@@ -1,5 +1,20 @@
-import { EventType, HitType, type GameEvent, type HitPayload, type OutPayload } from '../types/game-event';
+import { EventType, HitType, HitTrajectory, type GameEvent, type HitPayload, type OutPayload } from '../types/game-event';
 import type { BattingStats } from '../types/batting';
+
+/**
+ * A batted ball is a "Hard Hit Ball" when:
+ *   - Hit type is home_run (ball cleared the fence), OR
+ *   - Trajectory is line_drive (hard straight contact), OR
+ *   - Trajectory is fly_ball AND sprayY > 0.733 (deep outfield; 0.733 = 110/150 radius boundary)
+ */
+const DEEP_OF_SPRAY_Y_THRESHOLD = 0.733;
+
+function isHardHit(hitType: string | undefined, trajectory: string | undefined, sprayY: number | undefined): boolean {
+  if (hitType === HitType.HOME_RUN) return true;
+  if (trajectory === HitTrajectory.LINE_DRIVE) return true;
+  if (trajectory === HitTrajectory.FLY_BALL && typeof sprayY === 'number' && sprayY > DEEP_OF_SPRAY_Y_THRESHOLD) return true;
+  return false;
+}
 
 // FanGraphs 2023 wOBA linear weights
 const W_BB  = 0.69;
@@ -36,6 +51,9 @@ function makeEmptyStats(playerId: string, playerName: string): BattingStats {
     kPct: NaN,
     bbPct: NaN,
     woba: NaN,
+    battedBalls: 0,
+    hardHitBalls: 0,
+    hardHitPct: NaN,
   };
 }
 
@@ -108,7 +126,7 @@ export function deriveBattingStats(
       // ── HIT ────────────────────────────────────────────────────────────────
       if (etype === EventType.HIT) {
         const p = payload as HitPayload;
-        const { batterId, hitType, rbis } = p;
+        const { batterId, hitType, trajectory, rbis, sprayY } = p;
         if (!batterId) continue;
 
         markAppeared(batterId);
@@ -116,8 +134,11 @@ export function deriveBattingStats(
         s.plateAppearances += 1;
         s.atBats += 1;
         s.hits += 1;
+        s.battedBalls += 1;
 
         if (rbis) s.rbi += rbis;
+
+        if (isHardHit(hitType, trajectory, sprayY)) s.hardHitBalls += 1;
 
         switch (hitType) {
           case HitType.DOUBLE:    s.doubles += 1;   break;
@@ -132,7 +153,7 @@ export function deriveBattingStats(
       // ── OUT ────────────────────────────────────────────────────────────────
       if (etype === EventType.OUT) {
         const p = payload as OutPayload;
-        const { batterId, outType } = p;
+        const { batterId, outType, trajectory } = p;
         if (!batterId) continue;
 
         markAppeared(batterId);
@@ -143,8 +164,10 @@ export function deriveBattingStats(
           s.strikeouts += 1;
           s.atBats += 1;
         } else {
-          // Regular out (groundout, flyout, lineout, popout, other)
+          // Regular batted-ball out (groundout, flyout, lineout, popout, other)
           s.atBats += 1;
+          s.battedBalls += 1;
+          if (isHardHit(undefined, trajectory, payload?.sprayY as number | undefined)) s.hardHitBalls += 1;
         }
       }
 
@@ -189,6 +212,7 @@ export function deriveBattingStats(
         const s = getStats(batterId);
         s.plateAppearances += 1;
         s.sacrificeFlies += 1;
+        s.battedBalls += 1;  // SF is a batted ball (fly ball by definition, but not typically "hard hit")
         if (payload?.rbis) s.rbi += payload.rbis as number;
         // Not an at-bat
       }
@@ -201,6 +225,7 @@ export function deriveBattingStats(
         const s = getStats(batterId);
         s.plateAppearances += 1;
         s.sacrificeHits += 1;
+        s.battedBalls += 1;  // bunt is a batted ball (ground ball by definition, never hard hit)
         // Not an at-bat
       }
 
@@ -213,6 +238,10 @@ export function deriveBattingStats(
         const s = getStats(batterId);
         s.plateAppearances += 1;
         s.atBats += 1;
+        s.battedBalls += 1;
+        const traj = payload?.trajectory as string | undefined;
+        const sy = payload?.sprayY as number | undefined;
+        if (isHardHit(undefined, traj, sy)) s.hardHitBalls += 1;
       }
 
       // ── DOUBLE_PLAY ────────────────────────────────────────────────────────
@@ -264,6 +293,8 @@ export function deriveBattingStats(
       ? (W_BB * s.walks + W_HBP * s.hitByPitch + W_1B * singles +
          W_2B * s.doubles + W_3B * s.triples + W_HR * s.homeRuns) / wobaDenom
       : NaN;
+
+    s.hardHitPct = s.battedBalls > 0 ? s.hardHitBalls / s.battedBalls : NaN;
   }
 
   return statsMap;

@@ -30,6 +30,8 @@ const COLUMNS: { key: SortKey; label: string; title: string }[] = [
   { key: 'kPct',            label: 'K%',      title: 'Strikeout rate (K / PA)' },
   { key: 'bbPct',           label: 'BB%',     title: 'Walk rate (BB / PA)' },
   { key: 'woba',            label: 'wOBA',    title: 'Weighted on-base average (FanGraphs 2023 weights)' },
+  { key: 'hardHitBalls',    label: 'HHB',     title: 'Hard Hit Balls — line drives, deep fly balls, and home runs' },
+  { key: 'hardHitPct',      label: 'HHB%',    title: 'Hard Hit Ball rate (HHB / total batted balls)' },
 ];
 
 function getValue(s: BattingStats, key: SortKey): number | string {
@@ -44,14 +46,14 @@ function displayStat(s: BattingStats, key: SortKey): string {
   const intKeys: SortKey[] = [
     'gamesAppeared', 'plateAppearances', 'atBats', 'runs', 'hits',
     'doubles', 'triples', 'homeRuns', 'rbi', 'walks', 'strikeouts',
-    'hitByPitch', 'sacrificeFlies',
+    'hitByPitch', 'sacrificeFlies', 'battedBalls', 'hardHitBalls',
   ];
   if (intKeys.includes(key)) {
     return String(s[key as keyof typeof s]);
   }
 
   // Percentage stats (formatted as XX.X%)
-  const pctKeys: SortKey[] = ['kPct', 'bbPct'];
+  const pctKeys: SortKey[] = ['kPct', 'bbPct', 'hardHitPct'];
   if (pctKeys.includes(key)) {
     return formatBattingPct(s[key as keyof typeof s] as number);
   }

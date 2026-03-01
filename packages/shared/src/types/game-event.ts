@@ -65,6 +65,13 @@ export enum HitType {
   POP_UP = 'pop_up',
 }
 
+/** Batted-ball trajectory — independent of hit/out outcome */
+export enum HitTrajectory {
+  GROUND_BALL = 'ground_ball',
+  LINE_DRIVE  = 'line_drive',
+  FLY_BALL    = 'fly_ball',
+}
+
 // Discriminated union payloads by event type
 export interface PitchThrownPayload {
   pitcherId: string;
@@ -82,6 +89,7 @@ export interface HitPayload {
   batterId: string;
   pitcherId: string;
   hitType: HitType;
+  trajectory?: HitTrajectory;
   // Spray chart coordinates: 0-1 normalized, 0,0 = home plate
   sprayX?: number;
   sprayY?: number;
@@ -92,6 +100,7 @@ export interface OutPayload {
   batterId: string;
   pitcherId: string;
   outType: 'groundout' | 'flyout' | 'lineout' | 'popout' | 'strikeout' | 'other';
+  trajectory?: HitTrajectory;
   fieldedBy?: string; // position abbreviation
 }
 

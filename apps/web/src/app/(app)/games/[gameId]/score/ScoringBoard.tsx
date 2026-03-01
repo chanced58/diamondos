@@ -518,7 +518,11 @@ export function ScoringBoard({
 
   // Track in-play state (waiting for hit/out result after pitch lands in play)
   const [inPlayPending, setInPlayPending] = useState(false);
-  // Track error fielder selection sub-step (shown after clicking "Error" in the result buttons)
+  // The result type chosen (single/double/etc/error) — waiting for trajectory selection
+  const [pendingResult, setPendingResult] = useState<string | null>(null);
+  // Trajectory captured during error flow (stored until fielder is selected)
+  const [pendingTrajectory, setPendingTrajectory] = useState<string | null>(null);
+  // Track error fielder selection sub-step (shown after trajectory is picked for errors)
   const [errorPending, setErrorPending] = useState(false);
   // Track pitching change UI
   const [showPitchingChange, setShowPitchingChange] = useState(false);
@@ -534,6 +538,8 @@ export function ScoringBoard({
     setZoneLocation(null);
     setSprayPoint(null);
     setErrorPending(false);
+    setPendingResult(null);
+    setPendingTrajectory(null);
   }
 
   // Derive game state from events
@@ -674,6 +680,8 @@ export function ScoringBoard({
     setInPlayPending(false);
     setShowPitchingChange(false);
     resetAnnotations();
+    setPendingResult(null);
+    setPendingTrajectory(null);
   }
 
   // ── Pitch handlers ────────────────────────────────────────────────────────
@@ -706,8 +714,9 @@ export function ScoringBoard({
     }
   }
 
-  async function handleInPlay(result: 'single' | 'double' | 'triple' | 'home_run' | 'out' | 'field_choice') {
+  async function handleInPlay(result: string, trajectory: string) {
     setInPlayPending(false);
+    setPendingResult(null);
     const batterId = activeBatterId;
     const pitcherId = gameState.currentPitcherId;
     if (!batterId || !pitcherId) return;
@@ -725,9 +734,15 @@ export function ScoringBoard({
     resetAnnotations();
 
     if (result === 'out' || result === 'field_choice') {
-      await recordEvent('out', { batterId, pitcherId, outType: 'other', ...sprayExtra });
+      const outTypeMap: Record<string, string> = {
+        ground_ball: 'groundout',
+        line_drive:  'lineout',
+        fly_ball:    'flyout',
+      };
+      const outType = outTypeMap[trajectory] ?? 'other';
+      await recordEvent('out', { batterId, pitcherId, outType, trajectory, ...sprayExtra });
     } else {
-      await recordEvent('hit', { batterId, pitcherId, hitType: result, rbis: 0, ...sprayExtra });
+      await recordEvent('hit', { batterId, pitcherId, hitType: result, trajectory, rbis: 0, ...sprayExtra });
     }
   }
 
@@ -746,9 +761,16 @@ export function ScoringBoard({
       ? { sprayX: sprayPoint.x, sprayY: sprayPoint.y }
       : {};
 
+    // Capture trajectory before resetAnnotations clears it
+    const trajectory = pendingTrajectory;
+
     await recordEvent('pitch_thrown', { pitcherId, batterId, outcome: 'in_play', ...pitchExtra });
     resetAnnotations();
-    await recordEvent('field_error', { batterId, pitcherId, errorPosition, ...sprayExtra });
+    await recordEvent('field_error', {
+      batterId, pitcherId, errorPosition,
+      ...(trajectory ? { trajectory } : {}),
+      ...sprayExtra,
+    });
   }
 
   async function handleWalk() {
@@ -967,7 +989,7 @@ export function ScoringBoard({
                 <SprayChartPicker value={sprayPoint} onChange={setSprayPoint} />
 
                 {errorPending ? (
-                  /* ── Error fielder picker ── */
+                  /* ── Step 3: Error fielder picker ── */
                   <div>
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                       Who made the error?
@@ -984,14 +1006,50 @@ export function ScoringBoard({
                       ))}
                     </div>
                     <button
-                      onClick={() => setErrorPending(false)}
+                      onClick={() => { setErrorPending(false); setPendingTrajectory(null); setPendingResult('error'); }}
+                      className="text-xs text-gray-400 hover:text-gray-600 mt-2 block"
+                    >
+                      ← Back to trajectory
+                    </button>
+                  </div>
+                ) : pendingResult !== null ? (
+                  /* ── Step 2: Trajectory picker ── */
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                      How was it hit?
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { label: 'Ground Ball', value: 'ground_ball' },
+                        { label: 'Line Drive',  value: 'line_drive' },
+                        { label: 'Fly Ball',    value: 'fly_ball' },
+                      ].map(({ label, value }) => (
+                        <button
+                          key={value}
+                          onClick={() => {
+                            if (pendingResult === 'error') {
+                              setPendingTrajectory(value);
+                              setErrorPending(true);
+                              setPendingResult(null);
+                            } else {
+                              handleInPlay(pendingResult, value);
+                            }
+                          }}
+                          className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 transition-colors"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setPendingResult(null)}
                       className="text-xs text-gray-400 hover:text-gray-600 mt-2 block"
                     >
                       ← Back to result
                     </button>
                   </div>
                 ) : (
-                  /* ── Result buttons ── */
+                  /* ── Step 1: Result buttons ── */
                   <div>
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                       In play — what happened?
@@ -1000,7 +1058,7 @@ export function ScoringBoard({
                       {(['single', 'double', 'triple', 'home_run', 'out', 'field_choice'] as const).map((r) => (
                         <button
                           key={r}
-                          onClick={() => handleInPlay(r)}
+                          onClick={() => setPendingResult(r)}
                           disabled={!sprayPoint}
                           className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:hover:bg-gray-50 capitalize"
                         >
@@ -1008,7 +1066,7 @@ export function ScoringBoard({
                         </button>
                       ))}
                       <button
-                        onClick={() => setErrorPending(true)}
+                        onClick={() => setPendingResult('error')}
                         disabled={!sprayPoint}
                         className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:hover:bg-red-50"
                       >
@@ -1022,7 +1080,7 @@ export function ScoringBoard({
                 )}
 
                 <button
-                  onClick={() => { setInPlayPending(false); setErrorPending(false); setSprayPoint(null); }}
+                  onClick={() => { setInPlayPending(false); resetAnnotations(); }}
                   className="text-xs text-gray-400 hover:text-gray-600"
                 >
                   Cancel

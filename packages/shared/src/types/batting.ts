@@ -42,4 +42,15 @@ export interface BattingStats {
    * (0.69×BB + 0.72×HBP + 0.89×1B + 1.27×2B + 1.62×3B + 2.10×HR) / (AB + BB + SF + HBP)
    */
   woba: number;
+
+  // Hard Hit Ball stats
+  /** Total batted balls (hits + non-strikeout outs + errors + DPs + SFs + SHs) */
+  battedBalls: number;
+  /**
+   * Hard Hit Balls: line drives + home runs + fly balls to deep outfield (sprayY > 0.733).
+   * The 0.733 threshold maps to the short-OF/deep-OF boundary on the spray chart (d=110, R=150).
+   */
+  hardHitBalls: number;
+  /** HHB rate: hardHitBalls / battedBalls; NaN when battedBalls === 0 */
+  hardHitPct: number;
 }
