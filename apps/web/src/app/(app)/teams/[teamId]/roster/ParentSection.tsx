@@ -1,0 +1,268 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useFormState, useFormStatus } from 'react-dom';
+import { useRouter } from 'next/navigation';
+import { inviteParentAction } from './parents/new/actions';
+
+const inputClass =
+  'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent';
+
+function SubmitButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-800 disabled:opacity-50 transition-colors"
+    >
+      {pending ? 'Saving...' : 'Add parent'}
+    </button>
+  );
+}
+
+type Player = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  jerseyNumber: number | null;
+};
+
+type PendingInvitation = {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  role: string;
+};
+
+type ParentRow = {
+  id: string;
+  userId: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  phone: string | null;
+};
+
+type ParentLink = {
+  parentUserId: string;
+  playerName: string;
+};
+
+export function ParentSection({
+  teamId,
+  parents,
+  parentLinks,
+  pendingInvitations,
+  players,
+  canInvite,
+}: {
+  teamId: string;
+  parents: ParentRow[];
+  parentLinks: ParentLink[];
+  pendingInvitations: PendingInvitation[];
+  players: Player[];
+  canInvite: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [result, action] = useFormState(inviteParentAction, null);
+  const router = useRouter();
+
+  const isSuccess = result === 'added' || result === 'invited';
+
+  useEffect(() => {
+    if (isSuccess) {
+      router.refresh();
+      const t = setTimeout(() => setOpen(false), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [isSuccess, router]);
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-semibold text-gray-900">Parents</h2>
+          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">
+            {parents.length + pendingInvitations.length}
+          </span>
+        </div>
+        {canInvite && (
+          <button
+            onClick={() => setOpen((o) => !o)}
+            className="text-xs text-brand-700 hover:underline font-medium"
+          >
+            {open ? 'Cancel' : '+ Add parent'}
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="mb-4 bg-gray-50 border border-gray-200 rounded-xl p-5">
+          <p className="text-sm font-semibold text-gray-800 mb-4">Add Parent</p>
+          <form action={action} className="space-y-4">
+            <input type="hidden" name="teamId" value={teamId} />
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">First name</label>
+                <input type="text" name="firstName" className={inputClass} placeholder="Jane" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Last name</label>
+                <input type="text" name="lastName" className={inputClass} placeholder="Smith" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  name="email"
+                  className={inputClass}
+                  placeholder="parent@example.com"
+                  autoComplete="email"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Optional — sends an invite to view their player&apos;s practice notes.
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Phone</label>
+                <input type="tel" name="phone" className={inputClass} placeholder="(555) 000-0000" />
+              </div>
+            </div>
+
+            {players.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-2">
+                  Linked players
+                </label>
+                <div className="space-y-2 border border-gray-200 rounded-lg p-3 max-h-40 overflow-y-auto bg-white">
+                  {players.map((p) => (
+                    <label key={p.id} className="flex items-center gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        name="playerIds"
+                        value={p.id}
+                        className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                      />
+                      <span className="text-sm text-gray-800">
+                        {p.lastName}, {p.firstName}
+                        {p.jerseyNumber != null && (
+                          <span className="text-gray-400 ml-1.5 font-mono text-xs">
+                            #{p.jerseyNumber}
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {isSuccess && (
+              <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                {result === 'added'
+                  ? 'Parent added to the team.'
+                  : 'Invite email sent. They will be added when they accept.'}
+              </div>
+            )}
+            {result && !isSuccess && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {result}
+              </p>
+            )}
+
+            <div className="flex items-center gap-3">
+              <SubmitButton />
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="text-sm text-gray-500 hover:text-gray-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {parents.length === 0 && pendingInvitations.length === 0 ? (
+        <p className="text-sm text-gray-400 py-4">No parents added yet.</p>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Linked Players</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {parents.map((parent) => {
+                const linked = parentLinks.filter((l) => l.parentUserId === parent.userId);
+                return (
+                  <tr key={parent.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      {parent.firstName || parent.lastName
+                        ? `${parent.firstName ?? ''} ${parent.lastName ?? ''}`.trim()
+                        : <span className="text-gray-400 italic">Unknown</span>}
+                      {parent.phone && (
+                        <div className="text-xs text-gray-400">{parent.phone}</div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {parent.email ?? <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {linked.length === 0 ? (
+                        <span className="text-xs text-gray-300">No players linked</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {linked.map((l, i) => (
+                            <span
+                              key={i}
+                              className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full"
+                            >
+                              {l.playerName}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {pendingInvitations.map((inv) => (
+                <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    <div className="flex items-center gap-2">
+                      {inv.firstName || inv.lastName
+                        ? `${inv.firstName ?? ''} ${inv.lastName ?? ''}`.trim()
+                        : <span className="text-gray-400 italic">{inv.email}</span>}
+                      <span className="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 px-1.5 py-0.5 rounded-full font-normal">
+                        Pending
+                      </span>
+                    </div>
+                    {inv.phone && (
+                      <div className="text-xs text-gray-400">{inv.phone}</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">{inv.email}</td>
+                  <td className="px-4 py-3">
+                    <span className="text-xs text-gray-300">—</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}

@@ -6,9 +6,13 @@ This file provides guidance for AI assistants (Claude and others) working on thi
 
 ## Project Overview
 
-**baseballcoachesapp** is an application for baseball coaches. Its exact feature set should be documented here as it is defined, but the intent is to provide tooling useful to coaching staff (e.g., roster management, game planning, statistics tracking, drill libraries, player development tracking).
+**baseballcoachesapp** is a full-stack coaching platform for high school and youth baseball. It covers five pillars:
 
-> **Note:** This repository was initialized empty. Update this section as soon as the tech stack, architecture, and feature scope are established.
+1. **Scorekeeping** — offline-first pitch-by-pitch event logging with real-time live score streaming for parents
+2. **Communication** — tiered channels (announcement, topic, DM), push notifications, RSVP tracking
+3. **Practices** — drill library, drag-and-drop practice builder, multimedia CDN *(v2)*
+4. **Administration** — pitch count compliance (NFHS / Little League / NCAA rules), MaxPreps export, FERPA-compliant roster/user management
+5. **Statistics** — event-sourced aggregation, Quality At-Bats, spray charts, scouting reports *(v2)*
 
 ---
 
@@ -17,10 +21,10 @@ This file provides guidance for AI assistants (Claude and others) working on thi
 | Item | Status |
 |------|--------|
 | Initialized | Yes |
-| Source code | Not yet added |
-| Tests | Not yet configured |
+| Source code | Phase 1 complete — monorepo scaffold, packages, Supabase schema, web + mobile apps |
+| Tests | Not yet configured (add tests alongside business logic in `packages/shared/src/utils/`) |
 | CI/CD | Not yet configured |
-| Documentation | This file only |
+| Documentation | CLAUDE.md + inline code comments |
 
 ---
 
@@ -67,63 +71,143 @@ docs: add CLAUDE.md with project conventions
 
 ## Commands
 
-> Fill these in once the tech stack is chosen. Examples below are placeholders.
-
 ### Install Dependencies
 ```bash
-# e.g., npm install  |  yarn  |  pip install -r requirements.txt  |  go mod download
+pnpm install
 ```
 
-### Run Development Server
+### Run Development Servers
 ```bash
-# e.g., npm run dev  |  python manage.py runserver  |  go run ./cmd/server
+# All apps in parallel (via Turborepo)
+pnpm dev
+
+# Web only (Next.js on http://localhost:3000)
+pnpm dev:web
+
+# Mobile only (Expo — opens in Expo Go or simulator)
+pnpm dev:mobile
 ```
 
 ### Run Tests
 ```bash
-# e.g., npm test  |  pytest  |  go test ./...
+pnpm test
 ```
 
 ### Build for Production
 ```bash
-# e.g., npm run build  |  docker build .  |  go build ./cmd/server
+# Web (Next.js)
+pnpm build
+
+# Mobile iOS (via Expo EAS)
+pnpm --filter mobile build:ios
+
+# Mobile Android
+pnpm --filter mobile build:android
 ```
 
 ### Lint / Format
 ```bash
-# e.g., npm run lint  |  ruff check .  |  golangci-lint run
+pnpm lint
+pnpm format          # write
+pnpm format:check    # check only (CI)
+```
+
+### Type Check
+```bash
+pnpm type-check
+```
+
+### Supabase (local dev)
+```bash
+# Start local Supabase stack (requires Docker)
+supabase start
+
+# Apply all migrations
+supabase db reset
+
+# Regenerate TypeScript types from local DB
+pnpm --filter @baseball/database gen-types
+
+# Deploy edge functions
+supabase functions deploy pitch-count-calculator
+supabase functions deploy push-notifications
+supabase functions deploy maxpreps-export
+supabase functions deploy create-team
+supabase functions deploy invite-member
 ```
 
 ---
 
 ## Architecture
 
-> Document the high-level architecture here once it is established. Include:
-> - Frontend framework and major libraries
-> - Backend framework and language
-> - Database(s) and ORM/query layer
-> - External APIs or services (e.g., authentication, storage)
-> - Deployment platform (Vercel, AWS, Railway, etc.)
+**Monorepo** — Turborepo + pnpm workspaces. TypeScript everywhere.
+
+| Layer | Technology |
+|-------|-----------|
+| Mobile app | Expo SDK 51 + Expo Router v3 (React Native) |
+| Web app | Next.js 14 (App Router) |
+| Shared packages | `@baseball/shared`, `@baseball/database`, `@baseball/ui` |
+| Backend | Supabase (Postgres + Realtime + Auth + Storage) |
+| Offline storage (mobile) | WatermelonDB (SQLite via JSI) |
+| Styling (mobile) | NativeWind v4 (Tailwind CSS for React Native) |
+| Styling (web) | Tailwind CSS + shadcn/ui |
+| Edge functions | Deno (Supabase Functions) |
+| Push notifications | Expo Push Notifications |
+| Deployment (web) | Vercel |
+| Deployment (mobile) | Expo EAS Build |
+
+### Key Architectural Decision: Event Sourcing
+
+`game_events` is an **immutable append-only log**. Every pitch, out, and substitution is a row. Game state (score, count, baserunners) is derived by replaying events. This enables:
+- Offline-first sync (events created on device, upserted to Supabase idempotently)
+- Full audit trail for pitch count compliance
+- Future analytics without schema changes
+
+### RBAC
+
+Roles: `head_coach`, `assistant_coach`, `player`, `parent`, `athletic_director`.
+Enforced at three layers: Supabase RLS (primary), edge function JWT verification, client UI gating (cosmetic only).
 
 ### Directory Structure
 
-> Update once source code is added. A typical structure might look like:
-
 ```
 baseballcoachesapp/
-├── CLAUDE.md              # This file
-├── README.md              # User-facing documentation
-├── package.json           # (if Node/JS project)
-├── src/
-│   ├── app/               # Application entry points / routing
-│   ├── components/        # Reusable UI components
-│   ├── features/          # Feature-specific modules
-│   ├── lib/               # Shared utilities and helpers
-│   ├── api/               # API route handlers or service layer
-│   └── types/             # Shared TypeScript types / interfaces
-├── tests/                 # Test files
-├── public/                # Static assets
-└── docs/                  # Additional documentation
+├── CLAUDE.md
+├── .env.example
+├── package.json           # Root workspace (turbo, eslint, prettier)
+├── turbo.json
+├── pnpm-workspace.yaml
+├── tsconfig.base.json
+│
+├── apps/
+│   ├── web/               # Next.js 14 — admin dashboard + live score viewer
+│   │   └── src/
+│   │       ├── app/       # App Router pages
+│   │       ├── components/
+│   │       └── lib/supabase/
+│   └── mobile/            # Expo React Native — offline-first scoring + messaging
+│       ├── app/           # Expo Router file-system routing
+│       └── src/
+│           ├── db/        # WatermelonDB schema + models
+│           ├── sync/      # Sync engine (WDB ↔ Supabase)
+│           ├── features/  # scoring/, roster/, messaging/
+│           ├── lib/       # supabase.ts, notifications.ts, device-id.ts
+│           └── providers/ # AuthProvider, SyncProvider
+│
+├── packages/
+│   ├── shared/            # Pure TS: types, constants, Zod schemas, pure utils
+│   ├── database/          # Supabase client factory + generated types + query helpers
+│   └── ui/                # Shared React Native component primitives
+│
+└── supabase/
+    ├── migrations/        # 12 ordered SQL migration files
+    ├── seed.sql
+    └── functions/         # Deno edge functions
+        ├── pitch-count-calculator/
+        ├── push-notifications/
+        ├── maxpreps-export/
+        ├── create-team/
+        └── invite-member/
 ```
 
 ---
@@ -174,23 +258,27 @@ baseballcoachesapp/
 
 ## Environment Variables
 
-> Document all required environment variables here as they are added.
+Copy `.env.example` to `.env.local` in each app directory. Never commit `.env` files.
 
-Create a `.env` file in the project root (do not commit it). A `.env.example` file should be committed as a template.
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| _(none yet)_ | — | — |
+| Variable | Where | Description |
+|----------|-------|-------------|
+| `NEXT_PUBLIC_SUPABASE_URL` | `apps/web/.env.local` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `apps/web/.env.local` | Supabase anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only (never client) | Supabase service role key |
+| `EXPO_PUBLIC_SUPABASE_URL` | `apps/mobile/.env.local` | Supabase project URL (mobile) |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `apps/mobile/.env.local` | Supabase anon key (mobile) |
+| `EXPO_ACCESS_TOKEN` | Supabase secrets | Expo push notification API token |
+| `APP_URL` | Supabase secrets | Base URL for invite redirect |
 
 ---
 
 ## Database
 
-> Document schema conventions, migration tooling, and seeding steps here once chosen.
-
-- Use migrations for all schema changes — never modify the database schema manually
-- Migration files should be named with a timestamp prefix: `20240215_add_player_stats_table`
-- Seed scripts for local development should live in `db/seeds/` or equivalent
+- **Never** modify the Supabase schema manually — always use migrations in `supabase/migrations/`
+- Migration files use timestamp prefix: `YYYYMMDDHHMMSS_<description>.sql`
+- After adding a migration: run `supabase db reset` locally, then `pnpm --filter @baseball/database gen-types` to regenerate TypeScript types
+- **Never** UPDATE or DELETE rows in `game_events` — the table is append-only by design
+- After changing `supabase/migrations/`, update `packages/database/src/types/supabase.ts` (or regenerate it)
 
 ---
 
@@ -208,6 +296,11 @@ Consistent naming helps avoid confusion between the codebase and baseball termin
 | **Stats** | Performance statistics (batting, pitching, fielding) |
 | **Drill** | A practice activity in a drill library |
 | **Season** | A time period grouping games and rosters |
+| **GameEvent** | An atomic timestamped action in a game (pitch, hit, out, sub, etc.) — the event sourcing primitive |
+| **PitchCount** | Running total of pitches thrown by a pitcher in a game; tracked for compliance |
+| **ComplianceRule** | A ruleset (e.g., NFHS, Little League) defining max pitches per day and required rest days |
+| **QAB** | Quality At-Bat — a high-school-relevant metric crediting productive plate appearances regardless of traditional hit/out outcome |
+| **Channel** | A messaging context: announcement (coach-post-only), topic (threaded), or direct (1:1) |
 
 Extend this glossary as domain concepts are added to the codebase.
 

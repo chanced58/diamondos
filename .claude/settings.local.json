@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /c/Users/chance/baseball-app/baseballcoachesapp log --oneline -10)",
+      "Bash(pnpm install:*)",
+      "Bash(npm install:*)",
+      "Bash(node --version:*)",
+      "Bash(npm:*)",
+      "Bash(corepack enable:*)",
+      "Bash(corepack prepare:*)",
+      "Bash(pkill:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd.exe /c \"taskkill /F /IM node.exe\")",
+      "Bash(pnpm --filter web dev:*)",
+      "Bash(python3:*)",
+      "Bash(powershell.exe -Command \"Get-Process -Name node -ErrorAction SilentlyContinue | Stop-Process -Force; Write-Output ''Killed''\")",
+      "Bash(pnpm dev)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(head:*)",
+      "Bash(test:*)",
+      "Bash(git -C \"c:/Users/chance/baseball-app/baseballcoachesapp\" status --short)",
+      "Bash(pnpm --filter web type-check:*)",
+      "Bash(grep:*)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\chance\\baseball-app\\baseballcoachesapp\\apps\\web\\src\\app\\(app)\\teams\\[teamId]\\admin"
+    ]
+  }
+}

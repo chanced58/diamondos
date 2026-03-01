@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Baseball Coaches",
+    "slug": "baseball-coaches-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1e3a8a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.baseballcoachesapp"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1e3a8a"
+      },
+      "package": "com.baseballcoachesapp"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#1e3a8a"
+        }
+      ]
+    ],
+    "scheme": "baseballcoaches",
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

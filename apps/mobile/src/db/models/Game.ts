@@ -1,0 +1,28 @@
+import { Model, field, children } from '@nozbe/watermelondb';
+import type { Associations } from '@nozbe/watermelondb/Model';
+import type { GameEvent } from './GameEvent';
+
+export class Game extends Model {
+  static table = 'games';
+
+  static associations: Associations = {
+    game_events: { type: 'has_many', foreignKey: 'game_id' },
+  };
+
+  @field('remote_id') remoteId!: string;
+  @field('season_id') seasonId!: string;
+  @field('team_id') teamId!: string;
+  @field('opponent_name') opponentName!: string;
+  @field('scheduled_at') scheduledAt!: number;
+  @field('location_type') locationType!: string;
+  @field('venue_name') venueName!: string | undefined;
+  @field('status') status!: string;
+  @field('home_score') homeScore!: number;
+  @field('away_score') awayScore!: number;
+  @field('current_inning') currentInning!: number;
+  @field('is_top_of_inning') isTopOfInning!: boolean;
+  @field('outs') outs!: number;
+  @field('synced_at') syncedAt!: number | undefined;
+
+  @children('game_events') events!: import('@nozbe/watermelondb').Query<InstanceType<typeof GameEvent>>;
+}

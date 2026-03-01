@@ -1,0 +1,84 @@
+'use server';
+
+import { redirect } from 'next/navigation';
+import { createClient } from '@supabase/supabase-js';
+import { createServerClient } from '@/lib/supabase/server';
+import { formatDate, formatTime } from '@baseball/shared';
+import { postEventAlert } from '@/app/(app)/messages/notify';
+
+export async function createGameAction(_prevState: string | null, formData: FormData) {
+  const authClient = createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return 'Not authenticated — please log in again.';
+
+  const teamId       = formData.get('teamId') as string;
+  const opponent     = (formData.get('opponent') as string)?.trim();
+  const date         = formData.get('date') as string;
+  const time         = (formData.get('time') as string) || '12:00';
+  const locationType = (formData.get('locationType') as string) || 'home';
+  const venue        = (formData.get('venue') as string)?.trim() || null;
+  const notes        = (formData.get('notes') as string)?.trim() || null;
+
+  // Structured address fields from AddressAutocomplete
+  const address   = (formData.get('venue_address') as string)   || null;
+  const latRaw    = formData.get('venue_latitude') as string;
+  const lngRaw    = formData.get('venue_longitude') as string;
+  const placeId   = (formData.get('venue_place_id') as string)  || null;
+  const latitude  = latRaw  ? parseFloat(latRaw)  : null;
+  const longitude = lngRaw  ? parseFloat(lngRaw)  : null;
+
+  if (!teamId)    return 'Missing team ID.';
+  if (!opponent)  return 'Opponent name is required.';
+  if (!date)      return 'Game date is required.';
+
+  const scheduledAt = new Date(`${date}T${time}`).toISOString();
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  // Verify coach role
+  const { data: membership } = await supabase
+    .from('team_members')
+    .select('role')
+    .eq('team_id', teamId)
+    .eq('user_id', user.id)
+    .single();
+
+  const isCoach =
+    membership?.role === 'head_coach' ||
+    membership?.role === 'assistant_coach' ||
+    membership?.role === 'athletic_director';
+
+  if (!isCoach) return 'Only coaches can schedule games.';
+
+  const { data: game, error } = await supabase
+    .from('games')
+    .insert({
+      team_id:       teamId,
+      opponent_name: opponent,
+      scheduled_at:  scheduledAt,
+      location_type: locationType,
+      venue_name:    venue,
+      address,
+      latitude,
+      longitude,
+      place_id:      placeId,
+      notes,
+      created_by:    user.id,
+    })
+    .select()
+    .single();
+
+  if (error) return `Failed to create game: ${error.message}`;
+
+  if (formData.get('notifyTeam') === 'on') {
+    const locationLabel =
+      locationType === 'home' ? 'Home' : locationType === 'away' ? 'Away' : 'Neutral site';
+    const msg = `📅 New game scheduled: vs. ${opponent} — ${formatDate(scheduledAt)} at ${formatTime(scheduledAt)} (${locationLabel})`;
+    await postEventAlert(supabase, teamId, user.id, msg);
+  }
+
+  redirect(`/games/${game.id}`);
+}
