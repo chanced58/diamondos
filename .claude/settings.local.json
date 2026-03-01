@@ -21,7 +21,13 @@
       "Bash(test:*)",
       "Bash(git -C \"c:/Users/chance/baseball-app/baseballcoachesapp\" status --short)",
       "Bash(pnpm --filter web type-check:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(git config:*)",
+      "Bash(gh auth status:*)",
+      "Bash(git -C /c/Users/chance/baseball-app/baseballcoachesapp push --dry-run)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "additionalDirectories": [
       "c:\\Users\\chance\\baseball-app\\baseballcoachesapp\\apps\\web\\src\\app\\(app)\\teams\\[teamId]\\admin"

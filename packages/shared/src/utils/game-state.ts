@@ -73,8 +73,8 @@ export function deriveGameState(
 
       case EventType.WALK:
       case EventType.HIT_BY_PITCH: {
-        // Batter advances to first; push existing runners
-        state.runnersOnBase = advanceRunners(state.runnersOnBase, state.currentBatterId, 1);
+        // Force advance: only runners whose path is blocked by the batter move
+        state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, state.currentBatterId);
         state.balls = 0;
         state.strikes = 0;
         break;
@@ -168,13 +168,53 @@ function advanceRunners(
   batterId: string | null,
   bases: number,
 ): LiveGameState['runnersOnBase'] {
+  // All runners advance the same number of bases as the batter (standard hit model).
+  // Runners reaching home plate score — cleared here, tracked via explicit SCORE events.
+  const result: LiveGameState['runnersOnBase'] = { first: null, second: null, third: null };
+
+  if (runners.second) {
+    const dest = 2 + bases;
+    if (dest === 3) result.third = runners.second;
+    // dest >= 4: runner scores, stays null in result
+  }
+  if (runners.first) {
+    const dest = 1 + bases;
+    if (dest === 2) result.second = runners.first;
+    else if (dest === 3) result.third = runners.first;
+    // dest >= 4: runner scores, stays null in result
+  }
+
+  // Place batter at the correct base
+  if (bases === 1) result.first = batterId;
+  else if (bases === 2) result.second = batterId;
+  else if (bases === 3) result.third = batterId;
+  // bases === 4 (home run) is handled separately in the HIT case
+
+  return result;
+}
+
+function forceAdvanceRunners(
+  runners: LiveGameState['runnersOnBase'],
+  batterId: string | null,
+): LiveGameState['runnersOnBase'] {
+  // Walk / HBP: only runners forced by the batter taking first base advance.
+  // A runner is forced only if every base between them and home is occupied.
   const updated = { ...runners };
-  // Advance existing runners
-  if (bases >= 3 && updated.second) { updated.third = updated.second; updated.second = null; }
-  if (bases >= 2 && updated.first) { updated.second = updated.first; updated.first = null; }
-  if (bases >= 1) { updated.first = batterId; }
-  // Simplified: full runner advancement logic should be handled event-by-event
-  // via explicit BASERUNNER_ADVANCE events for accuracy
+  if (updated.first && updated.second && updated.third) {
+    updated.third = null; // runner on 3rd scores
+    updated.third = updated.second;
+    updated.second = updated.first;
+    updated.first = batterId;
+  } else if (updated.first && updated.second) {
+    updated.third = updated.second;
+    updated.second = updated.first;
+    updated.first = batterId;
+  } else if (updated.first) {
+    updated.second = updated.first;
+    updated.first = batterId;
+  } else {
+    updated.first = batterId;
+  }
   return updated;
 }
 

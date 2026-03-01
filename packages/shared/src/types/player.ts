@@ -39,19 +39,3 @@ export interface Player {
   createdAt: string;
   updatedAt: string;
 }
-
-export interface ParentPlayerLink {
-  id: string;
-  parentUserId: string;
-  playerId: string;
-  relationship?: string;
-  createdAt: string;
-}
-
-export interface SeasonRoster {
-  id: string;
-  seasonId: string;
-  playerId: string;
-  addedAt: string;
-  player?: Player;
-}

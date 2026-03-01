@@ -510,7 +510,7 @@ export function ScoringBoard({
   isCoach: boolean;
   isDemo?: boolean;
   seasonSprayPoints?: Record<string, { x: number; y: number }[]>;
-}) {
+}): JSX.Element {
   const [eventRows, setEventRows] = useState<EventRow[]>(initialEvents);
   const nextSeqNum = useRef(
     Math.max(...initialEvents.map((e) => e.sequence_number as number), 1) + 1,
@@ -548,7 +548,7 @@ export function ScoringBoard({
   // Current batter index in the lineup
   const currentBatterIndex = starters.findIndex((l) => l.playerId === gameState.currentBatterId);
   const currentBatter = starters[currentBatterIndex] ?? starters[0];
-  const currentPitcher = lineup.find((l) => l.playerId === gameState.currentPitcherId);
+
 
   // Is the opponent currently batting?
   // Home team bats in bottom (isTopOfInning = false); away team bats in top (true).
@@ -657,8 +657,9 @@ export function ScoringBoard({
       }
 
       const supabase = createBrowserClient();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await supabase.from('game_events').upsert(
-        newRow,
+        newRow as any,
         { onConflict: 'id', ignoreDuplicates: true },
       );
     },
@@ -673,15 +674,6 @@ export function ScoringBoard({
     setInPlayPending(false);
     setShowPitchingChange(false);
     resetAnnotations();
-  }
-
-  // Next batter in lineup after the current one completes a PA
-  function nextBatterId(): string | null {
-    if (starters.length === 0) return null;
-    const nextIndex = currentBatterIndex < 0
-      ? 0
-      : (currentBatterIndex + 1) % starters.length;
-    return starters[nextIndex]?.playerId ?? null;
   }
 
   // ── Pitch handlers ────────────────────────────────────────────────────────
@@ -1009,18 +1001,23 @@ export function ScoringBoard({
                         <button
                           key={r}
                           onClick={() => handleInPlay(r)}
-                          className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 capitalize transition-colors"
+                          disabled={!sprayPoint}
+                          className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:hover:bg-gray-50 capitalize"
                         >
                           {r === 'home_run' ? 'HR' : r === 'field_choice' ? 'FC' : r.charAt(0).toUpperCase() + r.slice(1)}
                         </button>
                       ))}
                       <button
                         onClick={() => setErrorPending(true)}
-                        className="py-2 text-sm font-medium rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+                        disabled={!sprayPoint}
+                        className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:hover:bg-red-50"
                       >
                         Error
                       </button>
                     </div>
+                    {!sprayPoint && (
+                      <p className="text-xs text-gray-400 mt-2">Tap the field above to mark where the ball was hit</p>
+                    )}
                   </div>
                 )}
 

@@ -13,16 +13,6 @@ export interface PitchComplianceRule {
   createdAt: string;
 }
 
-export interface PitchCountSummary {
-  playerId: string;
-  gameId: string;
-  seasonId: string;
-  gameDate: string;
-  pitchCount: number;
-  requiredRestDays?: number;
-  canPitchNextDay?: boolean;
-}
-
 export interface PitchComplianceStatus {
   playerId: string;
   currentCount: number;

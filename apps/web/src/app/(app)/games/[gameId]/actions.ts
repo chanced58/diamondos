@@ -149,7 +149,7 @@ export async function startGameAction(_prevState: string | null, formData: FormD
   redirect(`/games/${gameId}/score`);
 }
 
-export async function endGameAction(_prevState: string | null, formData: FormData) {
+export async function endGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated.';

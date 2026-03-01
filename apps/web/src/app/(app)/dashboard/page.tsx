@@ -130,11 +130,7 @@ export default async function DashboardPage() {
           value={activeTeam ? String(rosterCount) : '—'}
           description="Active players"
         />
-        <StatCard
-          title="Messages"
-          value="—"
-          description="Coming soon"
-        />
+
       </div>
 
       {activeTeam && scheduleItems.length > 0 && (
