@@ -121,6 +121,13 @@ export interface ScorePayload {
   rbis: number;
 }
 
+/** Payload for STOLEN_BASE, BASERUNNER_ADVANCE, and CAUGHT_STEALING events */
+export interface BaserunnerMovePayload {
+  runnerId: string;
+  fromBase: 1 | 2 | 3;
+  toBase: 2 | 3 | 4;  // 4 = home plate / scored
+}
+
 export type GameEventPayload =
   | PitchThrownPayload
   | HitPayload

@@ -59,20 +59,37 @@ function Dot({ filled, color }: { filled: boolean; color: string }) {
   );
 }
 
-function BaserunnerDiamond({ runners }: { runners: { first: string | null; second: string | null; third: string | null } }) {
+function BaserunnerDiamond({
+  runners,
+  labels,
+}: {
+  runners: { first: string | null; second: string | null; third: string | null };
+  labels?: { first?: string | null; second?: string | null; third?: string | null };
+}) {
+  function Base({ occupied, label, className }: { occupied: boolean; label?: string | null; className: string }) {
+    return (
+      <div className={`absolute w-7 h-7 rotate-45 border-2 overflow-hidden ${occupied ? 'bg-brand-500 border-brand-600' : 'bg-white border-gray-400'} ${className}`}>
+        {occupied && label && (
+          <span className="absolute inset-0 flex items-center justify-center -rotate-45 text-[7px] font-bold text-white leading-none pointer-events-none">
+            {label}
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="relative w-20 h-20 mx-auto">
-      {/* Diamond shape using positioned squares rotated 45deg */}
+    <div className="relative w-24 h-24 mx-auto">
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="relative w-12 h-12">
+        <div className="relative w-14 h-14">
           {/* Second base — top */}
-          <div className={`absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rotate-45 border-2 ${runners.second ? 'bg-brand-500 border-brand-600' : 'bg-white border-gray-400'}`} />
+          <Base occupied={!!runners.second} label={labels?.second} className="top-0 left-1/2 -translate-x-1/2 -translate-y-1/2" />
           {/* First base — right */}
-          <div className={`absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 w-5 h-5 rotate-45 border-2 ${runners.first ? 'bg-brand-500 border-brand-600' : 'bg-white border-gray-400'}`} />
+          <Base occupied={!!runners.first}  label={labels?.first}  className="top-1/2 right-0 translate-x-1/2 -translate-y-1/2" />
           {/* Third base — left */}
-          <div className={`absolute top-1/2 left-0 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rotate-45 border-2 ${runners.third ? 'bg-brand-500 border-brand-600' : 'bg-white border-gray-400'}`} />
+          <Base occupied={!!runners.third}  label={labels?.third}  className="top-1/2 left-0 -translate-x-1/2 -translate-y-1/2" />
           {/* Home plate — bottom */}
-          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-5 h-5 rotate-45 border-2 bg-gray-200 border-gray-400" />
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-7 h-7 rotate-45 border-2 bg-gray-200 border-gray-400" />
         </div>
       </div>
     </div>
@@ -612,6 +629,19 @@ export function ScoringBoard({
     return `${entry.player.lastName} #${entry.player.jerseyNumber ?? '—'}`;
   };
 
+  // Jersey-number label for the baserunner diamond (short form: "#7")
+  const runnerJerseyLabel = (playerId: string | null): string | null => {
+    if (!playerId) return null;
+    const entry = [...lineup, ...(opponentLineup ?? [])].find((l) => l.playerId === playerId);
+    return entry?.player.jerseyNumber != null ? `#${entry.player.jerseyNumber}` : null;
+  };
+
+  const runnerLabels = {
+    first:  runnerJerseyLabel(gameState.runnersOnBase.first),
+    second: runnerJerseyLabel(gameState.runnersOnBase.second),
+    third:  runnerJerseyLabel(gameState.runnersOnBase.third),
+  };
+
   // ── Realtime subscription (skipped in demo mode) ─────────────────────────
   useEffect(() => {
     if (isDemo) return;
@@ -827,6 +857,28 @@ export function ScoringBoard({
     }
   }
 
+  // ── Baserunner handlers ───────────────────────────────────────────────────
+
+  async function handleStolenBase(runnerId: string, fromBase: 1 | 2 | 3) {
+    const toBase = (fromBase + 1) as 2 | 3 | 4;
+    await recordEvent('stolen_base', { runnerId, fromBase, toBase });
+    if (toBase === 4) {
+      await recordEvent('score', { scoringPlayerId: runnerId, rbis: 1 });
+    }
+  }
+
+  async function handleCaughtStealing(runnerId: string, fromBase: 1 | 2 | 3) {
+    const toBase = (fromBase + 1) as 2 | 3 | 4;
+    await recordEvent('caught_stealing', { runnerId, fromBase, toBase });
+  }
+
+  async function handleRunnerAdvance(runnerId: string, fromBase: 1 | 2 | 3, toBase: 2 | 3 | 4) {
+    await recordEvent('baserunner_advance', { runnerId, fromBase, toBase });
+    if (toBase === 4) {
+      await recordEvent('score', { scoringPlayerId: runnerId, rbis: 1 });
+    }
+  }
+
   async function handleInningChange() {
     await recordEvent('inning_change', {});
   }
@@ -932,7 +984,7 @@ export function ScoringBoard({
 
         {/* ── Baserunners + Current Players ────────────────────── */}
         <div className="bg-white rounded-xl border border-gray-200 p-5 grid grid-cols-2 gap-4 items-center">
-          <BaserunnerDiamond runners={gameState.runnersOnBase} />
+          <BaserunnerDiamond runners={gameState.runnersOnBase} labels={runnerLabels} />
           <div className="space-y-2 text-sm">
             <div>
               <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Batting</p>
@@ -1150,6 +1202,59 @@ export function ScoringBoard({
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* ── Baserunning ─────────────────────────────────────────── */}
+        {isCoach && !inPlayPending && Object.values(gameState.runnersOnBase).some(Boolean) && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Baserunning</p>
+            <div className="space-y-2">
+              {(
+                [
+                  { base: 3 as const, label: '3rd', runnerId: gameState.runnersOnBase.third },
+                  { base: 2 as const, label: '2nd', runnerId: gameState.runnersOnBase.second },
+                  { base: 1 as const, label: '1st', runnerId: gameState.runnersOnBase.first },
+                ] as const
+              ).filter((b) => b.runnerId).map(({ base, label, runnerId }) => {
+                const nextBase = (base + 1) as 2 | 3 | 4;
+                const stealLabel = ({ 2: 'Steal 2nd', 3: 'Steal 3rd', 4: 'Steal Home' } as Record<number, string>)[nextBase];
+                return (
+                  <div key={base} className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-bold text-gray-500 w-7">{label}</span>
+                    <span className="text-xs font-medium text-gray-800 flex-1 min-w-0 truncate">
+                      {playerName(runnerId!)}
+                    </span>
+                    <button
+                      onClick={() => handleStolenBase(runnerId!, base)}
+                      className="px-2 py-1 text-xs font-medium rounded border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 transition-colors whitespace-nowrap"
+                    >
+                      {stealLabel}
+                    </button>
+                    <button
+                      onClick={() => handleCaughtStealing(runnerId!, base)}
+                      className="px-2 py-1 text-xs font-medium rounded border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+                    >
+                      CS
+                    </button>
+                    {base < 3 && (
+                      <button
+                        onClick={() => handleRunnerAdvance(runnerId!, base, (base + 1) as 2 | 3)}
+                        className="px-2 py-1 text-xs font-medium rounded border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 transition-colors"
+                      >
+                        Adv →
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleRunnerAdvance(runnerId!, base, 4)}
+                      className="px-2 py-1 text-xs font-medium rounded border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 transition-colors"
+                    >
+                      Score
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 

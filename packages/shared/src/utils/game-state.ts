@@ -1,4 +1,4 @@
-import { EventType, type GameEvent, type PitchThrownPayload, type HitPayload, type SubstitutionPayload, type PitchingChangePayload, type ScorePayload } from '../types/game-event';
+import { EventType, type GameEvent, type PitchThrownPayload, type HitPayload, type SubstitutionPayload, type PitchingChangePayload, type ScorePayload, type BaserunnerMovePayload } from '../types/game-event';
 import type { LiveGameState } from '../types/game';
 import { BALLS_FOR_WALK, STRIKES_FOR_STRIKEOUT, OUTS_PER_INNING } from '../constants/baseball';
 
@@ -145,6 +145,34 @@ export function deriveGameState(
         if (runnersOnBase.first === p.outPlayerId) runnersOnBase.first = p.inPlayerId;
         if (runnersOnBase.second === p.outPlayerId) runnersOnBase.second = p.inPlayerId;
         if (runnersOnBase.third === p.outPlayerId) runnersOnBase.third = p.inPlayerId;
+        break;
+      }
+
+      case EventType.STOLEN_BASE:
+      case EventType.BASERUNNER_ADVANCE: {
+        const p = event.payload as unknown as BaserunnerMovePayload;
+        const runners = { ...state.runnersOnBase };
+        // Remove from old base
+        if (p.fromBase === 1) runners.first  = null;
+        else if (p.fromBase === 2) runners.second = null;
+        else if (p.fromBase === 3) runners.third  = null;
+        // Place on new base (toBase 4 = scored; cleared from diamond, SCORE event adds the run)
+        if (p.toBase === 2) runners.second = p.runnerId;
+        else if (p.toBase === 3) runners.third  = p.runnerId;
+        state.runnersOnBase = runners;
+        break;
+      }
+
+      case EventType.CAUGHT_STEALING: {
+        const p = event.payload as unknown as BaserunnerMovePayload;
+        const runners = { ...state.runnersOnBase };
+        if (p.fromBase === 1) runners.first  = null;
+        else if (p.fromBase === 2) runners.second = null;
+        else if (p.fromBase === 3) runners.third  = null;
+        state.runnersOnBase = runners;
+        state.outs++;
+        state.balls = 0;
+        state.strikes = 0;
         break;
       }
     }
