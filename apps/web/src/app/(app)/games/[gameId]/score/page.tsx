@@ -68,9 +68,11 @@ export default async function ScorePage({ params }: { params: { gameId: string }
   }));
 
   // ── Season spray-chart history ──────────────────────────────────────────────
-  // Fetch hit events with spray coordinates from all completed games this season
-  // so the tendency chart reflects the batter's full-season hitting profile.
-  const seasonSprayPoints: Record<string, { x: number; y: number }[]> = {};
+  // Fetch pitch_thrown + hit events for completed games and replay them to
+  // record the ball-strike count at the time of each batted ball.  The count
+  // is used on the scoring board to filter the spray chart by the live count.
+  type SprayPoint = { x: number; y: number; balls: number; strikes: number };
+  const seasonSprayPoints: Record<string, SprayPoint[]> = {};
 
   const playerIds = lineup.map((l) => l.playerId);
 
@@ -81,26 +83,78 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       .eq('team_id', game.team_id)
       .eq('season_id', game.season_id)
       .eq('status', 'completed')
-      .neq('id', params.gameId); // current game's hits come from eventsResult
+      .neq('id', params.gameId);
 
     const completedIds = (completedGames ?? []).map((g: any) => g.id as string);
 
     if (completedIds.length > 0) {
-      const { data: hitEvents } = await db
+      const { data: rawEvents } = await db
         .from('game_events')
-        .select('payload')
+        .select('game_id, sequence_number, event_type, payload')
         .in('game_id', completedIds)
-        .eq('event_type', 'hit');
+        .in('event_type', [
+          'pitch_thrown', 'hit', 'walk', 'strikeout', 'out',
+          'hit_by_pitch', 'inning_change', 'sacrifice_fly',
+          'sacrifice_bunt', 'field_error', 'double_play',
+        ])
+        .order('game_id')
+        .order('sequence_number');
 
-      for (const event of hitEvents ?? []) {
-        const p = (event.payload ?? {}) as Record<string, unknown>;
-        if (p.sprayX == null || p.batterId == null) continue;
-        const bid = p.batterId as string;
-        if (!playerIds.includes(bid)) continue;
-        (seasonSprayPoints[bid] ??= []).push({
-          x: p.sprayX as number,
-          y: p.sprayY as number,
-        });
+      // Group events by game so we can replay each game independently
+      const byGame = new Map<string, any[]>();
+      for (const e of rawEvents ?? []) {
+        const gid = e.game_id as string;
+        if (!byGame.has(gid)) byGame.set(gid, []);
+        byGame.get(gid)!.push(e);
+      }
+
+      // Replay each game's events to derive count at the time of each contact
+      for (const gameEvts of byGame.values()) {
+        let balls = 0, strikes = 0;
+        let prevBatterId: string | null = null;
+        let contactCount: { balls: number; strikes: number } | null = null;
+
+        for (const event of gameEvts) {
+          const etype = event.event_type as string;
+          const p = (event.payload ?? {}) as Record<string, unknown>;
+
+          if (etype === 'pitch_thrown') {
+            const bid = p.batterId as string;
+            if (bid !== prevBatterId) {
+              // New batter — reset count
+              balls = 0; strikes = 0; prevBatterId = bid; contactCount = null;
+            }
+            const outcome = p.outcome as string;
+            if (outcome === 'in_play') {
+              contactCount = { balls, strikes }; // count when ball was put in play
+            } else if (outcome === 'ball' || outcome === 'intentional_ball') {
+              if (balls < 3) balls++;
+            } else if (
+              outcome === 'called_strike' ||
+              outcome === 'swinging_strike' ||
+              outcome === 'foul_tip'
+            ) {
+              if (strikes < 2) strikes++;
+            } else if (outcome === 'foul') {
+              if (strikes < 2) strikes++;
+            }
+          } else if (etype === 'hit') {
+            const bid = p.batterId as string | undefined;
+            const sprayX = p.sprayX as number | null | undefined;
+            if (sprayX != null && bid && playerIds.includes(bid) && contactCount) {
+              (seasonSprayPoints[bid] ??= []).push({
+                x: sprayX,
+                y: (p.sprayY as number) ?? 0,
+                balls: contactCount.balls,
+                strikes: contactCount.strikes,
+              });
+            }
+            balls = 0; strikes = 0; prevBatterId = null; contactCount = null;
+          } else {
+            // Terminal or inning-reset events — clear count state
+            balls = 0; strikes = 0; prevBatterId = null; contactCount = null;
+          }
+        }
       }
     }
   }

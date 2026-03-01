@@ -314,177 +314,110 @@ function SprayChartPicker({
   );
 }
 
-// ── Hitter tendency chart ──────────────────────────────────────────────────────
+// ── Batter spray chart (count-filtered) ───────────────────────────────────────
 //
-// Field divided into 5 sectors (LF / LC / CF / RC / RF) from home plate out to
-// the outfield fence.  Each sector is a pie-slice path using the same arc geometry
-// as the field diagram (home plate at 120,185, radius 150).
+// Shows all season hit locations as faded gray dots; dots matching the
+// current ball-strike count are highlighted in blue.  Positioned inline,
+// next to the StrikeZoneGrid inside the pitch controls card.
 //
-// Sector boundary points on the outfield arc (angles measured from +x, CCW):
-//   -135° → (14,  79)  left foul line
-//   -117° → (52,  51)  LF | LC
-//    -99° → (97,  37)  LC | CF
-//    -81° → (143, 37)  CF | RC
-//    -63° → (188, 51)  RC | RF
-//    -45° → (226, 79)  right foul line
+// SVG coordinate system: home plate at (HX=120, HY=185), field radius R=150.
+// Normalized coords: sprayX 0=left, 0.5=center, 1=right; sprayY 0=HP, 1=deep CF.
 
-const TEND_ZONES = [
-  {
-    id: 'lf',
-    label: 'LF',
-    path: 'M 120 185 L 14 79 A 150 150 0 0 1 52 51 Z',
-    labelX: 48,  labelY: 108,
-  },
-  {
-    id: 'lc',
-    label: 'LC',
-    path: 'M 120 185 L 52 51 A 150 150 0 0 1 97 37 Z',
-    labelX: 81,  labelY: 80,
-  },
-  {
-    id: 'cf',
-    label: 'CF',
-    path: 'M 120 185 L 97 37 A 150 150 0 0 1 143 37 Z',
-    labelX: 120, labelY: 66,
-  },
-  {
-    id: 'rc',
-    label: 'RC',
-    path: 'M 120 185 L 143 37 A 150 150 0 0 1 188 51 Z',
-    labelX: 159, labelY: 80,
-  },
-  {
-    id: 'rf',
-    label: 'RF',
-    path: 'M 120 185 L 188 51 A 150 150 0 0 1 226 79 Z',
-    labelX: 192, labelY: 108,
-  },
-] as const;
+type SprayPt = { x: number; y: number; balls: number; strikes: number };
 
-type ZoneId = (typeof TEND_ZONES)[number]['id'];
-
-function getZoneId(nx: number, ny: number): ZoneId {
-  // angle from home plate in the SVG coordinate plane (y increases downward)
-  const deg = Math.atan2(-ny, nx - 0.5) * (180 / Math.PI);
-  if (deg < -117) return 'lf';
-  if (deg < -99)  return 'lc';
-  if (deg < -81)  return 'cf';
-  if (deg < -63)  return 'rc';
-  return 'rf';
-}
-
-function zoneColor(count: number): string {
-  if (count === 0) return 'rgba(239,68,68,0.30)';
-  if (count === 1) return 'rgba(245,158,11,0.45)';
-  return 'rgba(34,197,94,0.50)';
-}
-
-function HitterTendencyChart({
-  hitPoints,
-  batterName,
-  dataLabel = 'this game',
+function BatterSprayChart({
+  allHitPoints,
+  currentBalls,
+  currentStrikes,
 }: {
-  hitPoints: { x: number; y: number }[];
-  batterName: string;
-  dataLabel?: string;
+  allHitPoints: SprayPt[];
+  currentBalls: number;
+  currentStrikes: number;
 }) {
   const HX = 120, HY = 185, R = 150;
 
-  const counts: Record<ZoneId, number> = { lf: 0, lc: 0, cf: 0, rc: 0, rf: 0 };
-  for (const p of hitPoints) {
-    counts[getZoneId(p.x, p.y)]++;
-  }
+  const countMatch = allHitPoints.filter(
+    (p) => p.balls === currentBalls && p.strikes === currentStrikes,
+  );
+  const others = allHitPoints.filter(
+    (p) => !(p.balls === currentBalls && p.strikes === currentStrikes),
+  );
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
-          Hitting Tendency — {batterName}
-        </p>
-        <span className="text-xs text-gray-300">{hitPoints.length} hit{hitPoints.length !== 1 ? 's' : ''} {dataLabel}</span>
-      </div>
-
+    <div className="flex-1 min-w-0">
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+        Spray{' '}
+        <span className="font-normal normal-case text-gray-300">
+          {currentBalls}-{currentStrikes} ({countMatch.length}/{allHitPoints.length})
+        </span>
+      </p>
       <svg viewBox="0 0 240 200" className="w-full rounded-lg border border-gray-200">
-        {/* Sky background */}
+        {/* Sky / foul territory */}
         <rect width="240" height="200" fill="#e0f2fe" />
-
-        {/* Zone fills — drawn before field features so features render on top */}
-        {TEND_ZONES.map(({ id, path, label, labelX, labelY }) => (
-          <g key={id}>
-            <path d={path} fill={zoneColor(counts[id])} />
-            <text
-              x={labelX}
-              y={labelY}
-              textAnchor="middle"
-              fontSize="8"
-              fontWeight="bold"
-              fontFamily="sans-serif"
-              fill="#374151"
-              stroke="white"
-              strokeWidth="2"
-              paintOrder="stroke fill"
-            >
-              {label}
-            </text>
-          </g>
-        ))}
-
+        {/* Fair territory */}
+        <path d="M 120 185 L 14 79 A 150 150 0 0 1 226 79 Z" fill="#bbf7d0" />
         {/* Outfield wall */}
         <path d="M 14 79 A 150 150 0 0 1 226 79" stroke="#374151" strokeWidth="2.5" fill="none" />
-
+        {/* Infield dirt */}
+        <circle cx="120" cy="132" r="52" fill="#d4a76a" />
+        {/* Diamond grass */}
+        <polygon points="120,185 165,140 120,95 75,140" fill="#a3c97c" />
+        <polygon points="120,185 165,140 120,95 75,140" fill="none" stroke="#374151" strokeWidth="1" />
+        {/* Pitcher's mound */}
+        <circle cx="120" cy="131" r="6" fill="#c8956c" stroke="#92644e" strokeWidth="1" />
+        {/* Bases */}
+        <rect x="159" y="134" width="10" height="10" fill="white" stroke="#374151" strokeWidth="1"
+          transform="rotate(45,165,140)" />
+        <rect x="114" y="89" width="10" height="10" fill="white" stroke="#374151" strokeWidth="1"
+          transform="rotate(45,120,95)" />
+        <rect x="69" y="134" width="10" height="10" fill="white" stroke="#374151" strokeWidth="1"
+          transform="rotate(45,75,140)" />
+        <polygon points="120,195 128,188 125,179 115,179 112,188" fill="white" stroke="#374151" strokeWidth="1" />
         {/* Foul lines */}
         <line x1="120" y1="185" x2="14"  y2="79" stroke="#6b7280" strokeWidth="1" strokeDasharray="5 3" />
         <line x1="120" y1="185" x2="226" y2="79" stroke="#6b7280" strokeWidth="1" strokeDasharray="5 3" />
 
-        {/* Infield dirt */}
-        <circle cx="120" cy="132" r="52" fill="#d4a76a" />
+        {/* All other-count hits (faded gray) */}
+        {others.map((p, i) => (
+          <circle
+            key={i}
+            cx={(p.x - 0.5) * R + HX}
+            cy={HY - p.y * R}
+            r="4"
+            fill="#94a3b8"
+            opacity="0.35"
+          />
+        ))}
 
-        {/* Diamond grass + outline */}
-        <polygon points="120,185 165,140 120,95 75,140" fill="#a3c97c" />
-        <polygon points="120,185 165,140 120,95 75,140" fill="none" stroke="#374151" strokeWidth="1.5" />
-
-        {/* Pitcher's mound */}
-        <circle cx="120" cy="131" r="7" fill="#c8956c" stroke="#92644e" strokeWidth="1.5" />
-
-        {/* Bases */}
-        <rect x="159" y="134" width="12" height="12" fill="white" stroke="#374151" strokeWidth="1.5"
-          transform="rotate(45,165,140)" />
-        <rect x="114" y="89"  width="12" height="12" fill="white" stroke="#374151" strokeWidth="1.5"
-          transform="rotate(45,120,95)" />
-        <rect x="69"  y="134" width="12" height="12" fill="white" stroke="#374151" strokeWidth="1.5"
-          transform="rotate(45,75,140)" />
-        <polygon points="120,196 130,188 127,178 113,178 110,188" fill="white" stroke="#374151" strokeWidth="1.5" />
-
-        {/* Individual hit markers */}
-        {hitPoints.map((p, i) => {
+        {/* Current-count hits (highlighted blue) */}
+        {countMatch.map((p, i) => {
           const cx = (p.x - 0.5) * R + HX;
           const cy = HY - p.y * R;
           return (
             <g key={i}>
-              <circle cx={cx} cy={cy} r="6" fill="#1d4ed8" opacity="0.2" />
-              <circle cx={cx} cy={cy} r="3" fill="#1d4ed8" opacity="0.85" stroke="white" strokeWidth="1" />
+              <circle cx={cx} cy={cy} r="8" fill="#1d4ed8" opacity="0.18" />
+              <circle cx={cx} cy={cy} r="4" fill="#1d4ed8" opacity="0.9" stroke="white" strokeWidth="1.5" />
             </g>
           );
         })}
+
+        {/* No data hint */}
+        {allHitPoints.length === 0 && (
+          <text x="120" y="120" textAnchor="middle" fontSize="9" fill="#9ca3af" fontFamily="sans-serif">
+            No hit data yet
+          </text>
+        )}
       </svg>
 
-      {/* Legend */}
-      <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+      {/* Mini legend */}
+      <div className="flex items-center gap-3 mt-1.5 text-[10px] text-gray-400">
         <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-3 rounded-sm" style={{ background: 'rgba(239,68,68,0.50)' }} />
-          Rarely
+          <span className="inline-block w-2 h-2 rounded-full bg-blue-600 opacity-80" />
+          {currentBalls}-{currentStrikes} count
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-3 rounded-sm" style={{ background: 'rgba(245,158,11,0.65)' }} />
-          Sometimes
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-3 rounded-sm" style={{ background: 'rgba(34,197,94,0.65)' }} />
-          Frequently
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-3 rounded-full bg-blue-600 opacity-80" />
-          Hit location
+          <span className="inline-block w-2 h-2 rounded-full bg-slate-400 opacity-50" />
+          Other counts
         </span>
       </div>
     </div>
@@ -526,7 +459,7 @@ export function ScoringBoard({
   currentUserId: string;
   isCoach: boolean;
   isDemo?: boolean;
-  seasonSprayPoints?: Record<string, { x: number; y: number }[]>;
+  seasonSprayPoints?: Record<string, SprayPt[]>;
 }): JSX.Element {
   const [eventRows, setEventRows] = useState<EventRow[]>(initialEvents);
   const nextSeqNum = useRef(
@@ -599,27 +532,61 @@ export function ScoringBoard({
   const activeBatter = isOpponentBatting ? currentOpponentBatter : currentBatter;
   const activeBatterId = activeBatter?.playerId ?? null;
 
-  // Hit spray points for the tendency chart — season history + current game
-  const tendencyHitPoints: { x: number; y: number }[] = (() => {
+  // Hit spray points with count-at-contact — season history + current game.
+  // We replay the current game's events to track the ball-strike count at the
+  // moment each ball was put in play, then tag those hits with (balls, strikes).
+  const tendencyHitPointsWithCount: SprayPt[] = (() => {
     if (isOpponentBatting || !currentBatter) return [];
-    // Current game hits for this batter (from live event log)
-    const currentGameHits = eventRows
-      .filter((e) => {
-        if (e.event_type !== 'hit') return false;
-        const p = e.payload as Record<string, unknown>;
-        return p.batterId === currentBatter.playerId && p.sprayX != null;
-      })
-      .map((e) => {
-        const p = e.payload as Record<string, unknown>;
-        return { x: p.sprayX as number, y: p.sprayY as number };
-      });
-    // Season history from completed past games (passed from server)
-    const history = seasonSprayPoints?.[currentBatter.playerId] ?? [];
+
+    // Replay current game events to derive count at contact for each hit
+    const currentGameHits: SprayPt[] = [];
+    let balls = 0, strikes = 0;
+    let prevBatterId: string | null = null;
+    let contactCount: { balls: number; strikes: number } | null = null;
+
+    for (const row of eventRows) {
+      const etype = row.event_type as string;
+      const p = (row.payload ?? {}) as Record<string, unknown>;
+
+      if (etype === 'pitch_thrown') {
+        const bid = p.batterId as string;
+        if (bid !== prevBatterId) {
+          balls = 0; strikes = 0; prevBatterId = bid; contactCount = null;
+        }
+        const outcome = p.outcome as string;
+        if (outcome === 'in_play') {
+          contactCount = { balls, strikes };
+        } else if (outcome === 'ball' || outcome === 'intentional_ball') {
+          if (balls < 3) balls++;
+        } else if (
+          outcome === 'called_strike' || outcome === 'swinging_strike' || outcome === 'foul_tip'
+        ) {
+          if (strikes < 2) strikes++;
+        } else if (outcome === 'foul') {
+          if (strikes < 2) strikes++;
+        }
+      } else if (etype === 'hit') {
+        if (p.batterId === currentBatter.playerId && p.sprayX != null && contactCount) {
+          currentGameHits.push({
+            x: p.sprayX as number,
+            y: (p.sprayY ?? 0) as number,
+            balls: contactCount.balls,
+            strikes: contactCount.strikes,
+          });
+        }
+        balls = 0; strikes = 0; prevBatterId = null; contactCount = null;
+      } else if (
+        ['walk', 'strikeout', 'out', 'hit_by_pitch', 'sacrifice_fly',
+          'sacrifice_bunt', 'field_error', 'double_play', 'inning_change'].includes(etype)
+      ) {
+        balls = 0; strikes = 0; prevBatterId = null; contactCount = null;
+      }
+    }
+
+    // Merge season history (server-side) with current game hits
+    const history: SprayPt[] = seasonSprayPoints?.[currentBatter.playerId] ?? [];
     return [...history, ...currentGameHits];
   })();
-
-  // Whether the tendency data comes from season history or just this game (demo)
-  const tendencyLabel = seasonSprayPoints ? 'this season' : 'this game';
 
   // Player name lookup (searches both lineups)
   const playerName = (playerId: string | null) => {
@@ -1002,17 +969,6 @@ export function ScoringBoard({
           </div>
         </div>
 
-        {/* ── Batter Tendency Chart (our team batting only) ────────── */}
-        {!isOpponentBatting && currentBatter && (
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <HitterTendencyChart
-              hitPoints={tendencyHitPoints}
-              batterName={`${currentBatter.player.lastName} #${currentBatter.player.jerseyNumber ?? '—'}`}
-              dataLabel={tendencyLabel}
-            />
-          </div>
-        )}
-
         {/* ── Pitch Controls (coaches only) ─────────────────────── */}
         {isCoach && (
           <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
@@ -1021,7 +977,18 @@ export function ScoringBoard({
             {gameState.outs < 3 && (
               <div className="space-y-3 pb-3 border-b border-gray-100">
                 <PitchTypeSelector selected={pitchType} onSelect={setPitchType} />
-                <StrikeZoneGrid selected={zoneLocation} onSelect={setZoneLocation} />
+                <div className="flex gap-3 items-start">
+                  <div className="shrink-0">
+                    <StrikeZoneGrid selected={zoneLocation} onSelect={setZoneLocation} />
+                  </div>
+                  {!isOpponentBatting && currentBatter && (
+                    <BatterSprayChart
+                      allHitPoints={tendencyHitPointsWithCount}
+                      currentBalls={gameState.balls}
+                      currentStrikes={gameState.strikes}
+                    />
+                  )}
+                </div>
               </div>
             )}
 
