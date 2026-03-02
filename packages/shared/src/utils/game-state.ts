@@ -103,6 +103,15 @@ export function deriveGameState(
         break;
       }
 
+      case EventType.FIELD_ERROR: {
+        // Batter reaches base on the error — force-advance any runners already
+        // on base (same logic as a walk) and place batter on first.
+        state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, state.currentBatterId);
+        state.balls = 0;
+        state.strikes = 0;
+        break;
+      }
+
       case EventType.OUT:
       case EventType.STRIKEOUT: {
         state.outs++;
