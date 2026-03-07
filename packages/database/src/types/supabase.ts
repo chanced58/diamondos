@@ -44,6 +44,8 @@ export interface Database {
           name: string;
           organization: string | null;
           logo_url: string | null;
+          primary_color: string | null;
+          secondary_color: string | null;
           state_code: string | null;
           created_by: string;
           created_at: string;
@@ -54,6 +56,8 @@ export interface Database {
           name: string;
           organization?: string | null;
           logo_url?: string | null;
+          primary_color?: string | null;
+          secondary_color?: string | null;
           state_code?: string | null;
           created_by: string;
           created_at?: string;
@@ -63,6 +67,8 @@ export interface Database {
           name?: string;
           organization?: string | null;
           logo_url?: string | null;
+          primary_color?: string | null;
+          secondary_color?: string | null;
           state_code?: string | null;
           updated_at?: string;
         };
@@ -101,6 +107,7 @@ export interface Database {
           role: 'head_coach' | 'assistant_coach' | 'player' | 'parent' | 'athletic_director';
           is_active: boolean;
           joined_at: string;
+          jersey_number: number | null;
         };
         Insert: {
           id?: string;
@@ -109,10 +116,12 @@ export interface Database {
           role: 'head_coach' | 'assistant_coach' | 'player' | 'parent' | 'athletic_director';
           is_active?: boolean;
           joined_at?: string;
+          jersey_number?: number | null;
         };
         Update: {
           role?: 'head_coach' | 'assistant_coach' | 'player' | 'parent' | 'athletic_director';
           is_active?: boolean;
+          jersey_number?: number | null;
         };
       };
       players: {

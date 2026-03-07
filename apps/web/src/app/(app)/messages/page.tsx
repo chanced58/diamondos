@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getTeamsForUser } from '@baseball/database';
 import { seedDefaultChannels } from './seed';
+import { NewAnnouncementForm } from './NewAnnouncementForm';
 
 export const metadata: Metadata = { title: 'Messages' };
 
@@ -46,7 +47,8 @@ export default async function MessagesPage() {
     .select('role')
     .eq('team_id', activeTeam.id)
     .eq('user_id', user.id)
-    .single();
+    .eq('is_active', true)
+    .maybeSingle();
 
   const isCoach =
     membership?.role === 'head_coach' ||
@@ -179,7 +181,44 @@ export default async function MessagesPage() {
       </div>
 
       {/* ── Channel lists ────────────────────────────────────────────── */}
-      <ChannelList items={announcements} type="announcement" />
+      {/* Announcements section with compose form for coaches */}
+      {announcements.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2 px-1">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+              {CHANNEL_TYPE_LABELS['announcement']}
+            </p>
+            {isCoach && (
+              <NewAnnouncementForm
+                teamId={activeTeam.id}
+                channelId={announcements[0]?.id ?? ''}
+              />
+            )}
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <ul className="divide-y divide-gray-100">
+              {announcements.map((channel) => (
+                <li key={channel.id}>
+                  <Link
+                    href={`/messages/${channel.id}`}
+                    className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors"
+                  >
+                    <span className="text-gray-400 font-mono text-sm w-5 text-center shrink-0">
+                      {CHANNEL_TYPE_ICONS['announcement']}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{channel.name}</p>
+                      {channel.description && (
+                        <p className="text-xs text-gray-400 truncate">{channel.description}</p>
+                      )}
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
       <ChannelList items={topics} type="topic" />
       <ChannelList items={dms} type="direct" />
 

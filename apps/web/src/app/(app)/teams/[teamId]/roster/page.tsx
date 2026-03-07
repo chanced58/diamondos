@@ -33,10 +33,10 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const [playersResult, seasonResult, membershipResult, staffResult, parentsResult, pendingInvitesResult] = await Promise.all([
+  const [playersResult, seasonResult, membershipResult, staffMembersResult, parentMembersResult, pendingInvitesResult] = await Promise.all([
     db
       .from('players')
-      .select('id, first_name, last_name, jersey_number, primary_position, bats, throws, graduation_year')
+      .select('id, first_name, last_name, jersey_number, primary_position, bats, throws, graduation_year, email, user_id')
       .eq('team_id', params.teamId)
       .eq('is_active', true)
       .order('last_name'),
@@ -51,25 +51,27 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       .select('role')
       .eq('team_id', params.teamId)
       .eq('user_id', user.id)
-      .single(),
+      .eq('is_active', true)
+      .maybeSingle(),
+    // Fetch staff WITHOUT the user_profiles join (avoids PostgREST relationship issues)
     db
       .from('team_members')
-      .select('id, role, user_id, user_profiles(first_name, last_name, email, phone)')
+      .select('id, role, user_id, jersey_number')
       .eq('team_id', params.teamId)
       .eq('is_active', true)
       .in('role', ['head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper', 'staff']),
+    // Fetch parents WITHOUT the user_profiles join
     db
       .from('team_members')
-      .select('id, role, user_id, user_profiles(first_name, last_name, email, phone)')
+      .select('id, role, user_id')
       .eq('team_id', params.teamId)
       .eq('is_active', true)
       .eq('role', 'parent'),
     db
       .from('team_invitations')
-      .select('id, email, first_name, last_name, phone, role')
+      .select('id, email, first_name, last_name, phone, role, jersey_number')
       .eq('team_id', params.teamId)
-      .eq('status', 'pending')
-      .not('email', 'like', '%@placeholder.internal'),
+      .eq('status', 'pending'),
   ]);
 
   const players = playersResult.data ?? [];
@@ -83,24 +85,46 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     role === 'staff';
   const canInviteStaff = role === 'head_coach' || role === 'assistant_coach' || role === 'athletic_director';
 
-  const staff = (staffResult.data ?? []).map((row: any) => ({
-    id: row.id as string,
-    userId: row.user_id as string,
-    role: row.role as string,
-    firstName: (row.user_profiles as any)?.first_name ?? null as string | null,
-    lastName: (row.user_profiles as any)?.last_name ?? null as string | null,
-    email: (row.user_profiles as any)?.email ?? null as string | null,
-    phone: (row.user_profiles as any)?.phone ?? null as string | null,
-  }));
+  // Fetch user profiles separately to avoid PostgREST join issues
+  const allMemberRows = [...(staffMembersResult.data ?? []), ...(parentMembersResult.data ?? [])];
+  const memberUserIds = allMemberRows.map((m) => m.user_id);
+  const profileMap = new Map<string, { first_name: string; last_name: string; email: string | null; phone: string | null }>();
 
-  const parentRows = (parentsResult.data ?? []).map((row: any) => ({
-    id: row.id as string,
-    userId: row.user_id as string,
-    firstName: (row.user_profiles as any)?.first_name ?? null as string | null,
-    lastName: (row.user_profiles as any)?.last_name ?? null as string | null,
-    email: (row.user_profiles as any)?.email ?? null as string | null,
-    phone: (row.user_profiles as any)?.phone ?? null as string | null,
-  }));
+  if (memberUserIds.length > 0) {
+    const { data: profiles } = await db
+      .from('user_profiles')
+      .select('id, first_name, last_name, email, phone')
+      .in('id', memberUserIds);
+    for (const p of profiles ?? []) {
+      profileMap.set(p.id, p);
+    }
+  }
+
+  const staff = (staffMembersResult.data ?? []).map((row: any) => {
+    const profile = profileMap.get(row.user_id);
+    return {
+      id: row.id as string,
+      userId: row.user_id as string,
+      role: row.role as string,
+      jerseyNumber: row.jersey_number as number | null,
+      firstName: profile?.first_name || null as string | null,
+      lastName: profile?.last_name || null as string | null,
+      email: profile?.email ?? null as string | null,
+      phone: profile?.phone ?? null as string | null,
+    };
+  });
+
+  const parentRows = (parentMembersResult.data ?? []).map((row: any) => {
+    const profile = profileMap.get(row.user_id);
+    return {
+      id: row.id as string,
+      userId: row.user_id as string,
+      firstName: profile?.first_name || null as string | null,
+      lastName: profile?.last_name || null as string | null,
+      email: profile?.email ?? null as string | null,
+      phone: profile?.phone ?? null as string | null,
+    };
+  });
 
   const STAFF_ROLES = ['head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper', 'staff'];
   const allPendingInvites = (pendingInvitesResult.data ?? []).map((inv: any) => ({
@@ -110,9 +134,13 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     lastName: inv.last_name as string | null,
     phone: inv.phone as string | null,
     role: inv.role as string,
+    jerseyNumber: inv.jersey_number as number | null,
   }));
   const pendingStaff = allPendingInvites.filter((inv) => STAFF_ROLES.includes(inv.role));
   const pendingParents = allPendingInvites.filter((inv) => inv.role === 'parent');
+  const pendingPlayerEmails = new Set(
+    allPendingInvites.filter((inv) => inv.role === 'player').map((inv) => inv.email),
+  );
 
   // Fetch parent→player links
   let parentLinks: { parentUserId: string; playerName: string }[] = [];
@@ -236,12 +264,19 @@ export default async function RosterPage({ params }: { params: { teamId: string 
                         {player.jersey_number ?? '—'}
                       </td>
                       <td className="px-4 py-3 font-medium text-gray-900">
-                        <Link
-                          href={`/teams/${params.teamId}/roster/${player.id}`}
-                          className="hover:text-brand-700 transition-colors"
-                        >
-                          {player.last_name}, {player.first_name}
-                        </Link>
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/teams/${params.teamId}/roster/${player.id}`}
+                            className="hover:text-brand-700 transition-colors"
+                          >
+                            {player.last_name}, {player.first_name}
+                          </Link>
+                          {player.email && pendingPlayerEmails.has(player.email) ? (
+                            <span className="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 px-1.5 py-0.5 rounded-full font-normal">
+                              Invite pending
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-gray-600">
                         {player.primary_position

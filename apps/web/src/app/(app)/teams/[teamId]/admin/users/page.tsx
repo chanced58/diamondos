@@ -52,14 +52,22 @@ export default async function TeamUsersPage({
     redirect(`/teams/${params.teamId}/roster`);
   }
 
-  const [membersResult, playersResult, invitationsResult, parentsResult] = await Promise.all([
-    // Coaching staff only (explicitly excludes player and parent)
+  const [staffMembersResult, parentMembersResult, playersResult, invitationsResult] = await Promise.all([
+    // Coaching staff (WITHOUT user_profiles join — fetched separately)
     db
       .from('team_members')
-      .select('id, role, user_id, user_profiles(first_name, last_name, email, phone)')
+      .select('id, role, user_id')
       .eq('team_id', params.teamId)
       .eq('is_active', true)
       .in('role', ['head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper', 'staff']),
+
+    // Parents (WITHOUT user_profiles join)
+    db
+      .from('team_members')
+      .select('id, role, user_id')
+      .eq('team_id', params.teamId)
+      .eq('is_active', true)
+      .eq('role', 'parent'),
 
     // Players on the roster
     db
@@ -76,24 +84,31 @@ export default async function TeamUsersPage({
       .eq('team_id', params.teamId)
       .eq('status', 'pending')
       .order('invited_at', { ascending: false }),
-
-    // Parents (team members with role='parent')
-    db
-      .from('team_members')
-      .select('id, role, user_id, user_profiles(first_name, last_name, email, phone)')
-      .eq('team_id', params.teamId)
-      .eq('is_active', true)
-      .eq('role', 'parent'),
   ]);
 
-  const members = (membersResult.data ?? []).map((m) => {
-    const profile = m.user_profiles as { first_name: string | null; last_name: string | null; email: string | null; phone: string | null } | null;
+  // Fetch user profiles separately to avoid PostgREST join issues
+  const allMemberRows = [...(staffMembersResult.data ?? []), ...(parentMembersResult.data ?? [])];
+  const memberUserIds = allMemberRows.map((m) => m.user_id);
+  const profileMap = new Map<string, { first_name: string; last_name: string; email: string | null; phone: string | null }>();
+
+  if (memberUserIds.length > 0) {
+    const { data: profiles } = await db
+      .from('user_profiles')
+      .select('id, first_name, last_name, email, phone')
+      .in('id', memberUserIds);
+    for (const p of profiles ?? []) {
+      profileMap.set(p.id, p);
+    }
+  }
+
+  const members = (staffMembersResult.data ?? []).map((m: any) => {
+    const profile = profileMap.get(m.user_id);
     return {
       id: m.id as string,
       userId: m.user_id as string,
       role: m.role as string,
-      firstName: profile?.first_name ?? null,
-      lastName: profile?.last_name ?? null,
+      firstName: profile?.first_name || null,
+      lastName: profile?.last_name || null,
       email: profile?.email ?? null,
       phone: profile?.phone ?? null,
     };
@@ -120,13 +135,13 @@ export default async function TeamUsersPage({
     invitedAt: inv.invited_at as string,
   }));
 
-  const parentRows = (parentsResult.data ?? []).map((m) => {
-    const profile = m.user_profiles as { first_name: string | null; last_name: string | null; email: string | null; phone: string | null } | null;
+  const parentRows = (parentMembersResult.data ?? []).map((m: any) => {
+    const profile = profileMap.get(m.user_id);
     return {
       id: m.id as string,
       userId: m.user_id as string,
-      firstName: profile?.first_name ?? null,
-      lastName: profile?.last_name ?? null,
+      firstName: profile?.first_name || null,
+      lastName: profile?.last_name || null,
       email: profile?.email ?? null,
       phone: profile?.phone ?? null,
     };

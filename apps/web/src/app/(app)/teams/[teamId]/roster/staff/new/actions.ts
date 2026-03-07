@@ -7,6 +7,51 @@ import { addToTeamChannels } from '@/lib/team-channels';
 const STAFF_ROLES = ['head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper', 'staff'] as const;
 type StaffRole = typeof STAFF_ROLES[number];
 
+/** Look up whether an email belongs to an existing app user. Returns their profile or null. */
+export async function lookupUserByEmailAction(email: string): Promise<{
+  id: string;
+  firstName: string;
+  lastName: string;
+} | null> {
+  const authClient = createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return null;
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  // Try user_profiles first (fast)
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('id, first_name, last_name')
+    .eq('email', email.toLowerCase().trim())
+    .maybeSingle();
+
+  if (profile) {
+    return { id: profile.id, firstName: profile.first_name, lastName: profile.last_name };
+  }
+
+  // Fallback: user_profiles.email may be null — check auth.users directly
+  const { data: listData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+  const authUser = listData?.users?.find((u) => u.email === email.toLowerCase().trim());
+  if (!authUser) return null;
+
+  // Fetch their profile by user ID
+  const { data: profileById } = await supabase
+    .from('user_profiles')
+    .select('first_name, last_name')
+    .eq('id', authUser.id)
+    .maybeSingle();
+
+  return {
+    id: authUser.id,
+    firstName: profileById?.first_name ?? '',
+    lastName: profileById?.last_name ?? '',
+  };
+}
+
 export async function inviteStaffAction(
   _prevState: string | null,
   formData: FormData,
@@ -21,6 +66,8 @@ export async function inviteStaffAction(
   const firstName = (formData.get('firstName') as string)?.trim() || null;
   const lastName = (formData.get('lastName') as string)?.trim() || null;
   const phone = (formData.get('phone') as string)?.trim() || null;
+  const jerseyRaw = (formData.get('jerseyNumber') as string)?.trim();
+  const jerseyNumber = jerseyRaw ? parseInt(jerseyRaw, 10) : null;
 
   if (!teamId || !role) return 'All required fields are missing.';
   if (!STAFF_ROLES.includes(role as StaffRole)) return 'Invalid role selected.';
@@ -48,7 +95,6 @@ export async function inviteStaffAction(
 
   // If no email provided, create a placeholder-only record (name/phone visible in roster)
   if (!email) {
-    // Store the invitation record in pending state without sending an invite
     await supabase.from('team_invitations').upsert(
       {
         team_id: teamId,
@@ -57,6 +103,7 @@ export async function inviteStaffAction(
         last_name: lastName,
         phone,
         role,
+        jersey_number: jerseyNumber,
         invited_by: user.id,
         status: 'pending',
       },
@@ -65,26 +112,45 @@ export async function inviteStaffAction(
     return 'added';
   }
 
-  // Check if this email already belongs to a user in the system
-  const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
-  if (listError) return `Failed to look up users: ${listError.message}`;
+  // Check if this email already belongs to a user via user_profiles
+  const { data: existingProfile } = await supabase
+    .from('user_profiles')
+    .select('id, first_name, last_name')
+    .eq('email', email)
+    .maybeSingle();
 
-  const existingUser = users.find((u) => u.email === email);
+  // Fallback: user_profiles.email may be null — check auth.users directly
+  let resolvedUserId: string | null = existingProfile?.id ?? null;
+  if (!resolvedUserId) {
+    const { data: listData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+    const authUser = listData?.users?.find((u) => u.email === email);
+    resolvedUserId = authUser?.id ?? null;
+  }
 
-  if (existingUser) {
-    // Already has an account — add them to the team directly
+  if (resolvedUserId) {
+    // User already has an account — add them to the team directly
     const { error: memberError } = await supabase
       .from('team_members')
       .upsert(
-        { team_id: teamId, user_id: existingUser.id, role, is_active: true },
+        { team_id: teamId, user_id: resolvedUserId, role, is_active: true, jersey_number: jerseyNumber },
         { onConflict: 'team_id,user_id' },
       );
     if (memberError) return `Failed to add member: ${memberError.message}`;
 
-    // Add to all team channels
-    await addToTeamChannels(supabase, teamId, existingUser.id, role);
+    // Backfill name and email on their profile if missing
+    const profileFirstName = existingProfile?.first_name ?? '';
+    const profileLastName = existingProfile?.last_name ?? '';
+    const updates: Record<string, string | null> = { email };
+    if ((!profileFirstName || !profileLastName) && (firstName || lastName)) {
+      updates.first_name = profileFirstName || firstName;
+      updates.last_name = profileLastName || lastName;
+    }
+    await supabase.from('user_profiles').update(updates).eq('id', resolvedUserId);
 
-    // Record the accepted invitation
+    // Add to all team channels
+    await addToTeamChannels(supabase, teamId, resolvedUserId, role);
+
+    // Record as accepted invitation
     await supabase.from('team_invitations').upsert(
       {
         team_id: teamId,
@@ -93,6 +159,7 @@ export async function inviteStaffAction(
         last_name: lastName,
         phone,
         role,
+        jersey_number: jerseyNumber,
         invited_by: user.id,
         status: 'accepted',
         accepted_at: new Date().toISOString(),
@@ -121,6 +188,7 @@ export async function inviteStaffAction(
       last_name: lastName,
       phone,
       role,
+      jersey_number: jerseyNumber,
       invited_by: user.id,
       status: 'pending',
     },

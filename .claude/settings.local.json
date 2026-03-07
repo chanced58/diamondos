@@ -27,7 +27,12 @@
       "Bash(git -C /c/Users/chance/baseball-app/baseballcoachesapp push --dry-run)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(pnpm --filter web build)",
+      "Bash(pnpm dev:web)",
+      "Bash(pnpm add colorthief)",
+      "Bash(pnpm add -D @types/colorthief)",
+      "Bash(npx tsc --noEmit)"
     ],
     "additionalDirectories": [
       "c:\\Users\\chance\\baseball-app\\baseballcoachesapp\\apps\\web\\src\\app\\(app)\\teams\\[teamId]\\admin"

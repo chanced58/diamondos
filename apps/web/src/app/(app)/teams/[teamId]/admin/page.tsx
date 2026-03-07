@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { TeamBrandingForm } from './TeamBrandingForm';
+import { MyProfileForm } from './MyProfileForm';
 
 export const metadata: Metadata = { title: 'Team Admin' };
 
@@ -20,7 +22,7 @@ export default async function TeamAdminPage({
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const [membershipResult, teamResult] = await Promise.all([
+  const [membershipResult, teamResult, profileResult] = await Promise.all([
     db
       .from('team_members')
       .select('role')
@@ -28,15 +30,35 @@ export default async function TeamAdminPage({
       .eq('user_id', user.id)
       .eq('is_active', true)
       .maybeSingle(),
-    db.from('teams').select('name').eq('id', params.teamId).single(),
+    db.from('teams').select('name, logo_url, primary_color, secondary_color, created_by').eq('id', params.teamId).single(),
+    db.from('user_profiles').select('first_name, last_name, phone').eq('id', user.id).maybeSingle(),
   ]);
 
-  const role = membershipResult.data?.role;
-  if (role !== 'head_coach' && role !== 'athletic_director') {
+  let role = membershipResult.data?.role;
+  const team = teamResult.data;
+
+  // Self-healing: if user is the team creator but has no membership, auto-create it
+  if (!role && team?.created_by === user.id) {
+    await db.from('team_members').upsert(
+      { team_id: params.teamId, user_id: user.id, role: 'head_coach', is_active: true },
+      { onConflict: 'team_id,user_id' },
+    );
+    // Also backfill email on profile
+    await db
+      .from('user_profiles')
+      .update({ email: user.email })
+      .eq('id', user.id)
+      .is('email', null);
+    role = 'head_coach';
+  }
+
+  const BRANDING_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
+  if (!role || !BRANDING_ROLES.includes(role)) {
     redirect(`/teams/${params.teamId}/roster`);
   }
 
-  const teamName = teamResult.data?.name ?? 'Your Team';
+  const teamName = team?.name ?? 'Your Team';
+  const profile = profileResult.data;
 
   const cards = [
     {
@@ -70,7 +92,7 @@ export default async function TeamAdminPage({
       <h1 className="text-2xl font-bold text-gray-900 mb-1">Team Admin</h1>
       <p className="text-gray-500 mb-8">{teamName}</p>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4 mb-10">
         {cards.map((card) => (
           <Link
             key={card.href}
@@ -85,6 +107,33 @@ export default async function TeamAdminPage({
           </Link>
         ))}
       </div>
+
+      {/* My Profile */}
+      <section className="mb-10">
+        <h2 className="text-lg font-semibold text-gray-900 mb-1">My Profile</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Your name and contact info as it appears to the team.
+        </p>
+        <div className="bg-white border border-gray-200 rounded-xl p-5">
+          <MyProfileForm
+            currentFirstName={profile?.first_name ?? ''}
+            currentLastName={profile?.last_name ?? ''}
+            currentPhone={profile?.phone ?? null}
+            email={user.email ?? ''}
+          />
+        </div>
+      </section>
+
+      {/* Team Branding */}
+      <section>
+        <h2 className="text-lg font-semibold text-gray-900 mb-3">Team Branding</h2>
+        <TeamBrandingForm
+          teamId={params.teamId}
+          currentLogoUrl={team?.logo_url ?? null}
+          currentPrimaryColor={team?.primary_color ?? null}
+          currentSecondaryColor={team?.secondary_color ?? null}
+        />
+      </section>
     </div>
   );
 }

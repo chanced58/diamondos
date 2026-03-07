@@ -4,7 +4,7 @@ import { useFormState, useFormStatus } from 'react-dom';
 import { savePlayerSelfNotesAction } from './actions';
 
 const CATEGORIES = [
-  { key: 'pitching', label: 'Pitching' },
+  { key: 'pitching', label: 'Pitching/Throwing' },
   { key: 'hitting', label: 'Hitting' },
   { key: 'fielding_catching', label: 'Fielding / Catching' },
   { key: 'baserunning', label: 'Baserunning' },

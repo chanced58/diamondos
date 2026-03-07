@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 export function LoginForm() {
@@ -8,11 +9,37 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
+  const router = useRouter();
   const supabase = createBrowserClient();
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleDirectLogin() {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch('/api/auth/direct-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.toLowerCase().trim() }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Login failed');
+        setLoading(false);
+        return;
+      }
+
+      // Session cookies are set — redirect to dashboard
+      router.push('/dashboard');
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message ?? 'Login failed');
+      setLoading(false);
+    }
+  }
+
+  async function handleMagicLink() {
     setLoading(true);
     setError(null);
 
@@ -50,7 +77,13 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        handleDirectLogin();
+      }}
+      className="space-y-5"
+    >
       <div>
         <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
           Email address
@@ -77,11 +110,29 @@ export function LoginForm() {
         disabled={loading || !email}
         className="w-full bg-brand-700 text-white font-semibold py-2.5 rounded-lg hover:bg-brand-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
-        {loading ? 'Sending...' : 'Send magic link'}
+        {loading ? 'Signing in...' : 'Sign In'}
+      </button>
+
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-gray-200" />
+        </div>
+        <div className="relative flex justify-center text-xs">
+          <span className="bg-white px-2 text-gray-400">or</span>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={handleMagicLink}
+        disabled={loading || !email}
+        className="w-full bg-white border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+      >
+        Send magic link to email
       </button>
 
       <p className="text-xs text-center text-gray-400">
-        No password needed. We'll email you a one-click sign-in link.
+        Sign in directly or receive a one-click link by email.
       </p>
     </form>
   );

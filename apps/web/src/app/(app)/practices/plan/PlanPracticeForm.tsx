@@ -87,7 +87,7 @@ export function PlanPracticeForm({ teamId }: { teamId: string }) {
         <textarea
           name="plan"
           rows={8}
-          placeholder="Write your practice agenda, drills, and goals…&#10;&#10;e.g.&#10;Warm-up: 10 min dynamic stretch&#10;Hitting: 3 rounds BP, focus on gap coverage&#10;Fielding: double-play turns at middle infield&#10;Pitching: bullpen sessions (15 pitches each)"
+          placeholder="Write your practice agenda, drills, and goals…&#10;&#10;e.g.&#10;Warm-up: 10 min dynamic stretch&#10;Hitting: 3 rounds BP, focus on gap coverage&#10;Fielding: double-play turns at middle infield&#10;Pitching/Throwing: bullpen sessions (15 pitches each)"
           className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-y"
         />
         <p className="text-xs text-gray-400 mt-1">
