@@ -102,6 +102,8 @@ export interface OutPayload {
   outType: 'groundout' | 'flyout' | 'lineout' | 'popout' | 'strikeout' | 'other';
   trajectory?: HitTrajectory;
   fieldedBy?: string; // position abbreviation
+  /** Defensive play sequence as position numbers, e.g. [6, 3] for SS-to-1B. Max 5 steps. */
+  fieldingSequence?: number[];
 }
 
 export interface SubstitutionPayload {

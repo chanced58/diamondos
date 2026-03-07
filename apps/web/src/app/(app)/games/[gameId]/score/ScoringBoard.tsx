@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { deriveGameState } from '@baseball/shared';
+import { deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence } from '@baseball/shared';
 import type { GameEvent } from '@baseball/shared';
 import { endGameAction } from '../actions';
 
@@ -475,6 +475,11 @@ export function ScoringBoard({
   const [pendingTrajectory, setPendingTrajectory] = useState<string | null>(null);
   // Track error fielder selection sub-step (shown after trajectory is picked for errors)
   const [errorPending, setErrorPending] = useState(false);
+  // Track fielding sequence for outs (e.g., [6, 3] = SS to 1B)
+  const [fieldingSequencePending, setFieldingSequencePending] = useState(false);
+  const [fieldingSequence, setFieldingSequence] = useState<number[]>([]);
+  // Stashed result/trajectory for the fielding sequence step (so pendingResult can be cleared)
+  const [stashedOutResult, setStashedOutResult] = useState<string | null>(null);
   // Track pitching change UI
   const [showPitchingChange, setShowPitchingChange] = useState(false);
   // Per-pitch annotations (optional, cleared after each pitch is recorded)
@@ -491,6 +496,9 @@ export function ScoringBoard({
     setErrorPending(false);
     setPendingResult(null);
     setPendingTrajectory(null);
+    setFieldingSequencePending(false);
+    setFieldingSequence([]);
+    setStashedOutResult(null);
   }
 
   // Derive game state from events
@@ -711,7 +719,7 @@ export function ScoringBoard({
     }
   }
 
-  async function handleInPlay(result: string, trajectory: string) {
+  async function handleInPlay(result: string, trajectory: string, sequence?: number[]) {
     setInPlayPending(false);
     setPendingResult(null);
     const batterId = activeBatterId;
@@ -737,7 +745,10 @@ export function ScoringBoard({
         fly_ball:    'flyout',
       };
       const outType = outTypeMap[trajectory] ?? 'other';
-      await recordEvent('out', { batterId, pitcherId, outType, trajectory, ...sprayExtra });
+      const seqExtra: Record<string, unknown> = sequence && sequence.length > 0
+        ? { fieldingSequence: sequence }
+        : {};
+      await recordEvent('out', { batterId, pitcherId, outType, trajectory, ...sprayExtra, ...seqExtra });
     } else {
       await recordEvent('hit', { batterId, pitcherId, hitType: result, trajectory, rbis: 0, ...sprayExtra });
     }
@@ -1007,8 +1018,75 @@ export function ScoringBoard({
                 {/* Field spray chart — mark where the ball was hit/error occurred */}
                 <SprayChartPicker value={sprayPoint} onChange={setSprayPoint} />
 
-                {errorPending ? (
-                  /* ── Step 3: Error fielder picker ── */
+                {fieldingSequencePending && stashedOutResult ? (
+                  /* ── Step 3: Fielding sequence picker (for outs) ── */
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                      Fielding play order (up to 5)
+                    </p>
+                    {fieldingSequence.length > 0 && (
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-lg font-bold text-gray-900 tracking-wider">
+                          {formatFieldingSequence(fieldingSequence)}
+                        </span>
+                        <button
+                          onClick={() => setFieldingSequence((prev) => prev.slice(0, -1))}
+                          className="text-xs text-gray-400 hover:text-gray-600 underline"
+                        >
+                          Undo
+                        </button>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-3 gap-2">
+                      {FIELDING_POSITION_NUMBERS.map(({ number, abbr }) => (
+                        <button
+                          key={number}
+                          onClick={() => {
+                            if (fieldingSequence.length < 5) {
+                              setFieldingSequence((prev) => [...prev, number]);
+                            }
+                          }}
+                          disabled={fieldingSequence.length >= 5}
+                          className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {number} — {abbr}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-3 mt-3">
+                      <button
+                        onClick={() => {
+                          handleInPlay(stashedOutResult, pendingTrajectory ?? 'ground_ball', fieldingSequence);
+                        }}
+                        disabled={fieldingSequence.length === 0}
+                        className="flex-1 py-2 text-sm font-semibold rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-brand-700 text-white hover:bg-brand-800 disabled:hover:bg-brand-700"
+                      >
+                        Record Out{fieldingSequence.length > 0 ? ` (${formatFieldingSequence(fieldingSequence)})` : ''}
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleInPlay(stashedOutResult, pendingTrajectory ?? 'ground_ball');
+                        }}
+                        className="text-xs text-gray-400 hover:text-gray-600 underline"
+                      >
+                        Skip
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setFieldingSequencePending(false);
+                        setFieldingSequence([]);
+                        setPendingTrajectory(null);
+                        setPendingResult(stashedOutResult);
+                        setStashedOutResult(null);
+                      }}
+                      className="text-xs text-gray-400 hover:text-gray-600 mt-2 block"
+                    >
+                      ← Back to trajectory
+                    </button>
+                  </div>
+                ) : errorPending ? (
+                  /* ── Error fielder picker ── */
                   <div>
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                       Who made the error?
@@ -1050,6 +1128,12 @@ export function ScoringBoard({
                               setPendingTrajectory(value);
                               setErrorPending(true);
                               setPendingResult(null);
+                            } else if (pendingResult === 'out' || pendingResult === 'field_choice') {
+                              setStashedOutResult(pendingResult);
+                              setPendingTrajectory(value);
+                              setPendingResult(null);
+                              setFieldingSequencePending(true);
+                              setFieldingSequence([]);
                             } else {
                               handleInPlay(pendingResult, value);
                             }
