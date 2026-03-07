@@ -6,6 +6,16 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { MessageThread } from './MessageThread';
 
+type MessageRow = {
+  id: string;
+  body: string;
+  sender_id: string;
+  created_at: string;
+  edited_at: string | null;
+  is_pinned: boolean;
+  user_profiles: { first_name: string; last_name: string } | null;
+};
+
 export const metadata: Metadata = { title: 'Channel' };
 
 const CHANNEL_TYPE_ICONS: Record<string, string> = {
@@ -112,7 +122,15 @@ export default async function ChannelPage({
       {/* ── Message thread (real-time) ───────────────────────────────── */}
       <MessageThread
         channelId={params.channelId}
-        initialMessages={messages ?? []}
+        initialMessages={(messages ?? []).map((m: any): MessageRow => ({
+          id: m.id,
+          body: m.body,
+          sender_id: m.sender_id,
+          created_at: m.created_at,
+          edited_at: m.edited_at,
+          is_pinned: m.is_pinned,
+          user_profiles: Array.isArray(m.user_profiles) ? (m.user_profiles[0] ?? null) : (m.user_profiles ?? null),
+        }))}
         canPost={myMembership.can_post}
         currentUserId={user.id}
         memberProfiles={memberProfiles}

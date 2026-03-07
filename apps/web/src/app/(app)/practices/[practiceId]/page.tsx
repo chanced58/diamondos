@@ -66,7 +66,10 @@ export default async function PracticeNotesPage({
 
   // Filter linked players to only those on this team
   const linkedPlayers = (linkedPlayersResult.data ?? [])
-    .map((link) => link.players as { id: string; first_name: string; last_name: string; team_id: string } | null)
+    .map((link) => {
+      const raw = link.players as unknown;
+      return (Array.isArray(raw) ? raw[0] : raw) as { id: string; first_name: string; last_name: string; team_id: string } | null;
+    })
     .filter((p): p is { id: string; first_name: string; last_name: string; team_id: string } =>
       p !== null && p.team_id === practice.team_id,
     );

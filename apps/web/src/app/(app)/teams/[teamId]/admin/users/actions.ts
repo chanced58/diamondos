@@ -46,7 +46,7 @@ export async function updateMemberRoleAction(
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
   const result = await getAuthorizedCoach(teamId);
-  if ('error' in result) return result.error;
+  if ('error' in result) return result.error ?? null;
   const { supabase } = result;
 
   const memberId = formData.get('memberId') as string;
@@ -70,7 +70,7 @@ export async function removeMemberAction(
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
   const result = await getAuthorizedCoach(teamId);
-  if ('error' in result) return result.error;
+  if ('error' in result) return result.error ?? null;
   const { supabase } = result;
 
   const memberId = formData.get('memberId') as string;
@@ -93,7 +93,7 @@ export async function cancelInvitationAction(
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
   const result = await getAuthorizedCoach(teamId);
-  if ('error' in result) return result.error;
+  if ('error' in result) return result.error ?? null;
   const { supabase } = result;
 
   const invitationId = formData.get('invitationId') as string;
@@ -116,7 +116,7 @@ export async function resendInvitationAction(
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
   const result = await getAuthorizedCoach(teamId);
-  if ('error' in result) return result.error;
+  if ('error' in result) return result.error ?? null;
   const { supabase } = result;
 
   const invitationId = formData.get('invitationId') as string;
@@ -147,7 +147,7 @@ export async function linkParentToPlayerAction(
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
   const result = await getAuthorizedCoach(teamId);
-  if ('error' in result) return result.error;
+  if ('error' in result) return result.error ?? null;
   const { supabase } = result;
 
   const parentUserId = formData.get('parentUserId') as string;
@@ -172,7 +172,7 @@ export async function unlinkParentFromPlayerAction(
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
   const result = await getAuthorizedCoach(teamId);
-  if ('error' in result) return result.error;
+  if ('error' in result) return result.error ?? null;
   const { supabase } = result;
 
   const parentUserId = formData.get('parentUserId') as string;
@@ -196,7 +196,7 @@ export async function resendPlayerInviteAction(
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
   const result = await getAuthorizedCoach(teamId);
-  if ('error' in result) return result.error;
+  if ('error' in result) return result.error ?? null;
   const { supabase, user } = result;
 
   const playerId = formData.get('playerId') as string;
@@ -242,7 +242,7 @@ export async function connectPlayerToAccountAction(
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
   const result = await getAuthorizedCoach(teamId);
-  if ('error' in result) return result.error;
+  if ('error' in result) return result.error ?? null;
   const { supabase, user } = result;
 
   const playerId = formData.get('playerId') as string;

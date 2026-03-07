@@ -132,9 +132,10 @@ export function StaffSection({
       return;
     }
     const timer = setTimeout(() => {
-      startLookup(async () => {
-        const found = await lookupUserByEmailAction(trimmed);
-        setExistingUser(found);
+      startLookup(() => {
+        lookupUserByEmailAction(trimmed).then((found) => {
+          setExistingUser(found);
+        });
       });
     }, 600);
     return () => clearTimeout(timer);

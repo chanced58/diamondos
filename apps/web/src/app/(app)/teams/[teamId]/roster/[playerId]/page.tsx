@@ -86,7 +86,8 @@ export default async function PlayerPage({
   };
 
   for (const row of notesResult.data ?? []) {
-    const practice = row.practices as { id: string; scheduled_at: string } | null;
+    const rawPractice = row.practices as unknown;
+    const practice = (Array.isArray(rawPractice) ? rawPractice[0] : rawPractice) as { id: string; scheduled_at: string } | null;
     if (!practice) continue;
     for (const { key } of CATEGORIES) {
       const text = row[key as keyof typeof row] as string | null;
