@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getTeamsForUser } from '@baseball/database';
@@ -83,6 +84,33 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         primary_color: createdTeam.primary_color,
         secondary_color: createdTeam.secondary_color,
       };
+    }
+  }
+
+  // If the URL contains /teams/[teamId], use that team's branding instead
+  // of the default first-team. This ensures the sidebar matches the team
+  // environment the user navigated into.
+  const headersList = headers();
+  const pathname = headersList.get('x-invoke-path') ?? headersList.get('x-matched-path') ?? '';
+  const teamIdMatch = pathname.match(/\/teams\/([^/]+)/);
+  if (teamIdMatch && db) {
+    const urlTeamId = teamIdMatch[1];
+    if (urlTeamId !== activeTeam?.id) {
+      const { data: urlTeam } = await db
+        .from('teams')
+        .select('id, name, organization, logo_url, primary_color, secondary_color')
+        .eq('id', urlTeamId)
+        .maybeSingle();
+      if (urlTeam) {
+        activeTeam = {
+          id: urlTeam.id,
+          name: urlTeam.name,
+          organization: urlTeam.organization,
+          logo_url: urlTeam.logo_url,
+          primary_color: urlTeam.primary_color,
+          secondary_color: urlTeam.secondary_color,
+        };
+      }
     }
   }
 
