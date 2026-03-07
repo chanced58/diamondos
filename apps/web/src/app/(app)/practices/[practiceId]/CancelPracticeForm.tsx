@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -19,7 +20,7 @@ function CancelButton() {
   );
 }
 
-export function CancelPracticeForm({ practiceId }: { practiceId: string }) {
+export function CancelPracticeForm({ practiceId }: { practiceId: string }): JSX.Element | null {
   const [error, formAction] = useFormState(cancelPracticeAction, null);
 
   return (

@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useState } from 'react';
@@ -30,7 +31,7 @@ type OpponentRow = {
 
 type Tab = 'our' | 'opponent';
 
-export function DemoLineupBuilder({ players }: { players: Player[] }) {
+export function DemoLineupBuilder({ players }: { players: Player[] }): JSX.Element | null {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>('our');
   const [submitted, setSubmitted] = useState(false);

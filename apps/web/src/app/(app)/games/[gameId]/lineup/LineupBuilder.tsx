@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -41,7 +42,7 @@ export function LineupBuilder({
   gameId: string;
   players: Player[];
   existingLineup: LineupEntry[];
-}) {
+}): JSX.Element | null {
   const [error, action] = useFormState(saveLineupAction, null);
 
   function getDefaultOrder(playerId: string): string {

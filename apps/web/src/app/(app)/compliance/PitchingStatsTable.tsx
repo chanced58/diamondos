@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useState } from 'react';
@@ -71,7 +72,7 @@ function getValue(s: PitchingStats, key: SortKey): number | string {
   return s[key];
 }
 
-export function PitchingStatsTable({ stats, complianceMap, today }: Props) {
+export function PitchingStatsTable({ stats, complianceMap, today }: Props): JSX.Element | null {
   const [sortKey, setSortKey] = useState<SortKey>('inningsPitchedOuts');
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);

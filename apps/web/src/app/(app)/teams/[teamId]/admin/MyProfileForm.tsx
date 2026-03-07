@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -29,7 +30,7 @@ export function MyProfileForm({
   currentLastName: string;
   currentPhone: string | null;
   email: string;
-}) {
+}): JSX.Element | null {
   const [result, action] = useFormState(updateMyProfileAction, null);
 
   return (

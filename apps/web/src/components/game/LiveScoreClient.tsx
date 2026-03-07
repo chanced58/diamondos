@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -15,7 +16,7 @@ interface LiveScoreClientProps {
  * Client component: subscribes to Supabase Realtime for live score updates.
  * Parents and remote viewers use this page.
  */
-export function LiveScoreClient({ gameId, initialGame }: LiveScoreClientProps) {
+export function LiveScoreClient({ gameId, initialGame }: LiveScoreClientProps): JSX.Element | null {
   const [game, setGame] = useState<Game>(initialGame);
   const supabase = createBrowserClient();
 

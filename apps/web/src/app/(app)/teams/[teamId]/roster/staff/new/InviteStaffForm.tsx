@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -30,7 +31,7 @@ function SubmitButton() {
   );
 }
 
-export function InviteStaffForm({ teamId }: { teamId: string }) {
+export function InviteStaffForm({ teamId }: { teamId: string }): JSX.Element | null {
   const [result, formAction] = useFormState(inviteStaffAction, null);
 
   const isSuccess = result === 'added' || result === 'invited';

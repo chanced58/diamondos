@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -27,7 +28,7 @@ export function CancelGameForm({
   gameId: string;
   opponentName: string;
   currentStatus: string;
-}) {
+}): JSX.Element | null {
   const [error, formAction] = useFormState(cancelGameAction, null);
 
   if (currentStatus === 'cancelled' || currentStatus === 'completed') {

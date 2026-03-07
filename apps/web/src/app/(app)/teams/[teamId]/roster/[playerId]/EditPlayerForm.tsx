@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useState } from 'react';
@@ -38,7 +39,7 @@ type Player = {
   phone: string | null;
 };
 
-export function EditPlayerForm({ player, teamId }: { player: Player; teamId: string }) {
+export function EditPlayerForm({ player, teamId }: { player: Player; teamId: string }): JSX.Element | null {
   const [error, formAction] = useFormState(updatePlayerAction, null);
   const [primaryPos, setPrimaryPos] = useState<string>(player.primary_position ?? '');
 
@@ -201,7 +202,7 @@ export function EditPlayerForm({ player, teamId }: { player: Player; teamId: str
   );
 }
 
-export function DeactivatePlayerForm({ player, teamId }: { player: Player; teamId: string }) {
+export function DeactivatePlayerForm({ player, teamId }: { player: Player; teamId: string }): JSX.Element | null {
   const [error, formAction] = useFormState(deactivatePlayerAction, null);
 
   return (

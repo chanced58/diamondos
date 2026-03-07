@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useState } from 'react';
@@ -62,7 +63,7 @@ function displayStat(s: BattingStats, key: SortKey): string {
   return formatBattingRate(s[key as keyof typeof s] as number);
 }
 
-export function BattingStatsTable({ stats }: { stats: BattingStats[] }) {
+export function BattingStatsTable({ stats }: { stats: BattingStats[] }): JSX.Element | null {
   const [sortKey, setSortKey] = useState<SortKey>('plateAppearances');
   const [sortAsc, setSortAsc] = useState(false);
 

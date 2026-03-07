@@ -1,9 +1,10 @@
+import type { JSX } from 'react';
 import { Metadata } from 'next';
 import { AddPlayerForm } from './AddPlayerForm';
 
 export const metadata: Metadata = { title: 'Add Player' };
 
-export default function AddPlayerPage({ params }: { params: { teamId: string } }) {
+export default function AddPlayerPage({ params }: { params: { teamId: string } }): JSX.Element | null {
   return (
     <div className="p-8 max-w-lg">
       <h1 className="text-2xl font-bold text-gray-900 mb-2">Add Player</h1>

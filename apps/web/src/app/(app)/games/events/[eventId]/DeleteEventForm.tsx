@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -19,7 +20,7 @@ function DeleteButton({ title }: { title: string }) {
   );
 }
 
-export function DeleteEventForm({ eventId, title }: { eventId: string; title: string }) {
+export function DeleteEventForm({ eventId, title }: { eventId: string; title: string }): JSX.Element | null {
   const [error, formAction] = useFormState(deleteEventAction, null);
 
   return (

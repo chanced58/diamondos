@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import Link from 'next/link';
@@ -342,7 +343,7 @@ export function UsersPageClient({
   parentLinks: ParentLink[];
   roleLabels: Record<string, string>;
   currentUserId: string;
-}) {
+}): JSX.Element | null {
   return (
     <div className="space-y-10">
       {/* ── Coaching Staff ──────────────────────────────────────── */}

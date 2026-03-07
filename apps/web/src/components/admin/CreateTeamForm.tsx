@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -16,7 +17,7 @@ function SubmitButton() {
   );
 }
 
-export function CreateTeamForm() {
+export function CreateTeamForm(): JSX.Element | null {
   const [error, formAction] = useFormState(createTeamAction, null);
 
   return (

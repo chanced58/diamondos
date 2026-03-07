@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useRef, useState } from 'react';
@@ -19,7 +20,7 @@ export function TeamBrandingForm({
   currentLogoUrl,
   currentPrimaryColor,
   currentSecondaryColor,
-}: TeamBrandingFormProps) {
+}: TeamBrandingFormProps): JSX.Element | null {
   const [previewUrl, setPreviewUrl] = useState<string | null>(currentLogoUrl);
   const [primaryColor, setPrimaryColor] = useState<string>(currentPrimaryColor ?? '#1e2d6b');
   const [secondaryColor, setSecondaryColor] = useState<string>(currentSecondaryColor ?? '#1e3a8a');

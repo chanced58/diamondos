@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -63,7 +64,7 @@ export function PracticeNotesForm({
   coachNotes,
   players,
   playerNotesMap,
-}: Props) {
+}: Props): JSX.Element | null {
   const [state, formAction] = useFormState(savePracticeNotesAction, null);
 
   const saved = state === 'saved';

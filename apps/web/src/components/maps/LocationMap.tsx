@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useJsApiLoader, GoogleMap, Marker } from '@react-google-maps/api';
@@ -15,7 +16,7 @@ type Props = {
  * Renders an embedded Google Map with a single marker and a "Get Directions" link.
  * Renders nothing if latitude/longitude are not provided.
  */
-export function LocationMap({ latitude, longitude, label, placeId }: Props) {
+export function LocationMap({ latitude, longitude, label, placeId }: Props): JSX.Element | null {
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
     libraries: LIBRARIES,

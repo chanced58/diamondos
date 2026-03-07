@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useRouter } from 'next/navigation';
@@ -40,7 +41,7 @@ const TYPE_STYLES = {
   event:    { chip: 'bg-purple-50 text-purple-700 border-purple-200', dot: 'bg-purple-500', icon: '📅', label: 'Event' },
 };
 
-export function CalendarView({ year, month, events, isCoach: _isCoach, teamId: _teamId }: Props) {
+export function CalendarView({ year, month, events, isCoach: _isCoach, teamId: _teamId }: Props): JSX.Element | null {
   const router = useRouter();
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
 

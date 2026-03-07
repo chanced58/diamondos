@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
@@ -44,7 +45,7 @@ export function MessageThread({
   canPost,
   currentUserId,
   memberProfiles,
-}: Props) {
+}: Props): JSX.Element | null {
   const [messages, setMessages] = useState<MessageRow[]>(initialMessages);
   const [draft, setDraft]       = useState('');
   const [sending, setSending]   = useState(false);

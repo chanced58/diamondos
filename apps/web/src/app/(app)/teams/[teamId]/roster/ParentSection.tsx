@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -91,7 +92,7 @@ export function ParentSection({
   pendingInvitations: PendingInvitation[];
   players: Player[];
   canInvite: boolean;
-}) {
+}): JSX.Element | null {
   const [open, setOpen] = useState(false);
   const [result, action] = useFormState(inviteParentAction, null);
   const [editing, setEditing] = useState<EditingState>(null);

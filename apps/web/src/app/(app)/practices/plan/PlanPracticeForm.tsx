@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -20,7 +21,7 @@ function SubmitButton() {
 const inputClass =
   'w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent';
 
-export function PlanPracticeForm({ teamId }: { teamId: string }) {
+export function PlanPracticeForm({ teamId }: { teamId: string }): JSX.Element | null {
   const [error, formAction] = useFormState(planPracticeAction, null);
 
   // Default date = tomorrow

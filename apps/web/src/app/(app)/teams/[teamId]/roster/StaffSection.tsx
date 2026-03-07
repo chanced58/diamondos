@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useState, useEffect, useTransition } from 'react';
@@ -103,7 +104,7 @@ export function StaffSection({
   staff: StaffMember[];
   pendingInvitations: PendingInvitation[];
   canInvite: boolean;
-}) {
+}): JSX.Element | null {
   const [open, setOpen] = useState(false);
   const [result, action] = useFormState(inviteStaffAction, null);
   const [emailInput, setEmailInput] = useState('');

@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -27,7 +28,7 @@ type Props = {
   playerName: string;
 };
 
-export function RosterRowActions({ teamId, playerId, playerName }: Props) {
+export function RosterRowActions({ teamId, playerId, playerName }: Props): JSX.Element | null {
   const [error, formAction] = useFormState(removePlayerAction, null);
 
   return (

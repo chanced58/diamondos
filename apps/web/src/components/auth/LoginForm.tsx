@@ -1,10 +1,11 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
 
-export function LoginForm() {
+export function LoginForm(): JSX.Element | null {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);

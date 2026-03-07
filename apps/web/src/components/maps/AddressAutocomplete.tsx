@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useRef, useState } from 'react';
@@ -24,7 +25,7 @@ type Props = {
  *
  * All five values are submitted as hidden inputs with the parent form.
  */
-export function AddressAutocomplete({ name, placeholder, defaultValue }: Props) {
+export function AddressAutocomplete({ name, placeholder, defaultValue }: Props): JSX.Element | null {
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
     libraries: LIBRARIES,

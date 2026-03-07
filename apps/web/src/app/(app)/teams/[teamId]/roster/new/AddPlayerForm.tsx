@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useState } from 'react';
@@ -25,7 +26,7 @@ const inputClass =
 const selectClass =
   'w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent';
 
-export function AddPlayerForm({ teamId }: { teamId: string }) {
+export function AddPlayerForm({ teamId }: { teamId: string }): JSX.Element | null {
   const [error, formAction] = useFormState(addPlayerAction, null);
   const [primaryPos, setPrimaryPos] = useState<string>('');
 

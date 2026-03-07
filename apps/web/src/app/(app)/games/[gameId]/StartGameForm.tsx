@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -16,7 +17,7 @@ function SubmitButton() {
   );
 }
 
-export function StartGameForm({ gameId }: { gameId: string }) {
+export function StartGameForm({ gameId }: { gameId: string }): JSX.Element | null {
   const [error, action] = useFormState(startGameAction, null);
   return (
     <form action={action}>

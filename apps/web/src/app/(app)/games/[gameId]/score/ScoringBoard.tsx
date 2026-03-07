@@ -1,5 +1,6 @@
 'use client';
 
+import type { JSX } from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';

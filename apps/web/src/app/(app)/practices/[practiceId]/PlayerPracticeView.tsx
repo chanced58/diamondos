@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -97,7 +98,7 @@ export function PlayerPracticeView({
   overallNotes,
   coachNotes,
   readOnly = false,
-}: Props) {
+}: Props): JSX.Element | null {
   const hasAnyCoachNotes = coachNotes && CATEGORIES.some(({ key }) => coachNotes[key]);
   const selfNotes = coachNotes?.player_notes ?? '';
 

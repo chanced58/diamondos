@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -32,7 +33,7 @@ export function InviteParentForm({
 }: {
   teamId: string;
   players: Player[];
-}) {
+}): JSX.Element | null {
   const [result, formAction] = useFormState(inviteParentAction, null);
   const isSuccess = result === 'added' || result === 'invited';
 

@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import Image from 'next/image';
@@ -14,7 +15,7 @@ interface SidebarProps {
   secondaryColor?: string;
 }
 
-export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, secondaryColor }: SidebarProps) {
+export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, secondaryColor }: SidebarProps): JSX.Element | null {
   const pathname = usePathname();
   const router = useRouter();
 

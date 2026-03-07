@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useRef, useState } from 'react';
@@ -24,7 +25,7 @@ export function NewAnnouncementForm({
 }: {
   teamId: string;
   channelId: string;
-}) {
+}): JSX.Element | null {
   const [open, setOpen] = useState(false);
   const [result, action] = useFormState(postAnnouncementAction, null);
   const formRef = useRef<HTMLFormElement>(null);

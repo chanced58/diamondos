@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -22,7 +23,7 @@ export function PracticePlanEditor({
 }: {
   practiceId: string;
   initialPlan: string;
-}) {
+}): JSX.Element | null {
   const [result, action] = useFormState(savePracticePlanAction, null);
 
   return (
