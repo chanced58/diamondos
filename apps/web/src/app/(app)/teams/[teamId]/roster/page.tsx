@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link'; // kept for the Players section and admin link
 import { createClient } from '@supabase/supabase-js';

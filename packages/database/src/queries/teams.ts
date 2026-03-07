@@ -10,17 +10,26 @@ export async function getTeamById(client: TypedSupabaseClient, teamId: string) {
   return data;
 }
 
+export type TeamSummary = {
+  id: string;
+  name: string;
+  organization: string | null;
+  logo_url: string | null;
+  primary_color: string | null;
+  secondary_color: string | null;
+};
+
 type TeamMemberWithTeam = {
   role: string;
   is_active: boolean;
   joined_at: string | null;
-  teams: { id: string; name: string } | null;
+  teams: TeamSummary | null;
 };
 
 export async function getTeamsForUser(client: TypedSupabaseClient, userId: string) {
   const { data, error } = await client
     .from('team_members')
-    .select('role, is_active, joined_at, teams(id, name)')
+    .select('role, is_active, joined_at, teams(id, name, organization, logo_url, primary_color, secondary_color)')
     .eq('user_id', userId)
     .eq('is_active', true);
   if (error) throw error;
@@ -28,7 +37,7 @@ export async function getTeamsForUser(client: TypedSupabaseClient, userId: strin
     role: string;
     is_active: boolean;
     joined_at: string | null;
-    teams: { id: string; name: string } | { id: string; name: string }[] | null;
+    teams: TeamSummary | TeamSummary[] | null;
   }>;
   return rows.map((row): TeamMemberWithTeam => ({
     role: row.role,

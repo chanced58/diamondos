@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { createServerClient } from '@/lib/supabase/server';
 import { getGameById } from '@baseball/database';
 import { LiveScoreClient } from '@/components/game/LiveScoreClient';

@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';

@@ -1,10 +1,13 @@
+import type { JSX } from 'react';
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getTeamsForUser } from '@baseball/database';
+import type { TeamSummary } from '@baseball/database';
+import type { ReactNode } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
+export default async function AppLayout({ children }: { children: ReactNode }): Promise<JSX.Element> {
   const supabase = createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -13,14 +16,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   let teams = await getTeamsForUser(supabase, user.id);
-  let activeTeam = teams?.[0]?.teams as {
-    id: string;
-    name: string;
-    organization: string | null;
-    logo_url: string | null;
-    primary_color: string | null;
-    secondary_color: string | null;
-  } | undefined;
+  let activeTeam = teams?.[0]?.teams as TeamSummary | undefined;
 
   // Self-healing: if user created a team but has no team_members row,
   // auto-create the membership. This handles cases where the create-team

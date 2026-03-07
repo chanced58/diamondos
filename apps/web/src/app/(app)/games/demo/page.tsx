@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { createServerClient } from '@/lib/supabase/server';
 import { ScoringBoard } from '../[gameId]/score/ScoringBoard';
 

@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { redirect } from 'next/navigation';
 import { createServerClient } from '@/lib/supabase/server';
 
