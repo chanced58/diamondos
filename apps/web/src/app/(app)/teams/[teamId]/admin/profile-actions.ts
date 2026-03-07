@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 
 export async function updateMyProfileAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const authClient = createServerClient();

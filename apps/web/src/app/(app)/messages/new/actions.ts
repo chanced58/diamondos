@@ -6,7 +6,7 @@ import { createServerClient } from '@/lib/supabase/server';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
-export async function createChannelAction(_prevState: string | null, formData: FormData) {
+export async function createChannelAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated — please log in again.';

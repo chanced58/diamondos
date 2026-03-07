@@ -13,7 +13,7 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   other:     'Event',
 };
 
-export async function createTeamEventAction(_prevState: string | null, formData: FormData) {
+export async function createTeamEventAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated — please log in again.';

@@ -53,7 +53,7 @@ export async function lookupUserByEmailAction(email: string): Promise<{
 }
 
 export async function inviteStaffAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const authClient = createServerClient();

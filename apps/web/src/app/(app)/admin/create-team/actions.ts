@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { createTeamSchema } from '@baseball/shared';
 
-export async function createTeamAction(_prevState: string | null, formData: FormData) {
+export async function createTeamAction(_prevState: string | null | undefined, formData: FormData) {
   // Use the cookie-based client to verify the user's identity
   const authClient = createServerClient();
   const { data: { user }, error: authError } = await authClient.auth.getUser();

@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { createPlayerSchema } from '@baseball/shared';
 
-export async function addPlayerAction(_prevState: string | null, formData: FormData) {
+export async function addPlayerAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated — please log in again.';

@@ -7,7 +7,7 @@ import { createServerClient } from '@/lib/supabase/server';
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
 export async function saveLineupAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const authClient = createServerClient();

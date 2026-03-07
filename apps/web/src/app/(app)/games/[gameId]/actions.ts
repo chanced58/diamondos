@@ -30,7 +30,7 @@ async function getAuthorizedCoach(supabase: ReturnType<typeof createClient>, use
   return { game };
 }
 
-export async function cancelGameAction(_prevState: string | null, formData: FormData) {
+export async function cancelGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated.';
@@ -81,7 +81,7 @@ export async function cancelGameAction(_prevState: string | null, formData: Form
   redirect('/games');
 }
 
-export async function startGameAction(_prevState: string | null, formData: FormData) {
+export async function startGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated.';

@@ -6,7 +6,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { formatDate, formatTime } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
 
-export async function createGameAction(_prevState: string | null, formData: FormData) {
+export async function createGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated — please log in again.';

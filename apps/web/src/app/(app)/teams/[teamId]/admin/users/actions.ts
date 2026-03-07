@@ -41,7 +41,7 @@ async function getAuthorizedCoach(teamId: string) {
 }
 
 export async function updateMemberRoleAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
@@ -65,7 +65,7 @@ export async function updateMemberRoleAction(
 }
 
 export async function removeMemberAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
@@ -88,7 +88,7 @@ export async function removeMemberAction(
 }
 
 export async function cancelInvitationAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
@@ -111,7 +111,7 @@ export async function cancelInvitationAction(
 }
 
 export async function resendInvitationAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
@@ -142,7 +142,7 @@ export async function resendInvitationAction(
 }
 
 export async function linkParentToPlayerAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
@@ -167,7 +167,7 @@ export async function linkParentToPlayerAction(
 }
 
 export async function unlinkParentFromPlayerAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
@@ -191,7 +191,7 @@ export async function unlinkParentFromPlayerAction(
 }
 
 export async function resendPlayerInviteAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
@@ -237,7 +237,7 @@ export async function resendPlayerInviteAction(
 }
 
 export async function connectPlayerToAccountAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const teamId = formData.get('teamId') as string;

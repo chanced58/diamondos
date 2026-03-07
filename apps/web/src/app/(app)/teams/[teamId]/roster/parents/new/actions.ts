@@ -5,7 +5,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { addToTeamChannels } from '@/lib/team-channels';
 
 export async function inviteParentAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const authClient = createServerClient();

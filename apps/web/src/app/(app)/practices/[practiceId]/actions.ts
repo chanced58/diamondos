@@ -6,7 +6,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { formatDate } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
 
-export async function cancelPracticeAction(_prevState: string | null, formData: FormData) {
+export async function cancelPracticeAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated.';
@@ -59,7 +59,7 @@ export async function cancelPracticeAction(_prevState: string | null, formData: 
 // ─── Coach: save overall, coach, and per-player categorical notes ─────────────
 
 export async function savePracticeNotesAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const authClient = createServerClient();
@@ -142,7 +142,7 @@ export async function savePracticeNotesAction(
 // ─── Player: save only their own self-reflection notes ───────────────────────
 
 export async function savePlayerSelfNotesAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const authClient = createServerClient();
@@ -199,7 +199,7 @@ export async function savePlayerSelfNotesAction(
 }
 
 export async function savePracticePlanAction(
-  _prevState: string | null,
+  _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
   const authClient = createServerClient();
