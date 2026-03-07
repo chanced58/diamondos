@@ -56,15 +56,16 @@ export async function uploadTeamBrandingAction(
 
   if (uploadError) return { error: `Upload failed: ${uploadError.message}` };
 
-  // Get the public URL
+  // Get the public URL with cache-busting param to avoid stale browser cache
   const { data: { publicUrl } } = db.storage
     .from('team-logos')
     .getPublicUrl(storagePath);
+  const cacheBustedUrl = `${publicUrl}?v=${Date.now()}`;
 
   // Persist logo URL (always safe — column exists in base schema)
   const { error: logoError } = await db
     .from('teams')
-    .update({ logo_url: publicUrl, updated_at: new Date().toISOString() })
+    .update({ logo_url: cacheBustedUrl, updated_at: new Date().toISOString() })
     .eq('id', teamId);
 
   if (logoError) return { error: `Failed to save logo: ${logoError.message}` };
