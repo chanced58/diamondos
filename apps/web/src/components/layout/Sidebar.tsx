@@ -112,26 +112,26 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
         {isAdminPanel && teamId && (
           <>
             <div className="border-t border-white/10 my-3" />
-            <Link
+            <a
               href="/dashboard"
               className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition-colors"
             >
               <span>↩</span>
               Back to Team
-            </Link>
+            </a>
           </>
         )}
 
         {!isAdminPanel && isPlatformAdmin && (
           <>
             <div className="border-t border-white/10 my-3" />
-            <Link
+            <a
               href="/admin"
               className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition-colors"
             >
               <span>&#9881;</span>
               Platform Admin
-            </Link>
+            </a>
           </>
         )}
       </nav>

@@ -81,7 +81,7 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {teamRows.map((team) => (
-                <Link
+                <a
                   key={team.id}
                   href={`/teams/${team.id}/admin`}
                   className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl px-5 py-4 hover:border-gray-400 hover:shadow-sm transition-all group"
@@ -102,7 +102,7 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
                   <span className="shrink-0 text-xs text-gray-400 group-hover:text-gray-600 font-medium">
                     Enter &rarr;
                   </span>
-                </Link>
+                </a>
               ))}
             </div>
           )}
@@ -161,7 +161,7 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
 
         <div className="space-y-2">
           {coachTeams.map((t) => (
-            <Link
+            <a
               key={t.teamId}
               href={`/teams/${t.teamId}/admin`}
               className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-5 py-4 hover:border-brand-300 hover:shadow-sm transition-all"
@@ -173,7 +173,7 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
                 </p>
               </div>
               <span className="text-brand-700 text-sm">Manage →</span>
-            </Link>
+            </a>
           ))}
         </div>
 
