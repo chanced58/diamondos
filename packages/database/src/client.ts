@@ -1,7 +1,9 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from './types/supabase';
 
-export type TypedSupabaseClient = SupabaseClient<Database>;
+// Use broad schema generics so both @supabase/supabase-js and @supabase/ssr clients are assignable
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type TypedSupabaseClient = SupabaseClient<Database, any, any>;
 
 /**
  * Creates a Supabase client for use in browser / React Native contexts.
