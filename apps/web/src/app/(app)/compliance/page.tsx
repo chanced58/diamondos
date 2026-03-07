@@ -32,7 +32,7 @@ export default async function CompliancePage({
   searchParams,
 }: {
   searchParams: { tab?: string };
-}) {
+}): Promise<JSX.Element | null> {
   const tab = searchParams.tab === 'hitting' ? 'hitting' : 'pitching';
 
   const auth = createServerClient();

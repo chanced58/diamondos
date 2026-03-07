@@ -23,7 +23,7 @@ const SEASON_EVENT_TYPES = [
   'field_error',
 ];
 
-export default async function RosterPage({ params }: { params: { teamId: string } }) {
+export default async function RosterPage({ params }: { params: { teamId: string } }): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

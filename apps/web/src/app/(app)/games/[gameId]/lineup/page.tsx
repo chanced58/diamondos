@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: 'Set Lineup' };
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
-export default async function LineupPage({ params }: { params: { gameId: string } }) {
+export default async function LineupPage({ params }: { params: { gameId: string } }): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

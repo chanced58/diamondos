@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getTeamsForUser } from '@baseball/database';
 
 // Redirect to the active team's roster, or to team creation if none exists.
-export default async function TeamsIndexPage() {
+export default async function TeamsIndexPage(): Promise<JSX.Element | null> {
   const supabase = createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');

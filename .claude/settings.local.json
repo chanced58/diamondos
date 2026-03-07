@@ -32,7 +32,9 @@
       "Bash(pnpm dev:web)",
       "Bash(pnpm add colorthief)",
       "Bash(pnpm add -D @types/colorthief)",
-      "Bash(npx tsc --noEmit)"
+      "Bash(npx tsc --noEmit)",
+      "Bash(node -e \":*)",
+      "Bash(node -e:*)"
     ],
     "additionalDirectories": [
       "c:\\Users\\chance\\baseball-app\\baseballcoachesapp\\apps\\web\\src\\app\\(app)\\teams\\[teamId]\\admin"

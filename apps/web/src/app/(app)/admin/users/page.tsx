@@ -24,7 +24,7 @@ const ROLE_COLORS: Record<string, string> = {
   player: 'bg-green-50 text-green-700 border-green-200',
 };
 
-export default async function PlatformAdminUsersPage() {
+export default async function PlatformAdminUsersPage(): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) redirect('/login');

@@ -23,7 +23,7 @@ const ROLE_LABELS: Record<string, string> = {
   parent:            'Parent',
 };
 
-export default async function NewDmPage() {
+export default async function NewDmPage(): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

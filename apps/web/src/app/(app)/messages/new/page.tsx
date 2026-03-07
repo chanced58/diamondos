@@ -8,7 +8,7 @@ import { CreateChannelForm } from './CreateChannelForm';
 
 export const metadata: Metadata = { title: 'New Channel' };
 
-export default async function NewChannelPage() {
+export default async function NewChannelPage(): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

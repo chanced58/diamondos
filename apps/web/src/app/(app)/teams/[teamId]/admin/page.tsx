@@ -12,7 +12,7 @@ export default async function TeamAdminPage({
   params,
 }: {
   params: { teamId: string };
-}) {
+}): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) redirect('/login');

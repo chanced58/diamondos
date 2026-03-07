@@ -6,7 +6,7 @@ import { ScoringBoard } from './ScoringBoard';
 
 export const metadata: Metadata = { title: 'Scoring' };
 
-export default async function ScorePage({ params }: { params: { gameId: string } }) {
+export default async function ScorePage({ params }: { params: { gameId: string } }): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

@@ -54,7 +54,7 @@ const DEMO_INITIAL_EVENTS = [
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
-export default async function DemoScoringPage() {
+export default async function DemoScoringPage(): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

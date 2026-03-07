@@ -7,7 +7,7 @@ import { AddGameForm } from './AddGameForm';
 
 export const metadata: Metadata = { title: 'Add Game' };
 
-export default async function NewGamePage() {
+export default async function NewGamePage(): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

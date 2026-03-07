@@ -15,7 +15,7 @@ const DEMO_PLAYERS = [
   { id: 'demo-9', firstName: 'Drew',   lastName: 'Wilson',   jerseyNumber: 21, primaryPosition: '2B' },
 ];
 
-export default async function DemoLineupPage() {
+export default async function DemoLineupPage(): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

@@ -34,7 +34,7 @@ export default async function PlayerPage({
   params,
 }: {
   params: { teamId: string; playerId: string };
-}) {
+}): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

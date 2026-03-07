@@ -7,7 +7,7 @@ import { InviteStaffForm } from './InviteStaffForm';
 
 export const metadata: Metadata = { title: 'Add Coach / Staff' };
 
-export default async function InviteStaffPage({ params }: { params: { teamId: string } }) {
+export default async function InviteStaffPage({ params }: { params: { teamId: string } }): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) redirect('/login');

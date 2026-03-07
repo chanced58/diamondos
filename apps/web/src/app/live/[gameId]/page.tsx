@@ -18,7 +18,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * Public-facing live score page (no auth required).
  * Initial data is SSR'd; real-time updates are handled by LiveScoreClient.
  */
-export default async function LiveGamePage({ params }: Props) {
+export default async function LiveGamePage({ params }: Props): Promise<JSX.Element | null> {
   const supabase = createServerClient();
   const game = await getGameById(supabase, params.gameId).catch(() => null);
 

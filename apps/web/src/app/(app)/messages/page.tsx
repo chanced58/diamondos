@@ -20,7 +20,7 @@ const CHANNEL_TYPE_ICONS: Record<string, string> = {
   direct: '💬',
 };
 
-export default async function MessagesPage() {
+export default async function MessagesPage(): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

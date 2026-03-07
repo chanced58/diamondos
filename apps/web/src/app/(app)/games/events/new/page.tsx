@@ -7,7 +7,7 @@ import { AddEventForm } from './AddEventForm';
 
 export const metadata: Metadata = { title: 'Add Team Event' };
 
-export default async function NewEventPage() {
+export default async function NewEventPage(): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

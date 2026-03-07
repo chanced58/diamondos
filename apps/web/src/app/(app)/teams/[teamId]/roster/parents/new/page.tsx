@@ -7,7 +7,7 @@ import { InviteParentForm } from './InviteParentForm';
 
 export const metadata: Metadata = { title: 'Add Parent' };
 
-export default async function InviteParentPage({ params }: { params: { teamId: string } }) {
+export default async function InviteParentPage({ params }: { params: { teamId: string } }): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) redirect('/login');

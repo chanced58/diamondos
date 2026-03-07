@@ -22,7 +22,7 @@ export default async function GameDetailPage({
   params,
 }: {
   params: { gameId: string };
-}) {
+}): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

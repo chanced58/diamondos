@@ -40,7 +40,7 @@ type Announcement = {
   channelName: string | null;
 };
 
-export default async function DashboardPage() {
+export default async function DashboardPage(): Promise<JSX.Element | null> {
   const supabase = createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;

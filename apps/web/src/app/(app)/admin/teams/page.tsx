@@ -6,7 +6,7 @@ import { createServerClient } from '@/lib/supabase/server';
 
 export const metadata: Metadata = { title: 'All Teams — Platform Admin' };
 
-export default async function PlatformAdminTeamsPage() {
+export default async function PlatformAdminTeamsPage(): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) redirect('/login');

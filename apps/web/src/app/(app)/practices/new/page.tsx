@@ -7,7 +7,7 @@ import { CreatePracticeForm } from './CreatePracticeForm';
 
 export const metadata: Metadata = { title: 'Log Practice' };
 
-export default async function NewPracticePage() {
+export default async function NewPracticePage(): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

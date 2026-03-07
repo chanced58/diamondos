@@ -7,7 +7,7 @@ import { PlanPracticeForm } from './PlanPracticeForm';
 
 export const metadata: Metadata = { title: 'Plan a Practice' };
 
-export default async function PlanPracticePage() {
+export default async function PlanPracticePage(): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

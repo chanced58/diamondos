@@ -7,7 +7,7 @@ import { formatDate, formatTime } from '@baseball/shared';
 
 export const metadata: Metadata = { title: 'Practices' };
 
-export default async function PracticesPage() {
+export default async function PracticesPage(): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;

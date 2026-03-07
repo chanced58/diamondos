@@ -5,7 +5,7 @@ import { createServerClient } from '@/lib/supabase/server';
 
 export const metadata: Metadata = { title: 'Admin' };
 
-export default async function AdminPage() {
+export default async function AdminPage(): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
 
