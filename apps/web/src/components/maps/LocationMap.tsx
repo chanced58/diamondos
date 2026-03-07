@@ -1,5 +1,5 @@
-import type { JSX } from 'react';
 'use client';
+import type { JSX } from 'react';
 
 import { useJsApiLoader, GoogleMap, Marker } from '@react-google-maps/api';
 

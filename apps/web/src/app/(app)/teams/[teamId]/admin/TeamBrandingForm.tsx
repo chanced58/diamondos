@@ -1,5 +1,5 @@
-import type { JSX } from 'react';
 'use client';
+import type { JSX } from 'react';
 
 import { useRef, useState } from 'react';
 import { uploadTeamBrandingAction } from './branding-actions';

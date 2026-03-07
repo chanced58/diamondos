@@ -1,5 +1,5 @@
-import type { JSX } from 'react';
 'use client';
+import type { JSX } from 'react';
 
 import { useState, useEffect } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';

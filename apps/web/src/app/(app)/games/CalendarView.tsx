@@ -1,5 +1,5 @@
-import type { JSX } from 'react';
 'use client';
+import type { JSX } from 'react';
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
