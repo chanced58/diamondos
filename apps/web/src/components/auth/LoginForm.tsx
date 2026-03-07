@@ -3,7 +3,6 @@ import type { JSX } from 'react';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createBrowserClient } from '@/lib/supabase/client';
 
 export function LoginForm(): JSX.Element | null {
   const [email, setEmail] = useState('');
@@ -11,7 +10,6 @@ export function LoginForm(): JSX.Element | null {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createBrowserClient();
 
   async function handleDirectLogin() {
     setLoading(true);
@@ -44,17 +42,21 @@ export function LoginForm(): JSX.Element | null {
     setLoading(true);
     setError(null);
 
-    const { error: signInError } = await supabase.auth.signInWithOtp({
-      email: email.toLowerCase().trim(),
-      options: {
-        emailRedirectTo: `${window.location.origin}/callback`,
-      },
-    });
+    try {
+      const res = await fetch('/api/auth/send-magic-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.toLowerCase().trim() }),
+      });
 
-    if (signInError) {
-      setError(signInError.message);
-    } else {
-      setSent(true);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Failed to send magic link');
+      } else {
+        setSent(true);
+      }
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to send magic link');
     }
     setLoading(false);
   }

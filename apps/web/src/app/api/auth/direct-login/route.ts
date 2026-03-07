@@ -20,6 +20,20 @@ export async function POST(request: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
+  // Invite-only: verify the email exists in user_profiles
+  const { data: profile } = await db
+    .from('user_profiles')
+    .select('id')
+    .eq('email', email.toLowerCase().trim())
+    .maybeSingle();
+
+  if (!profile) {
+    return NextResponse.json(
+      { error: 'This email is not registered on the platform. Contact your coach for an invite.' },
+      { status: 403 },
+    );
+  }
+
   // Generate a magic link without sending an email
   const { data: linkData, error: linkError } = await db.auth.admin.generateLink({
     type: 'magiclink',
