@@ -1,9 +1,10 @@
+import type { JSX } from 'react';
 import { Metadata } from 'next';
 import { LoginForm } from '@/components/auth/LoginForm';
 
 export const metadata: Metadata = { title: 'Sign In' };
 
-export default function LoginPage() {
+export default function LoginPage(): JSX.Element {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md">

@@ -1,5 +1,6 @@
 'use client';
 
+import type { JSX } from 'react';
 import { useState } from 'react';
 import { runSetupAction, runResetAction, runVerifyCleanAction } from './actions';
 
@@ -51,7 +52,7 @@ function ResultDisplay({ result, label }: { result: SetupResult; label: string }
   );
 }
 
-export default function SetupPage() {
+export default function SetupPage(): JSX.Element {
   const [result, setResult] = useState<SetupResult | null>(null);
   const [running, setRunning] = useState(false);
 
