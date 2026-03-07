@@ -1,12 +1,13 @@
 import { createServerClient as createSupabaseServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import type { Database } from '@baseball/database';
+import type { TypedSupabaseClient } from '@baseball/database';
 
 /**
  * Creates a Supabase client for use in Next.js Server Components and Route Handlers.
  * Uses cookies for session management. Requires @supabase/ssr.
  */
-export function createServerClient() {
+export function createServerClient(): TypedSupabaseClient {
   const cookieStore = cookies();
 
   return createSupabaseServerClient<Database>(
@@ -28,5 +29,5 @@ export function createServerClient() {
         },
       },
     },
-  );
+  ) as TypedSupabaseClient;
 }

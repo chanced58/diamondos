@@ -1,14 +1,14 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { formatDate } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
-async function getAuthorizedCoach(supabase: ReturnType<typeof createClient>, userId: string, gameId: string) {
+async function getAuthorizedCoach(supabase: SupabaseClient, userId: string, gameId: string) {
   const { data: game } = await supabase
     .from('games')
     .select('team_id, opponent_name, scheduled_at, status')

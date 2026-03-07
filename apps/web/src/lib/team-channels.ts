@@ -1,11 +1,11 @@
-import { createClient } from '@supabase/supabase-js';
+import { type SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * Adds a user to all non-DM channels for a team.
  * Coaches get can_post on all channels; non-coaches only on topic channels.
  */
 export async function addToTeamChannels(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   teamId: string,
   userId: string,
   role: string,
