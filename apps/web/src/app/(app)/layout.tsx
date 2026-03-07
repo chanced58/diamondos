@@ -18,6 +18,18 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
   const teams = await getTeamsForUser(supabase, user.id);
   let activeTeam = teams?.[0]?.teams as TeamSummary | undefined;
 
+  // Check if user is platform admin
+  const db2 = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+  const { data: adminProfile } = await db2
+    .from('user_profiles')
+    .select('is_platform_admin')
+    .eq('id', user.id)
+    .maybeSingle();
+  const isPlatformAdmin = adminProfile?.is_platform_admin === true;
+
   // Self-healing: if user created a team but has no team_members row,
   // auto-create the membership. This handles cases where the create-team
   // edge function's team_members insert failed silently.
@@ -89,6 +101,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         logoUrl={activeTeam?.logo_url ?? undefined}
         primaryColor={activeTeam?.primary_color ?? undefined}
         secondaryColor={activeTeam?.secondary_color ?? undefined}
+        isPlatformAdmin={isPlatformAdmin}
       />
       <main className="flex-1 overflow-auto">
         {children}

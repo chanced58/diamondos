@@ -44,65 +44,110 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
 
   // ── Platform admin view ──────────────────────────────────────────────────
   if (isPlatformAdmin) {
+    // Fetch all teams for the environment selector
+    const { data: allTeams } = await db
+      .from('teams')
+      .select('id, name, organization, logo_url, team_members(count)')
+      .order('name');
+
+    type AllTeamRow = {
+      id: string;
+      name: string;
+      organization: string | null;
+      logo_url: string | null;
+      team_members: { count: number }[];
+    };
+
+    const teamRows = ((allTeams as AllTeamRow[]) ?? []).map((t) => ({
+      id: t.id,
+      name: t.name,
+      organization: t.organization,
+      logoUrl: t.logo_url,
+      memberCount: (t.team_members[0] as unknown as { count: number })?.count ?? 0,
+    }));
+
     return (
-      <div className="p-8 max-w-2xl">
+      <div className="p-8 max-w-4xl">
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Platform Admin</h1>
         <p className="text-gray-500 mb-8">Full platform administration access.</p>
 
-        <div className="grid grid-cols-2 gap-4 mb-8">
-          <Link
-            href="/admin/teams"
-            className="bg-white border border-gray-200 rounded-xl p-5 hover:border-brand-300 hover:shadow-sm transition-all group"
-          >
-            <div className="text-2xl mb-2">🏟️</div>
-            <h2 className="font-semibold text-gray-900 group-hover:text-brand-700 transition-colors">
-              All Teams
-            </h2>
-            <p className="text-sm text-gray-500 mt-1">View and manage every team on the platform.</p>
-          </Link>
-
-          <Link
-            href="/admin/users"
-            className="bg-white border border-gray-200 rounded-xl p-5 hover:border-brand-300 hover:shadow-sm transition-all group"
-          >
-            <div className="text-2xl mb-2">👥</div>
-            <h2 className="font-semibold text-gray-900 group-hover:text-brand-700 transition-colors">
-              All Users
-            </h2>
-            <p className="text-sm text-gray-500 mt-1">Browse all registered users and their team roles.</p>
-          </Link>
-
-          <Link
-            href="/admin/create-team"
-            className="bg-white border border-gray-200 rounded-xl p-5 hover:border-brand-300 hover:shadow-sm transition-all group"
-          >
-            <div className="text-2xl mb-2">➕</div>
-            <h2 className="font-semibold text-gray-900 group-hover:text-brand-700 transition-colors">
-              Create Team
-            </h2>
-            <p className="text-sm text-gray-500 mt-1">Set up a new team on the platform.</p>
-          </Link>
-        </div>
-
-        {coachTeams.length > 0 && (
-          <div>
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-              Your Teams
-            </h2>
-            <div className="space-y-2">
-              {coachTeams.map((t) => (
+        {/* Team Environment Selector */}
+        <div className="mb-10">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+            Select Team Environment
+          </h2>
+          {teamRows.length === 0 ? (
+            <p className="text-sm text-gray-400">No teams on the platform yet.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {teamRows.map((team) => (
                 <Link
-                  key={t.teamId}
-                  href={`/teams/${t.teamId}/admin`}
-                  className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3 hover:border-brand-300 transition-colors"
+                  key={team.id}
+                  href={`/teams/${team.id}/admin`}
+                  className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl px-5 py-4 hover:border-gray-400 hover:shadow-sm transition-all group"
                 >
-                  <span className="font-medium text-gray-900">{t.teamName}</span>
-                  <span className="text-xs text-gray-400 capitalize">{t.role.replace(/_/g, ' ')}</span>
+                  <div className="shrink-0 w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-lg font-bold text-gray-400 overflow-hidden">
+                    {team.logoUrl ? (
+                      <img src={team.logoUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      team.name.charAt(0).toUpperCase()
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 group-hover:text-gray-700 truncate">{team.name}</p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {team.organization ?? 'No organization'} &middot; {team.memberCount} member{team.memberCount !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs text-gray-400 group-hover:text-gray-600 font-medium">
+                    Enter &rarr;
+                  </span>
                 </Link>
               ))}
             </div>
+          )}
+        </div>
+
+        {/* Quick Links */}
+        <div>
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+            Quick Actions
+          </h2>
+          <div className="grid grid-cols-3 gap-4">
+            <Link
+              href="/admin/teams"
+              className="bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-400 hover:shadow-sm transition-all group"
+            >
+              <div className="text-2xl mb-2">🏟️</div>
+              <h3 className="font-semibold text-gray-900 group-hover:text-gray-700 transition-colors">
+                All Teams
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">View and manage every team.</p>
+            </Link>
+
+            <Link
+              href="/admin/users"
+              className="bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-400 hover:shadow-sm transition-all group"
+            >
+              <div className="text-2xl mb-2">👥</div>
+              <h3 className="font-semibold text-gray-900 group-hover:text-gray-700 transition-colors">
+                All Users
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">Browse users and their roles.</p>
+            </Link>
+
+            <Link
+              href="/admin/create-team"
+              className="bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-400 hover:shadow-sm transition-all group"
+            >
+              <div className="text-2xl mb-2">➕</div>
+              <h3 className="font-semibold text-gray-900 group-hover:text-gray-700 transition-colors">
+                Create Team
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">Set up a new team.</p>
+            </Link>
           </div>
-        )}
+        </div>
       </div>
     );
   }
