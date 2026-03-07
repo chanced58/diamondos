@@ -18,28 +18,31 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
   const teams = await getTeamsForUser(supabase, user.id);
   let activeTeam = teams?.[0]?.teams as TeamSummary | undefined;
 
+  // Create a single service-role client (guarded — won't crash if key is missing)
+  let isPlatformAdmin = false;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const db = serviceRoleKey
+    ? createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey)
+    : null;
+
   // Check if user is platform admin
-  const db2 = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
-  const { data: adminProfile } = await db2
-    .from('user_profiles')
-    .select('is_platform_admin')
-    .eq('id', user.id)
-    .maybeSingle();
-  const isPlatformAdmin = adminProfile?.is_platform_admin === true;
+  if (db) {
+    try {
+      const { data: adminProfile } = await db
+        .from('user_profiles')
+        .select('is_platform_admin')
+        .eq('id', user.id)
+        .maybeSingle();
+      isPlatformAdmin = adminProfile?.is_platform_admin === true;
+    } catch {
+      // Fall back to non-admin if query fails
+    }
+  }
 
   // Self-healing: if user created a team but has no team_members row,
   // auto-create the membership. This handles cases where the create-team
   // edge function's team_members insert failed silently.
-  if (!activeTeam) {
-    const db = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    );
-
-    // Check for teams the user created OR any team if user is platform admin
+  if (!activeTeam && db) {
     let createdTeam: any = null;
 
     const { data: ownTeam } = await db
@@ -50,22 +53,13 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
       .maybeSingle();
     createdTeam = ownTeam;
 
-    if (!createdTeam) {
-      // Fallback: check if user is platform admin and grab first available team
-      const { data: profile } = await db
-        .from('user_profiles')
-        .select('is_platform_admin')
-        .eq('id', user.id)
+    if (!createdTeam && isPlatformAdmin) {
+      const { data: anyTeam } = await db
+        .from('teams')
+        .select('id, name, organization, logo_url, primary_color, secondary_color')
+        .limit(1)
         .maybeSingle();
-
-      if (profile?.is_platform_admin) {
-        const { data: anyTeam } = await db
-          .from('teams')
-          .select('id, name, organization, logo_url, primary_color, secondary_color')
-          .limit(1)
-          .maybeSingle();
-        createdTeam = anyTeam;
-      }
+      createdTeam = anyTeam;
     }
 
     if (createdTeam) {
