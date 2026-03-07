@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { getTeamsForUser } from '@baseball/database';
+import { getActiveTeam } from '@/lib/active-team';
 import { derivePitchingStats, deriveBattingStats } from '@baseball/shared';
 import type { PitchingStats, BattingStats } from '@baseball/shared';
 import { PitchingStatsTable } from './PitchingStatsTable';
@@ -40,8 +40,7 @@ export default async function CompliancePage({
   const { data: { user } } = await auth.auth.getUser();
   if (!user) redirect('/login');
 
-  const teams = await getTeamsForUser(auth, user.id);
-  const activeTeam = teams?.[0]?.teams as { id: string; name: string } | undefined;
+  const activeTeam = await getActiveTeam(auth, user.id);
   if (!activeTeam) redirect('/dashboard');
 
   const db = createClient(

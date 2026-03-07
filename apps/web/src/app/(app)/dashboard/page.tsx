@@ -3,7 +3,7 @@ import { Metadata } from 'next';
 import Link from 'next/link';
 import { createServerClient } from '@/lib/supabase/server';
 import { createClient } from '@supabase/supabase-js';
-import { getTeamsForUser } from '@baseball/database';
+import { getActiveTeam } from '@/lib/active-team';
 import { formatTime } from '@baseball/shared';
 
 export const metadata: Metadata = { title: 'Dashboard' };
@@ -46,8 +46,7 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const teams = await getTeamsForUser(supabase, user.id);
-  const activeTeam = teams?.[0]?.teams as { id: string; name: string } | undefined;
+  const activeTeam = await getActiveTeam(supabase, user.id);
 
   if (!activeTeam) {
     return (

@@ -3,7 +3,7 @@ import { Metadata } from 'next';
 import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { getTeamsForUser } from '@baseball/database';
+import { getActiveTeam } from '@/lib/active-team';
 import { CalendarView, CalendarEvent } from './CalendarView';
 
 export const metadata: Metadata = { title: 'Schedule' };
@@ -38,8 +38,7 @@ export default async function SchedulePage({
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;
 
-  const teams = await getTeamsForUser(auth, user.id);
-  const activeTeam = teams?.[0]?.teams as { id: string; name: string } | undefined;
+  const activeTeam = await getActiveTeam(auth, user.id);
 
   const { year, month } = parseMonth(searchParams.month);
 

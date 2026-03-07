@@ -32,18 +32,30 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   // Redirect unauthenticated users from protected routes to login
-  const isProtectedRoute = request.nextUrl.pathname.startsWith('/dashboard') ||
-    request.nextUrl.pathname.startsWith('/teams') ||
-    request.nextUrl.pathname.startsWith('/games') ||
-    request.nextUrl.pathname.startsWith('/compliance') ||
-    request.nextUrl.pathname.startsWith('/messages') ||
-    request.nextUrl.pathname.startsWith('/admin');
+  const pathname = request.nextUrl.pathname;
+  const isProtectedRoute = pathname.startsWith('/dashboard') ||
+    pathname.startsWith('/teams') ||
+    pathname.startsWith('/games') ||
+    pathname.startsWith('/compliance') ||
+    pathname.startsWith('/messages') ||
+    pathname.startsWith('/admin');
 
   if (!user && isProtectedRoute) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = '/login';
-    redirectUrl.searchParams.set('redirectTo', request.nextUrl.pathname);
+    redirectUrl.searchParams.set('redirectTo', pathname);
     return NextResponse.redirect(redirectUrl);
+  }
+
+  // Track the active team environment via cookie when visiting /teams/[teamId]/*
+  const teamMatch = pathname.match(/^\/teams\/([^/]+)/);
+  if (teamMatch) {
+    supabaseResponse.cookies.set('active-team-id', teamMatch[1], {
+      path: '/',
+      httpOnly: false,
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 30, // 30 days
+    });
   }
 
   return supabaseResponse;

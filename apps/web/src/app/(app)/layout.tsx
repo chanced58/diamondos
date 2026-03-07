@@ -1,6 +1,6 @@
 import type { JSX } from 'react';
 import { redirect } from 'next/navigation';
-import { headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getTeamsForUser } from '@baseball/database';
@@ -87,30 +87,25 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
     }
   }
 
-  // If the URL contains /teams/[teamId], use that team's branding instead
-  // of the default first-team. This ensures the sidebar matches the team
-  // environment the user navigated into.
-  const headersList = headers();
-  const pathname = headersList.get('x-invoke-path') ?? headersList.get('x-matched-path') ?? '';
-  const teamIdMatch = pathname.match(/\/teams\/([^/]+)/);
-  if (teamIdMatch && db) {
-    const urlTeamId = teamIdMatch[1];
-    if (urlTeamId !== activeTeam?.id) {
-      const { data: urlTeam } = await db
-        .from('teams')
-        .select('id, name, organization, logo_url, primary_color, secondary_color')
-        .eq('id', urlTeamId)
-        .maybeSingle();
-      if (urlTeam) {
-        activeTeam = {
-          id: urlTeam.id,
-          name: urlTeam.name,
-          organization: urlTeam.organization,
-          logo_url: urlTeam.logo_url,
-          primary_color: urlTeam.primary_color,
-          secondary_color: urlTeam.secondary_color,
-        };
-      }
+  // Use the active-team-id cookie (set by middleware when visiting /teams/[id]/*)
+  // to show the correct team's branding across all routes.
+  const cookieStore = cookies();
+  const activeTeamId = cookieStore.get('active-team-id')?.value;
+  if (activeTeamId && activeTeamId !== activeTeam?.id && db) {
+    const { data: selectedTeam } = await db
+      .from('teams')
+      .select('id, name, organization, logo_url, primary_color, secondary_color')
+      .eq('id', activeTeamId)
+      .maybeSingle();
+    if (selectedTeam) {
+      activeTeam = {
+        id: selectedTeam.id,
+        name: selectedTeam.name,
+        organization: selectedTeam.organization,
+        logo_url: selectedTeam.logo_url,
+        primary_color: selectedTeam.primary_color,
+        secondary_color: selectedTeam.secondary_color,
+      };
     }
   }
 
