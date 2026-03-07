@@ -3,7 +3,6 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { addToTeamChannels } from '@/lib/team-channels';
 
 const ROSTER_ADMIN_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'] as const;
 

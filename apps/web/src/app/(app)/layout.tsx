@@ -15,7 +15,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
     redirect('/login');
   }
 
-  let teams = await getTeamsForUser(supabase, user.id);
+  const teams = await getTeamsForUser(supabase, user.id);
   let activeTeam = teams?.[0]?.teams as TeamSummary | undefined;
 
   // Self-healing: if user created a team but has no team_members row,

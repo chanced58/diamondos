@@ -55,8 +55,6 @@ function SaveButton() {
 const textareaClass =
   'w-full border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-y min-h-[80px]';
 
-const readonlyClass =
-  'w-full border border-gray-100 rounded-lg px-3 py-2.5 text-gray-600 text-sm bg-gray-50 resize-y min-h-[80px]';
 
 export function PracticeNotesForm({
   practiceId,

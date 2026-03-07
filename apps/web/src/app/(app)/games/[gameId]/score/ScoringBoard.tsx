@@ -666,7 +666,6 @@ export function ScoringBoard({
         { onConflict: 'id', ignoreDuplicates: true },
       );
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [game.id, gameState.inning, gameState.isTopOfInning, currentUserId, isDemo],
   );
 

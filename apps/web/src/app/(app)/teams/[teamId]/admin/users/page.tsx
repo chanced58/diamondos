@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { formatDate } from '@baseball/shared';
 import { UsersPageClient } from './UsersPageClient';
 
 export const metadata: Metadata = { title: 'Users & Invitations' };

@@ -40,7 +40,7 @@ const TYPE_STYLES = {
   event:    { chip: 'bg-purple-50 text-purple-700 border-purple-200', dot: 'bg-purple-500', icon: '📅', label: 'Event' },
 };
 
-export function CalendarView({ year, month, events, isCoach, teamId }: Props) {
+export function CalendarView({ year, month, events, isCoach: _isCoach, teamId: _teamId }: Props) {
   const router = useRouter();
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
