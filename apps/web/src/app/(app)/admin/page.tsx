@@ -37,7 +37,8 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
 
   const isPlatformAdmin = profileResult.data?.is_platform_admin === true;
   const coachTeams = (membershipsResult.data ?? []).map((m) => {
-    const team = m.teams as { id: string; name: string } | null;
+    const raw = m.teams as unknown;
+    const team = (Array.isArray(raw) ? raw[0] : raw) as { id: string; name: string } | null | undefined;
     return { teamId: m.team_id as string, teamName: team?.name ?? 'Unknown team', role: m.role as string };
   });
 
