@@ -61,7 +61,7 @@ export default async function PlatformAdminUsersPage(): Promise<JSX.Element | nu
   type TeamMemberRow = {
     role: string;
     is_active: boolean;
-    teams: { id: string; name: string } | null;
+    teams: { id: string; name: string } | { id: string; name: string }[] | null;
   };
 
   type ProfileRow = {
@@ -74,7 +74,7 @@ export default async function PlatformAdminUsersPage(): Promise<JSX.Element | nu
     team_members: TeamMemberRow[];
   };
 
-  const rows = (profiles as ProfileRow[] ?? []).map((p) => ({
+  const rows = ((profiles as unknown as ProfileRow[]) ?? []).map((p) => ({
     id: p.id,
     firstName: p.first_name,
     lastName: p.last_name,
@@ -83,11 +83,10 @@ export default async function PlatformAdminUsersPage(): Promise<JSX.Element | nu
     isPlatformAdmin: p.is_platform_admin,
     teamRoles: (p.team_members ?? [])
       .filter((m) => m.is_active && m.teams)
-      .map((m) => ({
-        teamId: m.teams!.id,
-        teamName: m.teams!.name,
-        role: m.role,
-      })),
+      .map((m) => {
+        const team = Array.isArray(m.teams) ? m.teams[0] : m.teams;
+        return { teamId: team!.id, teamName: team!.name, role: m.role };
+      }),
   }));
 
   return (
