@@ -117,12 +117,6 @@ export async function deleteUserAction(
     return 'You cannot delete your own account.';
   }
 
-  // Deactivate all team memberships
-  await supabase
-    .from('team_members')
-    .update({ is_active: false })
-    .eq('user_id', userId);
-
   // Nullify all RESTRICT FK references so auth.users deletion isn't blocked
   const nullifyResults = await Promise.all([
     supabase.from('teams').update({ created_by: null }).eq('created_by', userId),
@@ -143,6 +137,9 @@ export async function deleteUserAction(
   }
 
   // Delete the auth user — cascades to user_profiles, team_members, channel_members, etc.
+  // NOTE: Do NOT deactivate team_members before this — if deleteUser fails, the user
+  // would be left with deactivated memberships (invisible on roster). The CASCADE on
+  // auth.users will clean up team_members automatically on success.
   const { error } = await supabase.auth.admin.deleteUser(userId);
 
   if (error) return `Failed to delete user: ${error.message}`;

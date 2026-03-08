@@ -75,60 +75,56 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
     }
   }
 
-  // Self-healing: auto-accept any pending invitations for this user's email.
-  // Handles cases where the auth callback's URL params were lost or the user
-  // logged in directly instead of clicking the invite link.
+  // Self-healing: ensure team membership exists for any invitation (pending or accepted).
+  // Covers: lost callback URL params, direct login, and deactivated memberships from
+  // failed user deletions.
   if (!activeTeam && !isPlatformAdmin && db && user.email) {
-    const { data: pendingInvites } = await db
+    const { data: invites } = await db
       .from('team_invitations')
-      .select('id, team_id, role, email, first_name, last_name')
+      .select('id, team_id, role, email, first_name, last_name, status')
       .eq('email', user.email.toLowerCase())
-      .eq('status', 'pending')
+      .in('status', ['pending', 'accepted'])
       .limit(5);
 
-    if (pendingInvites && pendingInvites.length > 0) {
-      for (const invite of pendingInvites) {
+    if (invites && invites.length > 0) {
+      for (const invite of invites) {
+        // Ensure an active team_members row exists (creates or reactivates)
         await db.from('team_members').upsert(
           { team_id: invite.team_id, user_id: user.id, role: invite.role, is_active: true },
           { onConflict: 'team_id,user_id' },
         );
-        await db.from('team_invitations')
-          .update({ status: 'accepted', accepted_at: new Date().toISOString() })
-          .eq('id', invite.id);
+
+        if (invite.status === 'pending') {
+          await db.from('team_invitations')
+            .update({ status: 'accepted', accepted_at: new Date().toISOString() })
+            .eq('id', invite.id);
+        }
+
         await addToTeamChannels(db, invite.team_id, user.id, invite.role);
       }
 
       // Backfill name and email on profile if missing
-      const firstInvite = pendingInvites[0];
+      const firstInvite = invites[0];
+      const { data: currentProfile } = await db
+        .from('user_profiles')
+        .select('first_name, last_name, email')
+        .eq('id', user.id)
+        .maybeSingle();
+
       const profileUpdates: Record<string, string | null> = {};
-      if (user.email) profileUpdates.email = user.email;
-      if (firstInvite.first_name) profileUpdates.first_name = firstInvite.first_name;
-      if (firstInvite.last_name) profileUpdates.last_name = firstInvite.last_name;
+      if (!currentProfile?.email && user.email) profileUpdates.email = user.email;
+      if (!currentProfile?.first_name && firstInvite.first_name) profileUpdates.first_name = firstInvite.first_name;
+      if (!currentProfile?.last_name && firstInvite.last_name) profileUpdates.last_name = firstInvite.last_name;
 
       if (Object.keys(profileUpdates).length > 0) {
-        // Only fill in fields that are currently empty
-        const { data: currentProfile } = await db
-          .from('user_profiles')
-          .select('first_name, last_name, email')
-          .eq('id', user.id)
-          .maybeSingle();
-
-        const finalUpdates: Record<string, string | null> = {};
-        if (!currentProfile?.email && profileUpdates.email) finalUpdates.email = profileUpdates.email;
-        if (!currentProfile?.first_name && profileUpdates.first_name) finalUpdates.first_name = profileUpdates.first_name;
-        if (!currentProfile?.last_name && profileUpdates.last_name) finalUpdates.last_name = profileUpdates.last_name;
-
-        if (Object.keys(finalUpdates).length > 0) {
-          await db.from('user_profiles').update(finalUpdates).eq('id', user.id);
-        }
+        await db.from('user_profiles').update(profileUpdates).eq('id', user.id);
       }
 
       // Fetch team directly via service-role client (bypasses RLS)
-      const firstTeamId = pendingInvites[0].team_id;
       const { data: invitedTeam } = await db
         .from('teams')
         .select('id, name, organization, logo_url, primary_color, secondary_color')
-        .eq('id', firstTeamId)
+        .eq('id', invites[0].team_id)
         .maybeSingle();
 
       if (invitedTeam) {
