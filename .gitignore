@@ -42,3 +42,6 @@ coverage/
 # Expo
 *.orig.*
 web-build/
+
+# Claude Code worktrees
+claude/
