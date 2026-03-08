@@ -44,49 +44,46 @@ export default async function PlatformAdminUsersPage(): Promise<JSX.Element | nu
 
   if (!myProfile?.is_platform_admin) redirect('/admin');
 
-  // Fetch all user profiles with their team memberships and team names
-  const { data: profiles } = await db
-    .from('user_profiles')
-    .select(`
-      id,
-      first_name,
-      last_name,
-      email,
-      phone,
-      is_platform_admin,
-      team_members(role, is_active, teams(id, name))
-    `)
-    .order('last_name', { ascending: true });
+  // Fetch profiles and team memberships separately to avoid PostgREST join issues
+  // (no direct FK between user_profiles and team_members — both reference auth.users)
+  const [profilesResult, membershipsResult] = await Promise.all([
+    db
+      .from('user_profiles')
+      .select('id, first_name, last_name, email, phone, is_platform_admin')
+      .order('last_name', { ascending: true }),
+    db
+      .from('team_members')
+      .select('user_id, role, is_active, teams(id, name)')
+      .eq('is_active', true),
+  ]);
 
-  type TeamMemberRow = {
+  // Build a map of user_id → team roles
+  type MemberRow = {
+    user_id: string;
     role: string;
     is_active: boolean;
     teams: { id: string; name: string } | { id: string; name: string }[] | null;
   };
 
-  type ProfileRow = {
-    id: string;
-    first_name: string | null;
-    last_name: string | null;
-    email: string | null;
-    phone: string | null;
-    is_platform_admin: boolean;
-    team_members: TeamMemberRow[];
-  };
+  const teamRolesMap = new Map<string, { teamId: string; teamName: string; role: string }[]>();
+  for (const m of (membershipsResult.data as unknown as MemberRow[]) ?? []) {
+    if (!m.teams) continue;
+    const team = Array.isArray(m.teams) ? m.teams[0] : m.teams;
+    if (!team) continue;
+    const entry = { teamId: team.id, teamName: team.name, role: m.role };
+    const existing = teamRolesMap.get(m.user_id);
+    if (existing) existing.push(entry);
+    else teamRolesMap.set(m.user_id, [entry]);
+  }
 
-  const rows = ((profiles as unknown as ProfileRow[]) ?? []).map((p) => ({
-    id: p.id,
-    firstName: p.first_name,
-    lastName: p.last_name,
-    email: p.email,
-    phone: p.phone,
-    isPlatformAdmin: p.is_platform_admin,
-    teamRoles: (p.team_members ?? [])
-      .filter((m) => m.is_active && m.teams)
-      .map((m) => {
-        const team = Array.isArray(m.teams) ? m.teams[0] : m.teams;
-        return { teamId: team!.id, teamName: team!.name, role: m.role };
-      }),
+  const rows = (profilesResult.data ?? []).map((p: any) => ({
+    id: p.id as string,
+    firstName: p.first_name as string | null,
+    lastName: p.last_name as string | null,
+    email: p.email as string | null,
+    phone: p.phone as string | null,
+    isPlatformAdmin: p.is_platform_admin === true,
+    teamRoles: teamRolesMap.get(p.id) ?? [],
   }));
 
   return (
