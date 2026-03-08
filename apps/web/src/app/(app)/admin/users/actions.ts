@@ -123,8 +123,21 @@ export async function deleteUserAction(
     .update({ is_active: false })
     .eq('user_id', userId);
 
-  // Delete the user profile (cascades from auth.users deletion below)
-  // Delete the auth user — this cascades to user_profiles via FK
+  // Nullify all RESTRICT FK references so auth.users deletion isn't blocked
+  await Promise.all([
+    supabase.from('teams').update({ created_by: null }).eq('created_by', userId),
+    supabase.from('games').update({ created_by: null }).eq('created_by', userId),
+    supabase.from('game_events').update({ created_by: null }).eq('created_by', userId),
+    supabase.from('channels').update({ created_by: null }).eq('created_by', userId),
+    supabase.from('messages').update({ sender_id: null }).eq('sender_id', userId),
+    supabase.from('team_invitations').update({ invited_by: null }).eq('invited_by', userId),
+    supabase.from('practices').update({ created_by: null }).eq('created_by', userId),
+    supabase.from('practice_notes').update({ updated_by: null }).eq('updated_by', userId),
+    supabase.from('practice_player_notes').update({ updated_by: null }).eq('updated_by', userId),
+    supabase.from('team_events').update({ created_by: null }).eq('created_by', userId),
+  ]);
+
+  // Delete the auth user — cascades to user_profiles, team_members, channel_members, etc.
   const { error } = await supabase.auth.admin.deleteUser(userId);
 
   if (error) return `Failed to delete user: ${error.message}`;
