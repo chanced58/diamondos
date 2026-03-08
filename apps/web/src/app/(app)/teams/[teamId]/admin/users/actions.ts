@@ -129,7 +129,12 @@ export async function resendInvitationAction(
     redirectTo: `${appUrl}/auth/callback?team=${teamId}&role=${role}`,
   });
 
-  if (inviteError) return `Failed to resend invite: ${inviteError.message}`;
+  if (inviteError) {
+    if (inviteError.message.toLowerCase().includes('rate') || inviteError.status === 429) {
+      return 'Email rate limit reached. Please wait a few minutes and try again.';
+    }
+    return `Failed to resend invite: ${inviteError.message}`;
+  }
 
   await supabase
     .from('team_invitations')
@@ -216,7 +221,12 @@ export async function resendPlayerInviteAction(
     redirectTo: `${appUrl}/auth/callback?team=${teamId}&player=${playerId}&role=player`,
   });
 
-  if (error) return `Failed to send invite: ${error.message}`;
+  if (error) {
+    if (error.message.toLowerCase().includes('rate') || error.status === 429) {
+      return 'Email rate limit reached. Please wait a few minutes and try again.';
+    }
+    return `Failed to send invite: ${error.message}`;
+  }
 
   await supabase.from('team_invitations').upsert(
     {

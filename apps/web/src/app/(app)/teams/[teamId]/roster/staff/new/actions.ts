@@ -33,20 +33,19 @@ export async function lookupUserByEmailAction(email: string): Promise<{
     return { id: profile.id, firstName: profile.first_name, lastName: profile.last_name };
   }
 
-  // Fallback: user_profiles.email may be null — check auth.users directly
-  const { data: listData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-  const authUser = listData?.users?.find((u) => u.email === email.toLowerCase().trim());
-  if (!authUser) return null;
+  // Fallback: user_profiles.email may be null — use RPC to check auth.users directly
+  const { data: authId } = await supabase.rpc('find_auth_user_id_by_email', { p_email: email.toLowerCase().trim() });
+  if (!authId) return null;
 
   // Fetch their profile by user ID
   const { data: profileById } = await supabase
     .from('user_profiles')
     .select('first_name, last_name')
-    .eq('id', authUser.id)
+    .eq('id', authId)
     .maybeSingle();
 
   return {
-    id: authUser.id,
+    id: authId,
     firstName: profileById?.first_name ?? '',
     lastName: profileById?.last_name ?? '',
   };
@@ -80,16 +79,14 @@ export async function inviteStaffAction(
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  // Only head coaches and athletic directors can invite staff
-  const { data: membership } = await supabase
-    .from('team_members')
-    .select('role')
-    .eq('team_id', teamId)
-    .eq('user_id', user.id)
-    .eq('is_active', true)
-    .maybeSingle();
+  // Platform admins or team coaches can invite staff
+  const [{ data: adminProfile }, { data: membership }] = await Promise.all([
+    supabase.from('user_profiles').select('is_platform_admin').eq('id', user.id).maybeSingle(),
+    supabase.from('team_members').select('role').eq('team_id', teamId).eq('user_id', user.id).eq('is_active', true).maybeSingle(),
+  ]);
+  const isPlatformAdmin = adminProfile?.is_platform_admin === true;
 
-  if (!membership || !['head_coach', 'assistant_coach', 'athletic_director'].includes(membership.role)) {
+  if (!isPlatformAdmin && (!membership || !['head_coach', 'assistant_coach', 'athletic_director'].includes(membership.role))) {
     return 'Only head coaches and athletic directors can invite staff members.';
   }
 
@@ -119,12 +116,11 @@ export async function inviteStaffAction(
     .eq('email', email)
     .maybeSingle();
 
-  // Fallback: user_profiles.email may be null — check auth.users directly
+  // Fallback: user_profiles.email may be null — use RPC to check auth.users directly
   let resolvedUserId: string | null = existingProfile?.id ?? null;
   if (!resolvedUserId) {
-    const { data: listData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-    const authUser = listData?.users?.find((u) => u.email === email);
-    resolvedUserId = authUser?.id ?? null;
+    const { data: authId } = await supabase.rpc('find_auth_user_id_by_email', { p_email: email });
+    resolvedUserId = authId ?? null;
   }
 
   if (resolvedUserId) {
@@ -177,7 +173,12 @@ export async function inviteStaffAction(
     redirectTo: `${appUrl}/auth/callback?team=${teamId}&role=${role}`,
   });
 
-  if (inviteError) return `Failed to send invite: ${inviteError.message}`;
+  if (inviteError) {
+    if (inviteError.message.toLowerCase().includes('rate') || inviteError.status === 429) {
+      return 'Email rate limit reached. Please wait a few minutes and try again.';
+    }
+    return `Failed to send invite: ${inviteError.message}`;
+  }
 
   // Record pending invitation
   await supabase.from('team_invitations').upsert(
