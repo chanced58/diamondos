@@ -22,9 +22,16 @@ export async function GET(request: NextRequest) {
   const playersParam = searchParams.get('players'); // comma-separated player IDs for parent invites
 
   const redirectTo = searchParams.get('redirectTo') ?? '/dashboard';
+  const type = searchParams.get('type'); // 'recovery' for password-reset links
 
   if (code) {
-    const successResponse = NextResponse.redirect(`${origin}${redirectTo}`);
+    // After a team invite or password recovery, prompt the user to set/update their password
+    let finalRedirect = redirectTo;
+    if ((teamId && role) || type === 'recovery') {
+      finalRedirect = `/set-password?next=${encodeURIComponent(redirectTo)}`;
+    }
+
+    const successResponse = NextResponse.redirect(`${origin}${finalRedirect}`);
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
