@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { createServerClient } from '@/lib/supabase/server';
 import { createClient } from '@supabase/supabase-js';
 import { getActiveTeam } from '@/lib/active-team';
+import { getUserAccess } from '@/lib/user-access';
 import { formatTime } from '@baseball/shared';
+import { NewAnnouncementForm } from '../messages/NewAnnouncementForm';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -115,6 +117,9 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
       .eq('team_id', activeTeam.id)
       .eq('channel_type', 'announcement'),
   ]);
+
+  const { role } = await getUserAccess(activeTeam.id, user.id);
+  const canPostAnnouncement = ['head_coach', 'assistant_coach', 'athletic_director'].includes(role ?? '');
 
   // Build upcoming items list
   const upcomingItems: UpcomingItem[] = [
@@ -317,7 +322,15 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
               <h2 className="font-semibold text-gray-900">Announcements</h2>
-              <Link href="/messages" className="text-xs text-brand-700 hover:underline">View all →</Link>
+              <div className="flex items-center gap-2">
+                {canPostAnnouncement && (announcementChannelsResult.data?.length ?? 0) > 0 && (
+                  <NewAnnouncementForm
+                    teamId={activeTeam.id}
+                    channelId={announcementChannelsResult.data![0].id}
+                  />
+                )}
+                <Link href="/messages" className="text-xs text-brand-700 hover:underline">View all →</Link>
+              </div>
             </div>
             {announcements.length === 0 ? (
               <p className="px-6 py-5 text-sm text-gray-400">No recent announcements.</p>
