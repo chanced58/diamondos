@@ -55,14 +55,15 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       .eq('user_id', user.id)
       .eq('is_active', true)
       .maybeSingle(),
-    // Fetch staff WITHOUT the user_profiles join (avoids PostgREST relationship issues)
+    // Fetch staff — select only base columns (jersey_number added separately to avoid
+    // breaking the query if the migration hasn't been applied yet)
     db
       .from('team_members')
-      .select('id, role, user_id, jersey_number')
+      .select('id, role, user_id')
       .eq('team_id', params.teamId)
       .eq('is_active', true)
       .in('role', ['head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper', 'staff']),
-    // Fetch parents WITHOUT the user_profiles join
+    // Fetch parents
     db
       .from('team_members')
       .select('id, role, user_id')
@@ -71,10 +72,21 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       .eq('role', 'parent'),
     db
       .from('team_invitations')
-      .select('id, email, first_name, last_name, phone, role, jersey_number')
+      .select('id, email, first_name, last_name, phone, role')
       .eq('team_id', params.teamId)
       .eq('status', 'pending'),
   ]);
+
+  // Surface query errors instead of silently swallowing them
+  if (staffMembersResult.error) {
+    console.error('[Roster] staff query failed:', staffMembersResult.error.message);
+  }
+  if (parentMembersResult.error) {
+    console.error('[Roster] parent query failed:', parentMembersResult.error.message);
+  }
+  if (pendingInvitesResult.error) {
+    console.error('[Roster] pending invites query failed:', pendingInvitesResult.error.message);
+  }
 
   const players = playersResult.data ?? [];
   const season = seasonResult.data;
@@ -90,6 +102,20 @@ export default async function RosterPage({ params }: { params: { teamId: string 
   const allMemberRows = [...(staffMembersResult.data ?? []), ...(parentMembersResult.data ?? [])];
   const memberUserIds = allMemberRows.map((m) => m.user_id);
   const profileMap = new Map<string, { first_name: string; last_name: string; email: string | null; phone: string | null }>();
+
+  // Optionally fetch jersey_number from team_members (column may not exist yet)
+  const staffIds = (staffMembersResult.data ?? []).map((m: any) => m.id as string);
+  const jerseyMap = new Map<string, number | null>();
+  if (staffIds.length > 0) {
+    const { data: jerseyRows } = await db
+      .from('team_members')
+      .select('id, jersey_number')
+      .in('id', staffIds);
+    // If the column doesn't exist the query returns null — that's fine, we just skip
+    for (const r of jerseyRows ?? []) {
+      jerseyMap.set(r.id, (r as any).jersey_number ?? null);
+    }
+  }
 
   if (memberUserIds.length > 0) {
     const { data: profiles } = await db
@@ -107,7 +133,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       id: row.id as string,
       userId: row.user_id as string,
       role: row.role as string,
-      jerseyNumber: row.jersey_number as number | null,
+      jerseyNumber: jerseyMap.get(row.id) ?? null,
       firstName: profile?.first_name || null as string | null,
       lastName: profile?.last_name || null as string | null,
       email: profile?.email ?? null as string | null,
@@ -127,6 +153,19 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     };
   });
 
+  // Optionally fetch jersey_number from pending invitations (column may not exist yet)
+  const inviteIds = (pendingInvitesResult.data ?? []).map((inv: any) => inv.id as string);
+  const inviteJerseyMap = new Map<string, number | null>();
+  if (inviteIds.length > 0) {
+    const { data: invJerseyRows } = await db
+      .from('team_invitations')
+      .select('id, jersey_number')
+      .in('id', inviteIds);
+    for (const r of invJerseyRows ?? []) {
+      inviteJerseyMap.set(r.id, (r as any).jersey_number ?? null);
+    }
+  }
+
   const STAFF_ROLES = ['head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper', 'staff'];
   const allPendingInvites = (pendingInvitesResult.data ?? []).map((inv: any) => ({
     id: inv.id as string,
@@ -135,7 +174,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     lastName: inv.last_name as string | null,
     phone: inv.phone as string | null,
     role: inv.role as string,
-    jerseyNumber: inv.jersey_number as number | null,
+    jerseyNumber: inviteJerseyMap.get(inv.id) ?? null,
   }));
   const pendingStaff = allPendingInvites.filter((inv) => STAFF_ROLES.includes(inv.role));
   const pendingParents = allPendingInvites.filter((inv) => inv.role === 'parent');
