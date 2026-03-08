@@ -126,7 +126,7 @@ export async function resendInvitationAction(
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? 'http://localhost:3000';
   const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
     data: { invited_to_team: teamId, invited_role: role },
-    redirectTo: `${appUrl}/auth/callback?team=${teamId}&role=${role}`,
+    redirectTo: `${appUrl}/callback?team=${teamId}&role=${role}`,
   });
 
   if (inviteError) {
@@ -218,7 +218,7 @@ export async function resendPlayerInviteAction(
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? 'http://localhost:3000';
   const { error } = await supabase.auth.admin.inviteUserByEmail(player.email, {
     data: { invited_as_player: playerId, invited_to_team: teamId, invited_role: 'player' },
-    redirectTo: `${appUrl}/auth/callback?team=${teamId}&player=${playerId}&role=player`,
+    redirectTo: `${appUrl}/callback?team=${teamId}&player=${playerId}&role=player`,
   });
 
   if (error) {
@@ -292,7 +292,7 @@ export async function connectPlayerToAccountAction(
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? 'http://localhost:3000';
   const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
     data: { invited_to_team: teamId, invited_role: 'player', invited_as_player: playerId },
-    redirectTo: `${appUrl}/auth/callback?team=${teamId}&role=player&player=${playerId}`,
+    redirectTo: `${appUrl}/callback?team=${teamId}&role=player&player=${playerId}`,
   });
 
   if (inviteError) return `Failed to send invite: ${inviteError.message}`;
