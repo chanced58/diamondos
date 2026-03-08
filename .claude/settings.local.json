@@ -35,7 +35,8 @@
       "Bash(npx tsc --noEmit)",
       "Bash(node -e \":*)",
       "Bash(node -e:*)",
-      "Bash(n\" + content;:*)"
+      "Bash(n\" + content;:*)",
+      "Bash(git add apps/web/src/app/\\\\\\(app\\\\\\)/dashboard/page.tsx)"
     ],
     "additionalDirectories": [
       "c:\\Users\\chance\\baseball-app\\baseballcoachesapp\\apps\\web\\src\\app\\(app)\\teams\\[teamId]\\admin"
