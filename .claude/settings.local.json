@@ -36,7 +36,9 @@
       "Bash(node -e \":*)",
       "Bash(node -e:*)",
       "Bash(n\" + content;:*)",
-      "Bash(git add apps/web/src/app/\\\\\\(app\\\\\\)/dashboard/page.tsx)"
+      "Bash(git add apps/web/src/app/\\\\\\(app\\\\\\)/dashboard/page.tsx)",
+      "Bash(ls -la /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app/\\\\\\(app\\\\\\)/)",
+      "Bash(ls -la /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app/\\\\\\(auth\\\\\\)/)"
     ],
     "additionalDirectories": [
       "c:\\Users\\chance\\baseball-app\\baseballcoachesapp\\apps\\web\\src\\app\\(app)\\teams\\[teamId]\\admin"
