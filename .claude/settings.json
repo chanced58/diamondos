@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add \"apps/web/src/app/\\(app\\)/layout.tsx\" \"apps/web/src/app/\\(app\\)/admin/users/actions.ts\")",
+      "Bash(git add \"apps/web/src/app/\\(app\\)/teams/[teamId]/roster/page.tsx\")"
+    ]
+  }
+}
