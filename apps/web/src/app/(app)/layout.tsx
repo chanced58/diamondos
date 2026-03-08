@@ -81,7 +81,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
   if (!activeTeam && !isPlatformAdmin && db && user.email) {
     const { data: pendingInvites } = await db
       .from('team_invitations')
-      .select('id, team_id, role, email')
+      .select('id, team_id, role, email, first_name, last_name')
       .eq('email', user.email.toLowerCase())
       .eq('status', 'pending')
       .limit(5);
@@ -98,16 +98,49 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         await addToTeamChannels(db, invite.team_id, user.id, invite.role);
       }
 
-      // Backfill email on profile if missing
-      await db
-        .from('user_profiles')
-        .update({ email: user.email })
-        .eq('id', user.id)
-        .is('email', null);
+      // Backfill name and email on profile if missing
+      const firstInvite = pendingInvites[0];
+      const profileUpdates: Record<string, string | null> = {};
+      if (user.email) profileUpdates.email = user.email;
+      if (firstInvite.first_name) profileUpdates.first_name = firstInvite.first_name;
+      if (firstInvite.last_name) profileUpdates.last_name = firstInvite.last_name;
 
-      // Re-fetch teams now that memberships exist
-      const freshTeams = await getTeamsForUser(supabase, user.id);
-      activeTeam = freshTeams?.[0]?.teams as TeamSummary | undefined;
+      if (Object.keys(profileUpdates).length > 0) {
+        // Only fill in fields that are currently empty
+        const { data: currentProfile } = await db
+          .from('user_profiles')
+          .select('first_name, last_name, email')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        const finalUpdates: Record<string, string | null> = {};
+        if (!currentProfile?.email && profileUpdates.email) finalUpdates.email = profileUpdates.email;
+        if (!currentProfile?.first_name && profileUpdates.first_name) finalUpdates.first_name = profileUpdates.first_name;
+        if (!currentProfile?.last_name && profileUpdates.last_name) finalUpdates.last_name = profileUpdates.last_name;
+
+        if (Object.keys(finalUpdates).length > 0) {
+          await db.from('user_profiles').update(finalUpdates).eq('id', user.id);
+        }
+      }
+
+      // Fetch team directly via service-role client (bypasses RLS)
+      const firstTeamId = pendingInvites[0].team_id;
+      const { data: invitedTeam } = await db
+        .from('teams')
+        .select('id, name, organization, logo_url, primary_color, secondary_color')
+        .eq('id', firstTeamId)
+        .maybeSingle();
+
+      if (invitedTeam) {
+        activeTeam = {
+          id: invitedTeam.id,
+          name: invitedTeam.name,
+          organization: invitedTeam.organization,
+          logo_url: invitedTeam.logo_url,
+          primary_color: invitedTeam.primary_color,
+          secondary_color: invitedTeam.secondary_color,
+        };
+      }
     }
   }
 

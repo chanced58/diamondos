@@ -61,6 +61,36 @@ export async function GET(request: NextRequest) {
             { onConflict: 'team_id,user_id' },
           );
 
+        // Backfill profile name from the invitation (new users have empty profiles)
+        const { data: invite } = await serviceClient
+          .from('team_invitations')
+          .select('first_name, last_name')
+          .eq('team_id', teamId)
+          .eq('email', session.user.email!)
+          .maybeSingle();
+
+        if (invite) {
+          const profileUpdates: Record<string, string | null> = { email: session.user.email! };
+          if (invite.first_name) profileUpdates.first_name = invite.first_name;
+          if (invite.last_name) profileUpdates.last_name = invite.last_name;
+
+          // Only fill in fields that are currently empty
+          const { data: profile } = await serviceClient
+            .from('user_profiles')
+            .select('first_name, last_name, email')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          const updates: Record<string, string | null> = {};
+          if (!profile?.email) updates.email = session.user.email!;
+          if (!profile?.first_name && invite.first_name) updates.first_name = invite.first_name;
+          if (!profile?.last_name && invite.last_name) updates.last_name = invite.last_name;
+
+          if (Object.keys(updates).length > 0) {
+            await serviceClient.from('user_profiles').update(updates).eq('id', session.user.id);
+          }
+        }
+
         await serviceClient
           .from('team_invitations')
           .update({ status: 'accepted', accepted_at: new Date().toISOString() })
