@@ -28,5 +28,5 @@ export async function addToTeamChannels(
 
   await supabase
     .from('channel_members')
-    .upsert(memberships, { onConflict: 'channel_id,user_id', ignoreDuplicates: true });
+    .upsert(memberships, { onConflict: 'channel_id,user_id' });
 }
