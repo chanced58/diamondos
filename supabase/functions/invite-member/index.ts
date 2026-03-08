@@ -79,6 +79,20 @@ Deno.serve(async (req: Request) => {
   const existingUser = users.find((u: { email?: string }) => u.email === email.toLowerCase());
 
   if (existingUser) {
+    // Refuse to add a platform admin to a team
+    const { data: targetProfile } = await serviceClient
+      .from('user_profiles')
+      .select('is_platform_admin')
+      .eq('id', existingUser.id)
+      .maybeSingle();
+
+    if (targetProfile?.is_platform_admin) {
+      return new Response(
+        JSON.stringify({ error: 'Platform administrators cannot be added to a team.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
     // User exists — add them to the team directly
     const { error: memberError } = await serviceClient.from('team_members').upsert({
       team_id: teamId,
@@ -108,7 +122,7 @@ Deno.serve(async (req: Request) => {
     email.toLowerCase(),
     {
       data: { invited_to_team: teamId, invited_role: role },
-      redirectTo: `${Deno.env.get('APP_URL') ?? 'https://localhost:3000'}/auth/callback?team=${teamId}&role=${role}`,
+      redirectTo: `${Deno.env.get('APP_URL') ?? 'https://localhost:3000'}/callback?team=${teamId}&role=${role}`,
     },
   );
 

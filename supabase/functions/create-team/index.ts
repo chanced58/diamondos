@@ -1,7 +1,9 @@
 /**
  * create-team edge function
  *
- * Creates a new team and sets the authenticated user as head_coach.
+ * Creates a new team. If the creator is a regular user, they are added as
+ * head_coach. If the creator is a platform admin, no team_members row is
+ * created — platform admins access all teams implicitly via is_platform_admin.
  * Also creates the team's default "Announcements" channel.
  * Uses service role to bypass RLS for the initial team setup.
  *
@@ -71,12 +73,25 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Add the creator as head_coach
-  await serviceClient.from('team_members').insert({
-    team_id: team.id,
-    user_id: user.id,
-    role: 'head_coach',
-  });
+  // Check if the creator is a platform admin
+  const { data: profile } = await serviceClient
+    .from('user_profiles')
+    .select('is_platform_admin')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  const isPlatformAdmin = profile?.is_platform_admin === true;
+
+  // Only add a team_members row for non-admin creators.
+  // Platform admins get implicit access to all teams via is_platform_admin —
+  // they must not hold a team_members row.
+  if (!isPlatformAdmin) {
+    await serviceClient.from('team_members').insert({
+      team_id: team.id,
+      user_id: user.id,
+      role: 'head_coach',
+    });
+  }
 
   // Create default announcements channel
   const { data: channel } = await serviceClient
@@ -91,8 +106,8 @@ Deno.serve(async (req: Request) => {
     .select()
     .single();
 
-  // Add head coach as channel member with post permission
-  if (channel) {
+  // Add head coach as channel member with post permission (non-admin creators only)
+  if (channel && !isPlatformAdmin) {
     await serviceClient.from('channel_members').insert({
       channel_id: channel.id,
       user_id: user.id,

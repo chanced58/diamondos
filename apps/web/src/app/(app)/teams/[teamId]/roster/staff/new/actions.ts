@@ -124,6 +124,17 @@ export async function inviteStaffAction(
   }
 
   if (resolvedUserId) {
+    // Refuse to add a platform admin to a team
+    const { data: targetProfile } = await supabase
+      .from('user_profiles')
+      .select('is_platform_admin')
+      .eq('id', resolvedUserId)
+      .maybeSingle();
+
+    if (targetProfile?.is_platform_admin) {
+      return 'Platform administrators cannot be added to a team.';
+    }
+
     // User already has an account — add them to the team directly
     const { error: memberError } = await supabase
       .from('team_members')
@@ -170,7 +181,7 @@ export async function inviteStaffAction(
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? 'http://localhost:3000';
   const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
     data: { invited_to_team: teamId, invited_role: role },
-    redirectTo: `${appUrl}/auth/callback?team=${teamId}&role=${role}`,
+    redirectTo: `${appUrl}/callback?team=${teamId}&role=${role}`,
   });
 
   if (inviteError) {

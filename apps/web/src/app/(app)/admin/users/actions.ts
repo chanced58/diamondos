@@ -69,6 +69,16 @@ export async function togglePlatformAdminAction(
 
   const currentValue = formData.get('currentValue') === 'true';
 
+  // When promoting to platform admin, remove all team memberships first.
+  // Platform admins access teams implicitly and must not hold team_members rows.
+  if (!currentValue) {
+    const { error: memberError } = await supabase
+      .from('team_members')
+      .delete()
+      .eq('user_id', userId);
+    if (memberError) return `Failed to remove team memberships: ${memberError.message}`;
+  }
+
   const { error } = await supabase
     .from('user_profiles')
     .update({ is_platform_admin: !currentValue })
