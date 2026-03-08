@@ -124,7 +124,7 @@ export async function deleteUserAction(
     .eq('user_id', userId);
 
   // Nullify all RESTRICT FK references so auth.users deletion isn't blocked
-  await Promise.all([
+  const nullifyResults = await Promise.all([
     supabase.from('teams').update({ created_by: null }).eq('created_by', userId),
     supabase.from('games').update({ created_by: null }).eq('created_by', userId),
     supabase.from('game_events').update({ created_by: null }).eq('created_by', userId),
@@ -136,6 +136,11 @@ export async function deleteUserAction(
     supabase.from('practice_player_notes').update({ updated_by: null }).eq('updated_by', userId),
     supabase.from('team_events').update({ created_by: null }).eq('created_by', userId),
   ]);
+
+  const nullifyError = nullifyResults.find((r) => r.error)?.error;
+  if (nullifyError) {
+    return `Failed to prepare user for deletion: ${nullifyError.message}`;
+  }
 
   // Delete the auth user — cascades to user_profiles, team_members, channel_members, etc.
   const { error } = await supabase.auth.admin.deleteUser(userId);
