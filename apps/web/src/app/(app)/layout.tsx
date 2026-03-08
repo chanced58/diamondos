@@ -7,6 +7,7 @@ import { getTeamsForUser } from '@baseball/database';
 import type { TeamSummary } from '@baseball/database';
 import type { ReactNode } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { addToTeamChannels } from '@/lib/team-channels';
 
 export default async function AppLayout({ children }: { children: ReactNode }): Promise<JSX.Element> {
   const supabase = createServerClient();
@@ -71,6 +72,42 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         primary_color: ownTeam.primary_color,
         secondary_color: ownTeam.secondary_color,
       };
+    }
+  }
+
+  // Self-healing: auto-accept any pending invitations for this user's email.
+  // Handles cases where the auth callback's URL params were lost or the user
+  // logged in directly instead of clicking the invite link.
+  if (!activeTeam && !isPlatformAdmin && db && user.email) {
+    const { data: pendingInvites } = await db
+      .from('team_invitations')
+      .select('id, team_id, role, email')
+      .eq('email', user.email.toLowerCase())
+      .eq('status', 'pending')
+      .limit(5);
+
+    if (pendingInvites && pendingInvites.length > 0) {
+      for (const invite of pendingInvites) {
+        await db.from('team_members').upsert(
+          { team_id: invite.team_id, user_id: user.id, role: invite.role, is_active: true },
+          { onConflict: 'team_id,user_id' },
+        );
+        await db.from('team_invitations')
+          .update({ status: 'accepted', accepted_at: new Date().toISOString() })
+          .eq('id', invite.id);
+        await addToTeamChannels(db, invite.team_id, user.id, invite.role);
+      }
+
+      // Backfill email on profile if missing
+      await db
+        .from('user_profiles')
+        .update({ email: user.email })
+        .eq('id', user.id)
+        .is('email', null);
+
+      // Re-fetch teams now that memberships exist
+      const freshTeams = await getTeamsForUser(supabase, user.id);
+      activeTeam = freshTeams?.[0]?.teams as TeamSummary | undefined;
     }
   }
 
