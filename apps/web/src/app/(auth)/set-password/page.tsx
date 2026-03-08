@@ -52,6 +52,9 @@ export default function SetPasswordPage(): JSX.Element {
       return;
     }
 
+    // Record that the user has set a password so they aren't prompted again
+    await fetch('/api/auth/mark-password-set', { method: 'POST' });
+
     setDone(true);
     router.push(next);
   }

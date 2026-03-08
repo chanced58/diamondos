@@ -10,6 +10,7 @@ import { addToTeamChannels } from '@/lib/team-channels';
  *
  * For staff/coach invites: creates the team_members row and marks the invitation accepted.
  * For player invites: links players.user_id and creates a team_members row with role='player'.
+ * For regular magic-link logins: redirects to /set-password if the user hasn't set one yet.
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
@@ -25,13 +26,9 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type'); // 'recovery' for password-reset links
 
   if (code) {
-    // After a team invite or password recovery, prompt the user to set/update their password
-    let finalRedirect = redirectTo;
-    if ((teamId && role) || type === 'recovery') {
-      finalRedirect = `/set-password?next=${encodeURIComponent(redirectTo)}`;
-    }
-
-    const successResponse = NextResponse.redirect(`${origin}${finalRedirect}`);
+    // Use a cookie-collector response so we can determine the final redirect
+    // AFTER the session exchange (which requires the user ID from the session).
+    const cookieResponse = new NextResponse();
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -43,7 +40,7 @@ export async function GET(request: NextRequest) {
           },
           setAll(cookiesToSet: Array<{ name: string; value: string; options?: any }>) {
             cookiesToSet.forEach(({ name, value, options }) =>
-              successResponse.cookies.set(name, value, options),
+              cookieResponse.cookies.set(name, value, options),
             );
           },
         },
@@ -77,10 +74,6 @@ export async function GET(request: NextRequest) {
           .maybeSingle();
 
         if (invite) {
-          const profileUpdates: Record<string, string | null> = { email: session.user.email! };
-          if (invite.first_name) profileUpdates.first_name = invite.first_name;
-          if (invite.last_name) profileUpdates.last_name = invite.last_name;
-
           // Only fill in fields that are currently empty
           const { data: profile } = await serviceClient
             .from('user_profiles')
@@ -155,7 +148,32 @@ export async function GET(request: NextRequest) {
           );
       }
 
-      return successResponse;
+      // Determine final redirect now that we have the session and DB access
+      let finalRedirect = redirectTo;
+
+      if ((teamId && role) || type === 'recovery') {
+        // Team invite or password reset: always prompt to set/update password
+        finalRedirect = `/set-password?next=${encodeURIComponent(redirectTo)}`;
+      } else {
+        // Regular magic-link login: redirect to set-password if user hasn't set one yet
+        const { data: profile } = await serviceClient
+          .from('user_profiles')
+          .select('has_set_password')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (profile && !profile.has_set_password) {
+          finalRedirect = `/set-password?next=${encodeURIComponent(redirectTo)}`;
+        }
+      }
+
+      // Build the actual redirect response and transfer auth cookies from the collector
+      const actualResponse = NextResponse.redirect(`${origin}${finalRedirect}`);
+      cookieResponse.cookies.getAll().forEach((cookie) => {
+        actualResponse.cookies.set(cookie.name, cookie.value);
+      });
+
+      return actualResponse;
     }
   }
 
