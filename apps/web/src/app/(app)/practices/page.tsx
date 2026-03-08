@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
+import { getUserAccess } from '@/lib/user-access';
 import { formatDate, formatTime } from '@baseball/shared';
 
 export const metadata: Metadata = { title: 'Practices' };
@@ -21,18 +22,9 @@ export default async function PracticesPage(): Promise<JSX.Element | null> {
   );
 
   // Check if user is a coach on this team
-  const { data: membership } = activeTeam
-    ? await db
-        .from('team_members')
-        .select('role')
-        .eq('team_id', activeTeam.id)
-        .eq('user_id', user.id)
-        .single()
-    : { data: null };
-  const isCoach =
-    membership?.role === 'head_coach' ||
-    membership?.role === 'assistant_coach' ||
-    membership?.role === 'athletic_director';
+  const { isCoach } = activeTeam
+    ? await getUserAccess(activeTeam.id, user.id)
+    : { isCoach: false };
 
   const { data: practices } = activeTeam
     ? await db

@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { getUserAccess } from '@/lib/user-access';
 import { formatDate, formatTime } from '@baseball/shared';
 import { DeleteEventForm } from './DeleteEventForm';
 import { LocationMap } from '@/components/maps/LocationMap';
@@ -39,19 +40,18 @@ export default async function TeamEventDetailPage({
 
   if (!event) notFound();
 
-  const { data: membership } = await db
-    .from('team_members')
-    .select('role')
-    .eq('team_id', event.team_id)
-    .eq('user_id', user.id)
-    .single();
+  const { isCoach, isPlatformAdmin } = await getUserAccess(event.team_id, user.id);
 
-  if (!membership) notFound();
-
-  const isCoach =
-    membership.role === 'head_coach' ||
-    membership.role === 'assistant_coach' ||
-    membership.role === 'athletic_director';
+  // Non-admin users must be team members to view
+  if (!isCoach && !isPlatformAdmin) {
+    const { data: membership } = await db
+      .from('team_members')
+      .select('role')
+      .eq('team_id', event.team_id)
+      .eq('user_id', user.id)
+      .single();
+    if (!membership) notFound();
+  }
 
   const typeLabel = EVENT_TYPE_LABELS[event.event_type] ?? 'Event';
 

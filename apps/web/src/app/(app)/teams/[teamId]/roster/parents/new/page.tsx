@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { getUserAccess } from '@/lib/user-access';
 import { InviteParentForm } from './InviteParentForm';
 
 export const metadata: Metadata = { title: 'Add Parent' };
@@ -18,17 +19,11 @@ export default async function InviteParentPage({ params }: { params: { teamId: s
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  // Only head coaches and athletic directors can access this page
-  const { data: membership } = await db
-    .from('team_members')
-    .select('role')
-    .eq('team_id', params.teamId)
-    .eq('user_id', user.id)
-    .eq('is_active', true)
-    .maybeSingle();
+  // Only head coaches, athletic directors, and platform admins can access this page
+  const { isPlatformAdmin, role } = await getUserAccess(params.teamId, user.id);
 
   const canInvite =
-    membership?.role === 'head_coach' || membership?.role === 'athletic_director';
+    isPlatformAdmin || role === 'head_coach' || role === 'athletic_director';
 
   if (!canInvite) redirect(`/teams/${params.teamId}/roster`);
 

@@ -3,6 +3,7 @@ import { Metadata } from 'next';
 import Link from 'next/link'; // kept for the Players section and admin link
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { getUserAccess } from '@/lib/user-access';
 import {
   POSITION_ABBREVIATIONS,
   deriveBattingStats,
@@ -78,13 +79,12 @@ export default async function RosterPage({ params }: { params: { teamId: string 
   const players = playersResult.data ?? [];
   const season = seasonResult.data;
   const role = membershipResult.data?.role;
+  const { isCoach: hasCoachAccess, isPlatformAdmin } = await getUserAccess(params.teamId, user.id);
   const isCoach =
-    role === 'head_coach' ||
-    role === 'assistant_coach' ||
-    role === 'athletic_director' ||
+    hasCoachAccess ||
     role === 'scorekeeper' ||
     role === 'staff';
-  const canInviteStaff = role === 'head_coach' || role === 'assistant_coach' || role === 'athletic_director';
+  const canInviteStaff = isPlatformAdmin || role === 'head_coach' || role === 'assistant_coach' || role === 'athletic_director';
 
   // Fetch user profiles separately to avoid PostgREST join issues
   const allMemberRows = [...(staffMembersResult.data ?? []), ...(parentMembersResult.data ?? [])];

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { getUserAccess } from '@/lib/user-access';
 import { formatDate, formatTime } from '@baseball/shared';
 import { PracticeNotesForm } from './PracticeNotesForm';
 import { PlayerPracticeView } from './PlayerPracticeView';
@@ -36,7 +37,7 @@ export default async function PracticeNotesPage({
   if (!practice) notFound();
 
   // Determine role + linked player record in parallel
-  const [membershipResult, playerResult, linkedPlayersResult] = await Promise.all([
+  const [membershipResult, playerResult, linkedPlayersResult, access] = await Promise.all([
     db
       .from('team_members')
       .select('role')
@@ -56,11 +57,11 @@ export default async function PracticeNotesPage({
       .from('parent_player_links')
       .select('player_id, players(id, first_name, last_name, team_id)')
       .eq('parent_user_id', user.id),
+    getUserAccess(practice.team_id, user.id),
   ]);
 
   const role = membershipResult.data?.role;
-  const isCoach =
-    role === 'head_coach' || role === 'assistant_coach' || role === 'athletic_director';
+  const isCoach = access.isCoach;
   const isParent = role === 'parent';
   const playerRecord = playerResult.data;
 

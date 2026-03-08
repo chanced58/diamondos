@@ -40,36 +40,23 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
     }
   }
 
-  // Self-healing: if user created a team but has no team_members row,
-  // auto-create the membership. This handles cases where the create-team
-  // edge function's team_members insert failed silently.
-  if (!activeTeam && db) {
-    let createdTeam: any = null;
-
+  // Self-healing: if a NON-admin user created a team but has no team_members row,
+  // auto-create the membership. Platform admins don't need team_members rows —
+  // they access teams via the admin panel cookie.
+  if (!activeTeam && !isPlatformAdmin && db) {
     const { data: ownTeam } = await db
       .from('teams')
       .select('id, name, organization, logo_url, primary_color, secondary_color')
       .eq('created_by', user.id)
       .limit(1)
       .maybeSingle();
-    createdTeam = ownTeam;
 
-    if (!createdTeam && isPlatformAdmin) {
-      const { data: anyTeam } = await db
-        .from('teams')
-        .select('id, name, organization, logo_url, primary_color, secondary_color')
-        .limit(1)
-        .maybeSingle();
-      createdTeam = anyTeam;
-    }
-
-    if (createdTeam) {
+    if (ownTeam) {
       await db.from('team_members').upsert(
-        { team_id: createdTeam.id, user_id: user.id, role: 'head_coach', is_active: true },
+        { team_id: ownTeam.id, user_id: user.id, role: 'head_coach', is_active: true },
         { onConflict: 'team_id,user_id' },
       );
 
-      // Also backfill user_profiles.email if missing
       await db
         .from('user_profiles')
         .update({ email: user.email })
@@ -77,12 +64,12 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         .is('email', null);
 
       activeTeam = {
-        id: createdTeam.id,
-        name: createdTeam.name,
-        organization: createdTeam.organization,
-        logo_url: createdTeam.logo_url,
-        primary_color: createdTeam.primary_color,
-        secondary_color: createdTeam.secondary_color,
+        id: ownTeam.id,
+        name: ownTeam.name,
+        organization: ownTeam.organization,
+        logo_url: ownTeam.logo_url,
+        primary_color: ownTeam.primary_color,
+        secondary_color: ownTeam.secondary_color,
       };
     }
   }

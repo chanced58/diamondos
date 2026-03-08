@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { getUserAccess } from '@/lib/user-access';
 import { formatDate, formatTime } from '@baseball/shared';
 import { CancelGameForm } from './CancelGameForm';
 import { StartGameForm } from './StartGameForm';
@@ -41,19 +42,18 @@ export default async function GameDetailPage({
 
   if (!game) notFound();
 
-  const { data: membership } = await db
-    .from('team_members')
-    .select('role')
-    .eq('team_id', game.team_id)
-    .eq('user_id', user.id)
-    .single();
+  const { isCoach, isPlatformAdmin } = await getUserAccess(game.team_id, user.id);
 
-  if (!membership) notFound();
-
-  const isCoach =
-    membership.role === 'head_coach' ||
-    membership.role === 'assistant_coach' ||
-    membership.role === 'athletic_director';
+  // Non-admin users must be team members to view
+  if (!isCoach && !isPlatformAdmin) {
+    const { data: membership } = await db
+      .from('team_members')
+      .select('role')
+      .eq('team_id', game.team_id)
+      .eq('user_id', user.id)
+      .single();
+    if (!membership) notFound();
+  }
 
   const { count: lineupCount } = await db
     .from('game_lineups')

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
+import { getUserAccess } from '@/lib/user-access';
 import { seedDefaultChannels } from './seed';
 import { NewAnnouncementForm } from './NewAnnouncementForm';
 
@@ -42,18 +43,7 @@ export default async function MessagesPage(): Promise<JSX.Element | null> {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const { data: membership } = await db
-    .from('team_members')
-    .select('role')
-    .eq('team_id', activeTeam.id)
-    .eq('user_id', user.id)
-    .eq('is_active', true)
-    .maybeSingle();
-
-  const isCoach =
-    membership?.role === 'head_coach' ||
-    membership?.role === 'assistant_coach' ||
-    membership?.role === 'athletic_director';
+  const { isCoach } = await getUserAccess(activeTeam.id, user.id);
 
   // Get channel IDs the user belongs to
   const { data: memberOf } = await db

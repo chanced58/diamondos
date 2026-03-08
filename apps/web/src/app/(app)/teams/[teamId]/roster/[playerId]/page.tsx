@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { getUserAccess } from '@/lib/user-access';
 import {
   POSITION_ABBREVIATIONS,
   formatDate,
@@ -45,18 +46,12 @@ export default async function PlayerPage({
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const [playerResult, membershipResult, notesResult] = await Promise.all([
+  const [playerResult, notesResult, access] = await Promise.all([
     db
       .from('players')
       .select('*')
       .eq('id', params.playerId)
       .eq('team_id', params.teamId)
-      .single(),
-    db
-      .from('team_members')
-      .select('role')
-      .eq('team_id', params.teamId)
-      .eq('user_id', user.id)
       .single(),
     // Fetch all practice notes for this player, newest first
     db
@@ -69,14 +64,13 @@ export default async function PlayerPage({
       `)
       .eq('player_id', params.playerId)
       .order('created_at', { ascending: false }),
+    getUserAccess(params.teamId, user.id),
   ]);
 
   if (!playerResult.data) notFound();
   const player = playerResult.data;
 
-  const role = membershipResult.data?.role;
-  const isCoach =
-    role === 'head_coach' || role === 'assistant_coach' || role === 'athletic_director';
+  const isCoach = access.isCoach;
 
   // Build a per-category list of { date, text, practiceId } entries
   type NoteEntry = { date: string; text: string; practiceId: string };

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
+import { getUserAccess } from '@/lib/user-access';
 import { CalendarView, CalendarEvent } from './CalendarView';
 
 export const metadata: Metadata = { title: 'Schedule' };
@@ -54,13 +55,7 @@ export default async function SchedulePage({
     const rangeStart = new Date(year, month - 1, 1).toISOString();
     const rangeEnd   = new Date(year, month, 1).toISOString();
 
-    const [membershipResult, gamesResult, practicesResult, teamEventsResult] = await Promise.all([
-      db
-        .from('team_members')
-        .select('role')
-        .eq('team_id', activeTeam.id)
-        .eq('user_id', user.id)
-        .single(),
+    const [gamesResult, practicesResult, teamEventsResult] = await Promise.all([
       db
         .from('games')
         .select('id, opponent_name, scheduled_at, location_type, status')
@@ -86,8 +81,8 @@ export default async function SchedulePage({
         .order('starts_at'),
     ]);
 
-    const role = membershipResult.data?.role;
-    isCoach = role === 'head_coach' || role === 'assistant_coach' || role === 'athletic_director';
+    const access = await getUserAccess(activeTeam.id, user.id);
+    isCoach = access.isCoach;
 
     for (const g of gamesResult.data ?? []) {
       const loc = g.location_type === 'home' ? 'vs' : g.location_type === 'away' ? '@' : 'vs';

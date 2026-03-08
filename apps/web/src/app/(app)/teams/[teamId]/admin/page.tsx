@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { getUserAccess } from '@/lib/user-access';
 import { TeamBrandingForm } from './TeamBrandingForm';
 import { MyProfileForm } from './MyProfileForm';
 
@@ -53,8 +54,9 @@ export default async function TeamAdminPage({
     role = 'head_coach';
   }
 
+  const { isPlatformAdmin } = await getUserAccess(params.teamId, user.id);
   const BRANDING_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
-  if (!role || !BRANDING_ROLES.includes(role)) {
+  if (!isPlatformAdmin && (!role || !BRANDING_ROLES.includes(role))) {
     redirect(`/teams/${params.teamId}/roster`);
   }
 
