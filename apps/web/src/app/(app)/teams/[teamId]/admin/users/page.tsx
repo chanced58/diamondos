@@ -155,7 +155,7 @@ export default async function TeamUsersPage({
       .select('parent_user_id, player_id, players(first_name, last_name)')
       .in('parent_user_id', parentRows.map((p) => p.userId));
     parentLinks = (links ?? []).map((l) => {
-      const p = l.players as { first_name: string; last_name: string } | null;
+      const p = l.players as unknown as { first_name: string; last_name: string } | null;
       return {
         parentUserId: l.parent_user_id as string,
         playerId: l.player_id as string,

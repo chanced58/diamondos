@@ -190,7 +190,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       .select('parent_user_id, players(first_name, last_name)')
       .in('parent_user_id', parentRows.map((p) => p.userId));
     parentLinks = (links ?? []).map((l) => {
-      const p = l.players as { first_name: string; last_name: string } | null;
+      const p = l.players as unknown as { first_name: string; last_name: string } | null;
       return {
         parentUserId: l.parent_user_id as string,
         playerName: p ? `${p.last_name}, ${p.first_name}` : 'Unknown',

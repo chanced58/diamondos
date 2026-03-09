@@ -57,7 +57,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
   ]);
 
   const lineup = (lineupResult.data ?? []).map((l) => {
-    const p = l.players as { id: string; first_name: string; last_name: string; jersey_number: number | null } | null;
+    const p = l.players as unknown as { id: string; first_name: string; last_name: string; jersey_number: number | null } | null;
     return {
       playerId: l.player_id as string,
       battingOrder: l.batting_order as number,

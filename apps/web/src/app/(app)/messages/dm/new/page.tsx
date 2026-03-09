@@ -60,7 +60,7 @@ export default async function NewDmPage(): Promise<JSX.Element | null> {
   for (const m of teamMembers ?? []) {
     if (seen.has(m.user_id)) continue;
     seen.add(m.user_id);
-    const profile = m.user_profiles as { first_name: string; last_name: string } | null;
+    const profile = m.user_profiles as unknown as { first_name: string; last_name: string } | null;
     targets.push({
       userId:    m.user_id,
       firstName: profile?.first_name ?? '',
