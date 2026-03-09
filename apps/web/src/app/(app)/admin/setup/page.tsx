@@ -68,8 +68,8 @@ export default function SetupPage(): JSX.Element {
     try {
       const res = await runSetupAction();
       setResult(res);
-    } catch (err: any) {
-      setResult({ success: false, steps: [], errors: [err.message] });
+    } catch (err) {
+      setResult({ success: false, steps: [], errors: [err instanceof Error ? err.message : 'Unknown error'] });
     } finally {
       setRunning(false);
     }
@@ -80,8 +80,8 @@ export default function SetupPage(): JSX.Element {
     try {
       const res = await runVerifyCleanAction();
       setVerifyResult(res);
-    } catch (err: any) {
-      setVerifyResult({ success: false, steps: [], errors: [err.message] });
+    } catch (err) {
+      setVerifyResult({ success: false, steps: [], errors: [err instanceof Error ? err.message : 'Unknown error'] });
     } finally {
       setVerifying(false);
     }
@@ -92,8 +92,8 @@ export default function SetupPage(): JSX.Element {
     try {
       const res = await runResetAction();
       setResetResult(res);
-    } catch (err: any) {
-      setResetResult({ success: false, steps: [], errors: [err.message] });
+    } catch (err) {
+      setResetResult({ success: false, steps: [], errors: [err instanceof Error ? err.message : 'Unknown error'] });
     } finally {
       setResetting(false);
       setConfirmText('');

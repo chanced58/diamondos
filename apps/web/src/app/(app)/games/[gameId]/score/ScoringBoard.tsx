@@ -669,8 +669,8 @@ export function ScoringBoard({
       }
 
       const supabase = createBrowserClient();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await supabase.from('game_events').upsert(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         newRow as any,
         { onConflict: 'id', ignoreDuplicates: true },
       );
