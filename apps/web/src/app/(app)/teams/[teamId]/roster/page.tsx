@@ -113,7 +113,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       .in('id', staffIds);
     // If the column doesn't exist the query returns null — that's fine, we just skip
     for (const r of jerseyRows ?? []) {
-      jerseyMap.set(r.id, (r as { id: string; jersey_number?: number | null }).jersey_number ?? null);
+      jerseyMap.set(r.id, (r as unknown as { id: string; jersey_number?: number | null }).jersey_number ?? null);
     }
   }
 
@@ -162,7 +162,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       .select('id, jersey_number')
       .in('id', inviteIds);
     for (const r of invJerseyRows ?? []) {
-      inviteJerseyMap.set(r.id, (r as { id: string; jersey_number?: number | null }).jersey_number ?? null);
+      inviteJerseyMap.set(r.id, (r as unknown as { id: string; jersey_number?: number | null }).jersey_number ?? null);
     }
   }
 

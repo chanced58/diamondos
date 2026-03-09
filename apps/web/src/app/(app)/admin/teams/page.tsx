@@ -41,7 +41,7 @@ export default async function PlatformAdminTeamsPage(): Promise<JSX.Element | nu
     team_members: { count: number }[];
   };
 
-  const rows = (teams as TeamRow[] ?? []).map((t) => ({
+  const rows = ((teams as unknown as TeamRow[]) ?? []).map((t) => ({
     id: t.id,
     name: t.name,
     organization: t.organization,

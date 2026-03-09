@@ -73,7 +73,7 @@ export default async function MessagesPage(): Promise<JSX.Element | null> {
       .eq('team_id', activeTeam.id)
       .in('id', channelIds)
       .order('name');
-    channels = (data ?? []) as ChannelWithMembers[];
+    channels = (data ?? []) as unknown as ChannelWithMembers[];
   }
 
   // Seed defaults if first visit
@@ -97,7 +97,7 @@ export default async function MessagesPage(): Promise<JSX.Element | null> {
         .eq('team_id', activeTeam.id)
         .in('id', freshIds)
         .order('name');
-      channels = (data ?? []) as ChannelWithMembers[];
+      channels = (data ?? []) as unknown as ChannelWithMembers[];
     }
   }
 

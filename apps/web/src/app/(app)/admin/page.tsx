@@ -58,7 +58,7 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
       team_members: { count: number }[];
     };
 
-    const teamRows = ((allTeams as AllTeamRow[]) ?? []).map((t) => ({
+    const teamRows = ((allTeams as unknown as AllTeamRow[]) ?? []).map((t) => ({
       id: t.id,
       name: t.name,
       organization: t.organization,
