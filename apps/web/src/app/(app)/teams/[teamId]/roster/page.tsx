@@ -104,7 +104,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
   const profileMap = new Map<string, { first_name: string; last_name: string; email: string | null; phone: string | null }>();
 
   // Optionally fetch jersey_number from team_members (column may not exist yet)
-  const staffIds = (staffMembersResult.data ?? []).map((m: any) => m.id as string);
+  const staffIds = (staffMembersResult.data ?? []).map((m) => m.id as string);
   const jerseyMap = new Map<string, number | null>();
   if (staffIds.length > 0) {
     const { data: jerseyRows } = await db
@@ -113,7 +113,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       .in('id', staffIds);
     // If the column doesn't exist the query returns null — that's fine, we just skip
     for (const r of jerseyRows ?? []) {
-      jerseyMap.set(r.id, (r as any).jersey_number ?? null);
+      jerseyMap.set(r.id, (r as { id: string; jersey_number?: number | null }).jersey_number ?? null);
     }
   }
 
@@ -127,7 +127,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     }
   }
 
-  const staff = (staffMembersResult.data ?? []).map((row: any) => {
+  const staff = (staffMembersResult.data ?? []).map((row) => {
     const profile = profileMap.get(row.user_id);
     return {
       id: row.id as string,
@@ -141,7 +141,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     };
   });
 
-  const parentRows = (parentMembersResult.data ?? []).map((row: any) => {
+  const parentRows = (parentMembersResult.data ?? []).map((row) => {
     const profile = profileMap.get(row.user_id);
     return {
       id: row.id as string,
@@ -154,7 +154,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
   });
 
   // Optionally fetch jersey_number from pending invitations (column may not exist yet)
-  const inviteIds = (pendingInvitesResult.data ?? []).map((inv: any) => inv.id as string);
+  const inviteIds = (pendingInvitesResult.data ?? []).map((inv) => inv.id as string);
   const inviteJerseyMap = new Map<string, number | null>();
   if (inviteIds.length > 0) {
     const { data: invJerseyRows } = await db
@@ -162,12 +162,12 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       .select('id, jersey_number')
       .in('id', inviteIds);
     for (const r of invJerseyRows ?? []) {
-      inviteJerseyMap.set(r.id, (r as any).jersey_number ?? null);
+      inviteJerseyMap.set(r.id, (r as { id: string; jersey_number?: number | null }).jersey_number ?? null);
     }
   }
 
   const STAFF_ROLES = ['head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper', 'staff'];
-  const allPendingInvites = (pendingInvitesResult.data ?? []).map((inv: any) => ({
+  const allPendingInvites = (pendingInvitesResult.data ?? []).map((inv) => ({
     id: inv.id as string,
     email: inv.email as string,
     firstName: inv.first_name as string | null,
@@ -189,12 +189,13 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       .from('parent_player_links')
       .select('parent_user_id, players(first_name, last_name)')
       .in('parent_user_id', parentRows.map((p) => p.userId));
-    parentLinks = (links ?? []).map((l: any) => ({
-      parentUserId: l.parent_user_id as string,
-      playerName: l.players
-        ? `${(l.players as any).last_name}, ${(l.players as any).first_name}`
-        : 'Unknown',
-    }));
+    parentLinks = (links ?? []).map((l) => {
+      const p = l.players as { first_name: string; last_name: string } | null;
+      return {
+        parentUserId: l.parent_user_id as string,
+        playerName: p ? `${p.last_name}, ${p.first_name}` : 'Unknown',
+      };
+    });
   }
 
   // Fetch season stats

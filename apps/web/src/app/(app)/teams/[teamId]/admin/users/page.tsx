@@ -101,7 +101,7 @@ export default async function TeamUsersPage({
     }
   }
 
-  const members = (staffMembersResult.data ?? []).map((m: any) => {
+  const members = (staffMembersResult.data ?? []).map((m) => {
     const profile = profileMap.get(m.user_id);
     return {
       id: m.id as string,
@@ -135,7 +135,7 @@ export default async function TeamUsersPage({
     invitedAt: inv.invited_at as string,
   }));
 
-  const parentRows = (parentMembersResult.data ?? []).map((m: any) => {
+  const parentRows = (parentMembersResult.data ?? []).map((m) => {
     const profile = profileMap.get(m.user_id);
     return {
       id: m.id as string,
@@ -154,13 +154,14 @@ export default async function TeamUsersPage({
       .from('parent_player_links')
       .select('parent_user_id, player_id, players(first_name, last_name)')
       .in('parent_user_id', parentRows.map((p) => p.userId));
-    parentLinks = (links ?? []).map((l: any) => ({
-      parentUserId: l.parent_user_id as string,
-      playerId: l.player_id as string,
-      playerName: l.players
-        ? `${(l.players as any).last_name}, ${(l.players as any).first_name}`
-        : 'Unknown',
-    }));
+    parentLinks = (links ?? []).map((l) => {
+      const p = l.players as { first_name: string; last_name: string } | null;
+      return {
+        parentUserId: l.parent_user_id as string,
+        playerId: l.player_id as string,
+        playerName: p ? `${p.last_name}, ${p.first_name}` : 'Unknown',
+      };
+    });
   }
 
   return (

@@ -10,6 +10,14 @@ import { NewAnnouncementForm } from './NewAnnouncementForm';
 
 export const metadata: Metadata = { title: 'Messages' };
 
+type ChannelWithMembers = {
+  id: string;
+  name: string;
+  channel_type: string;
+  description: string | null;
+  channel_members: { user_id: string; user_profiles: { first_name: string; last_name: string } | null }[];
+};
+
 const CHANNEL_TYPE_LABELS: Record<string, string> = {
   announcement: 'Announcements',
   topic: 'Channels',
@@ -54,7 +62,7 @@ export default async function MessagesPage(): Promise<JSX.Element | null> {
   const channelIds = memberOf?.map((m) => m.channel_id) ?? [];
 
   // Fetch those channels with all member profiles (for DM display names)
-  let channels: any[] = [];
+  let channels: ChannelWithMembers[] = [];
   if (channelIds.length > 0) {
     const { data } = await db
       .from('channels')
@@ -98,15 +106,15 @@ export default async function MessagesPage(): Promise<JSX.Element | null> {
   const topics = channels.filter((c) => c.channel_type === 'topic');
   const dms = channels.filter((c) => c.channel_type === 'direct');
 
-  function getDmDisplayName(channel: any): string {
-    const other = (channel.channel_members as any[]).find(
-      (m: any) => m.user_id !== user!.id,
+  function getDmDisplayName(channel: ChannelWithMembers): string {
+    const other = channel.channel_members.find(
+      (m) => m.user_id !== user!.id,
     );
     if (!other?.user_profiles) return 'Unknown';
     return `${other.user_profiles.first_name} ${other.user_profiles.last_name}`;
   }
 
-  function ChannelList({ items, type }: { items: any[]; type: string }) {
+  function ChannelList({ items, type }: { items: ChannelWithMembers[]; type: string }) {
     if (items.length === 0) return null;
     const icon = CHANNEL_TYPE_ICONS[type];
     return (
