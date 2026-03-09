@@ -1,11 +1,11 @@
 'use client';
 
 import type { JSX } from 'react';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
 
-export default function SetPasswordPage(): JSX.Element {
+function SetPasswordForm(): JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get('next') ?? '/dashboard';
@@ -145,5 +145,19 @@ export default function SetPasswordPage(): JSX.Element {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SetPasswordPage(): JSX.Element {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <p className="text-gray-400 text-sm">Loading…</p>
+        </div>
+      }
+    >
+      <SetPasswordForm />
+    </Suspense>
   );
 }

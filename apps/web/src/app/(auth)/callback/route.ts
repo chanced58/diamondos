@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
           getAll() {
             return request.cookies.getAll();
           },
-          setAll(cookiesToSet: Array<{ name: string; value: string; options?: any }>) {
+          setAll(cookiesToSet) {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieResponse.cookies.set(name, value, options),
             );

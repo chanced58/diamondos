@@ -36,8 +36,8 @@ export function LoginForm(): JSX.Element | null {
 
       router.push('/dashboard');
       router.refresh();
-    } catch (err: any) {
-      setError(err.message ?? 'Sign in failed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign in failed');
       setLoading(false);
     }
   }
@@ -60,8 +60,8 @@ export function LoginForm(): JSX.Element | null {
       } else {
         setMode('magic-sent');
       }
-    } catch (err: any) {
-      setError(err.message ?? 'Failed to send magic link');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send magic link');
     }
     setLoading(false);
   }
@@ -85,8 +85,8 @@ export function LoginForm(): JSX.Element | null {
       } else {
         setMode('reset-sent');
       }
-    } catch (err: any) {
-      setError(err.message ?? 'Failed to send reset email');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send reset email');
     }
     setLoading(false);
   }
