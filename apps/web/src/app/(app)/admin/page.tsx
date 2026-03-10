@@ -113,7 +113,18 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
             Quick Actions
           </h2>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Link
+              href="/admin/branding"
+              className="bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-400 hover:shadow-sm transition-all group"
+            >
+              <div className="text-2xl mb-2">🎨</div>
+              <h3 className="font-semibold text-gray-900 group-hover:text-gray-700 transition-colors">
+                Site Branding
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">Logo, colors, and messaging.</p>
+            </Link>
+
             <Link
               href="/admin/teams"
               className="bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-400 hover:shadow-sm transition-all group"
