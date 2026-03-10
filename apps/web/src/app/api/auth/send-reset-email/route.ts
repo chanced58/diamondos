@@ -2,12 +2,12 @@ import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * Sends a password reset email.
+ * Sends a password reset email using a magic-link OTP.
  * Invite-only: verifies the email exists in user_profiles before sending.
  *
- * Redirects directly to /set-password so the browser client can handle
- * the auth exchange (code param or hash fragment) on the client side.
- * This avoids PKCE code_verifier cookie issues with the server-side callback.
+ * Uses signInWithOtp() (same proven flow as magic-link login) so the email
+ * contains a proper auth code. The link redirects to /callback?type=recovery,
+ * which exchanges the code for a session and then redirects to /set-password.
  *
  * POST /api/auth/send-reset-email
  * Body: { email: string }
@@ -39,13 +39,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const origin = request.nextUrl.origin;
-  const { error } = await db.auth.resetPasswordForEmail(normalizedEmail, {
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? origin}/set-password`,
+  // Use anon client with signInWithOtp — same proven flow as magic-link login.
+  // This generates a proper auth code that the callback can exchange for a session.
+  const anonDb = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? request.nextUrl.origin;
+  const { error: otpError } = await anonDb.auth.signInWithOtp({
+    email: normalizedEmail,
+    options: {
+      shouldCreateUser: false,
+      emailRedirectTo: `${appUrl}/callback?type=recovery`,
+    },
   });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+  if (otpError) {
+    return NextResponse.json({ error: otpError.message }, { status: 400 });
   }
 
   return NextResponse.json({ sent: true });
