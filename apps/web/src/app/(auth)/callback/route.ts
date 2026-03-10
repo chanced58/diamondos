@@ -169,8 +169,8 @@ export async function GET(request: NextRequest) {
 
       // Build the actual redirect response and transfer auth cookies from the collector
       const actualResponse = NextResponse.redirect(`${origin}${finalRedirect}`);
-      cookieResponse.cookies.getAll().forEach((cookie) => {
-        actualResponse.cookies.set(cookie.name, cookie.value);
+      cookieResponse.cookies.getAll().forEach(({ name, value, ...options }) => {
+        actualResponse.cookies.set(name, value, options);
       });
 
       return actualResponse;
