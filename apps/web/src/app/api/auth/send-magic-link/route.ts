@@ -2,8 +2,10 @@ import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * Invite-only magic link endpoint — verifies the email exists in
- * user_profiles before sending the OTP email.
+ * Invite-only email verification endpoint.
+ * Checks that the email exists in user_profiles before the client sends
+ * the OTP. The actual signInWithOtp() call happens browser-side so that
+ * PKCE code_verifier cookies are stored in the user's browser.
  *
  * POST /api/auth/send-magic-link
  * Body: { email: string }
@@ -35,30 +37,5 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Send the magic link via signInWithOtp (anon client — single auth call)
-  const anonDb = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  );
-
-  const { error: otpError } = await anonDb.auth.signInWithOtp({
-    email: normalizedEmail,
-    options: {
-      shouldCreateUser: false,
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? request.nextUrl.origin}/callback`,
-    },
-  });
-
-  if (otpError) {
-    // Surface a friendlier message for Supabase's rate limit
-    const isRateLimit = otpError.message?.toLowerCase().includes('security purposes');
-    return NextResponse.json(
-      { error: isRateLimit
-          ? 'Please wait 60 seconds before requesting another sign-in link.'
-          : otpError.message },
-      { status: isRateLimit ? 429 : 400 },
-    );
-  }
-
-  return NextResponse.json({ sent: true });
+  return NextResponse.json({ verified: true });
 }

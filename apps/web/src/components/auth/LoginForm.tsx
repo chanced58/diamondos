@@ -2,6 +2,7 @@
 import type { JSX } from 'react';
 
 import { useState } from 'react';
+import { createBrowserClient } from '@/lib/supabase/client';
 
 type Mode = 'email' | 'sent';
 
@@ -16,21 +17,48 @@ export function LoginForm(): JSX.Element | null {
     setLoading(true);
     setError(null);
 
+    const normalizedEmail = email.toLowerCase().trim();
+
     try {
+      // Step 1: Server-side invite-only check
       const res = await fetch('/api/auth/send-magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.toLowerCase().trim() }),
+        body: JSON.stringify({ email: normalizedEmail }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error ?? 'Failed to send magic link');
-      } else {
-        setMode('sent');
+        setError(data.error ?? 'Unable to verify email');
+        setLoading(false);
+        return;
       }
+
+      // Step 2: Send OTP from the browser so PKCE code_verifier cookie
+      // is stored in the user's browser (required for callback code exchange)
+      const supabase = createBrowserClient();
+      const { error: otpError } = await supabase.auth.signInWithOtp({
+        email: normalizedEmail,
+        options: {
+          shouldCreateUser: false,
+          emailRedirectTo: `${window.location.origin}/callback`,
+        },
+      });
+
+      if (otpError) {
+        const isRateLimit = otpError.message?.toLowerCase().includes('security purposes');
+        setError(
+          isRateLimit
+            ? 'Please wait 60 seconds before requesting another sign-in link.'
+            : otpError.message,
+        );
+        setLoading(false);
+        return;
+      }
+
+      setMode('sent');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send magic link');
+      setError(err instanceof Error ? err.message : 'Failed to send sign-in link');
     }
     setLoading(false);
   }
