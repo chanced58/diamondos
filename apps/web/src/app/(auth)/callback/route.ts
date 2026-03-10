@@ -23,7 +23,6 @@ export async function GET(request: NextRequest) {
   const playersParam = searchParams.get('players'); // comma-separated player IDs for parent invites
 
   const redirectTo = searchParams.get('redirectTo') ?? '/dashboard';
-  const type = searchParams.get('type'); // 'recovery' for password-reset links
 
   if (code) {
     // Use a cookie-collector response so we can determine the final redirect
@@ -155,26 +154,8 @@ export async function GET(request: NextRequest) {
         if (playerMemberErr) console.error('[callback] player team_members upsert failed:', playerMemberErr.message);
       }
 
-      // Determine final redirect now that we have the session and DB access
-      let finalRedirect = redirectTo;
-
-      if ((teamId && role) || type === 'recovery') {
-        // Team invite or password reset: always prompt to set/update password
-        finalRedirect = `/set-password?next=${encodeURIComponent(redirectTo)}`;
-      } else {
-        // Regular magic-link login: redirect to set-password if user hasn't set one yet
-        const { data: profile } = await serviceClient
-          .from('user_profiles')
-          .select('has_set_password')
-          .eq('id', session.user.id)
-          .maybeSingle();
-
-        if (profile && !profile.has_set_password) {
-          finalRedirect = `/set-password?next=${encodeURIComponent(redirectTo)}`;
-        }
-      }
-
       // Build the actual redirect response and transfer auth cookies from the collector
+      const finalRedirect = redirectTo;
       const actualResponse = NextResponse.redirect(`${origin}${finalRedirect}`);
       cookieResponse.cookies.getAll().forEach(({ name, value, ...options }) => {
         actualResponse.cookies.set(name, value, options);
