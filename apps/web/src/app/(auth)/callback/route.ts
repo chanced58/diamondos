@@ -58,12 +58,13 @@ export async function GET(request: NextRequest) {
 
       // Staff / coach invite accepted (not player or parent — those have dedicated blocks below)
       if (teamId && role && role !== 'player' && role !== 'parent') {
-        await serviceClient
+        const { error: memberErr } = await serviceClient
           .from('team_members')
           .upsert(
             { team_id: teamId, user_id: session.user.id, role, is_active: true },
             { onConflict: 'team_id,user_id' },
           );
+        if (memberErr) console.error('[callback] team_members upsert failed:', memberErr.message);
 
         // Backfill profile name from the invitation (new users have empty profiles)
         const { data: invite } = await serviceClient
@@ -91,41 +92,45 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        await serviceClient
+        const { error: inviteErr } = await serviceClient
           .from('team_invitations')
           .update({ status: 'accepted', accepted_at: new Date().toISOString() })
           .eq('team_id', teamId)
           .eq('email', session.user.email!);
+        if (inviteErr) console.error('[callback] invitation update failed:', inviteErr.message);
 
         await addToTeamChannels(serviceClient, teamId, session.user.id, role);
       }
 
       // Parent invite accepted
       if (teamId && role === 'parent') {
-        await serviceClient
+        const { error: parentMemberErr } = await serviceClient
           .from('team_members')
           .upsert(
             { team_id: teamId, user_id: session.user.id, role: 'parent', is_active: true },
             { onConflict: 'team_id,user_id' },
           );
+        if (parentMemberErr) console.error('[callback] parent team_members upsert failed:', parentMemberErr.message);
 
         // Create parent-player links for any player IDs passed in the invite URL
         if (playersParam) {
           for (const pid of playersParam.split(',').filter(Boolean)) {
-            await serviceClient
+            const { error: linkErr } = await serviceClient
               .from('parent_player_links')
               .upsert(
                 { parent_user_id: session.user.id, player_id: pid },
                 { onConflict: 'parent_user_id,player_id', ignoreDuplicates: true },
               );
+            if (linkErr) console.error('[callback] parent_player_link upsert failed:', linkErr.message);
           }
         }
 
-        await serviceClient
+        const { error: parentInviteErr } = await serviceClient
           .from('team_invitations')
           .update({ status: 'accepted', accepted_at: new Date().toISOString() })
           .eq('team_id', teamId)
           .eq('email', session.user.email!);
+        if (parentInviteErr) console.error('[callback] parent invitation update failed:', parentInviteErr.message);
 
         await addToTeamChannels(serviceClient, teamId, session.user.id, 'parent');
       }
@@ -133,19 +138,21 @@ export async function GET(request: NextRequest) {
       // Player invite accepted
       if (teamId && role === 'player' && playerId) {
         // Link the player record to this user account
-        await serviceClient
+        const { error: playerLinkErr } = await serviceClient
           .from('players')
           .update({ user_id: session.user.id })
           .eq('id', playerId)
           .eq('team_id', teamId);
+        if (playerLinkErr) console.error('[callback] player link failed:', playerLinkErr.message);
 
         // Create a team_members row so the player can access the team
-        await serviceClient
+        const { error: playerMemberErr } = await serviceClient
           .from('team_members')
           .upsert(
             { team_id: teamId, user_id: session.user.id, role: 'player', is_active: true },
             { onConflict: 'team_id,user_id' },
           );
+        if (playerMemberErr) console.error('[callback] player team_members upsert failed:', playerMemberErr.message);
       }
 
       // Determine final redirect now that we have the session and DB access
