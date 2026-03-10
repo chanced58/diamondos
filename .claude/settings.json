@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(git add \"apps/web/src/app/\\(app\\)/layout.tsx\" \"apps/web/src/app/\\(app\\)/admin/users/actions.ts\")",
-      "Bash(git add \"apps/web/src/app/\\(app\\)/teams/[teamId]/roster/page.tsx\")"
+      "Bash(git add \"apps/web/src/app/\\(app\\)/teams/[teamId]/roster/page.tsx\")",
+      "Bash(find /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app -type f -path \"*\\(auth\\)*layout*\" -o -type f -name \"layout.tsx\")",
+      "Bash(find /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app -name \"layout.tsx\" -path \"*\\(auth\\)*\")",
+      "Bash(find /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app -name \"*.tsx\" -path \"*\\(auth\\)*\")",
+      "Bash(ls -la /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app/\\\\\\(auth\\\\\\)/set-password/)",
+      "Bash(ls -la /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app/\\\\\\(auth\\\\\\)/login/)"
     ]
   }
 }

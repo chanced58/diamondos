@@ -184,7 +184,7 @@ export async function inviteStaffAction(
   }
   const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
     data: { invited_to_team: teamId, invited_role: role },
-    redirectTo: `${appUrl}/callback?team=${teamId}&role=${role}`,
+    redirectTo: `${appUrl}/auth/callback?team=${teamId}&role=${role}`,
   });
 
   if (inviteError) {

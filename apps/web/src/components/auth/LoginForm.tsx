@@ -41,7 +41,7 @@ export function LoginForm(): JSX.Element | null {
         email: normalizedEmail,
         options: {
           shouldCreateUser: false,
-          emailRedirectTo: `${window.location.origin}/callback`,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       });
 

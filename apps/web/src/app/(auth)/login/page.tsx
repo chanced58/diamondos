@@ -1,10 +1,19 @@
 import type { JSX } from 'react';
 import { Metadata } from 'next';
+import { redirect } from 'next/navigation';
+import { createServerClient } from '@/lib/supabase/server';
 import { LoginForm } from '@/components/auth/LoginForm';
 
 export const metadata: Metadata = { title: 'Sign In' };
 
-export default function LoginPage(): JSX.Element {
+export default async function LoginPage(): Promise<JSX.Element> {
+  // Redirect already-authenticated users to dashboard (prevents login loop)
+  const supabase = createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    redirect('/dashboard');
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md">

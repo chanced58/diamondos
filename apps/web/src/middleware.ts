@@ -47,6 +47,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
+  // Redirect authenticated users away from login to dashboard (prevents loop)
+  if (user && pathname === '/login') {
+    const redirectUrl = request.nextUrl.clone();
+    const redirectTo = redirectUrl.searchParams.get('redirectTo') ?? '/dashboard';
+    redirectUrl.pathname = redirectTo;
+    redirectUrl.search = '';
+    return NextResponse.redirect(redirectUrl);
+  }
+
   // Track the active team environment via cookie when visiting /teams/[teamId]/*
   const teamMatch = pathname.match(/^\/teams\/([^/]+)/);
   if (teamMatch) {

@@ -71,7 +71,7 @@ export async function addPlayerAction(_prevState: string | null | undefined, for
         invited_to_team: teamId,
         invited_role: 'player',
       },
-      redirectTo: `${appUrl}/callback?team=${teamId}&player=${player.id}&role=player`,
+      redirectTo: `${appUrl}/auth/callback?team=${teamId}&player=${player.id}&role=player`,
     });
 
     // Track the invitation so it appears in the Pending Invitations section

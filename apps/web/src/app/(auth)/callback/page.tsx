@@ -2,73 +2,68 @@
 
 import type { JSX } from 'react';
 import { Suspense, useEffect, useRef } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 /**
- * Client-side callback page for magic-link authentication.
+ * Client-side callback fallback for magic-link authentication.
  *
- * The code exchange happens browser-side so that the PKCE code_verifier
- * cookie (set when signInWithOtp was called) is available. A server-side
- * route handler cannot reliably access this cookie.
- *
- * After establishing a session, any invite params are forwarded to a
- * server-side API endpoint for processing (team_members, invitations, etc.).
+ * The primary callback is the server-side route handler at /auth/callback.
+ * This page handles backwards-compatible links that still point to /callback,
+ * as well as hash-fragment tokens from the implicit flow (which can only be
+ * processed client-side since hash fragments are not sent to the server).
  */
 function CallbackHandler(): JSX.Element {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const processed = useRef(false);
 
   useEffect(() => {
-    // Prevent double-processing in React StrictMode
     if (processed.current) return;
     processed.current = true;
 
     async function handleCallback() {
       const code = searchParams.get('code');
-      const teamId = searchParams.get('team');
-      const role = searchParams.get('role');
-      const playerId = searchParams.get('player');
-      const playersParam = searchParams.get('players');
-      const redirectTo = searchParams.get('redirectTo') ?? '/dashboard';
+      const tokenHash = searchParams.get('token_hash');
+      const type = searchParams.get('type');
 
-      if (!code) {
-        console.error('[callback] No code parameter in URL');
-        router.replace('/login?error=auth_failed');
+      // If we have query-string params (code or token_hash), delegate to
+      // the server-side handler which sets cookies atomically on the redirect.
+      if (code || (tokenHash && type)) {
+        const params = new URLSearchParams(window.location.search);
+        window.location.href = `/auth/callback?${params.toString()}`;
         return;
       }
 
-      // Exchange the PKCE code for a session using the browser client
-      // (which has the code_verifier cookie stored from signInWithOtp)
-      const supabase = createBrowserClient();
-      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-
-      if (exchangeError) {
-        console.error('[callback] Code exchange failed:', exchangeError.message);
-        router.replace('/login?error=auth_failed');
-        return;
-      }
-
-      // Process invite if applicable (server-side, using service role)
-      if (teamId && role) {
-        try {
-          await fetch('/api/auth/process-invite', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ teamId, role, playerId, playersParam }),
+      // Hash-fragment tokens (implicit flow) can only be processed client-side.
+      if (window.location.hash) {
+        const supabase = createBrowserClient();
+        const session = await new Promise<boolean>((resolve) => {
+          const {
+            data: { subscription },
+          } = supabase.auth.onAuthStateChange((event) => {
+            if (event === 'SIGNED_IN') {
+              subscription.unsubscribe();
+              resolve(true);
+            }
           });
-        } catch (err) {
-          console.error('[callback] Invite processing failed:', err);
-          // Continue to redirect — the layout auto-accept logic will retry
+          setTimeout(() => {
+            subscription.unsubscribe();
+            resolve(false);
+          }, 5000);
+        });
+
+        if (session) {
+          window.location.href = '/dashboard';
+          return;
         }
       }
 
-      router.replace(redirectTo);
+      // Nothing we can process — send back to login
+      window.location.href = '/login?error=auth_failed';
     }
 
     handleCallback();
-  }, [searchParams, router]);
+  }, [searchParams]);
 
   return (
     <div className="min-h-screen flex items-center justify-center">
