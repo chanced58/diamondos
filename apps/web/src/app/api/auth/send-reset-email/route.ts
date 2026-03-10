@@ -1,13 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * Sends a password reset email.
  * Invite-only: verifies the email exists in user_profiles before sending.
  *
- * Uses the SSR client (PKCE flow) so the code_verifier is stored in a cookie.
- * The callback route reads this cookie to complete the code exchange.
+ * Redirects directly to /set-password so the browser client can handle
+ * the auth exchange (code param or hash fragment) on the client side.
+ * This avoids PKCE code_verifier cookie issues with the server-side callback.
  *
  * POST /api/auth/send-reset-email
  * Body: { email: string }
@@ -20,12 +20,12 @@ export async function POST(request: NextRequest) {
 
   const normalizedEmail = email.toLowerCase().trim();
 
-  // Service-role client for the invite-only profile check
   const db = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
+  // Invite-only: verify the email exists in user_profiles
   const { data: profile } = await db
     .from('user_profiles')
     .select('id')
@@ -39,35 +39,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Use SSR client (PKCE flow) so the code_verifier cookie is set on the response.
-  // The callback route's exchangeCodeForSession reads this cookie to complete the exchange.
-  const response = NextResponse.json({ sent: true });
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
-          );
-        },
-      },
-    },
-  );
-
   const origin = request.nextUrl.origin;
-  const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? origin}/callback?type=recovery`,
+  const { error } = await db.auth.resetPasswordForEmail(normalizedEmail, {
+    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? origin}/set-password`,
   });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  return response;
+  return NextResponse.json({ sent: true });
 }

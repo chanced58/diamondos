@@ -17,16 +17,31 @@ function SetPasswordForm(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  // Verify a session exists — redirect to login if not
+  // Wait for a session to be established. This handles three cases:
+  // 1. User already has a session (navigated here from callback or dashboard)
+  // 2. Recovery redirect — Supabase redirects here with a code/hash that the
+  //    browser client exchanges for a session during initialization
+  // 3. No session at all — redirect to login
   useEffect(() => {
     const supabase = createBrowserClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) {
-        router.replace('/login');
-      } else {
-        setChecking(false);
-      }
-    });
+
+    // onAuthStateChange fires INITIAL_SESSION after the client processes any
+    // auth redirect params (code or hash fragment) in the URL.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (event === 'INITIAL_SESSION') {
+          if (session) {
+            setChecking(false);
+          } else {
+            router.replace('/login');
+          }
+        } else if (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') {
+          setChecking(false);
+        }
+      },
+    );
+
+    return () => subscription.unsubscribe();
   }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
