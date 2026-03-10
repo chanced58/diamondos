@@ -35,23 +35,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Send the magic link email via admin API
-  const { error: linkError } = await db.auth.admin.generateLink({
-    type: 'magiclink',
-    email: normalizedEmail,
-  });
-
-  if (linkError) {
-    return NextResponse.json(
-      { error: linkError.message },
-      { status: 400 },
-    );
-  }
-
-  // Use signInWithOtp to actually send the email (generateLink doesn't send)
-  // We need a separate anon client for this
-  const { createClient: createAnonClient } = await import('@supabase/supabase-js');
-  const anonDb = createAnonClient(
+  // Send the magic link via signInWithOtp (anon client — single auth call)
+  const anonDb = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   );
@@ -65,9 +50,13 @@ export async function POST(request: NextRequest) {
   });
 
   if (otpError) {
+    // Surface a friendlier message for Supabase's rate limit
+    const isRateLimit = otpError.message?.toLowerCase().includes('security purposes');
     return NextResponse.json(
-      { error: otpError.message },
-      { status: 400 },
+      { error: isRateLimit
+          ? 'Please wait 60 seconds before requesting another sign-in link.'
+          : otpError.message },
+      { status: isRateLimit ? 429 : 400 },
     );
   }
 
