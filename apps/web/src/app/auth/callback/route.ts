@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { type NextRequest, NextResponse } from 'next/server';
+import { addToTeamChannels } from '@/lib/team-channels';
 
 /**
  * Server-side auth callback route handler.
@@ -116,6 +117,9 @@ export async function GET(request: NextRequest) {
             { team_id: effectiveTeamId, user_id: user.id, role: effectiveRole, is_active: true },
             { onConflict: 'team_id,user_id' },
           );
+
+        // Add user to all team channels (announcement, topic, etc.)
+        await addToTeamChannels(db, effectiveTeamId, user.id, effectiveRole);
 
         // Accept the invitation
         if (user.email) {

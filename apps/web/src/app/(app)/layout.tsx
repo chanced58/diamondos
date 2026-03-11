@@ -140,6 +140,35 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
     }
   }
 
+  // Ensure channel membership exists for the active team member.
+  // Catches cases where the auth callback created team_members but missed
+  // addToTeamChannels() (e.g., users who accepted invites before this fix).
+  if (activeTeam && db) {
+    try {
+      const { data: channelMembership } = await db
+        .from('channel_members')
+        .select('channel_id')
+        .eq('user_id', user.id)
+        .limit(1);
+
+      if (!channelMembership || channelMembership.length === 0) {
+        const { data: membership } = await db
+          .from('team_members')
+          .select('role')
+          .eq('team_id', activeTeam.id)
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (membership) {
+          await addToTeamChannels(db, activeTeam.id, user.id, membership.role);
+        }
+      }
+    } catch {
+      // Non-fatal — channel membership will be retried on next page load
+    }
+  }
+
   // Use the active-team-id cookie (set by middleware when visiting /teams/[id]/*)
   // to show the correct team's branding across all routes.
   const cookieStore = cookies();
