@@ -87,7 +87,7 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
     announcementChannelsResult,
   ] = await Promise.all([
     db.from('games')
-      .select('id, opponent_name, scheduled_at, location_type')
+      .select('id, opponent_name, scheduled_at, location_type, venue_name')
       .eq('team_id', activeTeam.id)
       .in('status', ['scheduled', 'in_progress'])
       .gte('scheduled_at', now)
@@ -123,14 +123,18 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
 
   // Build upcoming items list
   const upcomingItems: UpcomingItem[] = [
-    ...(upcomingGamesResult.data ?? []).map((g) => ({
-      kind: 'game' as const,
-      id: g.id,
-      date: g.scheduled_at,
-      label: `${g.location_type === 'away' ? '@' : 'vs'} ${g.opponent_name}`,
-      sublabel: g.location_type === 'home' ? 'Home' : g.location_type === 'away' ? 'Away' : 'Neutral',
-      href: `/games/${g.id}`,
-    })),
+    ...(upcomingGamesResult.data ?? []).map((g) => {
+      const locTag = g.location_type === 'home' ? 'Home' : g.location_type === 'away' ? 'Away' : 'Neutral';
+      const parts = [locTag, g.venue_name].filter(Boolean);
+      return {
+        kind: 'game' as const,
+        id: g.id,
+        date: g.scheduled_at,
+        label: `${g.location_type === 'away' ? '@' : 'vs'} ${g.opponent_name}`,
+        sublabel: parts.join(' · '),
+        href: `/games/${g.id}`,
+      };
+    }),
     ...(practicesResult.data ?? []).map((p) => ({
       kind: 'practice' as const,
       id: p.id,
@@ -285,7 +289,10 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 truncate">{item.label}</p>
-                          <p className="text-xs text-gray-500">{formatTime(item.date)}</p>
+                          <p className="text-xs text-gray-500">
+                            {formatTime(item.date)}
+                            {item.sublabel && <span className="ml-1.5">· {item.sublabel}</span>}
+                          </p>
                         </div>
                         <span className={`shrink-0 text-xs font-medium px-2.5 py-0.5 rounded-full border ${kindStyles[item.kind]}`}>
                           {kindLabel[item.kind]}
