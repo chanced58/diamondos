@@ -1,9 +1,10 @@
 import type { JSX } from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link'; // kept for the Players section and admin link
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
+import { addToTeamChannels } from '@/lib/team-channels';
 import {
   POSITION_ABBREVIATIONS,
   deriveBattingStats,
@@ -25,6 +26,101 @@ const SEASON_EVENT_TYPES = [
   'field_error',
 ];
 
+const STAFF_ROLES = ['head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper', 'staff'];
+
+/**
+ * Self-healing: for each pending invitation whose email matches an existing
+ * auth user, create the team_members row, accept the invitation, and add
+ * to team channels. Returns the IDs of invitations that were promoted.
+ */
+async function healPendingInvitations(
+  db: SupabaseClient,
+  teamId: string,
+  pendingInvites: Array<{ id: string; email: string; first_name: string | null; last_name: string | null; phone: string | null; role: string }>,
+): Promise<Set<string>> {
+  const promoted = new Set<string>();
+  if (pendingInvites.length === 0) return promoted;
+
+  // Collect all non-placeholder emails from pending invitations
+  const realInvites = pendingInvites.filter((inv) => !inv.email.includes('@placeholder.internal'));
+  if (realInvites.length === 0) return promoted;
+
+  // Batch-check which emails belong to existing auth users via user_profiles
+  const emails = realInvites.map((inv) => inv.email.toLowerCase());
+  const { data: matchedProfiles } = await db
+    .from('user_profiles')
+    .select('id, email, first_name, last_name, phone')
+    .in('email', emails);
+
+  // Also check auth.users directly for emails not found in user_profiles
+  // (user_profiles.email can be null if trigger didn't backfill)
+  const profileEmails = new Set((matchedProfiles ?? []).map((p) => p.email?.toLowerCase()));
+  const unmatchedEmails = emails.filter((e) => !profileEmails.has(e));
+
+  const emailToUserId = new Map<string, string>();
+  const emailToProfile = new Map<string, { first_name: string | null; last_name: string | null; phone: string | null }>();
+
+  for (const p of matchedProfiles ?? []) {
+    if (p.email) {
+      emailToUserId.set(p.email.toLowerCase(), p.id);
+      emailToProfile.set(p.email.toLowerCase(), p);
+    }
+  }
+
+  // For unmatched emails, try auth.users via RPC
+  for (const email of unmatchedEmails) {
+    try {
+      const { data: authId } = await db.rpc('find_auth_user_id_by_email', { p_email: email });
+      if (authId) {
+        emailToUserId.set(email, authId);
+        // Fetch their profile
+        const { data: prof } = await db.from('user_profiles').select('first_name, last_name, phone').eq('id', authId).maybeSingle();
+        if (prof) emailToProfile.set(email, prof);
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  // For each pending invitation with a matched user, create team_members and accept
+  for (const invite of realInvites) {
+    const userId = emailToUserId.get(invite.email.toLowerCase());
+    if (!userId) continue;
+
+    try {
+      // Create team_members row (or reactivate if deactivated)
+      await db.from('team_members').upsert(
+        { team_id: teamId, user_id: userId, role: invite.role, is_active: true },
+        { onConflict: 'team_id,user_id' },
+      );
+
+      // Mark invitation as accepted
+      await db.from('team_invitations')
+        .update({ status: 'accepted', accepted_at: new Date().toISOString() })
+        .eq('id', invite.id);
+
+      // Backfill profile name from invitation if missing
+      const profile = emailToProfile.get(invite.email.toLowerCase());
+      const updates: Record<string, string> = {};
+      if (!profile?.first_name && invite.first_name) updates.first_name = invite.first_name;
+      if (!profile?.last_name && invite.last_name) updates.last_name = invite.last_name;
+      if (Object.keys(updates).length > 0) {
+        await db.from('user_profiles').update(updates).eq('id', userId);
+      }
+
+      // Add to team channels
+      await addToTeamChannels(db, teamId, userId, invite.role);
+
+      promoted.add(invite.id);
+      console.log(`[Roster] Self-healed invitation ${invite.id} for ${invite.email} → team_members created`);
+    } catch (err) {
+      console.error(`[Roster] Failed to heal invitation ${invite.id}:`, err);
+    }
+  }
+
+  return promoted;
+}
+
 export default async function RosterPage({ params }: { params: { teamId: string } }): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
@@ -35,7 +131,22 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const [playersResult, seasonResult, membershipResult, staffMembersResult, parentMembersResult, pendingInvitesResult] = await Promise.all([
+  // Fetch pending invitations FIRST so we can self-heal before building the roster
+  const { data: pendingInvitesRaw, error: pendingErr } = await db
+    .from('team_invitations')
+    .select('id, email, first_name, last_name, phone, role')
+    .eq('team_id', params.teamId)
+    .eq('status', 'pending');
+
+  if (pendingErr) {
+    console.error('[Roster] pending invites query failed:', pendingErr.message);
+  }
+
+  // Self-heal: promote pending invitations to team_members for users who already exist
+  const promotedIds = await healPendingInvitations(db, params.teamId, pendingInvitesRaw ?? []);
+
+  // Now fetch the rest of the data (team_members will include newly healed members)
+  const [playersResult, seasonResult, membershipResult, staffMembersResult, parentMembersResult] = await Promise.all([
     db
       .from('players')
       .select('id, first_name, last_name, jersey_number, primary_position, bats, throws, graduation_year, email, user_id')
@@ -55,8 +166,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       .eq('user_id', user.id)
       .eq('is_active', true)
       .maybeSingle(),
-    // Fetch staff — select only base columns (jersey_number added separately to avoid
-    // breaking the query if the migration hasn't been applied yet)
+    // Fetch staff (now includes any freshly healed members)
     db
       .from('team_members')
       .select('id, role, user_id')
@@ -70,11 +180,6 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       .eq('team_id', params.teamId)
       .eq('is_active', true)
       .eq('role', 'parent'),
-    db
-      .from('team_invitations')
-      .select('id, email, first_name, last_name, phone, role')
-      .eq('team_id', params.teamId)
-      .eq('status', 'pending'),
   ]);
 
   // Surface query errors instead of silently swallowing them
@@ -83,9 +188,6 @@ export default async function RosterPage({ params }: { params: { teamId: string 
   }
   if (parentMembersResult.error) {
     console.error('[Roster] parent query failed:', parentMembersResult.error.message);
-  }
-  if (pendingInvitesResult.error) {
-    console.error('[Roster] pending invites query failed:', pendingInvitesResult.error.message);
   }
 
   const players = playersResult.data ?? [];
@@ -153,8 +255,11 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     };
   });
 
+  // Filter out promoted invitations — they're now in the staff/parent lists
+  const remainingPending = (pendingInvitesRaw ?? []).filter((inv) => !promotedIds.has(inv.id));
+
   // Optionally fetch jersey_number from pending invitations (column may not exist yet)
-  const inviteIds = (pendingInvitesResult.data ?? []).map((inv) => inv.id as string);
+  const inviteIds = remainingPending.map((inv) => inv.id as string);
   const inviteJerseyMap = new Map<string, number | null>();
   if (inviteIds.length > 0) {
     const { data: invJerseyRows } = await db
@@ -166,8 +271,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     }
   }
 
-  const STAFF_ROLES = ['head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper', 'staff'];
-  const allPendingInvites = (pendingInvitesResult.data ?? []).map((inv) => ({
+  const allPendingInvites = remainingPending.map((inv) => ({
     id: inv.id as string,
     email: inv.email as string,
     firstName: inv.first_name as string | null,

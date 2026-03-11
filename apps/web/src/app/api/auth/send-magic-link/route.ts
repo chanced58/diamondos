@@ -39,10 +39,12 @@ export async function POST(request: NextRequest) {
 
   // Send OTP server-side (single email, no PKCE cookie needed since
   // the email template uses token_hash directly)
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL;
   const { error: otpError } = await db.auth.signInWithOtp({
     email: normalizedEmail,
     options: {
       shouldCreateUser: false,
+      ...(appUrl ? { emailRedirectTo: `${appUrl}/auth/callback` } : {}),
     },
   });
 
