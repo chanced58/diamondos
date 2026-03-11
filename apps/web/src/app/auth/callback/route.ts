@@ -67,8 +67,12 @@ export async function GET(request: NextRequest) {
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
+      const isPkceError = error.message?.toLowerCase().includes('code verifier');
       console.error('[auth/callback] Code exchange failed:', error.message);
-      return NextResponse.redirect(errorUrl);
+      const errorParam = isPkceError ? 'link_wrong_browser' : 'auth_failed';
+      return NextResponse.redirect(
+        new URL(`/login?error=${errorParam}`, request.url),
+      );
     }
   } else if (tokenHash && type) {
     const { error } = await supabase.auth.verifyOtp({
@@ -90,7 +94,13 @@ export async function GET(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (user && teamId && role) {
+  // Fallback: read invite params from user_metadata when URL params are absent
+  // (e.g., when email template uses token_hash directly without query params)
+  const effectiveTeamId = teamId ?? (user?.user_metadata?.invited_to_team as string | undefined) ?? null;
+  const effectiveRole = role ?? (user?.user_metadata?.invited_role as string | undefined) ?? null;
+  const effectivePlayerId = playerId ?? (user?.user_metadata?.invited_player_id as string | undefined) ?? null;
+
+  if (user && effectiveTeamId && effectiveRole) {
     try {
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
       if (serviceKey) {
@@ -103,7 +113,7 @@ export async function GET(request: NextRequest) {
         await db
           .from('team_members')
           .upsert(
-            { team_id: teamId, user_id: user.id, role, is_active: true },
+            { team_id: effectiveTeamId, user_id: user.id, role: effectiveRole, is_active: true },
             { onConflict: 'team_id,user_id' },
           );
 
@@ -115,14 +125,14 @@ export async function GET(request: NextRequest) {
               status: 'accepted',
               accepted_at: new Date().toISOString(),
             })
-            .eq('team_id', teamId)
+            .eq('team_id', effectiveTeamId)
             .eq('email', user.email.toLowerCase());
 
           // Backfill profile name from invitation
           const { data: invite } = await db
             .from('team_invitations')
             .select('first_name, last_name')
-            .eq('team_id', teamId)
+            .eq('team_id', effectiveTeamId)
             .eq('email', user.email.toLowerCase())
             .maybeSingle();
 
@@ -147,16 +157,16 @@ export async function GET(request: NextRequest) {
         }
 
         // Player-specific: link players.user_id
-        if (role === 'player' && playerId) {
+        if (effectiveRole === 'player' && effectivePlayerId) {
           await db
             .from('players')
             .update({ user_id: user.id })
-            .eq('id', playerId)
-            .eq('team_id', teamId);
+            .eq('id', effectivePlayerId)
+            .eq('team_id', effectiveTeamId);
         }
 
         // Parent-specific: create parent-player links
-        if (role === 'parent' && playersParam) {
+        if (effectiveRole === 'parent' && playersParam) {
           for (const pid of playersParam.split(',').filter(Boolean)) {
             await db.from('parent_player_links').upsert(
               { parent_user_id: user.id, player_id: pid },
