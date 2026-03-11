@@ -6,6 +6,20 @@ import { createServerClient } from '@/lib/supabase/server';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
+/** Map UI abbreviations to the player_position database enum values. */
+const POSITION_TO_DB: Record<string, string> = {
+  P: 'pitcher',
+  C: 'catcher',
+  '1B': 'first_base',
+  '2B': 'second_base',
+  '3B': 'third_base',
+  SS: 'shortstop',
+  LF: 'left_field',
+  CF: 'center_field',
+  RF: 'right_field',
+  DH: 'designated_hitter',
+};
+
 export async function saveLineupAction(
   _prevState: string | null | undefined,
   formData: FormData,
@@ -49,11 +63,12 @@ export async function saveLineupAction(
       const playerId = orderMatch[1];
       const order = parseInt(value as string, 10);
       if (isNaN(order) || order < 1 || order > 9) continue; // skip bench players
-      const position = formData.get(`player_${playerId}_position`) as string | null;
+      const rawPosition = formData.get(`player_${playerId}_position`) as string | null;
+      const dbPosition = rawPosition ? POSITION_TO_DB[rawPosition] ?? rawPosition : null;
       entries.push({
         player_id: playerId,
         batting_order: order,
-        starting_position: position || null,
+        starting_position: dbPosition,
       });
     }
   }

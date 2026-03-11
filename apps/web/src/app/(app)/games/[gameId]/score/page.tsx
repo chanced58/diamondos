@@ -8,6 +8,14 @@ import { ScoringBoard } from './ScoringBoard';
 
 export const metadata: Metadata = { title: 'Scoring' };
 
+/** Map database enum values to UI abbreviations. */
+const DB_TO_POSITION: Record<string, string> = {
+  pitcher: 'P', catcher: 'C', first_base: '1B', second_base: '2B',
+  third_base: '3B', shortstop: 'SS', left_field: 'LF', center_field: 'CF',
+  right_field: 'RF', designated_hitter: 'DH', infield: 'IF', outfield: 'OF',
+  utility: 'UTIL',
+};
+
 export default async function ScorePage({ params }: { params: { gameId: string } }): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
@@ -61,7 +69,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
     return {
       playerId: l.player_id as string,
       battingOrder: l.batting_order as number,
-      startingPosition: l.starting_position as string | null,
+      startingPosition: l.starting_position ? DB_TO_POSITION[l.starting_position] ?? l.starting_position : null,
       player: {
         id: p?.id as string,
         firstName: p?.first_name as string,
