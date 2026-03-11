@@ -62,6 +62,16 @@ export async function addPlayerAction(_prevState: string | null | undefined, for
     .single();
   if (error) return `Failed to add player: ${error.message}`;
 
+  // Also create the player_team_memberships record (source of truth for team history)
+  if (player) {
+    await supabase.from('player_team_memberships').insert({
+      player_id: player.id,
+      team_id: teamId,
+      jersey_number: parsed.data.jerseyNumber ?? null,
+      is_active: true,
+    });
+  }
+
   // Send an invite email if an address was provided (failure is non-fatal)
   if (email && player) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? 'http://localhost:3000';

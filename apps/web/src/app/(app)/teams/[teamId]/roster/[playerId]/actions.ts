@@ -60,6 +60,14 @@ export async function updatePlayerAction(_prevState: string | null | undefined, 
     .eq('id', playerId);
   if (error) return `Failed to update player: ${error.message}`;
 
+  // Keep jersey_number in sync on the active player_team_memberships record
+  await supabase
+    .from('player_team_memberships')
+    .update({ jersey_number: parsed.data.jerseyNumber ?? null })
+    .eq('player_id', playerId)
+    .eq('team_id', teamId)
+    .eq('is_active', true);
+
   redirect(`/teams/${teamId}/roster`);
 }
 
@@ -82,6 +90,14 @@ export async function deactivatePlayerAction(_prevState: string | null | undefin
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq('id', playerId);
   if (error) return `Failed to remove player: ${error.message}`;
+
+  // Also deactivate the player_team_memberships record
+  await supabase
+    .from('player_team_memberships')
+    .update({ is_active: false, left_at: new Date().toISOString(), transfer_reason: 'deactivated' })
+    .eq('player_id', playerId)
+    .eq('team_id', teamId)
+    .eq('is_active', true);
 
   redirect(`/teams/${teamId}/roster`);
 }

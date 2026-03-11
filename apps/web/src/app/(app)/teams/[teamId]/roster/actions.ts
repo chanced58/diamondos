@@ -40,5 +40,13 @@ export async function removePlayerAction(_prevState: string | null | undefined, 
 
   if (error) return `Failed to remove player: ${error.message}`;
 
+  // Also deactivate the player_team_memberships record
+  await supabase
+    .from('player_team_memberships')
+    .update({ is_active: false, left_at: new Date().toISOString(), transfer_reason: 'removed' })
+    .eq('player_id', playerId)
+    .eq('team_id', teamId)
+    .eq('is_active', true);
+
   redirect(`/teams/${teamId}/roster`);
 }
