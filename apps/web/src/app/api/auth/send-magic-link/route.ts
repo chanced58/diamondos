@@ -2,10 +2,10 @@ import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * Invite-only email verification endpoint.
- * Checks that the email exists in user_profiles before the client sends
- * the OTP. The actual signInWithOtp() call happens browser-side so that
- * PKCE code_verifier cookies are stored in the user's browser.
+ * Invite-only magic link endpoint.
+ * Verifies the email exists in user_profiles, then sends the OTP
+ * server-side. The email template uses token_hash directly so no
+ * PKCE code_verifier cookie is needed.
  *
  * POST /api/auth/send-magic-link
  * Body: { email: string }
@@ -37,5 +37,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ verified: true });
+  // Send OTP server-side (single email, no PKCE cookie needed since
+  // the email template uses token_hash directly)
+  const { error: otpError } = await db.auth.signInWithOtp({
+    email: normalizedEmail,
+    options: {
+      shouldCreateUser: false,
+    },
+  });
+
+  if (otpError) {
+    const isRateLimit = otpError.message?.toLowerCase().includes('security purposes');
+    console.error('[send-magic-link] signInWithOtp failed:', otpError.message);
+    return NextResponse.json(
+      {
+        error: isRateLimit
+          ? 'Please wait 60 seconds before requesting another sign-in link.'
+          : 'Failed to send sign-in link. Please try again.',
+      },
+      { status: isRateLimit ? 429 : 500 },
+    );
+  }
+
+  return NextResponse.json({ sent: true });
 }
