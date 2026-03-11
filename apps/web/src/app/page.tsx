@@ -36,8 +36,8 @@ const DEFAULTS: SiteSettings = {
   hero_headline: 'The Operating System for Baseball Coaches',
   hero_subtext: 'Scorekeeping, pitch count compliance, team communication, and statistics — all in one platform built for high school and youth baseball.',
   cta_button_text: 'Get Early Access',
-  form_headline: 'Get started for free',
-  form_subtext: 'Enter your email and we\'ll keep you updated.',
+  form_headline: 'We\'re still building',
+  form_subtext: 'Drop your email to get notified when we go live.',
 };
 
 // ── Feature data ────────────────────────────────────────────────────────────
@@ -151,8 +151,8 @@ export default async function HomePage(): Promise<JSX.Element> {
           <p className="text-lg text-gray-500 max-w-2xl mx-auto leading-relaxed">
             {s.hero_subtext}
           </p>
-          <div className="pt-2 max-w-md mx-auto">
-            {isLoggedIn ? (
+          {isLoggedIn && (
+            <div className="pt-2">
               <Link
                 href="/dashboard"
                 className="inline-block px-6 py-3 text-sm font-semibold rounded-lg text-white transition-colors shadow-sm"
@@ -160,18 +160,30 @@ export default async function HomePage(): Promise<JSX.Element> {
               >
                 Open Dashboard
               </Link>
-            ) : (
-              <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm text-left">
-                <h2 className="text-lg font-semibold text-gray-900 mb-1">{s.form_headline}</h2>
-                <p className="text-sm text-gray-500 mb-4">{s.form_subtext}</p>
-                <LeadCaptureForm
-                  ctaText={s.cta_button_text}
-                  primaryColor={s.primary_color}
-                  secondaryColor={s.secondary_color}
-                  siteName={s.site_name}
-                />
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ── Features ────────────────────────────────────────────────────────── */}
+      <section className="py-20 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-bold text-gray-900">
+              Everything You Need on Game Day
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {FEATURES.map((f) => (
+              <div
+                key={f.title}
+                className="bg-white rounded-xl border border-gray-200 p-6 space-y-3"
+              >
+                <div style={{ color: s.secondary_color }}>{f.icon}</div>
+                <h3 className="font-semibold text-gray-900">{f.title}</h3>
+                <p className="text-sm text-gray-500 leading-relaxed">{f.description}</p>
               </div>
-            )}
+            ))}
           </div>
         </div>
       </section>
@@ -194,28 +206,57 @@ export default async function HomePage(): Promise<JSX.Element> {
         </div>
       </section>
 
-      {/* ── Features ────────────────────────────────────────────────────────── */}
-      <section className="pb-20 px-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-10">
-            <h2 className="text-2xl font-bold text-gray-900">
-              Everything You Need on Game Day
-            </h2>
+      {/* ── Portable Stats ────────────────────────────────────────────────── */}
+      <section className="py-20 px-6" style={{ backgroundColor: s.accent_color }}>
+        <div className="max-w-3xl mx-auto text-center space-y-6">
+          <div
+            className="inline-flex items-center justify-center w-14 h-14 rounded-full"
+            style={{ backgroundColor: s.primary_color + '15', color: s.primary_color }}
+          >
+            <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+            </svg>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {FEATURES.map((f) => (
-              <div
-                key={f.title}
-                className="bg-white rounded-xl border border-gray-200 p-6 space-y-3"
-              >
-                <div style={{ color: s.secondary_color }}>{f.icon}</div>
-                <h3 className="font-semibold text-gray-900">{f.title}</h3>
-                <p className="text-sm text-gray-500 leading-relaxed">{f.description}</p>
-              </div>
-            ))}
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
+            Stats that follow the player, not the team
+          </h2>
+          <p className="text-lg text-gray-500 max-w-2xl mx-auto leading-relaxed">
+            Every at-bat, pitch, and play is tied to the player&apos;s profile — not a single team roster.
+            When a player moves to a new team on the platform, their full statistical history comes with them.
+            Coaches see the complete picture from day one.
+          </p>
+          <div className="grid sm:grid-cols-3 gap-4 max-w-xl mx-auto pt-2">
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="text-2xl font-bold" style={{ color: s.primary_color }}>100%</div>
+              <div className="text-sm text-gray-500 mt-1">Portable stats</div>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="text-2xl font-bold" style={{ color: s.primary_color }}>Every</div>
+              <div className="text-sm text-gray-500 mt-1">Season preserved</div>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="text-2xl font-bold" style={{ color: s.primary_color }}>Zero</div>
+              <div className="text-sm text-gray-500 mt-1">Data lost on transfer</div>
+            </div>
           </div>
         </div>
       </section>
+
+      {/* ── CTA / Lead Capture ────────────────────────────────────────────── */}
+      {!isLoggedIn && (
+        <section className="py-16 px-6 bg-white">
+          <div className="max-w-md mx-auto text-center">
+            <h2 className="text-xl font-bold text-gray-900 mb-1">{s.form_headline}</h2>
+            <p className="text-sm text-gray-500 mb-5">{s.form_subtext}</p>
+            <LeadCaptureForm
+              ctaText={s.cta_button_text}
+              primaryColor={s.primary_color}
+              secondaryColor={s.secondary_color}
+              siteName={s.site_name}
+            />
+          </div>
+        </section>
+      )}
 
       {/* ── Footer ──────────────────────────────────────────────────────────── */}
       <footer className="mt-auto border-t border-gray-200 bg-white">

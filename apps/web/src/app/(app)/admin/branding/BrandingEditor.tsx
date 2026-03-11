@@ -31,8 +31,8 @@ export function BrandingEditor({ initialSettings }: { initialSettings: SiteSetti
     hero_headline: 'The coaching platform built for baseball.',
     hero_subtext: 'Scorekeeping, communication, practice planning, and compliance — all in one place.',
     cta_button_text: 'Get Early Access',
-    form_headline: 'Get started for free',
-    form_subtext: 'Enter your email and we\'ll keep you updated.',
+    form_headline: 'We\'re still building',
+    form_subtext: 'Drop your email to get notified when we go live.',
     updated_at: new Date().toISOString(),
   };
 

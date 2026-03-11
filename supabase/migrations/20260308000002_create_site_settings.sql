@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
   hero_subtext   TEXT NOT NULL DEFAULT 'Scorekeeping, communication, practice planning, and compliance — all in one place.',
   cta_button_text TEXT NOT NULL DEFAULT 'Get Early Access',
   -- Form messaging
-  form_headline  TEXT NOT NULL DEFAULT 'Get started for free',
-  form_subtext   TEXT NOT NULL DEFAULT 'Enter your email and we''ll keep you updated.',
+  form_headline  TEXT NOT NULL DEFAULT 'We''re still building',
+  form_subtext   TEXT NOT NULL DEFAULT 'Drop your email to get notified when we go live.',
   -- Timestamps
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
