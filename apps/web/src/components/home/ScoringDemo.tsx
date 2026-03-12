@@ -10,6 +10,20 @@ import {
 } from '@baseball/shared';
 import type { GameEvent, LiveGameState } from '@baseball/shared';
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
+interface PitchLocation {
+  x: number; // 0-200 SVG x coordinate
+  y: number; // 0-240 SVG y coordinate
+  outcome: PitchOutcome;
+}
+
+interface SprayHit {
+  x: number; // 0-100 percentage across field
+  y: number; // 0-100 percentage down field
+  result: string;
+}
+
 // ── Demo data ────────────────────────────────────────────────────────────────
 
 const DEMO_BATTERS = [
@@ -46,6 +60,273 @@ function Dot({ filled, color }: { filled: boolean; color: string }) {
         filled ? color : 'border-gray-300 bg-transparent'
       }`}
     />
+  );
+}
+
+// ── Strike Zone ──────────────────────────────────────────────────────────────
+
+// Strike zone SVG layout:
+// viewBox 0 0 200 240
+// Strike zone box: x=40 y=48 w=120 h=131 (the "official" zone)
+// Full clickable area extends beyond for balls
+
+function StrikeZone({
+  onSelect,
+  outcome,
+  previousLocations,
+}: {
+  onSelect: (x: number, y: number) => void;
+  outcome: PitchOutcome;
+  previousLocations: PitchLocation[];
+}) {
+  const isBall = outcome === PitchOutcome.BALL;
+  const outcomeColor = isBall
+    ? { bg: 'bg-green-400' }
+    : outcome === PitchOutcome.IN_PLAY
+      ? { bg: 'bg-blue-400' }
+      : { bg: 'bg-yellow-400' };
+
+  function dotColor(loc: PitchLocation) {
+    if (loc.outcome === PitchOutcome.BALL) return 'fill-green-500';
+    if (loc.outcome === PitchOutcome.IN_PLAY) return 'fill-blue-500';
+    return 'fill-yellow-500';
+  }
+
+  function handleClick(e: React.MouseEvent<SVGSVGElement>) {
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 200;
+    const y = ((e.clientY - rect.top) / rect.height) * 240;
+    // Clamp to reasonable bounds
+    if (x < 5 || x > 195 || y < 5 || y > 235) return;
+    onSelect(x, y);
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs font-medium text-gray-400 uppercase tracking-wide text-center">
+        Tap pitch location
+      </div>
+      <div className="flex justify-center">
+        <svg viewBox="0 0 200 240" className="w-56 h-auto cursor-crosshair" onClick={handleClick}>
+          {/* Full clickable background */}
+          <rect x="0" y="0" width="200" height="240" className="fill-transparent" />
+
+          {/* Ball zone background (area outside strike zone) */}
+          <rect x="5" y="5" width="190" height="230" rx="8"
+            className="fill-gray-50 stroke-gray-200" strokeWidth="1" />
+
+          {/* Strike zone box */}
+          <rect x="40" y="48" width="120" height="131" rx="2"
+            className="fill-white stroke-gray-900" strokeWidth="2" />
+
+          {/* Grid lines inside zone */}
+          <line x1="80" y1="48" x2="80" y2="179" className="stroke-gray-200" strokeWidth="0.5" />
+          <line x1="120" y1="48" x2="120" y2="179" className="stroke-gray-200" strokeWidth="0.5" />
+          <line x1="40" y1="91" x2="160" y2="91" className="stroke-gray-200" strokeWidth="0.5" />
+          <line x1="40" y1="135" x2="160" y2="135" className="stroke-gray-200" strokeWidth="0.5" />
+
+          {/* Zone labels */}
+          <text x="100" y="20" textAnchor="middle" className="fill-gray-300 text-[9px] pointer-events-none">
+            High
+          </text>
+          <text x="100" y="225" textAnchor="middle" className="fill-gray-300 text-[9px] pointer-events-none">
+            Low
+          </text>
+          <text x="18" y="118" textAnchor="middle" className="fill-gray-300 text-[9px] pointer-events-none"
+            transform="rotate(-90 18 118)">
+            Inside
+          </text>
+          <text x="182" y="118" textAnchor="middle" className="fill-gray-300 text-[9px] pointer-events-none"
+            transform="rotate(90 182 118)">
+            Outside
+          </text>
+
+          {/* Previous pitch dots */}
+          {previousLocations.map((loc, i) => (
+            <circle key={i} cx={loc.x} cy={loc.y} r="5"
+              className={`${dotColor(loc)} opacity-40 pointer-events-none`}
+            />
+          ))}
+        </svg>
+      </div>
+      <div className="flex justify-center gap-3 text-[10px] text-gray-400">
+        <span className="flex items-center gap-1">
+          <span className={`inline-block w-2.5 h-2.5 rounded-full ${outcomeColor.bg}`} />
+          {isBall ? 'Ball' : outcome === PitchOutcome.IN_PLAY ? 'In Play' : 'Strike'}
+        </span>
+        {previousLocations.length > 0 && (
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-300" />
+            Previous
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Spray Chart ──────────────────────────────────────────────────────────────
+
+function SprayChart({
+  onSelect,
+  resultLabel,
+  previousHits,
+}: {
+  onSelect: (x: number, y: number) => void;
+  resultLabel: string;
+  previousHits: SprayHit[];
+}) {
+  function handleClick(e: React.MouseEvent<SVGSVGElement>) {
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 200;
+    const y = ((e.clientY - rect.top) / rect.height) * 200;
+    // Only accept clicks in the field area (fan shape)
+    const dx = x - 100;
+    const dy = 180 - y;
+    if (dy < 10 || Math.sqrt(dx * dx + dy * dy) > 170) return;
+    onSelect(x, y);
+  }
+
+  function hitColor(result: string) {
+    if (result === 'Out' || result === 'Groundout') return 'fill-red-500';
+    if (result === 'Error — Safe at 1st') return 'fill-gray-500';
+    return 'fill-green-500';
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs font-medium text-gray-400 uppercase tracking-wide text-center">
+        Tap where the ball landed
+      </div>
+      <div className="flex justify-center">
+        <svg viewBox="0 0 200 200" className="w-56 h-auto cursor-crosshair" onClick={handleClick}>
+          {/* Outfield grass */}
+          <path d="M 100 180 L 5 40 A 135 135 0 0 1 195 40 Z"
+            className="fill-green-100 stroke-green-300" strokeWidth="1.5" />
+          {/* Infield dirt */}
+          <path d="M 100 180 L 55 120 A 60 60 0 0 1 145 120 Z"
+            className="fill-amber-100 stroke-amber-300" strokeWidth="1" />
+          {/* Infield diamond */}
+          <polygon points="100,130 120,150 100,170 80,150"
+            className="fill-amber-50 stroke-amber-400" strokeWidth="1" />
+          {/* Bases */}
+          <rect x="97" y="128" width="6" height="6" transform="rotate(45 100 131)"
+            className="fill-white stroke-gray-500" strokeWidth="0.8" />
+          <rect x="117" y="148" width="6" height="6" transform="rotate(45 120 151)"
+            className="fill-white stroke-gray-500" strokeWidth="0.8" />
+          <rect x="77" y="148" width="6" height="6" transform="rotate(45 80 151)"
+            className="fill-white stroke-gray-500" strokeWidth="0.8" />
+          {/* Home plate */}
+          <polygon points="100,172 96,176 100,180 104,176"
+            className="fill-white stroke-gray-500" strokeWidth="0.8" />
+          {/* Foul lines */}
+          <line x1="100" y1="180" x2="5" y2="40" className="stroke-gray-400" strokeWidth="0.8" />
+          <line x1="100" y1="180" x2="195" y2="40" className="stroke-gray-400" strokeWidth="0.8" />
+          {/* Labels */}
+          <text x="25" y="60" className="fill-gray-400 text-[8px]">LF</text>
+          <text x="95" y="35" className="fill-gray-400 text-[8px]">CF</text>
+          <text x="168" y="60" className="fill-gray-400 text-[8px]">RF</text>
+
+          {/* Previous hit dots */}
+          {previousHits.map((hit, i) => (
+            <circle key={i} cx={hit.x} cy={hit.y} r="4"
+              className={`${hitColor(hit.result)} opacity-40`} />
+          ))}
+        </svg>
+      </div>
+      <div className="text-center text-xs text-gray-500">
+        Recording: <span className="font-semibold">{resultLabel}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Completion mini charts ───────────────────────────────────────────────────
+
+function MiniStrikeZone({ locations }: { locations: PitchLocation[] }) {
+  if (locations.length === 0) return null;
+
+  function dotColor(loc: PitchLocation) {
+    if (loc.outcome === PitchOutcome.BALL) return 'fill-green-500';
+    if (loc.outcome === PitchOutcome.IN_PLAY) return 'fill-blue-500';
+    return 'fill-yellow-500';
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="text-xs font-medium text-gray-500 text-center">Pitch Locations</div>
+      <div className="flex justify-center">
+        <svg viewBox="0 0 200 240" className="w-32 h-auto">
+          {/* Background */}
+          <rect x="5" y="5" width="190" height="230" rx="8"
+            className="fill-gray-50 stroke-gray-200" strokeWidth="0.5" />
+          {/* Strike zone background */}
+          <rect x="40" y="48" width="120" height="131" rx="2"
+            className="fill-white stroke-gray-400" strokeWidth="1.5" />
+          {/* Grid lines */}
+          <line x1="80" y1="48" x2="80" y2="179" className="stroke-gray-200" strokeWidth="0.5" />
+          <line x1="120" y1="48" x2="120" y2="179" className="stroke-gray-200" strokeWidth="0.5" />
+          <line x1="40" y1="91" x2="160" y2="91" className="stroke-gray-200" strokeWidth="0.5" />
+          <line x1="40" y1="135" x2="160" y2="135" className="stroke-gray-200" strokeWidth="0.5" />
+          {/* Dots */}
+          {locations.map((loc, i) => (
+            <circle key={i} cx={loc.x} cy={loc.y} r="6"
+              className={`${dotColor(loc)} opacity-70`} />
+          ))}
+        </svg>
+      </div>
+      <div className="flex justify-center gap-2 text-[9px] text-gray-400">
+        <span className="flex items-center gap-0.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> Ball
+        </span>
+        <span className="flex items-center gap-0.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-yellow-500" /> Strike
+        </span>
+        <span className="flex items-center gap-0.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-blue-500" /> In Play
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function MiniSprayChart({ hits }: { hits: SprayHit[] }) {
+  if (hits.length === 0) return null;
+
+  function hitColor(result: string) {
+    if (result === 'Out' || result === 'Groundout') return 'fill-red-500';
+    if (result === 'Error — Safe at 1st') return 'fill-gray-500';
+    return 'fill-green-500';
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="text-xs font-medium text-gray-500 text-center">Spray Chart</div>
+      <div className="flex justify-center">
+        <svg viewBox="0 0 200 200" className="w-32 h-auto">
+          <path d="M 100 180 L 5 40 A 135 135 0 0 1 195 40 Z"
+            className="fill-green-50 stroke-green-200" strokeWidth="1" />
+          <path d="M 100 180 L 55 120 A 60 60 0 0 1 145 120 Z"
+            className="fill-amber-50 stroke-amber-200" strokeWidth="0.8" />
+          <line x1="100" y1="180" x2="5" y2="40" className="stroke-gray-300" strokeWidth="0.5" />
+          <line x1="100" y1="180" x2="195" y2="40" className="stroke-gray-300" strokeWidth="0.5" />
+          {hits.map((hit, i) => (
+            <circle key={i} cx={hit.x} cy={hit.y} r="5"
+              className={`${hitColor(hit.result)} opacity-70`} />
+          ))}
+        </svg>
+      </div>
+      <div className="flex justify-center gap-2 text-[9px] text-gray-400">
+        <span className="flex items-center gap-0.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> Hit
+        </span>
+        <span className="flex items-center gap-0.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> Out
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -114,6 +395,12 @@ export function ScoringDemo({ isLoggedIn }: ScoringDemoProps): JSX.Element {
   const [demoComplete, setDemoComplete] = useState(false);
   const [lastAction, setLastAction] = useState<string | null>(null);
 
+  // Strike zone & spray chart state
+  const [pendingPitchOutcome, setPendingPitchOutcome] = useState<PitchOutcome | null>(null);
+  const [pendingResult, setPendingResult] = useState<{ type: string; label: string } | null>(null);
+  const [pitchLocations, setPitchLocations] = useState<PitchLocation[]>([]);
+  const [sprayHits, setSprayHits] = useState<SprayHit[]>([]);
+
   const gameState = deriveGameState(DEMO_GAME_ID, events, DEMO_HOME_TEAM_ID);
   const currentBatter = DEMO_BATTERS[currentBatterIdx] ?? null;
 
@@ -162,9 +449,24 @@ export function ScoringDemo({ isLoggedIn }: ScoringDemoProps): JSX.Element {
     [currentBatterIdx],
   );
 
-  const handlePitch = useCallback(
+  // Step 1: User clicks pitch outcome → show strike zone
+  const handlePitchSelect = useCallback(
     (outcome: PitchOutcome) => {
       if (!currentBatter) return;
+      setPendingPitchOutcome(outcome);
+    },
+    [currentBatter],
+  );
+
+  // Step 2: User taps strike zone location → record pitch
+  const handlePitchLocation = useCallback(
+    (x: number, y: number) => {
+      if (!currentBatter || pendingPitchOutcome === null) return;
+      const outcome = pendingPitchOutcome;
+
+      // Record location
+      setPitchLocations((prev) => [...prev, { x, y, outcome }]);
+      setPendingPitchOutcome(null);
 
       const pitchEvent = appendEvent(EventType.PITCH_THROWN, {
         pitcherId: DEMO_PITCHER_ID,
@@ -187,7 +489,6 @@ export function ScoringDemo({ isLoggedIn }: ScoringDemoProps): JSX.Element {
           batterId: currentBatter.id,
           pitcherId: DEMO_PITCHER_ID,
         });
-        // Fix sequence since appendEvent uses same counter
         walkEvent.sequenceNumber = pitchEvent.sequenceNumber + 1;
         walkEvent.id = `demo-${pitchEvent.sequenceNumber + 1}`;
         setSeqCounter(pitchEvent.sequenceNumber + 2);
@@ -223,15 +524,37 @@ export function ScoringDemo({ isLoggedIn }: ScoringDemoProps): JSX.Element {
       };
       setLastAction(outcomeLabel[outcome] ?? outcome);
     },
-    [currentBatter, events, appendEvent, advanceBatter, gameState.strikes],
+    [currentBatter, pendingPitchOutcome, events, appendEvent, advanceBatter, gameState.strikes],
   );
 
-  const handleInPlayResult = useCallback(
+  // Step 1: User clicks in-play result → show spray chart
+  const handleInPlayResultSelect = useCallback(
     (type: 'out' | 'single' | 'double' | 'triple' | 'home_run' | 'error') => {
       if (!currentBatter) return;
+      const labelMap: Record<string, string> = {
+        out: 'Groundout',
+        single: 'Single',
+        double: 'Double',
+        triple: 'Triple',
+        home_run: 'Home Run',
+        error: 'Error — Safe at 1st',
+      };
+      setPendingResult({ type, label: labelMap[type] ?? type });
+    },
+    [currentBatter],
+  );
+
+  // Step 2: User taps spray chart → record result
+  const handleSprayLocation = useCallback(
+    (x: number, y: number) => {
+      if (!currentBatter || !pendingResult) return;
+      const { type, label } = pendingResult;
+
+      // Record spray hit
+      setSprayHits((prev) => [...prev, { x, y, result: label }]);
+      setPendingResult(null);
 
       let resultEvent: GameEvent;
-      let label: string;
 
       if (type === 'out') {
         resultEvent = appendEvent(EventType.OUT, {
@@ -239,13 +562,11 @@ export function ScoringDemo({ isLoggedIn }: ScoringDemoProps): JSX.Element {
           pitcherId: DEMO_PITCHER_ID,
           outType: 'groundout',
         });
-        label = 'Groundout';
       } else if (type === 'error') {
         resultEvent = appendEvent(EventType.FIELD_ERROR, {
           batterId: currentBatter.id,
           pitcherId: DEMO_PITCHER_ID,
         });
-        label = 'Error — Safe at 1st';
       } else {
         const hitTypeMap: Record<string, HitType> = {
           single: HitType.SINGLE,
@@ -258,12 +579,11 @@ export function ScoringDemo({ isLoggedIn }: ScoringDemoProps): JSX.Element {
           pitcherId: DEMO_PITCHER_ID,
           hitType: hitTypeMap[type],
         });
-        label = type === 'home_run' ? 'Home Run!' : type.charAt(0).toUpperCase() + type.slice(1) + '!';
       }
 
-      advanceBatter([...events, resultEvent], label);
+      advanceBatter([...events, resultEvent], label.includes('Home') ? 'Home Run!' : label + (type !== 'out' && type !== 'error' ? '!' : ''));
     },
-    [currentBatter, events, appendEvent, advanceBatter],
+    [currentBatter, pendingResult, events, appendEvent, advanceBatter],
   );
 
   const reset = useCallback(() => {
@@ -273,6 +593,10 @@ export function ScoringDemo({ isLoggedIn }: ScoringDemoProps): JSX.Element {
     setInPlayPending(false);
     setDemoComplete(false);
     setLastAction(null);
+    setPendingPitchOutcome(null);
+    setPendingResult(null);
+    setPitchLocations([]);
+    setSprayHits([]);
   }, []);
 
   // Count pitches thrown in the demo
@@ -313,6 +637,14 @@ export function ScoringDemo({ isLoggedIn }: ScoringDemoProps): JSX.Element {
             <div className="text-gray-500">Runs</div>
           </div>
         </div>
+
+        {/* Mini visualizations */}
+        {(pitchLocations.length > 0 || sprayHits.length > 0) && (
+          <div className="flex justify-center gap-6">
+            <MiniStrikeZone locations={pitchLocations} />
+            <MiniSprayChart hits={sprayHits} />
+          </div>
+        )}
 
         <p className="text-sm text-gray-400">
           That&apos;s the same game engine powering real scorekeeping in DiamondOS.
@@ -388,38 +720,68 @@ export function ScoringDemo({ isLoggedIn }: ScoringDemoProps): JSX.Element {
       )}
 
       {/* Action buttons */}
-      {!inPlayPending ? (
+      {pendingPitchOutcome !== null ? (
+        /* Strike zone — shown after selecting pitch outcome */
+        <div className="space-y-2">
+          <StrikeZone
+            onSelect={handlePitchLocation}
+            outcome={pendingPitchOutcome}
+            previousLocations={pitchLocations}
+          />
+          <button
+            onClick={() => setPendingPitchOutcome(null)}
+            className="w-full text-xs text-gray-400 hover:text-gray-600 transition-colors py-1"
+          >
+            Back
+          </button>
+        </div>
+      ) : pendingResult !== null ? (
+        /* Spray chart — shown after selecting in-play result */
+        <div className="space-y-2">
+          <SprayChart
+            onSelect={handleSprayLocation}
+            resultLabel={pendingResult.label}
+            previousHits={sprayHits}
+          />
+          <button
+            onClick={() => setPendingResult(null)}
+            className="w-full text-xs text-gray-400 hover:text-gray-600 transition-colors py-1"
+          >
+            Back
+          </button>
+        </div>
+      ) : !inPlayPending ? (
         <div className="space-y-2">
           <div className="text-xs font-medium text-gray-400 uppercase tracking-wide">
             Record Pitch
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
             <button
-              onClick={() => handlePitch(PitchOutcome.BALL)}
+              onClick={() => handlePitchSelect(PitchOutcome.BALL)}
               className="px-3 py-3 text-sm font-medium rounded-lg bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 transition-colors"
             >
               Ball
             </button>
             <button
-              onClick={() => handlePitch(PitchOutcome.CALLED_STRIKE)}
+              onClick={() => handlePitchSelect(PitchOutcome.CALLED_STRIKE)}
               className="px-3 py-3 text-sm font-medium rounded-lg bg-yellow-50 text-yellow-700 border border-yellow-200 hover:bg-yellow-100 transition-colors"
             >
               Called K
             </button>
             <button
-              onClick={() => handlePitch(PitchOutcome.SWINGING_STRIKE)}
+              onClick={() => handlePitchSelect(PitchOutcome.SWINGING_STRIKE)}
               className="px-3 py-3 text-sm font-medium rounded-lg bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors"
             >
               Swing K
             </button>
             <button
-              onClick={() => handlePitch(PitchOutcome.FOUL)}
+              onClick={() => handlePitchSelect(PitchOutcome.FOUL)}
               className="px-3 py-3 text-sm font-medium rounded-lg bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 transition-colors"
             >
               Foul
             </button>
             <button
-              onClick={() => handlePitch(PitchOutcome.IN_PLAY)}
+              onClick={() => handlePitchSelect(PitchOutcome.IN_PLAY)}
               className="px-3 py-3 text-sm font-medium rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors col-span-3 sm:col-span-1"
             >
               In Play
@@ -433,37 +795,37 @@ export function ScoringDemo({ isLoggedIn }: ScoringDemoProps): JSX.Element {
           </div>
           <div className="grid grid-cols-3 gap-2">
             <button
-              onClick={() => handleInPlayResult('out')}
+              onClick={() => handleInPlayResultSelect('out')}
               className="px-3 py-3 text-sm font-medium rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition-colors"
             >
               Out
             </button>
             <button
-              onClick={() => handleInPlayResult('single')}
+              onClick={() => handleInPlayResultSelect('single')}
               className="px-3 py-3 text-sm font-medium rounded-lg bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 transition-colors"
             >
               Single
             </button>
             <button
-              onClick={() => handleInPlayResult('double')}
+              onClick={() => handleInPlayResultSelect('double')}
               className="px-3 py-3 text-sm font-medium rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
             >
               Double
             </button>
             <button
-              onClick={() => handleInPlayResult('triple')}
+              onClick={() => handleInPlayResultSelect('triple')}
               className="px-3 py-3 text-sm font-medium rounded-lg bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 transition-colors"
             >
               Triple
             </button>
             <button
-              onClick={() => handleInPlayResult('home_run')}
+              onClick={() => handleInPlayResultSelect('home_run')}
               className="px-3 py-3 text-sm font-medium rounded-lg bg-yellow-50 text-yellow-700 border border-yellow-200 hover:bg-yellow-100 transition-colors"
             >
               Home Run
             </button>
             <button
-              onClick={() => handleInPlayResult('error')}
+              onClick={() => handleInPlayResultSelect('error')}
               className="px-3 py-3 text-sm font-medium rounded-lg bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 transition-colors"
             >
               Error
@@ -475,6 +837,7 @@ export function ScoringDemo({ isLoggedIn }: ScoringDemoProps): JSX.Element {
               setEvents(events.slice(0, -1));
               setSeqCounter(seqCounter - 1);
               setInPlayPending(false);
+              setPitchLocations((prev) => prev.slice(0, -1));
               setLastAction(null);
             }}
             className="w-full text-xs text-gray-400 hover:text-gray-600 transition-colors py-1"
