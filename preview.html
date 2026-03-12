@@ -501,6 +501,11 @@ var BATTERS = [
 var balls = 0, strikes = 0, outs = 0, runs = 0, hits = 0, pitchCount = 0;
 var batterIdx = 0, inPlayPending = false, demoComplete = false, lastAction = null;
 var runners = { first: null, second: null, third: null };
+var pendingPitchType = null; // pitch outcome waiting for zone tap
+var pendingResultType = null; // in-play result waiting for spray tap
+var pendingResultLabel = null;
+var pitchLocations = []; // {row, col, outcome}
+var sprayHits = []; // {x, y, result}
 
 function forceAdvance(batterId) {
   if (runners.first && runners.second && runners.third) {
@@ -543,7 +548,17 @@ function endPA(label) {
   render();
 }
 
-function recordPitch(type) {
+// Step 1: user clicks pitch type → show strike zone
+function selectPitch(type) {
+  pendingPitchType = type;
+  render();
+}
+
+// Step 2: user taps zone → record pitch (x, y in SVG coords)
+function confirmPitchLocation(x, y) {
+  var type = pendingPitchType;
+  pendingPitchType = null;
+  pitchLocations.push({ x: x, y: y, outcome: type });
   pitchCount++;
   var batter = BATTERS[batterIdx];
   if (type === 'ball') {
@@ -561,7 +576,21 @@ function recordPitch(type) {
   }
 }
 
-function recordResult(type) {
+// Step 1: user clicks result type → show spray chart
+function selectResult(type) {
+  var labels = { out: 'Groundout', single: 'Single', double: 'Double', triple: 'Triple', home_run: 'Home Run', error: 'Error — Safe at 1st' };
+  pendingResultType = type;
+  pendingResultLabel = labels[type] || type;
+  render();
+}
+
+// Step 2: user taps spray chart → record result
+function confirmSprayLocation(x, y) {
+  var type = pendingResultType;
+  var label = pendingResultLabel;
+  sprayHits.push({ x: x, y: y, result: label });
+  pendingResultType = null;
+  pendingResultLabel = null;
   var batter = BATTERS[batterIdx];
   if (type === 'out') { outs++; endPA('Groundout'); }
   else if (type === 'error') { forceAdvance(batter.id); endPA('Error \u2014 Safe at 1st'); }
@@ -572,14 +601,158 @@ function recordResult(type) {
 }
 
 function goBack() {
-  pitchCount--; inPlayPending = false; lastAction = null; render();
+  if (pendingPitchType !== null) { pendingPitchType = null; render(); return; }
+  if (pendingResultType !== null) { pendingResultType = null; pendingResultLabel = null; render(); return; }
+  pitchCount--; inPlayPending = false; pitchLocations.pop(); lastAction = null; render();
 }
 
 function resetDemo() {
   balls = 0; strikes = 0; outs = 0; runs = 0; hits = 0; pitchCount = 0;
   batterIdx = 0; inPlayPending = false; demoComplete = false; lastAction = null;
   runners = { first: null, second: null, third: null };
+  pendingPitchType = null; pendingResultType = null; pendingResultLabel = null;
+  pitchLocations = []; sprayHits = [];
   render();
+}
+
+function pitchDotColor(outcome) {
+  if (outcome === 'ball') return '#22c55e';
+  if (outcome === 'in_play') return '#3b82f6';
+  return '#eab308';
+}
+
+function sprayDotColor(result) {
+  if (result === 'Groundout' || result === 'Out') return '#ef4444';
+  if (result.indexOf('Error') >= 0) return '#6b7280';
+  return '#22c55e';
+}
+
+function renderStrikeZone() {
+  var svg = '<svg viewBox="0 0 200 240" style="width:14rem;height:auto;cursor:crosshair" id="zone-svg">';
+  // Full clickable background
+  svg += '<rect x="0" y="0" width="200" height="240" fill="transparent" />';
+  // Ball zone background
+  svg += '<rect x="5" y="5" width="190" height="230" rx="8" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1" />';
+  // Strike zone box
+  svg += '<rect x="40" y="48" width="120" height="131" rx="2" fill="white" stroke="#111827" stroke-width="2" />';
+  // Grid lines
+  svg += '<line x1="80" y1="48" x2="80" y2="179" stroke="#e5e7eb" stroke-width="0.5" />';
+  svg += '<line x1="120" y1="48" x2="120" y2="179" stroke="#e5e7eb" stroke-width="0.5" />';
+  svg += '<line x1="40" y1="91" x2="160" y2="91" stroke="#e5e7eb" stroke-width="0.5" />';
+  svg += '<line x1="40" y1="135" x2="160" y2="135" stroke="#e5e7eb" stroke-width="0.5" />';
+  // Labels
+  svg += '<text x="100" y="20" text-anchor="middle" fill="#d1d5db" style="font-size:9px;pointer-events:none">High</text>';
+  svg += '<text x="100" y="225" text-anchor="middle" fill="#d1d5db" style="font-size:9px;pointer-events:none">Low</text>';
+  svg += '<text x="18" y="118" text-anchor="middle" fill="#d1d5db" style="font-size:9px;pointer-events:none" transform="rotate(-90 18 118)">Inside</text>';
+  svg += '<text x="182" y="118" text-anchor="middle" fill="#d1d5db" style="font-size:9px;pointer-events:none" transform="rotate(90 182 118)">Outside</text>';
+  // Previous dots
+  for (var i = 0; i < pitchLocations.length; i++) {
+    var loc = pitchLocations[i];
+    svg += '<circle cx="'+loc.x+'" cy="'+loc.y+'" r="5" fill="'+pitchDotColor(loc.outcome)+'" opacity="0.4" style="pointer-events:none" />';
+  }
+  svg += '</svg>';
+  return '<div style="text-align:center">' +
+    '<div class="btn-section-label">Tap pitch location</div>' +
+    '<div style="display:flex;justify-content:center;margin:0.5rem 0">' + svg + '</div>' +
+    '<button class="btn-back" onclick="goBack()">&larr; Back</button>' +
+    '</div>';
+}
+
+function setupZoneClickHandler() {
+  var svgEl = document.getElementById('zone-svg');
+  if (!svgEl) return;
+  svgEl.addEventListener('click', function(e) {
+    var rect = svgEl.getBoundingClientRect();
+    var x = ((e.clientX - rect.left) / rect.width) * 200;
+    var y = ((e.clientY - rect.top) / rect.height) * 240;
+    if (x < 5 || x > 195 || y < 5 || y > 235) return;
+    confirmPitchLocation(Math.round(x), Math.round(y));
+  });
+}
+
+function renderSprayChart() {
+  var svg = '<svg viewBox="0 0 200 200" style="width:14rem;height:auto;cursor:crosshair" id="spray-svg">';
+  svg += '<path d="M 100 180 L 5 40 A 135 135 0 0 1 195 40 Z" fill="#dcfce7" stroke="#86efac" stroke-width="1.5" />';
+  svg += '<path d="M 100 180 L 55 120 A 60 60 0 0 1 145 120 Z" fill="#fef3c7" stroke="#fcd34d" stroke-width="1" />';
+  svg += '<polygon points="100,130 120,150 100,170 80,150" fill="#fefce8" stroke="#f59e0b" stroke-width="1" />';
+  svg += '<rect x="97" y="128" width="6" height="6" transform="rotate(45 100 131)" fill="white" stroke="#6b7280" stroke-width="0.8" />';
+  svg += '<rect x="117" y="148" width="6" height="6" transform="rotate(45 120 151)" fill="white" stroke="#6b7280" stroke-width="0.8" />';
+  svg += '<rect x="77" y="148" width="6" height="6" transform="rotate(45 80 151)" fill="white" stroke="#6b7280" stroke-width="0.8" />';
+  svg += '<polygon points="100,172 96,176 100,180 104,176" fill="white" stroke="#6b7280" stroke-width="0.8" />';
+  svg += '<line x1="100" y1="180" x2="5" y2="40" stroke="#9ca3af" stroke-width="0.8" />';
+  svg += '<line x1="100" y1="180" x2="195" y2="40" stroke="#9ca3af" stroke-width="0.8" />';
+  svg += '<text x="25" y="60" fill="#9ca3af" style="font-size:8px">LF</text>';
+  svg += '<text x="95" y="35" fill="#9ca3af" style="font-size:8px">CF</text>';
+  svg += '<text x="168" y="60" fill="#9ca3af" style="font-size:8px">RF</text>';
+  for (var i = 0; i < sprayHits.length; i++) {
+    var h = sprayHits[i];
+    svg += '<circle cx="'+h.x+'" cy="'+h.y+'" r="4" fill="'+sprayDotColor(h.result)+'" opacity="0.4" />';
+  }
+  svg += '</svg>';
+  return '<div style="text-align:center">' +
+    '<div class="btn-section-label">Tap where the ball landed</div>' +
+    '<div style="display:flex;justify-content:center;margin:0.5rem 0">' + svg + '</div>' +
+    '<div style="font-size:0.75rem;color:var(--gray-500)">Recording: <b>' + pendingResultLabel + '</b></div>' +
+    '<button class="btn-back" onclick="goBack()">&larr; Back</button>' +
+    '</div>';
+}
+
+function setupSprayClickHandler() {
+  var svgEl = document.getElementById('spray-svg');
+  if (!svgEl) return;
+  svgEl.addEventListener('click', function(e) {
+    var rect = svgEl.getBoundingClientRect();
+    var x = ((e.clientX - rect.left) / rect.width) * 200;
+    var y = ((e.clientY - rect.top) / rect.height) * 200;
+    var dx = x - 100, dy = 180 - y;
+    if (dy < 10 || Math.sqrt(dx*dx + dy*dy) > 170) return;
+    confirmSprayLocation(Math.round(x), Math.round(y));
+  });
+}
+
+function renderMiniCharts() {
+  var html = '';
+  if (pitchLocations.length === 0 && sprayHits.length === 0) return '';
+  html += '<div style="display:flex;justify-content:center;gap:1.5rem;margin:1.5rem 0">';
+  if (pitchLocations.length > 0) {
+    html += '<div style="text-align:center"><div style="font-size:0.75rem;font-weight:500;color:var(--gray-500);margin-bottom:0.25rem">Pitch Locations</div>';
+    html += '<svg viewBox="0 0 200 240" style="width:8rem;height:auto">';
+    html += '<rect x="5" y="5" width="190" height="230" rx="8" fill="#f9fafb" stroke="#e5e7eb" stroke-width="0.5" />';
+    html += '<rect x="40" y="48" width="120" height="131" rx="2" fill="white" stroke="#9ca3af" stroke-width="1.5" />';
+    html += '<line x1="80" y1="48" x2="80" y2="179" stroke="#e5e7eb" stroke-width="0.5" />';
+    html += '<line x1="120" y1="48" x2="120" y2="179" stroke="#e5e7eb" stroke-width="0.5" />';
+    html += '<line x1="40" y1="91" x2="160" y2="91" stroke="#e5e7eb" stroke-width="0.5" />';
+    html += '<line x1="40" y1="135" x2="160" y2="135" stroke="#e5e7eb" stroke-width="0.5" />';
+    for (var i = 0; i < pitchLocations.length; i++) {
+      var loc = pitchLocations[i];
+      html += '<circle cx="'+loc.x+'" cy="'+loc.y+'" r="6" fill="'+pitchDotColor(loc.outcome)+'" opacity="0.7" />';
+    }
+    html += '</svg>';
+    html += '<div style="display:flex;justify-content:center;gap:0.5rem;font-size:9px;color:var(--gray-400)">';
+    html += '<span style="display:flex;align-items:center;gap:2px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e"></span> Ball</span>';
+    html += '<span style="display:flex;align-items:center;gap:2px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#eab308"></span> Strike</span>';
+    html += '<span style="display:flex;align-items:center;gap:2px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#3b82f6"></span> In Play</span>';
+    html += '</div></div>';
+  }
+  if (sprayHits.length > 0) {
+    html += '<div style="text-align:center"><div style="font-size:0.75rem;font-weight:500;color:var(--gray-500);margin-bottom:0.25rem">Spray Chart</div>';
+    html += '<svg viewBox="0 0 200 200" style="width:8rem;height:auto">';
+    html += '<path d="M 100 180 L 5 40 A 135 135 0 0 1 195 40 Z" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1" />';
+    html += '<path d="M 100 180 L 55 120 A 60 60 0 0 1 145 120 Z" fill="#fefce8" stroke="#fde68a" stroke-width="0.8" />';
+    html += '<line x1="100" y1="180" x2="5" y2="40" stroke="#d1d5db" stroke-width="0.5" />';
+    html += '<line x1="100" y1="180" x2="195" y2="40" stroke="#d1d5db" stroke-width="0.5" />';
+    for (var j = 0; j < sprayHits.length; j++) {
+      var h = sprayHits[j];
+      html += '<circle cx="'+h.x+'" cy="'+h.y+'" r="5" fill="'+sprayDotColor(h.result)+'" opacity="0.7" />';
+    }
+    html += '</svg>';
+    html += '<div style="display:flex;justify-content:center;gap:0.5rem;font-size:9px;color:var(--gray-400)">';
+    html += '<span style="display:flex;align-items:center;gap:2px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e"></span> Hit</span>';
+    html += '<span style="display:flex;align-items:center;gap:2px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#ef4444"></span> Out</span>';
+    html += '</div></div>';
+  }
+  html += '</div>';
+  return html;
 }
 
 function dot(filled, colorClass) {
@@ -601,6 +774,7 @@ function render() {
           '<div class="stat"><div class="stat-val">' + outs + '</div><div class="stat-label">Outs</div></div>' +
           '<div class="stat"><div class="stat-val">' + runs + '</div><div class="stat-label">Runs</div></div>' +
         '</div>' +
+        renderMiniCharts() +
         '<p class="note">That\'s the same game engine powering real scorekeeping in ' + siteName + '.</p>' +
         '<div class="complete-btns">' +
           '<button class="btn-secondary" onclick="resetDemo()">Try Again</button>' +
@@ -614,24 +788,36 @@ function render() {
   var pitchButtons =
     '<div class="btn-section-label">Record Pitch</div>' +
     '<div class="btn-grid five-col">' +
-      '<button class="pitch-btn btn-ball" onclick="recordPitch(\'ball\')">Ball</button>' +
-      '<button class="pitch-btn btn-calledk" onclick="recordPitch(\'called_strike\')">Called K</button>' +
-      '<button class="pitch-btn btn-swingk" onclick="recordPitch(\'swinging_strike\')">Swing K</button>' +
-      '<button class="pitch-btn btn-foul" onclick="recordPitch(\'foul\')">Foul</button>' +
-      '<button class="pitch-btn btn-inplay" onclick="recordPitch(\'in_play\')">In Play</button>' +
+      '<button class="pitch-btn btn-ball" onclick="selectPitch(\'ball\')">Ball</button>' +
+      '<button class="pitch-btn btn-calledk" onclick="selectPitch(\'called_strike\')">Called K</button>' +
+      '<button class="pitch-btn btn-swingk" onclick="selectPitch(\'swinging_strike\')">Swing K</button>' +
+      '<button class="pitch-btn btn-foul" onclick="selectPitch(\'foul\')">Foul</button>' +
+      '<button class="pitch-btn btn-inplay" onclick="selectPitch(\'in_play\')">In Play</button>' +
     '</div>';
 
   var resultButtons =
     '<div class="btn-section-label">What happened?</div>' +
     '<div class="btn-grid">' +
-      '<button class="pitch-btn btn-out" onclick="recordResult(\'out\')">Out</button>' +
-      '<button class="pitch-btn btn-single" onclick="recordResult(\'single\')">Single</button>' +
-      '<button class="pitch-btn btn-double" onclick="recordResult(\'double\')">Double</button>' +
-      '<button class="pitch-btn btn-triple" onclick="recordResult(\'triple\')">Triple</button>' +
-      '<button class="pitch-btn btn-hr" onclick="recordResult(\'home_run\')">Home Run</button>' +
-      '<button class="pitch-btn btn-error" onclick="recordResult(\'error\')">Error</button>' +
+      '<button class="pitch-btn btn-out" onclick="selectResult(\'out\')">Out</button>' +
+      '<button class="pitch-btn btn-single" onclick="selectResult(\'single\')">Single</button>' +
+      '<button class="pitch-btn btn-double" onclick="selectResult(\'double\')">Double</button>' +
+      '<button class="pitch-btn btn-triple" onclick="selectResult(\'triple\')">Triple</button>' +
+      '<button class="pitch-btn btn-hr" onclick="selectResult(\'home_run\')">Home Run</button>' +
+      '<button class="pitch-btn btn-error" onclick="selectResult(\'error\')">Error</button>' +
     '</div>' +
     '<button class="btn-back" onclick="goBack()">&larr; Back</button>';
+
+  // Determine action panel
+  var actionPanel;
+  if (pendingPitchType !== null) {
+    actionPanel = renderStrikeZone();
+  } else if (pendingResultType !== null) {
+    actionPanel = renderSprayChart();
+  } else if (inPlayPending) {
+    actionPanel = resultButtons;
+  } else {
+    actionPanel = pitchButtons;
+  }
 
   el.innerHTML =
     '<div class="demo-scoreboard">' +
@@ -660,8 +846,16 @@ function render() {
       '</div>' +
     '</div>' +
     (lastAction ? '<div class="last-action">' + lastAction + '</div>' : '') +
-    (inPlayPending ? resultButtons : pitchButtons) +
-    (pitchCount > 0 ? '<button class="btn-reset" onclick="resetDemo()">Reset Demo</button>' : '');
+    actionPanel +
+    (pitchCount > 0 && pendingPitchType === null && pendingResultType === null ? '<button class="btn-reset" onclick="resetDemo()">Reset Demo</button>' : '');
+
+  // Attach click handlers after DOM update
+  if (pendingPitchType !== null) {
+    setTimeout(setupZoneClickHandler, 0);
+  }
+  if (pendingResultType !== null) {
+    setTimeout(setupSprayClickHandler, 0);
+  }
 }
 
 render();

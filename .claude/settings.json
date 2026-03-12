@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(git add \"apps/web/src/app/\\(app\\)/layout.tsx\" \"apps/web/src/app/\\(app\\)/admin/users/actions.ts\")",
-      "Bash(git add \"apps/web/src/app/\\(app\\)/teams/[teamId]/roster/page.tsx\")"
+      "Bash(git add \"apps/web/src/app/\\(app\\)/teams/[teamId]/roster/page.tsx\")",
+      "Bash(ls -la \"c:/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app/\\(app\\)/\")",
+      "Bash(grep -E \"\\\\.\\(tsx?\\)$\")",
+      "Bash(pnpm build)",
+      "Bash(npx turbo run build --filter=web)",
+      "Bash(npx next dev -p 4001)",
+      "Bash(pnpm --filter web add resend)",
+      "Bash(gh pr:*)",
+      "Bash(where gh:*)"
     ]
   }
 }
