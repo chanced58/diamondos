@@ -178,10 +178,13 @@ export async function inviteStaffAction(
   }
 
   // New user — send a magic-link invite
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? 'http://localhost:3000';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL;
+  if (!appUrl) {
+    return 'Server configuration error: APP_URL is not set. Please contact an administrator.';
+  }
   const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
     data: { invited_to_team: teamId, invited_role: role },
-    redirectTo: `${appUrl}/callback?team=${teamId}&role=${role}`,
+    redirectTo: `${appUrl}/auth/callback?team=${teamId}&role=${role}`,
   });
 
   if (inviteError) {

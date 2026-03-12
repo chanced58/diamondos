@@ -87,7 +87,7 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
     announcementChannelsResult,
   ] = await Promise.all([
     db.from('games')
-      .select('id, opponent_name, scheduled_at, location_type')
+      .select('id, opponent_name, scheduled_at, location_type, venue_name')
       .eq('team_id', activeTeam.id)
       .in('status', ['scheduled', 'in_progress'])
       .gte('scheduled_at', now)
@@ -123,14 +123,18 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
 
   // Build upcoming items list
   const upcomingItems: UpcomingItem[] = [
-    ...(upcomingGamesResult.data ?? []).map((g) => ({
-      kind: 'game' as const,
-      id: g.id,
-      date: g.scheduled_at,
-      label: `${g.location_type === 'away' ? '@' : 'vs'} ${g.opponent_name}`,
-      sublabel: g.location_type === 'home' ? 'Home' : g.location_type === 'away' ? 'Away' : 'Neutral',
-      href: `/games/${g.id}`,
-    })),
+    ...(upcomingGamesResult.data ?? []).map((g) => {
+      const locTag = g.location_type === 'home' ? 'Home' : g.location_type === 'away' ? 'Away' : 'Neutral';
+      const parts = [locTag, g.venue_name].filter(Boolean);
+      return {
+        kind: 'game' as const,
+        id: g.id,
+        date: g.scheduled_at,
+        label: `${g.location_type === 'away' ? '@' : 'vs'} ${g.opponent_name}`,
+        sublabel: parts.join(' · '),
+        href: `/games/${g.id}`,
+      };
+    }),
     ...(practicesResult.data ?? []).map((p) => ({
       kind: 'practice' as const,
       id: p.id,
@@ -215,10 +219,43 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
       <h1 className="text-2xl font-bold text-gray-900 mb-1">{activeTeam.name}</h1>
       <p className="text-gray-500 mb-6">Dashboard</p>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="space-y-6">
 
-        {/* ── Left column (2/3): Upcoming + Recent Games ─────────── */}
-        <div className="lg:col-span-2 space-y-6">
+        {/* ── Top: Announcements (full width) ──────────────────────── */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900">Announcements</h2>
+            <div className="flex items-center gap-2">
+              {canPostAnnouncement && (announcementChannelsResult.data?.length ?? 0) > 0 && (
+                <NewAnnouncementForm
+                  teamId={activeTeam.id}
+                  channelId={announcementChannelsResult.data![0].id}
+                />
+              )}
+              <Link href="/messages" className="text-xs text-brand-700 hover:underline">View all →</Link>
+            </div>
+          </div>
+          {announcements.length === 0 ? (
+            <p className="px-6 py-5 text-sm text-gray-400">No recent announcements.</p>
+          ) : (
+            <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 divide-y sm:divide-y-0 divide-gray-100">
+              {announcements.map((ann) => (
+                <li key={ann.id} className="px-6 py-4 border-b border-gray-100 last:border-b-0 sm:[&:nth-child(n)]:border-b sm:border-r sm:last:border-r-0 lg:[&:nth-child(3n)]:border-r-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-gray-700">{ann.senderName}</span>
+                    <span className="text-[10px] text-gray-400">
+                      {new Date(ann.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600 line-clamp-3">{ann.content}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* ── Bottom: Upcoming Events + Recent Games side by side ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
           {/* Upcoming Events */}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -252,7 +289,10 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 truncate">{item.label}</p>
-                          <p className="text-xs text-gray-500">{formatTime(item.date)}</p>
+                          <p className="text-xs text-gray-500">
+                            {formatTime(item.date)}
+                            {item.sublabel && <span className="ml-1.5">· {item.sublabel}</span>}
+                          </p>
                         </div>
                         <span className={`shrink-0 text-xs font-medium px-2.5 py-0.5 rounded-full border ${kindStyles[item.kind]}`}>
                           {kindLabel[item.kind]}
@@ -315,43 +355,8 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
               </ul>
             )}
           </div>
-        </div>
 
-        {/* ── Right column (1/3): Announcements ─────────────────── */}
-        <div className="lg:col-span-1">
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900">Announcements</h2>
-              <div className="flex items-center gap-2">
-                {canPostAnnouncement && (announcementChannelsResult.data?.length ?? 0) > 0 && (
-                  <NewAnnouncementForm
-                    teamId={activeTeam.id}
-                    channelId={announcementChannelsResult.data![0].id}
-                  />
-                )}
-                <Link href="/messages" className="text-xs text-brand-700 hover:underline">View all →</Link>
-              </div>
-            </div>
-            {announcements.length === 0 ? (
-              <p className="px-6 py-5 text-sm text-gray-400">No recent announcements.</p>
-            ) : (
-              <ul className="divide-y divide-gray-100">
-                {announcements.map((ann) => (
-                  <li key={ann.id} className="px-6 py-4">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-semibold text-gray-700">{ann.senderName}</span>
-                      <span className="text-[10px] text-gray-400">
-                        {new Date(ann.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600 line-clamp-3">{ann.content}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
         </div>
-
       </div>
     </div>
   );

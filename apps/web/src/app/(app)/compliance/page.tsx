@@ -68,6 +68,7 @@ export default async function CompliancePage({
   }
 
   // Get all relevant events for those games
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase select('*') returns untyped rows
   const rawEvents: any[] = [];
   if (gameIds.length > 0) {
     const { data: events } = await db

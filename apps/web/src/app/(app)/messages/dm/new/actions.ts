@@ -30,7 +30,7 @@ export async function startDmAction(formData: FormData) {
     .eq('channels.team_id', teamId);
 
   const candidateChannelIds =
-    (myDmMemberships ?? []).map((m: any) => m.channel_id);
+    (myDmMemberships ?? []).map((m) => m.channel_id);
 
   if (candidateChannelIds.length > 0) {
     // Check if the target user is in any of those channels

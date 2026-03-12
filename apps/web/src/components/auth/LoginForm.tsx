@@ -2,76 +2,60 @@
 import type { JSX } from 'react';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+
+type Mode = 'email' | 'sent';
 
 export function LoginForm(): JSX.Element | null {
+  const [mode, setMode] = useState<Mode>('email');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
 
-  async function handleDirectLogin() {
+  async function handleMagicLink(e: React.FormEvent) {
+    e.preventDefault();
     setLoading(true);
     setError(null);
 
+    const normalizedEmail = email.toLowerCase().trim();
+
     try {
-      const res = await fetch('/api/auth/direct-login', {
+      // Server verifies the email is registered and sends the OTP in one step.
+      // No browser-side signInWithOtp() — the email template uses token_hash
+      // directly, so no PKCE code_verifier cookie is needed.
+      const res = await fetch('/api/auth/send-magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.toLowerCase().trim() }),
+        body: JSON.stringify({ email: normalizedEmail }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error ?? 'Login failed');
+        setError(data.error ?? 'Unable to send sign-in link');
         setLoading(false);
         return;
       }
 
-      // Session cookies are set — redirect to dashboard
-      router.push('/dashboard');
-      router.refresh();
-    } catch (err: any) {
-      setError(err.message ?? 'Login failed');
-      setLoading(false);
-    }
-  }
-
-  async function handleMagicLink() {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await fetch('/api/auth/send-magic-link', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.toLowerCase().trim() }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? 'Failed to send magic link');
-      } else {
-        setSent(true);
-      }
-    } catch (err: any) {
-      setError(err.message ?? 'Failed to send magic link');
+      setMode('sent');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send sign-in link');
     }
     setLoading(false);
   }
 
-  if (sent) {
+  if (mode === 'sent') {
     return (
       <div className="text-center">
         <div className="text-4xl mb-4">📧</div>
         <h2 className="text-xl font-semibold text-gray-900 mb-2">Check your email</h2>
         <p className="text-gray-500">
-          We sent a magic link to <strong>{email}</strong>. Click the link to sign in.
+          We sent a sign-in link to <strong>{email}</strong>. Click the link to sign in.
         </p>
         <button
           className="mt-6 text-sm text-brand-600 hover:underline"
-          onClick={() => setSent(false)}
+          onClick={() => {
+            setMode('email');
+            setError(null);
+          }}
         >
           Use a different email
         </button>
@@ -80,13 +64,7 @@ export function LoginForm(): JSX.Element | null {
   }
 
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        handleDirectLogin();
-      }}
-      className="space-y-5"
-    >
+    <form onSubmit={handleMagicLink} className="space-y-5">
       <div>
         <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
           Email address
@@ -113,29 +91,11 @@ export function LoginForm(): JSX.Element | null {
         disabled={loading || !email}
         className="w-full bg-brand-700 text-white font-semibold py-2.5 rounded-lg hover:bg-brand-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
-        {loading ? 'Signing in...' : 'Sign In'}
-      </button>
-
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-200" />
-        </div>
-        <div className="relative flex justify-center text-xs">
-          <span className="bg-white px-2 text-gray-400">or</span>
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={handleMagicLink}
-        disabled={loading || !email}
-        className="w-full bg-white border border-gray-300 text-gray-700 font-medium py-2.5 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-      >
-        Send magic link to email
+        {loading ? 'Sending…' : 'Send sign-in link'}
       </button>
 
       <p className="text-xs text-center text-gray-400">
-        Sign in directly or receive a one-click link by email.
+        Enter your email to receive a one-click sign-in link.
       </p>
     </form>
   );

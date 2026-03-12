@@ -108,7 +108,7 @@ export async function inviteParentAction(
   const playersParam = linkedPlayerIds.length > 0 ? `&players=${linkedPlayerIds.join(',')}` : '';
   const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
     data: { invited_to_team: teamId, invited_role: 'parent' },
-    redirectTo: `${appUrl}/callback?team=${teamId}&role=parent${playersParam}`,
+    redirectTo: `${appUrl}/auth/callback?team=${teamId}&role=parent${playersParam}`,
   });
 
   if (inviteError) return `Failed to send invite: ${inviteError.message}`;

@@ -81,11 +81,12 @@ export default async function ChannelPage({
 
   // Build member profiles map for Realtime incoming messages
   const memberProfiles: Record<string, { firstName: string; lastName: string }> = {};
-  for (const m of channel.channel_members as any[]) {
-    if (m.user_profiles) {
+  for (const m of channel.channel_members) {
+    const profile = m.user_profiles as unknown as { first_name: string; last_name: string } | null;
+    if (profile) {
       memberProfiles[m.user_id] = {
-        firstName: m.user_profiles.first_name,
-        lastName:  m.user_profiles.last_name,
+        firstName: profile.first_name,
+        lastName:  profile.last_name,
       };
     }
   }
@@ -93,11 +94,12 @@ export default async function ChannelPage({
   // Compute channel display name (DMs use the other participant's name)
   let displayName = channel.name ?? 'Conversation';
   if (channel.channel_type === 'direct') {
-    const other = (channel.channel_members as any[]).find(
-      (m: any) => m.user_id !== user.id,
+    const other = channel.channel_members.find(
+      (m) => m.user_id !== user.id,
     );
-    if (other?.user_profiles) {
-      displayName = `${other.user_profiles.first_name} ${other.user_profiles.last_name}`;
+    const otherProfile = other?.user_profiles as unknown as { first_name: string; last_name: string } | null;
+    if (otherProfile) {
+      displayName = `${otherProfile.first_name} ${otherProfile.last_name}`;
     }
   }
 
@@ -122,7 +124,7 @@ export default async function ChannelPage({
       {/* ── Message thread (real-time) ───────────────────────────────── */}
       <MessageThread
         channelId={params.channelId}
-        initialMessages={(messages ?? []).map((m: any): MessageRow => ({
+        initialMessages={(messages ?? []).map((m): MessageRow => ({
           id: m.id,
           body: m.body,
           sender_id: m.sender_id,

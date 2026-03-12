@@ -59,7 +59,7 @@ export default async function PlatformAdminUsersPage(): Promise<JSX.Element | nu
     else teamRolesMap.set(m.user_id, [entry]);
   }
 
-  const rows = (profilesResult.data ?? []).map((p: any) => ({
+  const rows = (profilesResult.data ?? []).map((p) => ({
     id: p.id as string,
     firstName: p.first_name as string | null,
     lastName: p.last_name as string | null,

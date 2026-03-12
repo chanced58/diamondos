@@ -10,6 +10,23 @@ export const metadata: Metadata = { title: 'Set Lineup' };
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
+/** Map database enum values back to UI abbreviations. */
+const DB_TO_POSITION: Record<string, string> = {
+  pitcher: 'P',
+  catcher: 'C',
+  first_base: '1B',
+  second_base: '2B',
+  third_base: '3B',
+  shortstop: 'SS',
+  left_field: 'LF',
+  center_field: 'CF',
+  right_field: 'RF',
+  designated_hitter: 'DH',
+  infield: 'IF',
+  outfield: 'OF',
+  utility: 'UTIL',
+};
+
 export default async function LineupPage({ params }: { params: { gameId: string } }): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
@@ -57,13 +74,13 @@ export default async function LineupPage({ params }: { params: { gameId: string 
     firstName: p.first_name,
     lastName: p.last_name,
     jerseyNumber: p.jersey_number,
-    primaryPosition: p.primary_position,
+    primaryPosition: p.primary_position ? DB_TO_POSITION[p.primary_position] ?? p.primary_position : null,
   }));
 
   const existingLineup = (lineupResult.data ?? []).map((l) => ({
     playerId: l.player_id,
     battingOrder: l.batting_order,
-    startingPosition: l.starting_position,
+    startingPosition: l.starting_position ? DB_TO_POSITION[l.starting_position] ?? l.starting_position : null,
   }));
 
   const vsAt = game.location_type === 'away' ? '@' : 'vs';

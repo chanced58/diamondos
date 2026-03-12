@@ -108,7 +108,7 @@ export function StaffSection({
   const [open, setOpen] = useState(false);
   const [result, action] = useFormState(inviteStaffAction, null);
   const [emailInput, setEmailInput] = useState('');
-  const [existingUser, setExistingUser] = useState<ExistingUser>(undefined as any);
+  const [existingUser, setExistingUser] = useState<ExistingUser>(null);
   const [isLooking, startLookup] = useTransition();
   const [editing, setEditing] = useState<EditingState>(null);
   const [editError, setEditError] = useState<string | null>(null);

@@ -36,7 +36,14 @@
       "Bash(node -e \":*)",
       "Bash(node -e:*)",
       "Bash(n\" + content;:*)",
-      "Bash(git add apps/web/src/app/\\\\\\(app\\\\\\)/dashboard/page.tsx)"
+      "Bash(git add apps/web/src/app/\\\\\\(app\\\\\\)/dashboard/page.tsx)",
+      "Bash(ls -la /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app/\\\\\\(app\\\\\\)/)",
+      "Bash(ls -la /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app/\\\\\\(auth\\\\\\)/)",
+      "Bash(git status -u)",
+      "Bash(git add \"apps/web/src/app/\\(app\\)/messages/page.tsx\" \"apps/web/src/app/\\(app\\)/teams/[teamId]/admin/users/page.tsx\" \"apps/web/src/app/\\(app\\)/teams/[teamId]/roster/StaffSection.tsx\" \"apps/web/src/app/\\(app\\)/teams/[teamId]/roster/page.tsx\" \"apps/web/src/app/\\(auth\\)/callback/route.ts\")",
+      "Bash(git add \"apps/web/src/app/\\(app\\)/games/[gameId]/score/page.tsx\" \"apps/web/src/app/\\(app\\)/messages/dm/new/page.tsx\" \"apps/web/src/app/\\(app\\)/teams/[teamId]/admin/users/page.tsx\" \"apps/web/src/app/\\(app\\)/teams/[teamId]/roster/page.tsx\")",
+      "Bash(git add \"apps/web/src/app/\\(app\\)/messages/[channelId]/page.tsx\")",
+      "Bash(find /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app -type d -name '\\(auth\\)' -o -name '\\(app\\)')"
     ],
     "additionalDirectories": [
       "c:\\Users\\chance\\baseball-app\\baseballcoachesapp\\apps\\web\\src\\app\\(app)\\teams\\[teamId]\\admin"

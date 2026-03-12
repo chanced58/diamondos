@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { createServerClient } from '@supabase/ssr';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Extract token_hash from the properties or from the action_link URL
-  let tokenHash: string | null = (linkData.properties as any).hashed_token ?? null;
+  let tokenHash: string | null = (linkData.properties as Record<string, unknown>).hashed_token as string ?? null;
 
   if (!tokenHash) {
     // Fallback: parse from the action_link URL
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet: Array<{ name: string; value: string; options?: any }>) {
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           cookiesToSet.forEach(({ name, value, options }) =>
             successResponse.cookies.set(name, value, options),
           );

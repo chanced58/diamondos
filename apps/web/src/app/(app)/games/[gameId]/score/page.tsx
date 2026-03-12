@@ -8,6 +8,14 @@ import { ScoringBoard } from './ScoringBoard';
 
 export const metadata: Metadata = { title: 'Scoring' };
 
+/** Map database enum values to UI abbreviations. */
+const DB_TO_POSITION: Record<string, string> = {
+  pitcher: 'P', catcher: 'C', first_base: '1B', second_base: '2B',
+  third_base: '3B', shortstop: 'SS', left_field: 'LF', center_field: 'CF',
+  right_field: 'RF', designated_hitter: 'DH', infield: 'IF', outfield: 'OF',
+  utility: 'UTIL',
+};
+
 export default async function ScorePage({ params }: { params: { gameId: string } }): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
@@ -56,17 +64,20 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       .order('sequence_number'),
   ]);
 
-  const lineup = (lineupResult.data ?? []).map((l: any) => ({
-    playerId: l.player_id as string,
-    battingOrder: l.batting_order as number,
-    startingPosition: l.starting_position as string | null,
-    player: {
-      id: (l.players as any)?.id as string,
-      firstName: (l.players as any)?.first_name as string,
-      lastName: (l.players as any)?.last_name as string,
-      jerseyNumber: (l.players as any)?.jersey_number as number | null,
-    },
-  }));
+  const lineup = (lineupResult.data ?? []).map((l) => {
+    const p = l.players as unknown as { id: string; first_name: string; last_name: string; jersey_number: number | null } | null;
+    return {
+      playerId: l.player_id as string,
+      battingOrder: l.batting_order as number,
+      startingPosition: l.starting_position ? DB_TO_POSITION[l.starting_position] ?? l.starting_position : null,
+      player: {
+        id: p?.id as string,
+        firstName: p?.first_name as string,
+        lastName: p?.last_name as string,
+        jerseyNumber: p?.jersey_number ?? null,
+      },
+    };
+  });
 
   // ── Season spray-chart history ──────────────────────────────────────────────
   // Fetch pitch_thrown + hit events for completed games and replay them to
@@ -86,7 +97,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       .eq('status', 'completed')
       .neq('id', params.gameId);
 
-    const completedIds = (completedGames ?? []).map((g: any) => g.id as string);
+    const completedIds = (completedGames ?? []).map((g) => g.id as string);
 
     if (completedIds.length > 0) {
       const { data: rawEvents } = await db
@@ -102,6 +113,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
         .order('sequence_number');
 
       // Group events by game so we can replay each game independently
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- game event rows from Supabase
       const byGame = new Map<string, any[]>();
       for (const e of rawEvents ?? []) {
         const gid = e.game_id as string;

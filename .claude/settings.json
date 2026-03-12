@@ -10,7 +10,13 @@
       "Bash(npx next dev -p 4001)",
       "Bash(pnpm --filter web add resend)",
       "Bash(gh pr:*)",
-      "Bash(where gh:*)"
+      "Bash(where gh:*)",
+      "Bash(find /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app -type f -path \"*\\(auth\\)*layout*\" -o -type f -name \"layout.tsx\")",
+      "Bash(find /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app -name \"layout.tsx\" -path \"*\\(auth\\)*\")",
+      "Bash(find /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app -name \"*.tsx\" -path \"*\\(auth\\)*\")",
+      "Bash(ls -la /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app/\\\\\\(auth\\\\\\)/set-password/)",
+      "Bash(ls -la /c/Users/chance/baseball-app/baseballcoachesapp/apps/web/src/app/\\\\\\(auth\\\\\\)/login/)",
+      "Bash(git add:*)"
     ]
   }
 }
