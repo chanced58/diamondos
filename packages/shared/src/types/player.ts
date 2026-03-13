@@ -22,7 +22,7 @@ export enum BatsThrows {
 
 export interface Player {
   id: string;
-  teamId: string;
+  teamId?: string;   // Denormalized "current team" — nullable after transfer
   userId?: string;
   firstName: string;
   lastName: string;
@@ -38,4 +38,28 @@ export interface Player {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PlayerTeamMembership {
+  id: string;
+  playerId: string;
+  teamId: string;
+  jerseyNumber?: number;
+  joinedAt: string;
+  leftAt?: string;
+  isActive: boolean;
+  transferReason?: string;
+  createdAt: string;
+}
+
+export interface PlayerTransfer {
+  id: string;
+  playerId: string;
+  fromTeamId?: string;
+  toTeamId?: string;
+  transferredAt: string;
+  reason?: string;
+  initiatedBy: string;
+  notes?: string;
+  createdAt: string;
 }

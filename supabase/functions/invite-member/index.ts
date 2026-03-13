@@ -122,7 +122,7 @@ Deno.serve(async (req: Request) => {
     email.toLowerCase(),
     {
       data: { invited_to_team: teamId, invited_role: role },
-      redirectTo: `${Deno.env.get('APP_URL') ?? 'https://localhost:3000'}/callback?team=${teamId}&role=${role}`,
+      redirectTo: `${Deno.env.get('APP_URL') ?? 'https://localhost:3000'}/auth/callback?team=${teamId}&role=${role}`,
     },
   );
 
