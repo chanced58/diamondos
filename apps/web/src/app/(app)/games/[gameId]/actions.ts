@@ -133,6 +133,7 @@ export async function startGameAction(_prevState: string | null | undefined, for
 
   // Insert GAME_START event
   const { error: eventError } = await supabase.from('game_events').insert({
+    id: crypto.randomUUID(),
     game_id: gameId,
     sequence_number: 1,
     event_type: 'game_start',
@@ -181,6 +182,7 @@ export async function endGameAction(_prevState: string | null | undefined, formD
   const now = new Date().toISOString();
 
   await supabase.from('game_events').insert({
+    id: crypto.randomUUID(),
     game_id: gameId,
     sequence_number: nextSeq,
     event_type: 'game_end',

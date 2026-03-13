@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DiamondOS — Baseball Coaching Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* ── Branding tokens (mirrors site_settings defaults) ──────────────────── */
+  :root {
+    --primary: #1e3a8a;
+    --secondary: #1d4ed8;
+    --accent: #eff6ff;
+    --site-name: 'DiamondOS';
+
+    --gray-50: #f9fafb; --gray-100: #f3f4f6; --gray-200: #e5e7eb;
+    --gray-300: #d1d5db; --gray-400: #9ca3af; --gray-500: #6b7280;
+    --gray-600: #4b5563; --gray-700: #374151; --gray-900: #111827;
+    --green-50: #f0fdf4; --green-200: #bbf7d0; --green-500: #22c55e; --green-700: #15803d;
+    --yellow-50: #fefce8; --yellow-200: #fef08a; --yellow-500: #eab308; --yellow-700: #a16207;
+    --orange-50: #fff7ed; --orange-200: #fed7aa; --orange-700: #c2410c;
+    --red-50: #fef2f2; --red-200: #fecaca; --red-500: #ef4444; --red-700: #b91c1c;
+    --blue-50: #eff6ff; --blue-200: #bfdbfe; --blue-700: #1d4ed8;
+    --purple-50: #faf5ff; --purple-200: #e9d5ff; --purple-700: #7e22ce;
+  }
+
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--gray-50); color: var(--gray-900); -webkit-font-smoothing: antialiased; }
+  a { text-decoration: none; color: inherit; }
+
+  /* ── Nav ────────────────────────────────────────────────────────────────── */
+  .nav { position: sticky; top: 0; z-index: 50; background: rgba(255,255,255,0.8); backdrop-filter: blur(12px); border-bottom: 1px solid var(--gray-200); }
+  .nav-inner { max-width: 64rem; margin: 0 auto; padding: 1rem 1.5rem; display: flex; align-items: center; justify-content: space-between; }
+  .nav-brand { display: flex; align-items: center; gap: 0.625rem; }
+  .nav-logo-placeholder { width: 2rem; height: 2rem; border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 0.875rem; background: var(--primary); }
+  .nav-logo-placeholder img { width: 100%; height: 100%; object-fit: contain; }
+  .nav-brand-name { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.025em; color: var(--primary); }
+  .btn-primary { font-size: 0.875rem; font-weight: 500; padding: 0.5rem 1rem; border-radius: 0.5rem; background: var(--primary); color: #fff; border: none; cursor: pointer; transition: opacity 0.15s; }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-primary-lg { padding: 0.75rem 1.5rem; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+
+  /* ── Hero (accent background) ──────────────────────────────────────────── */
+  .hero { padding: 5rem 1.5rem 3rem; text-align: center; background: var(--accent); }
+  .hero-inner { max-width: 48rem; margin: 0 auto; }
+  .hero-logo { height: 4rem; width: 4rem; object-fit: contain; margin: 0 auto 1.25rem; display: none; }
+  .hero-logo.visible { display: block; }
+  .hero h1 { font-size: 2.5rem; font-weight: 800; letter-spacing: -0.025em; line-height: 1.15; }
+  .hero p.subtext { font-size: 1.125rem; color: var(--gray-500); max-width: 40rem; margin: 1.25rem auto 0; line-height: 1.7; }
+  @media (min-width: 640px) { .hero h1 { font-size: 3rem; } }
+
+  /* ── CTA / Lead capture section ──────────────────────────────────────── */
+  .cta-section { padding: 4rem 1.5rem; background: #fff; }
+  .cta-inner { max-width: 28rem; margin: 0 auto; text-align: center; }
+  .cta-inner h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: 0.25rem; }
+  .cta-inner .form-sub { font-size: 0.875rem; color: var(--gray-500); margin-bottom: 1.25rem; }
+  .lead-form { display: flex; gap: 0.5rem; }
+  .lead-form input { flex: 1; min-width: 0; border: 1px solid var(--gray-300); border-radius: 0.5rem; padding: 0.625rem 1rem; color: var(--gray-900); font-size: 0.875rem; font-family: inherit; outline: none; }
+  .lead-form input:focus { box-shadow: 0 0 0 2px var(--secondary); border-color: transparent; }
+  .lead-form input::placeholder { color: var(--gray-400); }
+  .lead-privacy { font-size: 0.75rem; color: var(--gray-400); text-align: center; margin-top: 0.75rem; }
+  .lead-success { text-align: center; padding: 0.5rem 0; }
+  .lead-success p:first-child { font-size: 1.125rem; font-weight: 600; color: var(--gray-900); }
+  .lead-success p:last-child { font-size: 0.875rem; color: var(--gray-400); margin-top: 0.25rem; }
+
+  /* ── Demo section ──────────────────────────────────────────────────────── */
+  .demo-section { padding: 4rem 1.5rem; }
+  .demo-wrapper { max-width: 36rem; margin: 0 auto; }
+  .demo-header { text-align: center; margin-bottom: 1.5rem; }
+  .demo-header .label { font-size: 0.875rem; font-weight: 600; color: var(--secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+  .demo-header h2 { font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem; }
+  .demo-header p { font-size: 0.875rem; color: var(--gray-400); margin-top: 0.25rem; }
+  .demo-card { background: #fff; border-radius: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); border: 1px solid var(--gray-200); padding: 1.5rem 2rem; }
+
+  /* ── Demo internals ────────────────────────────────────────────────────── */
+  .demo-scoreboard { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
+  .demo-inning { font-size: 0.875rem; font-weight: 500; color: var(--gray-500); background: var(--gray-100); padding: 0.25rem 0.75rem; border-radius: 9999px; }
+  .demo-score { font-size: 0.875rem; color: var(--gray-600); }
+  .demo-score b { color: var(--gray-900); }
+  .demo-pitches { font-size: 0.75rem; color: var(--gray-400); }
+  .demo-state { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; margin-bottom: 1.5rem; }
+  .demo-state-left { flex: 1; }
+
+  /* Count dots */
+  .count-row { display: flex; gap: 1.5rem; font-size: 0.75rem; font-weight: 600; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.05em; }
+  .count-group { display: flex; align-items: center; gap: 0.375rem; }
+  .dot { display: inline-block; width: 1rem; height: 1rem; border-radius: 50%; border: 2px solid var(--gray-300); }
+  .dot.filled-green { background: var(--green-500); border-color: var(--green-500); }
+  .dot.filled-yellow { background: var(--yellow-500); border-color: var(--yellow-500); }
+  .dot.filled-red { background: var(--red-500); border-color: var(--red-500); }
+
+  /* Batter info */
+  .batter-label { font-size: 0.75rem; font-weight: 500; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 1rem; }
+  .batter-name { font-size: 1.125rem; font-weight: 700; margin-top: 0.125rem; }
+  .batter-name .num { color: var(--primary); }
+  .batter-progress { font-size: 0.75rem; color: var(--gray-400); margin-top: 0.125rem; }
+
+  /* Diamond */
+  .diamond { position: relative; width: 5rem; height: 5rem; flex-shrink: 0; }
+  .base { position: absolute; width: 1.5rem; height: 1.5rem; transform: rotate(45deg); border: 2px solid var(--gray-300); background: #fff; }
+  .base.occupied { background: var(--secondary); border-color: var(--primary); }
+  .base-2 { top: 0; left: 50%; margin-left: -0.75rem; }
+  .base-3 { top: 50%; left: 0; margin-top: -0.75rem; }
+  .base-1 { top: 50%; right: 0; margin-top: -0.75rem; }
+  .base-home { bottom: 0; left: 50%; margin-left: -0.625rem; width: 1.25rem; height: 1.25rem; transform: rotate(45deg); border: 2px solid var(--gray-400); background: #fff; }
+
+  /* Last action */
+  .last-action { text-align: center; font-size: 0.875rem; font-weight: 500; color: var(--secondary); background: var(--accent); border-radius: 0.5rem; padding: 0.5rem; margin-bottom: 1.5rem; }
+
+  /* Buttons grid */
+  .btn-section-label { font-size: 0.75rem; font-weight: 500; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+  .btn-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+  .btn-grid.five-col { grid-template-columns: repeat(5, 1fr); }
+  .pitch-btn { padding: 0.75rem; font-size: 0.875rem; font-weight: 500; border-radius: 0.5rem; border: 1px solid; cursor: pointer; transition: background 0.15s; font-family: inherit; }
+  .pitch-btn:active { transform: scale(0.97); }
+  .btn-ball { background: var(--green-50); color: var(--green-700); border-color: var(--green-200); }
+  .btn-ball:hover { background: #dcfce7; }
+  .btn-calledk { background: var(--yellow-50); color: var(--yellow-700); border-color: var(--yellow-200); }
+  .btn-calledk:hover { background: #fef9c3; }
+  .btn-swingk { background: var(--orange-50); color: var(--orange-700); border-color: var(--orange-200); }
+  .btn-swingk:hover { background: #ffedd5; }
+  .btn-foul { background: var(--gray-50); color: var(--gray-700); border-color: var(--gray-200); }
+  .btn-foul:hover { background: var(--gray-100); }
+  .btn-inplay { background: var(--blue-50); color: var(--blue-700); border-color: var(--blue-200); }
+  .btn-inplay:hover { background: #dbeafe; }
+  .btn-out { background: var(--red-50); color: var(--red-700); border-color: var(--red-200); }
+  .btn-out:hover { background: #fee2e2; }
+  .btn-single { background: var(--green-50); color: var(--green-700); border-color: var(--green-200); }
+  .btn-double { background: var(--blue-50); color: var(--blue-700); border-color: var(--blue-200); }
+  .btn-triple { background: var(--purple-50); color: var(--purple-700); border-color: var(--purple-200); }
+  .btn-hr { background: var(--yellow-50); color: var(--yellow-700); border-color: var(--yellow-200); }
+  .btn-error { background: var(--gray-50); color: var(--gray-700); border-color: var(--gray-200); }
+  .btn-back { width: 100%; font-size: 0.75rem; color: var(--gray-400); background: none; border: none; cursor: pointer; padding: 0.5rem; font-family: inherit; }
+  .btn-back:hover { color: var(--gray-600); }
+  .btn-reset { display: block; margin: 1rem auto 0; font-size: 0.75rem; color: var(--gray-400); background: none; border: none; cursor: pointer; font-family: inherit; }
+  .btn-reset:hover { color: var(--gray-600); }
+  @media (max-width: 639px) { .btn-grid.five-col { grid-template-columns: repeat(3, 1fr); } .btn-inplay-wrap { grid-column: span 3; } }
+
+  /* Complete screen */
+  .complete { text-align: center; padding: 2rem 0; }
+  .complete h3 { font-size: 1.25rem; font-weight: 700; }
+  .complete .sub { color: var(--gray-500); margin-top: 0.5rem; }
+  .stats-row { display: flex; justify-content: center; gap: 2rem; margin: 1.5rem 0; }
+  .stat { text-align: center; }
+  .stat-val { font-size: 1.5rem; font-weight: 700; color: var(--primary); }
+  .stat-label { font-size: 0.875rem; color: var(--gray-500); }
+  .complete .note { font-size: 0.875rem; color: var(--gray-400); margin-bottom: 1.5rem; }
+  .complete-btns { display: flex; justify-content: center; gap: 0.75rem; }
+  .btn-secondary { font-size: 0.875rem; font-weight: 500; padding: 0.625rem 1.25rem; border-radius: 0.5rem; border: 1px solid var(--gray-300); color: var(--gray-700); background: #fff; cursor: pointer; transition: background 0.15s; font-family: inherit; }
+  .btn-secondary:hover { background: var(--gray-50); }
+
+  /* ── Portable Stats ────────────────────────────────────────────────────── */
+  .portable-stats { padding: 5rem 1.5rem; background: var(--accent); text-align: center; }
+  .portable-stats-inner { max-width: 48rem; margin: 0 auto; }
+  .portable-stats .icon-circle { display: inline-flex; align-items: center; justify-content: center; width: 3.5rem; height: 3.5rem; border-radius: 50%; margin-bottom: 1.5rem; }
+  .portable-stats .icon-circle svg { width: 1.75rem; height: 1.75rem; }
+  .portable-stats h2 { font-size: 1.5rem; font-weight: 700; line-height: 1.3; }
+  @media (min-width: 640px) { .portable-stats h2 { font-size: 1.875rem; } }
+  .portable-stats p.desc { font-size: 1.125rem; color: var(--gray-500); max-width: 40rem; margin: 1rem auto 0; line-height: 1.7; }
+  .stats-callouts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; max-width: 32rem; margin: 1.5rem auto 0; }
+  .stats-callout { background: #fff; border-radius: 0.75rem; border: 1px solid var(--gray-200); padding: 1rem; }
+  .stats-callout .val { font-size: 1.5rem; font-weight: 700; color: var(--primary); }
+  .stats-callout .lbl { font-size: 0.875rem; color: var(--gray-500); margin-top: 0.25rem; }
+
+  /* ── Features ──────────────────────────────────────────────────────────── */
+  .features { padding: 0 1.5rem 5rem; }
+  .features-inner { max-width: 64rem; margin: 0 auto; }
+  .features h2 { text-align: center; font-size: 1.5rem; font-weight: 700; margin-bottom: 2.5rem; }
+  .features-grid { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+  @media (min-width: 640px) { .features-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1024px) { .features-grid { grid-template-columns: repeat(4, 1fr); } }
+  .feature-card { background: #fff; border-radius: 0.75rem; border: 1px solid var(--gray-200); padding: 1.5rem; }
+  .feature-icon { color: var(--secondary); margin-bottom: 0.75rem; }
+  .feature-icon svg { width: 1.75rem; height: 1.75rem; }
+  .feature-card h3 { font-weight: 600; margin-bottom: 0.5rem; }
+  .feature-card p { font-size: 0.875rem; color: var(--gray-500); line-height: 1.6; }
+
+  /* ── Footer ────────────────────────────────────────────────────────────── */
+  .footer { margin-top: auto; border-top: 1px solid var(--gray-200); background: #fff; }
+  .footer-inner { max-width: 64rem; margin: 0 auto; padding: 1.5rem; display: flex; align-items: center; justify-content: space-between; font-size: 0.75rem; color: var(--gray-400); }
+  .footer-brand { display: flex; align-items: center; gap: 0.5rem; }
+  .footer-brand img { height: 1.25rem; width: 1.25rem; object-fit: contain; opacity: 0.5; }
+
+  /* ── Branding config panel ─────────────────────────────────────────────── */
+  .config-toggle { position: fixed; bottom: 1rem; right: 1rem; z-index: 100; width: 3rem; height: 3rem; border-radius: 50%; background: var(--primary); color: #fff; border: none; cursor: pointer; font-size: 1.25rem; box-shadow: 0 2px 8px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }
+  .config-toggle:hover { transform: scale(1.1); }
+  .config-panel { position: fixed; bottom: 4.5rem; right: 1rem; z-index: 100; width: 320px; background: #fff; border-radius: 0.75rem; border: 1px solid var(--gray-200); box-shadow: 0 8px 24px rgba(0,0,0,0.12); padding: 1.25rem; display: none; }
+  .config-panel.open { display: block; }
+  .config-panel h3 { font-size: 0.875rem; font-weight: 600; margin-bottom: 1rem; color: var(--gray-900); }
+  .config-field { margin-bottom: 0.75rem; }
+  .config-field label { display: block; font-size: 0.75rem; font-weight: 500; color: var(--gray-500); margin-bottom: 0.25rem; }
+  .config-field input[type="text"] { width: 100%; border: 1px solid var(--gray-300); border-radius: 0.375rem; padding: 0.375rem 0.5rem; font-size: 0.8125rem; font-family: inherit; outline: none; }
+  .config-field input[type="text"]:focus { box-shadow: 0 0 0 2px var(--secondary); border-color: transparent; }
+  .config-color-row { display: flex; align-items: center; gap: 0.5rem; }
+  .config-color-row input[type="color"] { width: 2rem; height: 2rem; border-radius: 0.375rem; border: 1px solid var(--gray-300); cursor: pointer; padding: 0.125rem; }
+  .config-color-row input[type="text"] { flex: 1; border: 1px solid var(--gray-300); border-radius: 0.375rem; padding: 0.375rem 0.5rem; font-size: 0.8125rem; font-family: 'Inter', monospace; outline: none; }
+  .config-field-group { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; }
+  .config-field-group .config-field { margin-bottom: 0; }
+  .config-field textarea { width: 100%; border: 1px solid var(--gray-300); border-radius: 0.375rem; padding: 0.375rem 0.5rem; font-size: 0.8125rem; font-family: inherit; outline: none; resize: none; }
+  .config-field textarea:focus { box-shadow: 0 0 0 2px var(--secondary); border-color: transparent; }
+  .config-sep { border: none; border-top: 1px solid var(--gray-100); margin: 0.75rem 0; }
+  .config-logo-area { display: flex; align-items: center; gap: 0.75rem; }
+  .config-logo-preview { width: 3rem; height: 3rem; border-radius: 0.5rem; border: 2px dashed var(--gray-300); display: flex; align-items: center; justify-content: center; background: var(--gray-50); overflow: hidden; flex-shrink: 0; }
+  .config-logo-preview img { width: 100%; height: 100%; object-fit: contain; padding: 0.25rem; }
+  .config-logo-btns { display: flex; gap: 0.375rem; flex-wrap: wrap; }
+  .config-logo-btns label, .config-logo-btns button { font-size: 0.75rem; font-weight: 500; padding: 0.25rem 0.625rem; border-radius: 0.375rem; cursor: pointer; border: 1px solid var(--gray-300); background: #fff; color: var(--gray-700); font-family: inherit; transition: background 0.15s; }
+  .config-logo-btns label:hover, .config-logo-btns button:hover { background: var(--gray-50); }
+  .config-logo-btns label.primary-btn { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .config-logo-btns label.primary-btn:hover { opacity: 0.9; }
+  .config-logo-btns input[type="file"] { display: none; }
+</style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#" class="nav-brand">
+      <span class="nav-logo-placeholder" id="nav-logo">D</span>
+      <span class="nav-brand-name" id="nav-brand-name">DiamondOS</span>
+    </a>
+    <button class="btn-primary" onclick="alert('This would navigate to /login')">Sign In</button>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-inner">
+    <img class="hero-logo" id="hero-logo" src="" alt="" />
+    <h1 id="hero-headline">The Operating System for Baseball Coaches</h1>
+    <p class="subtext" id="hero-subtext">Scorekeeping, pitch count compliance, team communication, and statistics — all in one platform built for high school and youth baseball.</p>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="features">
+  <div class="features-inner">
+    <h2>Everything You Need on Game Day</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" /></svg>
+        </div>
+        <h3>Pitch-by-Pitch Scoring</h3>
+        <p>Record every pitch, hit, and play in real time. Works offline — syncs automatically when you reconnect.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" /></svg>
+        </div>
+        <h3>Pitch Count Compliance</h3>
+        <p>Built-in NFHS, Little League, and NCAA pitch count rules. Automatic rest-day calculations and live alerts.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" /></svg>
+        </div>
+        <h3>Team Communication</h3>
+        <p>Announcements, topic channels, and direct messages with push notifications and RSVP tracking.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
+        </div>
+        <h3>Statistics & Analytics</h3>
+        <p>Batting averages, ERA, Quality At-Bats, and spray charts — all computed from your play-by-play data.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Demo -->
+<section class="demo-section">
+  <div class="demo-wrapper">
+    <div class="demo-header">
+      <div class="label">Try It</div>
+      <h2>Score an At-Bat</h2>
+      <p>Record pitches and outcomes for 3 batters using the real <span id="demo-site-name">DiamondOS</span> game engine.</p>
+    </div>
+    <div class="demo-card" id="demo"></div>
+  </div>
+</section>
+
+<!-- Portable Stats -->
+<section class="portable-stats">
+  <div class="portable-stats-inner">
+    <div class="icon-circle" id="portable-icon">
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" /></svg>
+    </div>
+    <h2>Stats that follow the player, not the team</h2>
+    <p class="desc">Every at-bat, pitch, and play is tied to the player's profile &mdash; not a single team roster. When a player moves to a new team on the platform, their full statistical history comes with them. Coaches see the complete picture from day one.</p>
+    <div class="stats-callouts">
+      <div class="stats-callout"><div class="val">100%</div><div class="lbl">Portable stats</div></div>
+      <div class="stats-callout"><div class="val">Every</div><div class="lbl">Season preserved</div></div>
+      <div class="stats-callout"><div class="val">Zero</div><div class="lbl">Data lost on transfer</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA / Lead Capture -->
+<section class="cta-section">
+  <div class="cta-inner">
+    <h2 id="form-headline">We're still building</h2>
+    <p class="form-sub" id="form-subtext">Drop your email to get notified when we go live.</p>
+    <div id="lead-capture">
+      <form class="lead-form" onsubmit="handleLeadSubmit(event)">
+        <input type="email" id="lead-email" placeholder="you@email.com" required />
+        <button type="submit" class="btn-primary btn-primary-lg" id="cta-btn">Get Early Access</button>
+      </form>
+      <p class="lead-privacy" id="lead-privacy">We'll never sell or share your email. It's only used to keep you updated on DiamondOS.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="footer-inner">
+    <span class="footer-brand">
+      <img id="footer-logo" src="" alt="" style="display:none" />
+      <span id="footer-name">DiamondOS</span>
+    </span>
+    <span>&copy; 2026</span>
+  </div>
+</footer>
+
+<!-- Branding config floating button -->
+<button class="config-toggle" id="config-toggle" title="Site Branding Settings">&#9881;</button>
+
+<!-- Branding config panel (simulates Admin > Site Branding) -->
+<div class="config-panel" id="config-panel">
+  <h3>Site Branding (Admin Preview)</h3>
+
+  <!-- Logo -->
+  <div class="config-field">
+    <label>Logo</label>
+    <div class="config-logo-area">
+      <div class="config-logo-preview" id="config-logo-preview">
+        <span style="font-size:1.25rem;color:var(--gray-300)">&#128247;</span>
+      </div>
+      <div class="config-logo-btns">
+        <label class="primary-btn">Upload <input type="file" accept="image/*" onchange="handleConfigLogo(event)" /></label>
+        <button onclick="removeConfigLogo()">Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <hr class="config-sep" />
+
+  <!-- Colors -->
+  <div class="config-field-group">
+    <div class="config-field">
+      <label>Primary</label>
+      <div class="config-color-row">
+        <input type="color" value="#1e3a8a" oninput="updateColor('primary', this.value)" />
+        <input type="text" value="#1e3a8a" id="cfg-primary-text" oninput="updateColor('primary', this.value)" maxlength="7" />
+      </div>
+    </div>
+    <div class="config-field">
+      <label>Secondary</label>
+      <div class="config-color-row">
+        <input type="color" value="#1d4ed8" oninput="updateColor('secondary', this.value)" />
+        <input type="text" value="#1d4ed8" id="cfg-secondary-text" oninput="updateColor('secondary', this.value)" maxlength="7" />
+      </div>
+    </div>
+    <div class="config-field">
+      <label>Accent</label>
+      <div class="config-color-row">
+        <input type="color" value="#eff6ff" oninput="updateColor('accent', this.value)" />
+        <input type="text" value="#eff6ff" id="cfg-accent-text" oninput="updateColor('accent', this.value)" maxlength="7" />
+      </div>
+    </div>
+  </div>
+
+  <hr class="config-sep" />
+
+  <!-- Messaging -->
+  <div class="config-field">
+    <label>Site Name</label>
+    <input type="text" value="DiamondOS" oninput="updateText('site_name', this.value)" />
+  </div>
+  <div class="config-field">
+    <label>Hero Headline</label>
+    <input type="text" value="The Operating System for Baseball Coaches" oninput="updateText('hero_headline', this.value)" />
+  </div>
+  <div class="config-field">
+    <label>Hero Subtext</label>
+    <textarea rows="2" oninput="updateText('hero_subtext', this.value)">Scorekeeping, pitch count compliance, team communication, and statistics — all in one platform built for high school and youth baseball.</textarea>
+  </div>
+  <div class="config-field">
+    <label>CTA Button Text</label>
+    <input type="text" value="Get Early Access" oninput="updateText('cta_button_text', this.value)" />
+  </div>
+  <div class="config-field">
+    <label>Form Headline</label>
+    <input type="text" value="We're still building" oninput="updateText('form_headline', this.value)" />
+  </div>
+  <div class="config-field">
+    <label>Form Subtext</label>
+    <input type="text" value="Drop your email to get notified when we go live." oninput="updateText('form_subtext', this.value)" />
+  </div>
+</div>
+
+<script>
+// ── Branding config panel ───────────────────────────────────────────────────
+let logoDataUrl = null;
+
+document.getElementById('config-toggle').addEventListener('click', function() {
+  document.getElementById('config-panel').classList.toggle('open');
+});
+
+function updateColor(name, value) {
+  if (!/^#[0-9a-fA-F]{6}$/.test(value)) return;
+  document.documentElement.style.setProperty('--' + name, value);
+  // Sync the paired inputs
+  const colorInputs = document.querySelectorAll(`input[oninput*="'${name}'"]`);
+  colorInputs.forEach(function(el) { el.value = value; });
+  // Update portable stats icon circle colors
+  if (name === 'primary') {
+    var ic = document.getElementById('portable-icon');
+    if (ic) { ic.style.backgroundColor = value + '24'; ic.style.color = value; }
+  }
+  render();
+}
+
+function updateText(field, value) {
+  if (field === 'site_name') {
+    document.getElementById('nav-brand-name').textContent = value;
+    document.getElementById('demo-site-name').textContent = value;
+    document.getElementById('footer-name').textContent = value;
+    document.getElementById('lead-privacy').textContent = "We'll never sell or share your email. It's only used to keep you updated on " + value + ".";
+    // Update nav logo placeholder letter
+    if (!logoDataUrl) {
+      document.getElementById('nav-logo').textContent = value.charAt(0) || 'D';
+    }
+  } else if (field === 'hero_headline') {
+    document.getElementById('hero-headline').textContent = value;
+  } else if (field === 'hero_subtext') {
+    document.getElementById('hero-subtext').textContent = value;
+  } else if (field === 'cta_button_text') {
+    document.getElementById('cta-btn').textContent = value;
+  } else if (field === 'form_headline') {
+    document.getElementById('form-headline').textContent = value;
+  } else if (field === 'form_subtext') {
+    document.getElementById('form-subtext').textContent = value;
+  }
+}
+
+function handleConfigLogo(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    logoDataUrl = ev.target.result;
+    applyLogo(logoDataUrl);
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeConfigLogo() {
+  logoDataUrl = null;
+  applyLogo(null);
+}
+
+function applyLogo(url) {
+  var navLogo = document.getElementById('nav-logo');
+  var heroLogo = document.getElementById('hero-logo');
+  var footerLogo = document.getElementById('footer-logo');
+  var configPreview = document.getElementById('config-logo-preview');
+
+  if (url) {
+    navLogo.innerHTML = '<img src="' + url + '" alt="" />';
+    heroLogo.src = url;
+    heroLogo.classList.add('visible');
+    footerLogo.src = url;
+    footerLogo.style.display = '';
+    configPreview.innerHTML = '<img src="' + url + '" alt="" />';
+  } else {
+    var name = document.getElementById('nav-brand-name').textContent;
+    navLogo.textContent = name.charAt(0) || 'D';
+    heroLogo.classList.remove('visible');
+    footerLogo.style.display = 'none';
+    configPreview.innerHTML = '<span style="font-size:1.25rem;color:var(--gray-300)">&#128247;</span>';
+  }
+}
+
+// ── Lead capture (preview only) ─────────────────────────────────────────────
+function handleLeadSubmit(e) {
+  e.preventDefault();
+  document.getElementById('lead-capture').innerHTML =
+    '<div class="lead-success"><p>Thanks! We\'ll be in touch.</p><p>We sent a note to our team about your interest.</p></div>';
+}
+
+// ── Simplified game engine for the preview ──────────────────────────────────
+var BATTERS = [
+  { id: 'b1', name: 'Alex Rivera', number: 12 },
+  { id: 'b2', name: 'Marcus Chen', number: 4 },
+  { id: 'b3', name: 'Jordan Williams', number: 23 },
+];
+
+var balls = 0, strikes = 0, outs = 0, runs = 0, hits = 0, pitchCount = 0;
+var batterIdx = 0, inPlayPending = false, demoComplete = false, lastAction = null;
+var runners = { first: null, second: null, third: null };
+var pendingPitchType = null; // pitch outcome waiting for zone tap
+var pendingResultType = null; // in-play result waiting for spray tap
+var pendingResultLabel = null;
+var pitchLocations = []; // {row, col, outcome}
+var sprayHits = []; // {x, y, result}
+
+function forceAdvance(batterId) {
+  if (runners.first && runners.second && runners.third) {
+    runs++;
+    runners.third = runners.second;
+    runners.second = runners.first;
+    runners.first = batterId;
+  } else if (runners.first && runners.second) {
+    runners.third = runners.second;
+    runners.second = runners.first;
+    runners.first = batterId;
+  } else if (runners.first) {
+    runners.second = runners.first;
+    runners.first = batterId;
+  } else {
+    runners.first = batterId;
+  }
+}
+
+function advanceRunners(batterId, bases) {
+  if (bases === 4) {
+    var on = [runners.first, runners.second, runners.third].filter(Boolean).length;
+    runs += on + 1;
+    runners = { first: null, second: null, third: null };
+    return;
+  }
+  var nr = { first: null, second: null, third: null };
+  if (runners.second) { var d = 2 + bases; if (d === 3) nr.third = runners.second; else if (d >= 4) runs++; }
+  if (runners.first) { var d2 = 1 + bases; if (d2 === 2) nr.second = runners.first; else if (d2 === 3) nr.third = runners.first; else if (d2 >= 4) runs++; }
+  if (bases === 1) nr.first = batterId; else if (bases === 2) nr.second = batterId; else if (bases === 3) nr.third = batterId;
+  runners = nr;
+}
+
+function endPA(label) {
+  lastAction = label; inPlayPending = false;
+  balls = 0; strikes = 0;
+  if (outs >= 3) { demoComplete = true; render(); return; }
+  batterIdx++;
+  if (batterIdx >= BATTERS.length) { demoComplete = true; }
+  render();
+}
+
+// Step 1: user clicks pitch type → show strike zone
+function selectPitch(type) {
+  pendingPitchType = type;
+  render();
+}
+
+// Step 2: user taps zone → record pitch (x, y in SVG coords)
+function confirmPitchLocation(x, y) {
+  var type = pendingPitchType;
+  pendingPitchType = null;
+  pitchLocations.push({ x: x, y: y, outcome: type });
+  pitchCount++;
+  var batter = BATTERS[batterIdx];
+  if (type === 'ball') {
+    balls++;
+    if (balls >= 4) { forceAdvance(batter.id); endPA('Walk (BB)'); return; }
+    lastAction = 'Ball'; render();
+  } else if (type === 'called_strike' || type === 'swinging_strike') {
+    if (strikes < 2) { strikes++; lastAction = type === 'called_strike' ? 'Called Strike' : 'Swinging Strike'; render(); }
+    else { outs++; endPA('Strikeout!'); }
+  } else if (type === 'foul') {
+    if (strikes < 2) strikes++;
+    lastAction = 'Foul Ball'; render();
+  } else if (type === 'in_play') {
+    inPlayPending = true; lastAction = 'In play...'; render();
+  }
+}
+
+// Step 1: user clicks result type → show spray chart
+function selectResult(type) {
+  var labels = { out: 'Groundout', single: 'Single', double: 'Double', triple: 'Triple', home_run: 'Home Run', error: 'Error — Safe at 1st' };
+  pendingResultType = type;
+  pendingResultLabel = labels[type] || type;
+  render();
+}
+
+// Step 2: user taps spray chart → record result
+function confirmSprayLocation(x, y) {
+  var type = pendingResultType;
+  var label = pendingResultLabel;
+  sprayHits.push({ x: x, y: y, result: label });
+  pendingResultType = null;
+  pendingResultLabel = null;
+  var batter = BATTERS[batterIdx];
+  if (type === 'out') { outs++; endPA('Groundout'); }
+  else if (type === 'error') { forceAdvance(batter.id); endPA('Error \u2014 Safe at 1st'); }
+  else if (type === 'single') { hits++; advanceRunners(batter.id, 1); endPA('Single!'); }
+  else if (type === 'double') { hits++; advanceRunners(batter.id, 2); endPA('Double!'); }
+  else if (type === 'triple') { hits++; advanceRunners(batter.id, 3); endPA('Triple!'); }
+  else if (type === 'home_run') { hits++; advanceRunners(batter.id, 4); endPA('Home Run!'); }
+}
+
+function goBack() {
+  if (pendingPitchType !== null) { pendingPitchType = null; render(); return; }
+  if (pendingResultType !== null) { pendingResultType = null; pendingResultLabel = null; render(); return; }
+  pitchCount--; inPlayPending = false; pitchLocations.pop(); lastAction = null; render();
+}
+
+function resetDemo() {
+  balls = 0; strikes = 0; outs = 0; runs = 0; hits = 0; pitchCount = 0;
+  batterIdx = 0; inPlayPending = false; demoComplete = false; lastAction = null;
+  runners = { first: null, second: null, third: null };
+  pendingPitchType = null; pendingResultType = null; pendingResultLabel = null;
+  pitchLocations = []; sprayHits = [];
+  render();
+}
+
+function pitchDotColor(outcome) {
+  if (outcome === 'ball') return '#22c55e';
+  if (outcome === 'in_play') return '#3b82f6';
+  return '#eab308';
+}
+
+function sprayDotColor(result) {
+  if (result === 'Groundout' || result === 'Out') return '#ef4444';
+  if (result.indexOf('Error') >= 0) return '#6b7280';
+  return '#22c55e';
+}
+
+function renderStrikeZone() {
+  var svg = '<svg viewBox="0 0 200 240" style="width:14rem;height:auto;cursor:crosshair" id="zone-svg">';
+  // Full clickable background
+  svg += '<rect x="0" y="0" width="200" height="240" fill="transparent" />';
+  // Ball zone background
+  svg += '<rect x="5" y="5" width="190" height="230" rx="8" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1" />';
+  // Strike zone box
+  svg += '<rect x="40" y="48" width="120" height="131" rx="2" fill="white" stroke="#111827" stroke-width="2" />';
+  // Grid lines
+  svg += '<line x1="80" y1="48" x2="80" y2="179" stroke="#e5e7eb" stroke-width="0.5" />';
+  svg += '<line x1="120" y1="48" x2="120" y2="179" stroke="#e5e7eb" stroke-width="0.5" />';
+  svg += '<line x1="40" y1="91" x2="160" y2="91" stroke="#e5e7eb" stroke-width="0.5" />';
+  svg += '<line x1="40" y1="135" x2="160" y2="135" stroke="#e5e7eb" stroke-width="0.5" />';
+  // Labels
+  svg += '<text x="100" y="20" text-anchor="middle" fill="#d1d5db" style="font-size:9px;pointer-events:none">High</text>';
+  svg += '<text x="100" y="225" text-anchor="middle" fill="#d1d5db" style="font-size:9px;pointer-events:none">Low</text>';
+  svg += '<text x="18" y="118" text-anchor="middle" fill="#d1d5db" style="font-size:9px;pointer-events:none" transform="rotate(-90 18 118)">Inside</text>';
+  svg += '<text x="182" y="118" text-anchor="middle" fill="#d1d5db" style="font-size:9px;pointer-events:none" transform="rotate(90 182 118)">Outside</text>';
+  // Previous dots
+  for (var i = 0; i < pitchLocations.length; i++) {
+    var loc = pitchLocations[i];
+    svg += '<circle cx="'+loc.x+'" cy="'+loc.y+'" r="5" fill="'+pitchDotColor(loc.outcome)+'" opacity="0.4" style="pointer-events:none" />';
+  }
+  svg += '</svg>';
+  return '<div style="text-align:center">' +
+    '<div class="btn-section-label">Tap pitch location</div>' +
+    '<div style="display:flex;justify-content:center;margin:0.5rem 0">' + svg + '</div>' +
+    '<button class="btn-back" onclick="goBack()">&larr; Back</button>' +
+    '</div>';
+}
+
+function setupZoneClickHandler() {
+  var svgEl = document.getElementById('zone-svg');
+  if (!svgEl) return;
+  svgEl.addEventListener('click', function(e) {
+    var rect = svgEl.getBoundingClientRect();
+    var x = ((e.clientX - rect.left) / rect.width) * 200;
+    var y = ((e.clientY - rect.top) / rect.height) * 240;
+    if (x < 5 || x > 195 || y < 5 || y > 235) return;
+    confirmPitchLocation(Math.round(x), Math.round(y));
+  });
+}
+
+function renderSprayChart() {
+  var svg = '<svg viewBox="0 0 200 200" style="width:14rem;height:auto;cursor:crosshair" id="spray-svg">';
+  svg += '<path d="M 100 180 L 5 40 A 135 135 0 0 1 195 40 Z" fill="#dcfce7" stroke="#86efac" stroke-width="1.5" />';
+  svg += '<path d="M 100 180 L 55 120 A 60 60 0 0 1 145 120 Z" fill="#fef3c7" stroke="#fcd34d" stroke-width="1" />';
+  svg += '<polygon points="100,130 120,150 100,170 80,150" fill="#fefce8" stroke="#f59e0b" stroke-width="1" />';
+  svg += '<rect x="97" y="128" width="6" height="6" transform="rotate(45 100 131)" fill="white" stroke="#6b7280" stroke-width="0.8" />';
+  svg += '<rect x="117" y="148" width="6" height="6" transform="rotate(45 120 151)" fill="white" stroke="#6b7280" stroke-width="0.8" />';
+  svg += '<rect x="77" y="148" width="6" height="6" transform="rotate(45 80 151)" fill="white" stroke="#6b7280" stroke-width="0.8" />';
+  svg += '<polygon points="100,172 96,176 100,180 104,176" fill="white" stroke="#6b7280" stroke-width="0.8" />';
+  svg += '<line x1="100" y1="180" x2="5" y2="40" stroke="#9ca3af" stroke-width="0.8" />';
+  svg += '<line x1="100" y1="180" x2="195" y2="40" stroke="#9ca3af" stroke-width="0.8" />';
+  svg += '<text x="25" y="60" fill="#9ca3af" style="font-size:8px">LF</text>';
+  svg += '<text x="95" y="35" fill="#9ca3af" style="font-size:8px">CF</text>';
+  svg += '<text x="168" y="60" fill="#9ca3af" style="font-size:8px">RF</text>';
+  for (var i = 0; i < sprayHits.length; i++) {
+    var h = sprayHits[i];
+    svg += '<circle cx="'+h.x+'" cy="'+h.y+'" r="4" fill="'+sprayDotColor(h.result)+'" opacity="0.4" />';
+  }
+  svg += '</svg>';
+  return '<div style="text-align:center">' +
+    '<div class="btn-section-label">Tap where the ball landed</div>' +
+    '<div style="display:flex;justify-content:center;margin:0.5rem 0">' + svg + '</div>' +
+    '<div style="font-size:0.75rem;color:var(--gray-500)">Recording: <b>' + pendingResultLabel + '</b></div>' +
+    '<button class="btn-back" onclick="goBack()">&larr; Back</button>' +
+    '</div>';
+}
+
+function setupSprayClickHandler() {
+  var svgEl = document.getElementById('spray-svg');
+  if (!svgEl) return;
+  svgEl.addEventListener('click', function(e) {
+    var rect = svgEl.getBoundingClientRect();
+    var x = ((e.clientX - rect.left) / rect.width) * 200;
+    var y = ((e.clientY - rect.top) / rect.height) * 200;
+    var dx = x - 100, dy = 180 - y;
+    if (dy < 10 || Math.sqrt(dx*dx + dy*dy) > 170) return;
+    confirmSprayLocation(Math.round(x), Math.round(y));
+  });
+}
+
+function renderMiniCharts() {
+  var html = '';
+  if (pitchLocations.length === 0 && sprayHits.length === 0) return '';
+  html += '<div style="display:flex;justify-content:center;gap:1.5rem;margin:1.5rem 0">';
+  if (pitchLocations.length > 0) {
+    html += '<div style="text-align:center"><div style="font-size:0.75rem;font-weight:500;color:var(--gray-500);margin-bottom:0.25rem">Pitch Locations</div>';
+    html += '<svg viewBox="0 0 200 240" style="width:8rem;height:auto">';
+    html += '<rect x="5" y="5" width="190" height="230" rx="8" fill="#f9fafb" stroke="#e5e7eb" stroke-width="0.5" />';
+    html += '<rect x="40" y="48" width="120" height="131" rx="2" fill="white" stroke="#9ca3af" stroke-width="1.5" />';
+    html += '<line x1="80" y1="48" x2="80" y2="179" stroke="#e5e7eb" stroke-width="0.5" />';
+    html += '<line x1="120" y1="48" x2="120" y2="179" stroke="#e5e7eb" stroke-width="0.5" />';
+    html += '<line x1="40" y1="91" x2="160" y2="91" stroke="#e5e7eb" stroke-width="0.5" />';
+    html += '<line x1="40" y1="135" x2="160" y2="135" stroke="#e5e7eb" stroke-width="0.5" />';
+    for (var i = 0; i < pitchLocations.length; i++) {
+      var loc = pitchLocations[i];
+      html += '<circle cx="'+loc.x+'" cy="'+loc.y+'" r="6" fill="'+pitchDotColor(loc.outcome)+'" opacity="0.7" />';
+    }
+    html += '</svg>';
+    html += '<div style="display:flex;justify-content:center;gap:0.5rem;font-size:9px;color:var(--gray-400)">';
+    html += '<span style="display:flex;align-items:center;gap:2px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e"></span> Ball</span>';
+    html += '<span style="display:flex;align-items:center;gap:2px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#eab308"></span> Strike</span>';
+    html += '<span style="display:flex;align-items:center;gap:2px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#3b82f6"></span> In Play</span>';
+    html += '</div></div>';
+  }
+  if (sprayHits.length > 0) {
+    html += '<div style="text-align:center"><div style="font-size:0.75rem;font-weight:500;color:var(--gray-500);margin-bottom:0.25rem">Spray Chart</div>';
+    html += '<svg viewBox="0 0 200 200" style="width:8rem;height:auto">';
+    html += '<path d="M 100 180 L 5 40 A 135 135 0 0 1 195 40 Z" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1" />';
+    html += '<path d="M 100 180 L 55 120 A 60 60 0 0 1 145 120 Z" fill="#fefce8" stroke="#fde68a" stroke-width="0.8" />';
+    html += '<line x1="100" y1="180" x2="5" y2="40" stroke="#d1d5db" stroke-width="0.5" />';
+    html += '<line x1="100" y1="180" x2="195" y2="40" stroke="#d1d5db" stroke-width="0.5" />';
+    for (var j = 0; j < sprayHits.length; j++) {
+      var h = sprayHits[j];
+      html += '<circle cx="'+h.x+'" cy="'+h.y+'" r="5" fill="'+sprayDotColor(h.result)+'" opacity="0.7" />';
+    }
+    html += '</svg>';
+    html += '<div style="display:flex;justify-content:center;gap:0.5rem;font-size:9px;color:var(--gray-400)">';
+    html += '<span style="display:flex;align-items:center;gap:2px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e"></span> Hit</span>';
+    html += '<span style="display:flex;align-items:center;gap:2px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#ef4444"></span> Out</span>';
+    html += '</div></div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function dot(filled, colorClass) {
+  return '<span class="dot ' + (filled ? colorClass : '') + '"></span>';
+}
+
+function render() {
+  var el = document.getElementById('demo');
+  var siteName = document.getElementById('nav-brand-name').textContent || 'DiamondOS';
+
+  if (demoComplete) {
+    el.innerHTML =
+      '<div class="complete">' +
+        '<h3>Half-Inning Complete</h3>' +
+        '<p class="sub">' + (outs >= 3 ? 'You retired the side!' : 'All 3 batters have batted.') + '</p>' +
+        '<div class="stats-row">' +
+          '<div class="stat"><div class="stat-val">' + pitchCount + '</div><div class="stat-label">Pitches</div></div>' +
+          '<div class="stat"><div class="stat-val">' + hits + '</div><div class="stat-label">Hits</div></div>' +
+          '<div class="stat"><div class="stat-val">' + outs + '</div><div class="stat-label">Outs</div></div>' +
+          '<div class="stat"><div class="stat-val">' + runs + '</div><div class="stat-label">Runs</div></div>' +
+        '</div>' +
+        renderMiniCharts() +
+        '<p class="note">That\'s the same game engine powering real scorekeeping in ' + siteName + '.</p>' +
+        '<div class="complete-btns">' +
+          '<button class="btn-secondary" onclick="resetDemo()">Try Again</button>' +
+          '<button class="btn-primary" onclick="alert(\'This would navigate to /login\')">Sign In to Start Scoring</button>' +
+        '</div>' +
+      '</div>';
+    return;
+  }
+
+  var batter = BATTERS[batterIdx];
+  var pitchButtons =
+    '<div class="btn-section-label">Record Pitch</div>' +
+    '<div class="btn-grid five-col">' +
+      '<button class="pitch-btn btn-ball" onclick="selectPitch(\'ball\')">Ball</button>' +
+      '<button class="pitch-btn btn-calledk" onclick="selectPitch(\'called_strike\')">Called K</button>' +
+      '<button class="pitch-btn btn-swingk" onclick="selectPitch(\'swinging_strike\')">Swing K</button>' +
+      '<button class="pitch-btn btn-foul" onclick="selectPitch(\'foul\')">Foul</button>' +
+      '<button class="pitch-btn btn-inplay" onclick="selectPitch(\'in_play\')">In Play</button>' +
+    '</div>';
+
+  var resultButtons =
+    '<div class="btn-section-label">What happened?</div>' +
+    '<div class="btn-grid">' +
+      '<button class="pitch-btn btn-out" onclick="selectResult(\'out\')">Out</button>' +
+      '<button class="pitch-btn btn-single" onclick="selectResult(\'single\')">Single</button>' +
+      '<button class="pitch-btn btn-double" onclick="selectResult(\'double\')">Double</button>' +
+      '<button class="pitch-btn btn-triple" onclick="selectResult(\'triple\')">Triple</button>' +
+      '<button class="pitch-btn btn-hr" onclick="selectResult(\'home_run\')">Home Run</button>' +
+      '<button class="pitch-btn btn-error" onclick="selectResult(\'error\')">Error</button>' +
+    '</div>' +
+    '<button class="btn-back" onclick="goBack()">&larr; Back</button>';
+
+  // Determine action panel
+  var actionPanel;
+  if (pendingPitchType !== null) {
+    actionPanel = renderStrikeZone();
+  } else if (pendingResultType !== null) {
+    actionPanel = renderSprayChart();
+  } else if (inPlayPending) {
+    actionPanel = resultButtons;
+  } else {
+    actionPanel = pitchButtons;
+  }
+
+  el.innerHTML =
+    '<div class="demo-scoreboard">' +
+      '<div style="display:flex;align-items:center;gap:1rem">' +
+        '<span class="demo-inning">Top 1st</span>' +
+        '<span class="demo-score"><b>' + runs + '</b> &mdash; <b>0</b></span>' +
+      '</div>' +
+      '<span class="demo-pitches">' + pitchCount + ' pitch' + (pitchCount !== 1 ? 'es' : '') + '</span>' +
+    '</div>' +
+    '<div class="demo-state">' +
+      '<div class="demo-state-left">' +
+        '<div class="count-row">' +
+          '<div class="count-group"><span>B</span>' + [0,1,2,3].map(function(i){return dot(i < balls, 'filled-green')}).join('') + '</div>' +
+          '<div class="count-group"><span>S</span>' + [0,1,2].map(function(i){return dot(i < strikes, 'filled-yellow')}).join('') + '</div>' +
+          '<div class="count-group"><span>O</span>' + [0,1,2].map(function(i){return dot(i < outs, 'filled-red')}).join('') + '</div>' +
+        '</div>' +
+        '<div class="batter-label">At Bat</div>' +
+        '<div class="batter-name"><span class="num">#' + batter.number + '</span> ' + batter.name + '</div>' +
+        '<div class="batter-progress">Batter ' + (batterIdx + 1) + ' of ' + BATTERS.length + '</div>' +
+      '</div>' +
+      '<div class="diamond">' +
+        '<div class="base base-2 ' + (runners.second ? 'occupied' : '') + '"></div>' +
+        '<div class="base base-3 ' + (runners.third ? 'occupied' : '') + '"></div>' +
+        '<div class="base base-1 ' + (runners.first ? 'occupied' : '') + '"></div>' +
+        '<div class="base-home"></div>' +
+      '</div>' +
+    '</div>' +
+    (lastAction ? '<div class="last-action">' + lastAction + '</div>' : '') +
+    actionPanel +
+    (pitchCount > 0 && pendingPitchType === null && pendingResultType === null ? '<button class="btn-reset" onclick="resetDemo()">Reset Demo</button>' : '');
+
+  // Attach click handlers after DOM update
+  if (pendingPitchType !== null) {
+    setTimeout(setupZoneClickHandler, 0);
+  }
+  if (pendingResultType !== null) {
+    setTimeout(setupSprayClickHandler, 0);
+  }
+}
+
+render();
+
+// Set initial portable stats icon color
+(function() {
+  var ic = document.getElementById('portable-icon');
+  if (ic) { ic.style.backgroundColor = '#1e3a8a24'; ic.style.color = '#1e3a8a'; }
+})();
+</script>
+</body>
+</html>
