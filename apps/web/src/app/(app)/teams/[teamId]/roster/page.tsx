@@ -18,6 +18,7 @@ import { StaffSection } from './StaffSection';
 import { ParentSection } from './ParentSection';
 
 export const metadata: Metadata = { title: 'Roster' };
+export const dynamic = 'force-dynamic';
 
 const SEASON_EVENT_TYPES = [
   'pitch_thrown', 'hit', 'out', 'strikeout', 'walk',
@@ -212,6 +213,19 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       .eq('is_active', true)
       .eq('role', 'parent'),
   ]);
+
+  // Diagnostic: dump raw team_members state to server logs
+  console.log('[Roster] teamId:', params.teamId);
+  console.log('[Roster] staffMembersResult.data:', JSON.stringify(staffMembersResult.data));
+  console.log('[Roster] staffMembersResult.error:', staffMembersResult.error?.message ?? null);
+
+  // Also query ALL team_members for this team (no role filter) to see the full picture
+  const { data: allMembers, error: allMembersError } = await db
+    .from('team_members')
+    .select('user_id, role, is_active')
+    .eq('team_id', params.teamId);
+  console.log('[Roster] ALL team_members (no filter):', JSON.stringify(allMembers));
+  if (allMembersError) console.error('[Roster] allMembers query error:', allMembersError.message);
 
   // Surface query errors instead of silently swallowing them
   if (staffMembersResult.error) {

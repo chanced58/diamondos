@@ -15,6 +15,15 @@ async function getCallerRole(teamId: string): Promise<string | null> {
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;
   const db = serviceClient();
+
+  // Platform admins can manage all teams without a team_members row
+  const { data: profile } = await db
+    .from('user_profiles')
+    .select('is_platform_admin')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (profile?.is_platform_admin) return 'head_coach';
+
   const { data } = await db
     .from('team_members')
     .select('role')
