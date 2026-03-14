@@ -29,20 +29,23 @@ const SEASON_EVENT_TYPES = [
 const STAFF_ROLES = ['head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper', 'staff'];
 
 /**
- * Self-healing: for each pending invitation whose email matches an existing
- * auth user, create the team_members row, accept the invitation, and add
- * to team channels. Returns the IDs of invitations that were promoted.
+ * Self-healing: for each invitation whose email matches an existing auth user,
+ * ensure a team_members row exists. Handles both:
+ *   - pending invitations (promotes to accepted)
+ *   - accepted invitations that are missing team_members rows (re-heals broken state)
+ *
+ * Returns the IDs of invitations that were promoted from pending to accepted.
  */
 async function healPendingInvitations(
   db: SupabaseClient,
   teamId: string,
-  pendingInvites: Array<{ id: string; email: string; first_name: string | null; last_name: string | null; phone: string | null; role: string }>,
+  invites: Array<{ id: string; email: string; first_name: string | null; last_name: string | null; phone: string | null; role: string; status: string }>,
 ): Promise<Set<string>> {
   const promoted = new Set<string>();
-  if (pendingInvites.length === 0) return promoted;
+  if (invites.length === 0) return promoted;
 
-  // Collect all non-placeholder emails from pending invitations
-  const realInvites = pendingInvites.filter((inv) => !inv.email.includes('@placeholder.internal'));
+  // Collect all non-placeholder emails
+  const realInvites = invites.filter((inv) => !inv.email.includes('@placeholder.internal'));
   if (realInvites.length === 0) return promoted;
 
   // Batch-check which emails belong to existing auth users via user_profiles
@@ -82,22 +85,55 @@ async function healPendingInvitations(
     }
   }
 
-  // For each pending invitation with a matched user, create team_members and accept
+  // Check which users already have active team_members rows
+  const matchedUserIds = [...emailToUserId.values()];
+  const existingMembers = new Set<string>();
+  if (matchedUserIds.length > 0) {
+    const { data: existing } = await db
+      .from('team_members')
+      .select('user_id')
+      .eq('team_id', teamId)
+      .eq('is_active', true)
+      .in('user_id', matchedUserIds);
+    for (const row of existing ?? []) {
+      existingMembers.add(row.user_id);
+    }
+  }
+
   for (const invite of realInvites) {
     const userId = emailToUserId.get(invite.email.toLowerCase());
     if (!userId) continue;
 
-    try {
-      // Create team_members row (or reactivate if deactivated)
-      await db.from('team_members').upsert(
-        { team_id: teamId, user_id: userId, role: invite.role, is_active: true },
-        { onConflict: 'team_id,user_id' },
-      );
+    // Skip if team_members row already exists and invitation is already accepted
+    if (existingMembers.has(userId) && invite.status === 'accepted') continue;
 
-      // Mark invitation as accepted
-      await db.from('team_invitations')
-        .update({ status: 'accepted', accepted_at: new Date().toISOString() })
-        .eq('id', invite.id);
+    try {
+      // Create team_members row (or reactivate if deactivated) — check the error!
+      if (!existingMembers.has(userId)) {
+        const { error: upsertError } = await db.from('team_members').upsert(
+          { team_id: teamId, user_id: userId, role: invite.role, is_active: true },
+          { onConflict: 'team_id,user_id' },
+        );
+
+        if (upsertError) {
+          console.error(`[Roster] team_members upsert failed for ${invite.email}:`, upsertError.message);
+          // Do NOT mark invitation as accepted if team_members creation failed
+          continue;
+        }
+
+        // Add to team channels
+        await addToTeamChannels(db, teamId, userId, invite.role);
+
+        console.log(`[Roster] Self-healed invitation ${invite.id} for ${invite.email} → team_members created`);
+      }
+
+      // Only mark pending invitations as accepted after successful team_members creation
+      if (invite.status === 'pending') {
+        await db.from('team_invitations')
+          .update({ status: 'accepted', accepted_at: new Date().toISOString() })
+          .eq('id', invite.id);
+        promoted.add(invite.id);
+      }
 
       // Backfill profile name from invitation if missing
       const profile = emailToProfile.get(invite.email.toLowerCase());
@@ -107,12 +143,6 @@ async function healPendingInvitations(
       if (Object.keys(updates).length > 0) {
         await db.from('user_profiles').update(updates).eq('id', userId);
       }
-
-      // Add to team channels
-      await addToTeamChannels(db, teamId, userId, invite.role);
-
-      promoted.add(invite.id);
-      console.log(`[Roster] Self-healed invitation ${invite.id} for ${invite.email} → team_members created`);
     } catch (err) {
       console.error(`[Roster] Failed to heal invitation ${invite.id}:`, err);
     }
@@ -131,19 +161,20 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  // Fetch pending invitations FIRST so we can self-heal before building the roster
-  const { data: pendingInvitesRaw, error: pendingErr } = await db
+  // Fetch pending AND accepted invitations so we can self-heal broken state
+  const { data: healableInvites, error: pendingErr } = await db
     .from('team_invitations')
-    .select('id, email, first_name, last_name, phone, role')
+    .select('id, email, first_name, last_name, phone, role, status')
     .eq('team_id', params.teamId)
-    .eq('status', 'pending');
+    .in('status', ['pending', 'accepted']);
 
   if (pendingErr) {
-    console.error('[Roster] pending invites query failed:', pendingErr.message);
+    console.error('[Roster] invitations query failed:', pendingErr.message);
   }
 
-  // Self-heal: promote pending invitations to team_members for users who already exist
-  const promotedIds = await healPendingInvitations(db, params.teamId, pendingInvitesRaw ?? []);
+  // Self-heal: promote pending invitations AND fix accepted invitations
+  // that are missing their team_members rows
+  const promotedIds = await healPendingInvitations(db, params.teamId, healableInvites ?? []);
 
   // Now fetch the rest of the data (team_members will include newly healed members)
   const [playersResult, seasonResult, membershipResult, staffMembersResult, parentMembersResult] = await Promise.all([
@@ -255,8 +286,10 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     };
   });
 
-  // Filter out promoted invitations — they're now in the staff/parent lists
-  const remainingPending = (pendingInvitesRaw ?? []).filter((inv) => !promotedIds.has(inv.id));
+  // Filter to only pending invitations that were NOT just promoted
+  const remainingPending = (healableInvites ?? []).filter(
+    (inv) => inv.status === 'pending' && !promotedIds.has(inv.id),
+  );
 
   // Optionally fetch jersey_number from pending invitations (column may not exist yet)
   const inviteIds = remainingPending.map((inv) => inv.id as string);

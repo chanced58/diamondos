@@ -110,19 +110,26 @@ export async function GET(request: NextRequest) {
           serviceKey,
         );
 
-        // Upsert team membership
-        await db
+        // Upsert team membership — check the error before marking accepted
+        const { error: memberError } = await db
           .from('team_members')
           .upsert(
             { team_id: effectiveTeamId, user_id: user.id, role: effectiveRole, is_active: true },
             { onConflict: 'team_id,user_id' },
           );
 
-        // Add user to all team channels (announcement, topic, etc.)
-        await addToTeamChannels(db, effectiveTeamId, user.id, effectiveRole);
+        if (memberError) {
+          console.error('[auth/callback] team_members upsert failed:', memberError.message);
+          // Don't mark invitation as accepted — self-healing will retry on next roster load
+        }
 
-        // Accept the invitation
-        if (user.email) {
+        // Add user to all team channels (announcement, topic, etc.)
+        if (!memberError) {
+          await addToTeamChannels(db, effectiveTeamId, user.id, effectiveRole);
+        }
+
+        // Accept the invitation only if team membership was created successfully
+        if (!memberError && user.email) {
           await db
             .from('team_invitations')
             .update({
