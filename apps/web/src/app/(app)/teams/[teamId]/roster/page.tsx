@@ -204,7 +204,8 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       .select('id, role, user_id')
       .eq('team_id', params.teamId)
       .eq('is_active', true)
-      .in('role', ['head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper', 'staff']),
+      .neq('role', 'player')
+      .neq('role', 'parent'),
     // Fetch parents
     db
       .from('team_members')
