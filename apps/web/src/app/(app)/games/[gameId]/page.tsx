@@ -9,6 +9,7 @@ import { formatDate, formatTime } from '@baseball/shared';
 import { CancelGameForm } from './CancelGameForm';
 import { StartGameForm } from './StartGameForm';
 import { LocationMap } from '@/components/maps/LocationMap';
+import { EditGameButton, ResetGameForm } from './GameDetailClient';
 
 export const metadata: Metadata = { title: 'Game' };
 
@@ -70,6 +71,10 @@ export default async function GameDetailPage({
   const vsAt = game.location_type === 'away' ? '@' : 'vs';
   const isCompleted = game.status === 'completed';
 
+  // Parse date and time for the edit form
+  const scheduledDate = new Date(game.scheduled_at).toISOString().slice(0, 10);
+  const scheduledTime = new Date(game.scheduled_at).toISOString().slice(11, 16);
+
   return (
     <div className="p-8 max-w-2xl">
       {/* ── Back link ──────────────────────────────────────────── */}
@@ -78,7 +83,7 @@ export default async function GameDetailPage({
       </Link>
 
       {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="mt-4 mb-8">
+      <div className="mt-4 mb-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
@@ -94,7 +99,32 @@ export default async function GameDetailPage({
             {statusStyle.label}
           </span>
         </div>
+
+        {/* ── Action row ─────────────────────────────────────── */}
+        <div className="flex items-center gap-3 mt-4">
+          <Link
+            href={`/games/${game.id}/notes`}
+            className="text-sm text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 px-4 py-2 rounded-lg font-medium transition-colors"
+          >
+            Notes
+          </Link>
+        </div>
       </div>
+
+      {/* ── Edit game (coaches only) ────────────────────────────── */}
+      {isCoach && (
+        <div className="mb-6">
+          <EditGameButton
+            gameId={game.id}
+            opponentName={game.opponent_name}
+            scheduledDate={scheduledDate}
+            scheduledTime={scheduledTime}
+            locationType={game.location_type}
+            venueName={game.venue_name ?? ''}
+            notes={game.notes ?? ''}
+          />
+        </div>
+      )}
 
       {/* ── Score (completed games) ─────────────────────────────── */}
       {isCompleted && (
@@ -211,18 +241,23 @@ export default async function GameDetailPage({
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
             Danger Zone
           </p>
-          <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-red-900">Cancel this game</p>
-              <p className="text-xs text-red-600 mt-0.5">
-                Marks the game as cancelled. The record is preserved.
-              </p>
+          <div className="space-y-3">
+            {game.status !== 'scheduled' && (
+              <ResetGameForm gameId={game.id} />
+            )}
+            <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-red-900">Cancel this game</p>
+                <p className="text-xs text-red-600 mt-0.5">
+                  Marks the game as cancelled. The record is preserved.
+                </p>
+              </div>
+              <CancelGameForm
+                gameId={game.id}
+                opponentName={game.opponent_name}
+                currentStatus={game.status}
+              />
             </div>
-            <CancelGameForm
-              gameId={game.id}
-              opponentName={game.opponent_name}
-              currentStatus={game.status}
-            />
           </div>
         </div>
       )}
