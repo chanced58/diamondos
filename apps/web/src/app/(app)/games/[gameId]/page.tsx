@@ -210,15 +210,13 @@ export default async function GameDetailPage({
           <p className="text-sm text-gray-500 mb-4">
             Set your lineup, then start the game to begin pitch-by-pitch scoring.
           </p>
-          <div className="flex items-center gap-3">
-            <Link
-              href={`/games/${game.id}/lineup`}
-              className="text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium transition-colors"
-            >
-              {hasLineup ? 'Edit Lineup' : 'Set Lineup'}
-            </Link>
-            {hasLineup && <StartGameForm gameId={game.id} />}
-          </div>
+          <Link
+            href={`/games/${game.id}/lineup`}
+            className="inline-block text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium transition-colors mb-3"
+          >
+            {hasLineup ? 'Edit Lineup' : 'Set Lineup'}
+          </Link>
+          {hasLineup && <StartGameForm gameId={game.id} />}
         </div>
       )}
 

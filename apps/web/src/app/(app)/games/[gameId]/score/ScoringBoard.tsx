@@ -441,6 +441,54 @@ function EndGameButton() {
   );
 }
 
+// ── Scoring config ─────────────────────────────────────────────────────────────
+
+type ScoringConfig = {
+  pitchType: boolean;
+  pitchLocation: boolean;
+  sprayChart: boolean;
+};
+
+const DEFAULT_CONFIG: ScoringConfig = {
+  pitchType: true,
+  pitchLocation: true,
+  sprayChart: true,
+};
+
+function ConfigToggle({
+  id,
+  checked,
+  onChange,
+  label,
+}: {
+  id: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
+  return (
+    <label htmlFor={id} className="flex items-center justify-between gap-3 cursor-pointer">
+      <span className="text-sm text-gray-700">{label}</span>
+      <button
+        id={id}
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+          checked ? 'bg-brand-600' : 'bg-gray-300'
+        }`}
+      >
+        <span
+          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform ${
+            checked ? 'translate-x-4.5' : 'translate-x-0.5'
+          }`}
+        />
+      </button>
+    </label>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export function ScoringBoard({
@@ -452,6 +500,7 @@ export function ScoringBoard({
   isCoach,
   isDemo = false,
   seasonSprayPoints,
+  scoringConfig: initialScoringConfig,
 }: {
   game: GameRow;
   lineup: LineupEntry[];
@@ -461,11 +510,18 @@ export function ScoringBoard({
   isCoach: boolean;
   isDemo?: boolean;
   seasonSprayPoints?: Record<string, SprayPt[]>;
+  scoringConfig?: ScoringConfig;
 }): JSX.Element {
   const [eventRows, setEventRows] = useState<EventRow[]>(initialEvents);
   const nextSeqNum = useRef(
     Math.max(...initialEvents.map((e) => e.sequence_number as number), 1) + 1,
   );
+
+  // Local scoring config — starts from the game_start event, overridable during the game
+  const [localConfig, setLocalConfig] = useState<ScoringConfig>(
+    initialScoringConfig ?? DEFAULT_CONFIG,
+  );
+  const [showSettings, setShowSettings] = useState(false);
 
   // Track in-play state (waiting for hit/out result after pitch lands in play)
   const [inPlayPending, setInPlayPending] = useState(false);
@@ -867,8 +923,10 @@ export function ScoringBoard({
     setShowPitchingChange(false);
   }
 
-  // Both pitch type AND zone location must be selected before recording a pitch outcome
-  const pitchAnnotationsReady = pitchType !== null && zoneLocation !== null;
+  // Pitch outcome buttons are enabled once all enabled annotations are filled in
+  const pitchAnnotationsReady =
+    (!localConfig.pitchType     || pitchType    !== null) &&
+    (!localConfig.pitchLocation || zoneLocation !== null);
 
   const vsAt = game.locationType === 'away' ? '@' : 'vs';
   const usScore = game.locationType === 'home' ? gameState.homeScore : gameState.awayScore;
@@ -887,16 +945,63 @@ export function ScoringBoard({
         <h1 className="text-sm font-semibold text-gray-700">
           {vsAt} {game.opponentName}
         </h1>
-        {isDemo ? (
-          <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-semibold">
-            Demo
-          </span>
-        ) : (
-          <span className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">
-            In Progress
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {isCoach && (
+            <button
+              onClick={() => setShowSettings((s) => !s)}
+              title="Scoring options"
+              className={`p-1.5 rounded-lg transition-colors ${
+                showSettings
+                  ? 'bg-brand-100 text-brand-700'
+                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {/* Gear icon */}
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M7.84 1.804A1 1 0 0 1 8.82 1h2.36a1 1 0 0 1 .98.804l.331 1.652a6.993 6.993 0 0 1 1.929 1.115l1.598-.54a1 1 0 0 1 1.186.447l1.18 2.044a1 1 0 0 1-.205 1.251l-1.267 1.113a7.047 7.047 0 0 1 0 2.228l1.267 1.113a1 1 0 0 1 .205 1.251l-1.18 2.044a1 1 0 0 1-1.186.447l-1.598-.54a6.993 6.993 0 0 1-1.929 1.115l-.33 1.652a1 1 0 0 1-.98.804H8.82a1 1 0 0 1-.98-.804l-.331-1.652a6.993 6.993 0 0 1-1.929-1.115l-1.598.54a1 1 0 0 1-1.186-.447l-1.18-2.044a1 1 0 0 1 .205-1.251l1.267-1.114a7.05 7.05 0 0 1 0-2.227L1.821 7.773a1 1 0 0 1-.205-1.251l1.18-2.044a1 1 0 0 1 1.186-.447l1.598.54A6.992 6.992 0 0 1 7.51 3.456l.33-1.652ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clipRule="evenodd" />
+              </svg>
+            </button>
+          )}
+          {isDemo ? (
+            <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-semibold">
+              Demo
+            </span>
+          ) : (
+            <span className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">
+              In Progress
+            </span>
+          )}
+        </div>
       </div>
+
+      {/* ── Settings panel ──────────────────────────────────── */}
+      {showSettings && isCoach && (
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="max-w-lg mx-auto space-y-3">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+              Scoring options
+            </p>
+            <ConfigToggle
+              id="cfg-pitch-type"
+              checked={localConfig.pitchType}
+              onChange={(v) => setLocalConfig((c) => ({ ...c, pitchType: v }))}
+              label="Track pitch type"
+            />
+            <ConfigToggle
+              id="cfg-pitch-location"
+              checked={localConfig.pitchLocation}
+              onChange={(v) => setLocalConfig((c) => ({ ...c, pitchLocation: v }))}
+              label="Track pitch location"
+            />
+            <ConfigToggle
+              id="cfg-spray-chart"
+              checked={localConfig.sprayChart}
+              onChange={(v) => setLocalConfig((c) => ({ ...c, sprayChart: v }))}
+              label="Batter spray chart"
+            />
+          </div>
+        </div>
+      )}
 
       {/* ── Demo Mode Banner ─────────────────────────────────── */}
       {isDemo && (
@@ -984,22 +1089,28 @@ export function ScoringBoard({
         {isCoach && (
           <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
 
-            {/* Pitch type + zone selectors — shown whenever a pitch can be recorded */}
-            {gameState.outs < 3 && (
+            {/* Pitch type + zone selectors — conditionally shown based on scoring config */}
+            {gameState.outs < 3 && (localConfig.pitchType || localConfig.pitchLocation || localConfig.sprayChart) && (
               <div className="space-y-3 pb-3 border-b border-gray-100">
-                <PitchTypeSelector selected={pitchType} onSelect={setPitchType} />
-                <div className="flex gap-3 items-start">
-                  <div className="shrink-0">
-                    <StrikeZoneGrid selected={zoneLocation} onSelect={setZoneLocation} />
+                {localConfig.pitchType && (
+                  <PitchTypeSelector selected={pitchType} onSelect={setPitchType} />
+                )}
+                {(localConfig.pitchLocation || (localConfig.sprayChart && !isOpponentBatting && currentBatter)) && (
+                  <div className="flex gap-3 items-start">
+                    {localConfig.pitchLocation && (
+                      <div className="shrink-0">
+                        <StrikeZoneGrid selected={zoneLocation} onSelect={setZoneLocation} />
+                      </div>
+                    )}
+                    {localConfig.sprayChart && !isOpponentBatting && currentBatter && (
+                      <BatterSprayChart
+                        allHitPoints={tendencyHitPointsWithCount}
+                        currentBalls={gameState.balls}
+                        currentStrikes={gameState.strikes}
+                      />
+                    )}
                   </div>
-                  {!isOpponentBatting && currentBatter && (
-                    <BatterSprayChart
-                      allHitPoints={tendencyHitPointsWithCount}
-                      currentBalls={gameState.balls}
-                      currentStrikes={gameState.strikes}
-                    />
-                  )}
-                </div>
+                )}
               </div>
             )}
 
@@ -1227,7 +1338,16 @@ export function ScoringBoard({
                     </button>
                   </div>
                   {!pitchAnnotationsReady && (
-                    <p className="text-xs text-gray-400 mt-2">Select pitch type and location above to enable</p>
+                    <p className="text-xs text-gray-400 mt-2">
+                      Select{' '}
+                      {[
+                        localConfig.pitchType && !pitchType && 'pitch type',
+                        localConfig.pitchLocation && zoneLocation === null && 'location',
+                      ]
+                        .filter(Boolean)
+                        .join(' and ')}{' '}
+                      above to enable
+                    </p>
                   )}
                 </div>
 

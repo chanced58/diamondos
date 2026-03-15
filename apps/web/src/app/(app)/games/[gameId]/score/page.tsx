@@ -172,6 +172,16 @@ export default async function ScorePage({ params }: { params: { gameId: string }
     }
   }
 
+  // ── Scoring config — read from the game_start event payload ─────────────────
+  // Defaults to all-enabled for games started before this feature shipped.
+  const gameStartEvent = (eventsResult.data ?? []).find((e) => e.event_type === 'game_start');
+  const gsp = (gameStartEvent?.payload ?? {}) as Record<string, unknown>;
+  const scoringConfig = {
+    pitchType:     gsp.pitchTypeEnabled     !== false,
+    pitchLocation: gsp.pitchLocationEnabled !== false,
+    sprayChart:    gsp.sprayChartEnabled    !== false,
+  };
+
   return (
     <ScoringBoard
       game={{
@@ -185,6 +195,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       currentUserId={user.id}
       isCoach={isCoach}
       seasonSprayPoints={seasonSprayPoints}
+      scoringConfig={scoringConfig}
     />
   );
 }

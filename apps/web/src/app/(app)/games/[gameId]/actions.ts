@@ -131,7 +131,12 @@ export async function startGameAction(_prevState: string | null | undefined, for
 
   if (updateError) return `Failed to start game: ${updateError.message}`;
 
-  // Insert GAME_START event
+  // Read scorekeeper config flags (default true if not provided)
+  const pitchTypeEnabled    = formData.get('pitchTypeEnabled')    !== 'false';
+  const pitchLocationEnabled = formData.get('pitchLocationEnabled') !== 'false';
+  const sprayChartEnabled   = formData.get('sprayChartEnabled')   !== 'false';
+
+  // Insert GAME_START event — config flags stored in payload for retrieval on the score page
   const { error: eventError } = await supabase.from('game_events').insert({
     id: crypto.randomUUID(),
     game_id: gameId,
@@ -139,7 +144,12 @@ export async function startGameAction(_prevState: string | null | undefined, for
     event_type: 'game_start',
     inning: 1,
     is_top_of_inning: true,
-    payload: { homeLineupPitcherId: startingPitcher?.player_id ?? null },
+    payload: {
+      homeLineupPitcherId: startingPitcher?.player_id ?? null,
+      pitchTypeEnabled,
+      pitchLocationEnabled,
+      sprayChartEnabled,
+    },
     occurred_at: now,
     created_by: user.id,
     device_id: 'web',
