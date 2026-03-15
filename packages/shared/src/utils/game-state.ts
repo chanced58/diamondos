@@ -41,10 +41,14 @@ export function deriveGameState(
 
       case EventType.PITCH_THROWN: {
         const p = event.payload as PitchThrownPayload;
-        state.currentPitcherId = p.pitcherId;
-        state.currentBatterId = p.batterId;
-        pitcherCounts[p.pitcherId] = (pitcherCounts[p.pitcherId] ?? 0) + 1;
-        state.currentPitcherPitchCount = pitcherCounts[p.pitcherId];
+        const pitcherId = p.pitcherId ?? p.opponentPitcherId ?? null;
+        const batterId  = p.batterId  ?? p.opponentBatterId  ?? null;
+        state.currentPitcherId = pitcherId;
+        state.currentBatterId  = batterId;
+        if (pitcherId) {
+          pitcherCounts[pitcherId] = (pitcherCounts[pitcherId] ?? 0) + 1;
+          state.currentPitcherPitchCount = pitcherCounts[pitcherId];
+        }
 
         switch (p.outcome) {
           case 'called_strike':
