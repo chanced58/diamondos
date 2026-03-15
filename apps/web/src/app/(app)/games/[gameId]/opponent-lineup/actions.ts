@@ -175,21 +175,27 @@ export async function saveOpponentLineupAction(
   const { db } = ctx;
 
   // Parse entries: player_{id}_order and player_{id}_position
-  const entries: { opponent_player_id: string; batting_order: number; starting_position: string | null }[] = [];
+  const entries: { opponent_player_id: string; batting_order: number | null; starting_position: string | null }[] = [];
   for (const [key, value] of formData.entries()) {
     const orderMatch = key.match(/^player_(.+)_order$/);
     if (orderMatch) {
       const playerId = orderMatch[1];
       const order = parseInt(value as string, 10);
-      if (isNaN(order) || order < 1 || order > 9) continue;
       const rawPosition = formData.get(`player_${playerId}_position`) as string | null;
       const dbPosition = rawPosition ? (POSITION_TO_DB[rawPosition] ?? rawPosition) : null;
+      if (isNaN(order) || order < 1 || order > 9) {
+        // Bench — still include pitchers so they can be identified as the starting pitcher.
+        if (dbPosition === 'pitcher') {
+          entries.push({ opponent_player_id: playerId, batting_order: null, starting_position: dbPosition });
+        }
+        continue;
+      }
       entries.push({ opponent_player_id: playerId, batting_order: order, starting_position: dbPosition });
     }
   }
 
-  // Validate no duplicate batting order spots
-  const orders = entries.map((e) => e.batting_order);
+  // Validate no duplicate batting order spots (nulls are not compared)
+  const orders = entries.map((e) => e.batting_order).filter((o): o is number => o !== null);
   if (orders.length !== new Set(orders).size) {
     return 'Duplicate batting order positions. Each spot (1–9) can only be assigned once.';
   }

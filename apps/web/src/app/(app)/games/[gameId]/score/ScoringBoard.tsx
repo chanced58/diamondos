@@ -26,7 +26,8 @@ type LineupEntry = {
     id: string;
     firstName: string;
     lastName: string;
-    jerseyNumber: number | null;
+    // number for our players (integer DB column); string for opponent players (text DB column)
+    jerseyNumber: number | string | null;
   };
 };
 
