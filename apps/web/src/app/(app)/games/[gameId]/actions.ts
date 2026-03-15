@@ -136,11 +136,23 @@ export async function startGameAction(_prevState: string | null | undefined, for
   const pitchLocationEnabled = formData.get('pitchLocationEnabled') !== 'false';
   const sprayChartEnabled   = formData.get('sprayChartEnabled')   !== 'false';
 
+  // Derive next sequence number — avoids duplicate key if events already exist
+  // (e.g. a prior start was followed by a game reset back to scheduled)
+  const { data: lastEvent } = await supabase
+    .from('game_events')
+    .select('sequence_number')
+    .eq('game_id', gameId)
+    .order('sequence_number', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const nextSeq = (lastEvent?.sequence_number ?? 0) + 1;
+
   // Insert GAME_START event — config flags stored in payload for retrieval on the score page
   const { error: eventError } = await supabase.from('game_events').insert({
     id: crypto.randomUUID(),
     game_id: gameId,
-    sequence_number: 1,
+    sequence_number: nextSeq,
     event_type: 'game_start',
     inning: 1,
     is_top_of_inning: true,
