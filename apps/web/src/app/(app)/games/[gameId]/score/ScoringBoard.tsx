@@ -1801,7 +1801,7 @@ export function ScoringBoard({
               const currentRoster: { id: string; firstName: string; lastName: string; jerseyNumber: number | string | null }[] =
                 isOpp
                   ? (opponentRoster ?? [])
-                  : (teamRoster ?? lineup.map((l) => l.player));
+                  : (teamRoster ?? lineup.map((l) => l.player).filter((p): p is typeof p & { id: string } => p.id !== null));
               const currentLineupIds = new Set(
                 isOpp
                   ? (opponentLineup ?? []).map((l) => l.playerId)
