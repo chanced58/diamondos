@@ -141,7 +141,7 @@ export async function startGameAction(_prevState: string | null | undefined, for
     .from('game_lineups')
     .select('player_id, batting_order, starting_position')
     .eq('game_id', gameId)
-    .order('batting_order', { nullsLast: true });
+    .order('batting_order', { ascending: true, nullsFirst: false });
 
   const startingPitcher = lineupRows?.find((r) => r.starting_position === 'pitcher') ?? lineupRows?.[0];
 
@@ -150,7 +150,7 @@ export async function startGameAction(_prevState: string | null | undefined, for
     .from('opponent_game_lineups')
     .select('opponent_player_id, batting_order, starting_position')
     .eq('game_id', gameId)
-    .order('batting_order', { nullsLast: true });
+    .order('batting_order', { ascending: true, nullsFirst: false });
 
   const opponentStartingPitcher =
     opponentLineupRows?.find((r) => r.starting_position === 'pitcher') ??
