@@ -20,10 +20,14 @@ export default async function GameNotesPage({
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;
 
-  const db = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
+  const supabaseUrl     = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey  = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('Missing required Supabase environment variables');
+  }
+
+  // Service role client — bypasses RLS for server-side admin queries
+  const db = createClient(supabaseUrl, serviceRoleKey);
 
   const { data: game } = await db
     .from('games')
@@ -93,7 +97,7 @@ export default async function GameNotesPage({
 
   // ── Coach view ──────────────────────────────────────────────────────────────
   if (isCoach) {
-    const [playersResult, notesResult, playerNotesResult] = await Promise.all([
+    const [playersResult, notesResult, coachNotesResult, playerNotesResult] = await Promise.all([
       db
         .from('players')
         .select('id, first_name, last_name, jersey_number')
@@ -102,7 +106,12 @@ export default async function GameNotesPage({
         .order('last_name'),
       db
         .from('game_notes')
-        .select('overall_notes, coach_notes')
+        .select('overall_notes')
+        .eq('game_id', params.gameId)
+        .maybeSingle(),
+      db
+        .from('game_coach_notes')
+        .select('coach_notes')
         .eq('game_id', params.gameId)
         .maybeSingle(),
       db
@@ -124,7 +133,7 @@ export default async function GameNotesPage({
           gameId={params.gameId}
           teamId={game.team_id}
           overallNotes={notes?.overall_notes ?? ''}
-          coachNotes={notes?.coach_notes ?? ''}
+          coachNotes={coachNotesResult.data?.coach_notes ?? ''}
           players={players}
           playerNotesMap={playerNotesMap}
         />
@@ -163,6 +172,8 @@ export default async function GameNotesPage({
 
   // ── Parent view — one section per linked child ───────────────────────────────
   if (isParent && linkedPlayers.length > 0) {
+    // Promise.all preserves insertion order, so childNotesResults[i] always
+    // corresponds to linkedPlayers[i]. The subsequent .map uses the same index.
     const [notesResult, ...childNotesResults] = await Promise.all([
       db
         .from('game_notes')

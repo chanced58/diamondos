@@ -71,9 +71,11 @@ export default async function GameDetailPage({
   const vsAt = game.location_type === 'away' ? '@' : 'vs';
   const isCompleted = game.status === 'completed';
 
-  // Parse date and time for the edit form
-  const scheduledDate = new Date(game.scheduled_at).toISOString().slice(0, 10);
-  const scheduledTime = new Date(game.scheduled_at).toISOString().slice(11, 16);
+  // Parse date and time for the edit form using local timezone so the form
+  // shows the coach's local time, not the UTC equivalent.
+  const scheduled    = new Date(game.scheduled_at);
+  const scheduledDate = scheduled.toLocaleDateString('en-CA');                              // YYYY-MM-DD
+  const scheduledTime = scheduled.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); // HH:MM
 
   return (
     <div className="p-8 max-w-2xl">
