@@ -1716,17 +1716,17 @@ export function ScoringBoard({
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <p className="text-sm font-semibold text-gray-700 mb-3">Select new pitcher</p>
             <div className="space-y-1">
-              {(teamRoster ?? lineup.map((l) => l.player))
-                .filter((p): p is typeof p & { id: string } => p.id !== null && p.id !== gameState.currentPitcherId)
-                .map((p) => (
+              {(teamRoster ?? lineup.map((lineupEntry) => lineupEntry.player))
+                .filter((pitcher): pitcher is typeof pitcher & { id: string } => pitcher.id !== null && pitcher.id !== gameState.currentPitcherId)
+                .map((pitcher) => (
                   <button
-                    key={p.id}
-                    onClick={() => handlePitchingChange(p.id)}
+                    key={pitcher.id}
+                    onClick={() => handlePitchingChange(pitcher.id)}
                     className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50 transition-colors"
                   >
-                    {p.lastName}, {p.firstName}
-                    {p.jerseyNumber != null && (
-                      <span className="text-gray-400 ml-1">#{p.jerseyNumber}</span>
+                    {pitcher.lastName}, {pitcher.firstName}
+                    {pitcher.jerseyNumber != null && (
+                      <span className="text-gray-400 ml-1">#{pitcher.jerseyNumber}</span>
                     )}
                   </button>
                 ))}
