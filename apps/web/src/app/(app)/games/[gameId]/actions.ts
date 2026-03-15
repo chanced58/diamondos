@@ -95,7 +95,7 @@ export async function startGameAction(_prevState: string | null | undefined, for
   );
 
   const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error;
+  if ('error' in result) return result.error ?? null;
   const { game } = result;
 
   if (game.status !== 'scheduled') {
@@ -261,7 +261,7 @@ export async function resetGameAction(
   );
 
   const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error;
+  if ('error' in result) return result.error ?? null;
   const { game } = result;
 
   if (game.status === 'scheduled') return 'Game is already in scheduled state.';
@@ -478,7 +478,7 @@ export async function endGameAction(_prevState: string | null | undefined, formD
   );
 
   const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error;
+  if ('error' in result) return result.error ?? null;
 
   const homeScore = parseInt(formData.get('homeScore') as string, 10) || 0;
   const awayScore = parseInt(formData.get('awayScore') as string, 10) || 0;
