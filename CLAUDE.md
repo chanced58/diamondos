@@ -320,3 +320,31 @@ When working on this repository as an AI assistant:
 8. **Commit clearly** — Use Conventional Commits format with a descriptive scope and summary.
 9. **Branch discipline** — Work on the designated branch; never push directly to `main`.
 10. **Keep this file current** — Update CLAUDE.md whenever something significant changes in the project structure, stack, or conventions.
+
+## Model & Effort Guidance
+
+
+### Use high effort reasoning for:
+- All multi-file code generation and refactoring
+- Architecture decisions and new feature implementation
+- Debugging complex or cross-cutting issues
+- CodeRabbit fix loops
+- Any task touching auth, data models, or API contracts
+
+
+### Use medium effort for:
+- Single-file edits and isolated bug fixes
+- Writing or updating tests
+- Code comments and inline documentation
+
+
+### Use low effort for:
+- Formatting and linting fixes
+- Renaming variables or files
+- Simple copy or string changes
+
+
+## DiamondOS Context
+- Primary stack: Render (hosting), Supabase (database), ZohoMail (mail), GitHub
+- Always run coderabbit review after implementing a feature
+- Commit after each discrete unit of work

@@ -199,6 +199,7 @@ export interface Database {
           season_id: string | null;
           team_id: string;
           opponent_name: string;
+          opponent_team_id: string | null;
           scheduled_at: string;
           location_type: string;
           venue_name: string | null;
@@ -224,6 +225,7 @@ export interface Database {
           season_id?: string | null;
           team_id: string;
           opponent_name: string;
+          opponent_team_id?: string | null;
           scheduled_at: string;
           location_type?: string;
           venue_name?: string | null;
@@ -246,6 +248,7 @@ export interface Database {
         };
         Update: {
           opponent_name?: string;
+          opponent_team_id?: string | null;
           scheduled_at?: string;
           location_type?: string;
           venue_name?: string | null;
@@ -317,6 +320,112 @@ export interface Database {
         };
         Update: {
           batting_order?: number;
+          starting_position?: string | null;
+          is_starter?: boolean;
+        };
+        Relationships: [];
+      };
+      opponent_teams: {
+        Row: {
+          id: string;
+          team_id: string;
+          name: string;
+          abbreviation: string | null;
+          city: string | null;
+          state_code: string | null;
+          logo_url: string | null;
+          notes: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          team_id: string;
+          name: string;
+          abbreviation?: string | null;
+          city?: string | null;
+          state_code?: string | null;
+          logo_url?: string | null;
+          notes?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          name?: string;
+          abbreviation?: string | null;
+          city?: string | null;
+          state_code?: string | null;
+          logo_url?: string | null;
+          notes?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      opponent_players: {
+        Row: {
+          id: string;
+          opponent_team_id: string;
+          first_name: string;
+          last_name: string;
+          jersey_number: string | null;
+          primary_position: string | null;
+          bats: string | null;
+          throws: string | null;
+          notes: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          opponent_team_id: string;
+          first_name: string;
+          last_name: string;
+          jersey_number?: string | null;
+          primary_position?: string | null;
+          bats?: string | null;
+          throws?: string | null;
+          notes?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          first_name?: string;
+          last_name?: string;
+          jersey_number?: string | null;
+          primary_position?: string | null;
+          bats?: string | null;
+          throws?: string | null;
+          notes?: string | null;
+          is_active?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      opponent_game_lineups: {
+        Row: {
+          id: string;
+          game_id: string;
+          opponent_player_id: string;
+          batting_order: number | null;
+          starting_position: string | null;
+          is_starter: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          game_id: string;
+          opponent_player_id: string;
+          batting_order?: number | null;
+          starting_position?: string | null;
+          is_starter?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          batting_order?: number | null;
           starting_position?: string | null;
           is_starter?: boolean;
         };

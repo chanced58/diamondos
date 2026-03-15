@@ -56,12 +56,19 @@ export default async function GameDetailPage({
     if (!membership) notFound();
   }
 
-  const { count: lineupCount } = await db
-    .from('game_lineups')
-    .select('id', { count: 'exact', head: true })
-    .eq('game_id', params.gameId);
+  const [{ count: lineupCount }, { count: opponentLineupCount }] = await Promise.all([
+    db
+      .from('game_lineups')
+      .select('id', { count: 'exact', head: true })
+      .eq('game_id', params.gameId),
+    db
+      .from('opponent_game_lineups')
+      .select('id', { count: 'exact', head: true })
+      .eq('game_id', params.gameId),
+  ]);
 
   const hasLineup = (lineupCount ?? 0) > 0;
+  const hasOpponentLineup = (opponentLineupCount ?? 0) > 0;
 
   const statusStyle = STATUS_STYLES[game.status] ?? STATUS_STYLES.scheduled;
   const locationLabel =
@@ -212,12 +219,20 @@ export default async function GameDetailPage({
           <p className="text-sm text-gray-500 mb-4">
             Set your lineup, then start the game to begin pitch-by-pitch scoring.
           </p>
-          <Link
-            href={`/games/${game.id}/lineup`}
-            className="inline-block text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium transition-colors mb-3"
-          >
-            {hasLineup ? 'Edit Lineup' : 'Set Lineup'}
-          </Link>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <Link
+              href={`/games/${game.id}/lineup`}
+              className="inline-block text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              {hasLineup ? 'Edit Lineup' : 'Set Lineup'}
+            </Link>
+            <Link
+              href={`/games/${game.id}/opponent-lineup`}
+              className="inline-block text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              {hasOpponentLineup ? 'Edit Opponent Lineup' : 'Set Opponent Lineup'}
+            </Link>
+          </div>
           {hasLineup && <StartGameForm gameId={game.id} />}
         </div>
       )}
