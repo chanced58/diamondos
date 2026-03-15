@@ -51,12 +51,12 @@ export default async function ScorePage({ params }: { params: { gameId: string }
   if (game.status === 'scheduled') redirect(`/games/${params.gameId}`);
   if (game.status === 'completed' || game.status === 'cancelled') redirect(`/games/${params.gameId}`);
 
-  const [lineupResult, eventsResult, rosterResult, opponentPlayersResult] = await Promise.all([
+  const [lineupResult, eventsResult, rosterResult, opponentPlayersResult, opponentLineupResult] = await Promise.all([
     db
       .from('game_lineups')
       .select('player_id, batting_order, starting_position, players(id, first_name, last_name, jersey_number)')
       .eq('game_id', params.gameId)
-      .order('batting_order'),
+      .order('batting_order', { nullsLast: true }),
     db
       .from('game_events')
       .select('*')
@@ -76,18 +76,42 @@ export default async function ScorePage({ params }: { params: { gameId: string }
           .eq('is_active', true)
           .order('last_name')
       : Promise.resolve({ data: [] as { id: string; first_name: string; last_name: string; jersey_number: string | null }[] }),
+    game.opponent_team_id
+      ? db
+          .from('opponent_game_lineups')
+          .select('opponent_player_id, batting_order, starting_position, opponent_players(id, first_name, last_name, jersey_number)')
+          .eq('game_id', params.gameId)
+          .order('batting_order', { nullsLast: true })
+      : Promise.resolve({ data: [] as { opponent_player_id: string; batting_order: number | null; starting_position: string | null; opponent_players: unknown }[] }),
   ]);
 
   const lineup = (lineupResult.data ?? []).map((l) => {
     const p = l.players as unknown as { id: string; first_name: string; last_name: string; jersey_number: number | null } | null;
     return {
       playerId: l.player_id as string,
-      battingOrder: l.batting_order as number,
+      // batting_order is NULL for pitchers who don't bat (DH rule); map to 0 so they are
+      // excluded from the 1–9 starters rotation but remain in the player-name lookup.
+      battingOrder: (l.batting_order as number | null) ?? 0,
       startingPosition: l.starting_position ? DB_TO_POSITION[l.starting_position] ?? l.starting_position : null,
       player: {
-        id: p?.id as string,
-        firstName: p?.first_name as string,
-        lastName: p?.last_name as string,
+        id: p?.id ?? null,
+        firstName: p?.first_name ?? '',
+        lastName: p?.last_name ?? '',
+        jerseyNumber: p?.jersey_number ?? null,
+      },
+    };
+  });
+
+  const opponentLineup = (opponentLineupResult.data ?? []).map((l) => {
+    const p = l.opponent_players as unknown as { id: string; first_name: string; last_name: string; jersey_number: string | null } | null;
+    return {
+      playerId: l.opponent_player_id as string,
+      battingOrder: (l.batting_order as number | null) ?? 0,
+      startingPosition: l.starting_position ? DB_TO_POSITION[l.starting_position] ?? l.starting_position : null,
+      player: {
+        id: p?.id ?? null,
+        firstName: p?.first_name ?? '',
+        lastName: p?.last_name ?? '',
         jerseyNumber: p?.jersey_number ?? null,
       },
     };
@@ -226,6 +250,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
         teamId: game.team_id,
       }}
       lineup={lineup}
+      opponentLineup={opponentLineup}
       teamRoster={teamRoster}
       opponentRoster={opponentRoster}
       initialEvents={activeEvents}

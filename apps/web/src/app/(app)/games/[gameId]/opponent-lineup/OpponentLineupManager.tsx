@@ -363,6 +363,8 @@ function OpponentBattingOrderSection({
 
           <p className="text-xs text-gray-400 mb-4">
             Set batting order 1–9 for starters. Players left as &quot;Bench&quot; will not appear in the order.
+            Exception: a player set to &quot;Bench&quot; with position P is saved as the starting pitcher without a
+            batting slot — use this for DH rules where the pitcher does not bat.
           </p>
 
           <SubmitButton label="Save batting order" pendingLabel="Saving..." />

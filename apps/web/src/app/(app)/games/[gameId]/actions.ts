@@ -135,14 +135,27 @@ export async function startGameAction(_prevState: string | null | undefined, for
     return 'Set the lineup before starting the game.';
   }
 
-  // Get starting pitcher (lowest batting order that has P position, or first in order)
+  // Get starting pitcher — prefer the player with position 'pitcher'; fall back to first in order.
+  // NOTE: starting_position stores the DB enum value ('pitcher'), not the UI abbreviation ('P').
   const { data: lineupRows } = await supabase
     .from('game_lineups')
     .select('player_id, batting_order, starting_position')
     .eq('game_id', gameId)
-    .order('batting_order');
+    .order('batting_order', { nullsLast: true });
 
-  const startingPitcher = lineupRows?.find((r) => r.starting_position === 'P') ?? lineupRows?.[0];
+  const startingPitcher = lineupRows?.find((r) => r.starting_position === 'pitcher') ?? lineupRows?.[0];
+
+  // Get opponent's starting pitcher from opponent_game_lineups if available.
+  const { data: opponentLineupRows } = await supabase
+    .from('opponent_game_lineups')
+    .select('opponent_player_id, batting_order, starting_position')
+    .eq('game_id', gameId)
+    .order('batting_order', { nullsLast: true });
+
+  const opponentStartingPitcher =
+    opponentLineupRows?.find((r) => r.starting_position === 'pitcher') ??
+    opponentLineupRows?.find((r) => r.batting_order !== null) ??
+    null;
 
   const now = new Date().toISOString();
 
@@ -165,13 +178,18 @@ export async function startGameAction(_prevState: string | null | undefined, for
     inning: 1,
     is_top_of_inning: true,
     payload: {
-      // When we're the home team, our pitcher fields in the TOP (homeLineupPitcherId).
-      // When we're the away team, our pitcher fields in the BOTTOM (awayLineupPitcherId).
-      // This prevents our starting pitcher from appearing as the pitcher when we are
-      // actually the batting team at the start of the game.
+      // Home team pitches in the TOP; away team pitches in the BOTTOM.
+      // Store both our pitcher and the opponent's pitcher in the correct fields
+      // so game-state can resolve the active pitcher for each half-inning.
       ...(game.location_type === 'away'
-        ? { awayLineupPitcherId: startingPitcher?.player_id ?? null }
-        : { homeLineupPitcherId: startingPitcher?.player_id ?? null }),
+        ? {
+            awayLineupPitcherId: startingPitcher?.player_id ?? null,
+            homeLineupPitcherId: opponentStartingPitcher?.opponent_player_id ?? null,
+          }
+        : {
+            homeLineupPitcherId: startingPitcher?.player_id ?? null,
+            awayLineupPitcherId: opponentStartingPitcher?.opponent_player_id ?? null,
+          }),
       pitchTypeEnabled,
       pitchLocationEnabled,
       sprayChartEnabled,
