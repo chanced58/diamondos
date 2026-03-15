@@ -783,9 +783,8 @@ export function ScoringBoard({
   // ── Pitch handlers ────────────────────────────────────────────────────────
 
   async function handlePitch(outcome: string) {
-    const batterId = activeBatterId;
-    const pitcherId = gameState.currentPitcherId;
-    if (!batterId || !pitcherId) return;
+    const batterId = activeBatterId ?? 'unknown-batter';
+    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
 
     if (outcome === 'in_play') {
       setInPlayPending(true);
@@ -813,9 +812,8 @@ export function ScoringBoard({
   async function handleInPlay(result: string, trajectory: string, sequence?: number[]) {
     setInPlayPending(false);
     setPendingResult(null);
-    const batterId = activeBatterId;
-    const pitcherId = gameState.currentPitcherId;
-    if (!batterId || !pitcherId) return;
+    const batterId = activeBatterId ?? 'unknown-batter';
+    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
 
     // Capture annotation values before resetting
     const pitchExtra: Record<string, unknown> = {};
@@ -848,9 +846,8 @@ export function ScoringBoard({
   async function handleError(errorPosition: string) {
     setInPlayPending(false);
     setErrorPending(false);
-    const batterId = activeBatterId;
-    const pitcherId = gameState.currentPitcherId;
-    if (!batterId || !pitcherId) return;
+    const batterId = activeBatterId ?? 'unknown-batter';
+    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
 
     const pitchExtra: Record<string, unknown> = {};
     if (pitchType) pitchExtra.pitchType = pitchType;
@@ -873,23 +870,20 @@ export function ScoringBoard({
   }
 
   async function handleWalk() {
-    const batterId = activeBatterId;
-    const pitcherId = gameState.currentPitcherId;
-    if (!batterId || !pitcherId) return;
+    const batterId = activeBatterId ?? 'unknown-batter';
+    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
     await recordEvent('walk', { batterId, pitcherId });
   }
 
   async function handleStrikeout() {
-    const batterId = activeBatterId;
-    const pitcherId = gameState.currentPitcherId;
-    if (!batterId || !pitcherId) return;
+    const batterId = activeBatterId ?? 'unknown-batter';
+    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
     await recordEvent('strikeout', { batterId, pitcherId, outType: 'strikeout' });
   }
 
   async function handleHBP() {
-    const batterId = activeBatterId;
-    const pitcherId = gameState.currentPitcherId;
-    if (!batterId || !pitcherId) return;
+    const batterId = activeBatterId ?? 'unknown-batter';
+    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
     const extra: Record<string, unknown> = {};
     if (pitchType) extra.pitchType = pitchType;
     if (zoneLocation !== null) extra.zoneLocation = zoneLocation;
@@ -899,9 +893,8 @@ export function ScoringBoard({
   }
 
   async function handleWildPitch() {
-    const batterId = activeBatterId;
-    const pitcherId = gameState.currentPitcherId;
-    if (!batterId || !pitcherId) return;
+    const batterId = activeBatterId ?? 'unknown-batter';
+    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
     const extra: Record<string, unknown> = {};
     if (pitchType) extra.pitchType = pitchType;
     if (zoneLocation !== null) extra.zoneLocation = zoneLocation;
@@ -913,9 +906,8 @@ export function ScoringBoard({
   }
 
   async function handlePassedBall() {
-    const batterId = activeBatterId;
-    const pitcherId = gameState.currentPitcherId;
-    if (!batterId || !pitcherId) return;
+    const batterId = activeBatterId ?? 'unknown-batter';
+    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
     const extra: Record<string, unknown> = {};
     if (pitchType) extra.pitchType = pitchType;
     if (zoneLocation !== null) extra.zoneLocation = zoneLocation;
@@ -959,8 +951,8 @@ export function ScoringBoard({
   }
 
   async function handleBalk() {
-    if (!gameState.currentPitcherId) return;
-    await recordEvent('balk', { pitcherId: gameState.currentPitcherId });
+    const balkPitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
+    await recordEvent('balk', { pitcherId: balkPitcherId });
     // Runs scored on balks are not RBIs per official scoring rules
     const thirdRunner = gameState.runnersOnBase.third;
     if (thirdRunner) {
