@@ -56,7 +56,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       .from('game_lineups')
       .select('player_id, batting_order, starting_position, players(id, first_name, last_name, jersey_number)')
       .eq('game_id', params.gameId)
-      .order('batting_order', { nullsLast: true }),
+      .order('batting_order', { ascending: true, nullsFirst: false }),
     db
       .from('game_events')
       .select('*')
@@ -81,7 +81,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
           .from('opponent_game_lineups')
           .select('opponent_player_id, batting_order, starting_position, opponent_players(id, first_name, last_name, jersey_number)')
           .eq('game_id', params.gameId)
-          .order('batting_order', { nullsLast: true })
+          .order('batting_order', { ascending: true, nullsFirst: false })
       : Promise.resolve({ data: [] as { opponent_player_id: string; batting_order: number | null; starting_position: string | null; opponent_players: unknown }[] }),
   ]);
 
