@@ -200,12 +200,10 @@ export function deriveGameState(
         if (p.outcome === 'out') {
           state.outs++;
         } else if (p.outcome === 'safe') {
-          // safeAtBase is required by the type when outcome === 'safe';
-          // fall back to startBase defensively in case of malformed legacy events
-          const safeBase = p.safeAtBase ?? p.startBase;
-          if (safeBase === 1) runners.first  = p.runnerId;
-          else if (safeBase === 2) runners.second = p.runnerId;
-          else if (safeBase === 3) runners.third  = p.runnerId;
+          // safeAtBase is required by the discriminated union when outcome === 'safe'
+          if (p.safeAtBase === 1) runners.first  = p.runnerId;
+          else if (p.safeAtBase === 2) runners.second = p.runnerId;
+          else if (p.safeAtBase === 3) runners.third  = p.runnerId;
         }
         state.runnersOnBase = runners;
         break;
