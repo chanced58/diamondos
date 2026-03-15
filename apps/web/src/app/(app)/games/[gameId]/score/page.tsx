@@ -28,7 +28,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
 
   const { data: game } = await db
     .from('games')
-    .select('id, team_id, opponent_name, location_type, status, home_score, away_score, season_id')
+    .select('id, team_id, opponent_name, location_type, status, home_score, away_score, season_id, opponent_team_id')
     .eq('id', params.gameId)
     .single();
 
@@ -51,7 +51,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
   if (game.status === 'scheduled') redirect(`/games/${params.gameId}`);
   if (game.status === 'completed' || game.status === 'cancelled') redirect(`/games/${params.gameId}`);
 
-  const [lineupResult, eventsResult] = await Promise.all([
+  const [lineupResult, eventsResult, rosterResult, opponentPlayersResult] = await Promise.all([
     db
       .from('game_lineups')
       .select('player_id, batting_order, starting_position, players(id, first_name, last_name, jersey_number)')
@@ -62,6 +62,20 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       .select('*')
       .eq('game_id', params.gameId)
       .order('sequence_number'),
+    db
+      .from('players')
+      .select('id, first_name, last_name, jersey_number')
+      .eq('team_id', game.team_id)
+      .eq('is_active', true)
+      .order('last_name'),
+    game.opponent_team_id
+      ? db
+          .from('opponent_players')
+          .select('id, first_name, last_name, jersey_number')
+          .eq('opponent_team_id', game.opponent_team_id)
+          .eq('is_active', true)
+          .order('last_name')
+      : Promise.resolve({ data: [] as { id: string; first_name: string; last_name: string; jersey_number: string | null }[] }),
   ]);
 
   const lineup = (lineupResult.data ?? []).map((l) => {
@@ -172,6 +186,20 @@ export default async function ScorePage({ params }: { params: { gameId: string }
     }
   }
 
+  const teamRoster = (rosterResult.data ?? []).map((p) => ({
+    id: p.id,
+    firstName: p.first_name,
+    lastName: p.last_name,
+    jerseyNumber: p.jersey_number ?? null,
+  }));
+
+  const opponentRoster = (opponentPlayersResult.data ?? []).map((p) => ({
+    id: p.id,
+    firstName: p.first_name,
+    lastName: p.last_name,
+    jerseyNumber: p.jersey_number ?? null,
+  }));
+
   // ── Filter events to only those in the current "game session" ───────────────
   // If the game has been reset, a game_reset event marks the boundary. Only
   // replay events after the most recent reset so ScoringBoard starts clean.
@@ -198,6 +226,8 @@ export default async function ScorePage({ params }: { params: { gameId: string }
         teamId: game.team_id,
       }}
       lineup={lineup}
+      teamRoster={teamRoster}
+      opponentRoster={opponentRoster}
       initialEvents={activeEvents}
       currentUserId={user.id}
       isCoach={isCoach}

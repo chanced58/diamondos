@@ -30,6 +30,13 @@ type LineupEntry = {
   };
 };
 
+type RosterEntry = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  jerseyNumber: number | string | null;
+};
+
 // Raw DB row shape — has snake_case columns
 type EventRow = Record<string, unknown>;
 
@@ -495,6 +502,8 @@ export function ScoringBoard({
   game,
   lineup,
   opponentLineup,
+  teamRoster,
+  opponentRoster,
   initialEvents,
   currentUserId,
   isCoach,
@@ -505,6 +514,8 @@ export function ScoringBoard({
   game: GameRow;
   lineup: LineupEntry[];
   opponentLineup?: LineupEntry[];
+  teamRoster?: RosterEntry[];
+  opponentRoster?: RosterEntry[];
   initialEvents: EventRow[];
   currentUserId: string;
   isCoach: boolean;
@@ -538,6 +549,27 @@ export function ScoringBoard({
   const [stashedOutResult, setStashedOutResult] = useState<string | null>(null);
   // Track pitching change UI
   const [showPitchingChange, setShowPitchingChange] = useState(false);
+  // Pending baserunner advance — waiting for reason selection
+  const [pendingAdvance, setPendingAdvance] = useState<{
+    runnerId: string;
+    fromBase: 1 | 2 | 3;
+    toBase: 2 | 3 | 4;
+  } | null>(null);
+  const [advanceErrorBy, setAdvanceErrorBy] = useState<number | null>(null);
+  // Rundown panel state
+  const [showRundown, setShowRundown] = useState(false);
+  const [rundownRunnerId, setRundownRunnerId] = useState('');
+  const [rundownThrowSeq, setRundownThrowSeq] = useState<number[]>([]);
+  const [rundownOutcome, setRundownOutcome] = useState<'out' | 'safe' | null>(null);
+  const [rundownSafeBase, setRundownSafeBase] = useState<1 | 2 | 3 | null>(null);
+  // Substitution panel state
+  const [showSubstitution, setShowSubstitution] = useState(false);
+  const [subTeam, setSubTeam] = useState<'us' | 'opponent'>('us');
+  const [subType, setSubType] = useState<'pinch_hitter' | 'pinch_runner' | 'defensive' | null>(null);
+  const [subOutPlayerId, setSubOutPlayerId] = useState('');
+  const [subInPlayerId, setSubInPlayerId] = useState('');
+  const [subRunnerBase, setSubRunnerBase] = useState<1 | 2 | 3 | null>(null);
+  const [subNewPosition, setSubNewPosition] = useState('');
   // Per-pitch annotations (optional, cleared after each pitch is recorded)
   const [pitchType, setPitchType] = useState<string | null>(null);
   const [zoneLocation, setZoneLocation] = useState<number | null>(null);
@@ -906,11 +938,75 @@ export function ScoringBoard({
     await recordEvent('caught_stealing', { runnerId, fromBase, toBase });
   }
 
-  async function handleRunnerAdvance(runnerId: string, fromBase: 1 | 2 | 3, toBase: 2 | 3 | 4) {
-    await recordEvent('baserunner_advance', { runnerId, fromBase, toBase });
+  function handleAdvanceClick(runnerId: string, fromBase: 1 | 2 | 3, toBase: 2 | 3 | 4) {
+    setPendingAdvance({ runnerId, fromBase, toBase });
+    setAdvanceErrorBy(null);
+  }
+
+  async function handleRunnerAdvance(runnerId: string, fromBase: 1 | 2 | 3, toBase: 2 | 3 | 4, reason?: string, errorBy?: number | null) {
+    const payload: Record<string, unknown> = { runnerId, fromBase, toBase };
+    if (reason) payload.reason = reason;
+    if (errorBy != null) payload.errorBy = errorBy;
+    await recordEvent('baserunner_advance', payload);
     if (toBase === 4) {
       await recordEvent('score', { scoringPlayerId: runnerId, rbis: 1 });
     }
+    setPendingAdvance(null);
+    setAdvanceErrorBy(null);
+  }
+
+  async function handleBalk() {
+    if (!gameState.currentPitcherId) return;
+    await recordEvent('balk', { pitcherId: gameState.currentPitcherId });
+    // Runs scored on balks are not RBIs per official scoring rules
+    const thirdRunner = gameState.runnersOnBase.third;
+    if (thirdRunner) {
+      await recordEvent('score', { scoringPlayerId: thirdRunner, rbis: 0 });
+    }
+  }
+
+  async function handleRundown() {
+    if (!rundownRunnerId || !rundownOutcome) return;
+    if (rundownOutcome === 'safe' && !rundownSafeBase) return;
+    const startBase = (
+      gameState.runnersOnBase.first  === rundownRunnerId ? 1 :
+      gameState.runnersOnBase.second === rundownRunnerId ? 2 :
+      gameState.runnersOnBase.third  === rundownRunnerId ? 3 :
+      null
+    );
+    if (!startBase) return;
+    await recordEvent('rundown', {
+      runnerId: rundownRunnerId,
+      startBase,
+      outcome: rundownOutcome,
+      safeAtBase: rundownOutcome === 'safe' ? rundownSafeBase : undefined,
+      throwSequence: rundownThrowSeq,
+    });
+    setShowRundown(false);
+    setRundownRunnerId('');
+    setRundownThrowSeq([]);
+    setRundownOutcome(null);
+    setRundownSafeBase(null);
+  }
+
+  async function handleSubstitution() {
+    if (!subOutPlayerId || !subInPlayerId || !subType) return;
+    const isOpponent = subTeam === 'opponent';
+    const payload: Record<string, unknown> = {
+      inPlayerId: subInPlayerId,
+      outPlayerId: subOutPlayerId,
+      substitutionType: subType,
+      isOpponentSubstitution: isOpponent,
+    };
+    if (subType === 'pinch_runner' && subRunnerBase != null) payload.runnerBase = subRunnerBase;
+    if (subType === 'defensive' && subNewPosition) payload.newPosition = subNewPosition;
+    await recordEvent('substitution', payload);
+    setShowSubstitution(false);
+    setSubType(null);
+    setSubOutPlayerId('');
+    setSubInPlayerId('');
+    setSubRunnerBase(null);
+    setSubNewPosition('');
   }
 
   async function handleInningChange() {
@@ -1390,42 +1486,217 @@ export function ScoringBoard({
               ).filter((b) => b.runnerId).map(({ base, label, runnerId }) => {
                 const nextBase = (base + 1) as 2 | 3 | 4;
                 const stealLabel = ({ 2: 'Steal 2nd', 3: 'Steal 3rd', 4: 'Steal Home' } as Record<number, string>)[nextBase];
+                const isPendingThis = pendingAdvance?.runnerId === runnerId;
                 return (
-                  <div key={base} className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-xs font-bold text-gray-500 w-7">{label}</span>
-                    <span className="text-xs font-medium text-gray-800 flex-1 min-w-0 truncate">
-                      {playerName(runnerId!)}
-                    </span>
-                    <button
-                      onClick={() => handleStolenBase(runnerId!, base)}
-                      className="px-2 py-1 text-xs font-medium rounded border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 transition-colors whitespace-nowrap"
-                    >
-                      {stealLabel}
-                    </button>
-                    <button
-                      onClick={() => handleCaughtStealing(runnerId!, base)}
-                      className="px-2 py-1 text-xs font-medium rounded border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
-                    >
-                      CS
-                    </button>
-                    {base < 3 && (
+                  <div key={base}>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-bold text-gray-500 w-7">{label}</span>
+                      <span className="text-xs font-medium text-gray-800 flex-1 min-w-0 truncate">
+                        {playerName(runnerId!)}
+                      </span>
                       <button
-                        onClick={() => handleRunnerAdvance(runnerId!, base, (base + 1) as 2 | 3)}
-                        className="px-2 py-1 text-xs font-medium rounded border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 transition-colors"
+                        onClick={() => handleStolenBase(runnerId!, base)}
+                        className="px-2 py-1 text-xs font-medium rounded border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 transition-colors whitespace-nowrap"
                       >
-                        Adv →
+                        {stealLabel}
                       </button>
+                      <button
+                        onClick={() => handleCaughtStealing(runnerId!, base)}
+                        className="px-2 py-1 text-xs font-medium rounded border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+                      >
+                        CS
+                      </button>
+                      {base < 3 && (
+                        <button
+                          onClick={() => handleAdvanceClick(runnerId!, base, (base + 1) as 2 | 3)}
+                          className={`px-2 py-1 text-xs font-medium rounded border transition-colors ${isPendingThis && pendingAdvance?.toBase === base + 1 ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+                        >
+                          Adv →
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleAdvanceClick(runnerId!, base, 4)}
+                        className={`px-2 py-1 text-xs font-medium rounded border transition-colors ${isPendingThis && pendingAdvance?.toBase === 4 ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+                      >
+                        Score
+                      </button>
+                    </div>
+
+                    {/* Advance reason picker — shown inline when this runner has a pending advance */}
+                    {isPendingThis && pendingAdvance && (
+                      <div className="mt-2 ml-7 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <p className="text-xs font-semibold text-gray-500 mb-2">Reason for advance</p>
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {([
+                            { label: 'Overthrow',  value: 'overthrow' },
+                            { label: 'Error',      value: 'error' },
+                            { label: 'Wild Pitch', value: 'wild_pitch' },
+                            { label: 'Passed Ball',value: 'passed_ball' },
+                            { label: 'Balk',       value: 'balk' },
+                            { label: 'Voluntary',  value: 'voluntary' },
+                          ] as const).map(({ label, value }) => (
+                            <button
+                              key={value}
+                              onClick={() => handleRunnerAdvance(pendingAdvance.runnerId, pendingAdvance.fromBase, pendingAdvance.toBase, value, advanceErrorBy)}
+                              className="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:border-brand-400 hover:text-brand-700 transition-colors"
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        {/* Fielder selector for overthrow/error */}
+                        <div className="mb-2">
+                          <p className="text-[10px] text-gray-400 mb-1">Fielder (for OT/Error)</p>
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              { n: 1, label: 'P' }, { n: 2, label: 'C' }, { n: 3, label: '1B' },
+                              { n: 4, label: '2B' }, { n: 5, label: '3B' }, { n: 6, label: 'SS' },
+                              { n: 7, label: 'LF' }, { n: 8, label: 'CF' }, { n: 9, label: 'RF' },
+                            ].map(({ n, label }) => (
+                              <button
+                                key={n}
+                                onClick={() => setAdvanceErrorBy(advanceErrorBy === n ? null : n)}
+                                className={`px-2 py-0.5 text-xs rounded border transition-colors ${advanceErrorBy === n ? 'bg-brand-600 text-white border-brand-700' : 'bg-white border-gray-300 text-gray-600 hover:border-brand-400'}`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => { setPendingAdvance(null); setAdvanceErrorBy(null); }}
+                          className="text-xs text-gray-400 hover:text-gray-600"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     )}
-                    <button
-                      onClick={() => handleRunnerAdvance(runnerId!, base, 4)}
-                      className="px-2 py-1 text-xs font-medium rounded border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 transition-colors"
-                    >
-                      Score
-                    </button>
                   </div>
                 );
               })}
             </div>
+
+            {/* Rundown button */}
+            {!showRundown && (
+              <button
+                onClick={() => setShowRundown(true)}
+                className="mt-3 text-xs text-gray-400 hover:text-gray-600"
+              >
+                Rundown…
+              </button>
+            )}
+
+            {/* Rundown panel */}
+            {showRundown && (
+              <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
+                <p className="text-xs font-semibold text-gray-600">Rundown</p>
+
+                {/* Runner selector */}
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-1 uppercase tracking-wide">Runner</p>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {(
+                      [
+                        { base: 1 as const, id: gameState.runnersOnBase.first },
+                        { base: 2 as const, id: gameState.runnersOnBase.second },
+                        { base: 3 as const, id: gameState.runnersOnBase.third },
+                      ]
+                    ).filter((b) => b.id).map(({ base, id }) => (
+                      <button
+                        key={base}
+                        onClick={() => setRundownRunnerId(id!)}
+                        className={`px-2.5 py-1 text-xs rounded border transition-colors ${rundownRunnerId === id ? 'bg-brand-600 text-white border-brand-700' : 'bg-white border-gray-300 text-gray-700 hover:border-brand-400'}`}
+                      >
+                        {playerName(id!)} ({base === 1 ? '1st' : base === 2 ? '2nd' : '3rd'})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Throw sequence builder */}
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-1 uppercase tracking-wide">
+                    Throw sequence{rundownThrowSeq.length > 0 && `: ${rundownThrowSeq.map((n) => ['P','C','1B','2B','3B','SS','LF','CF','RF'][n - 1]).join(' → ')}`}
+                  </p>
+                  <div className="flex flex-wrap gap-1 mb-1">
+                    {[
+                      { n: 1, label: 'P' }, { n: 2, label: 'C' }, { n: 3, label: '1B' },
+                      { n: 4, label: '2B' }, { n: 5, label: '3B' }, { n: 6, label: 'SS' },
+                      { n: 7, label: 'LF' }, { n: 8, label: 'CF' }, { n: 9, label: 'RF' },
+                    ].map(({ n, label }) => (
+                      <button
+                        key={n}
+                        onClick={() => setRundownThrowSeq((s) => [...s, n])}
+                        className="px-2 py-0.5 text-xs rounded border bg-white border-gray-300 text-gray-700 hover:border-brand-400 transition-colors"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    {rundownThrowSeq.length > 0 && (
+                      <button
+                        onClick={() => setRundownThrowSeq((s) => s.slice(0, -1))}
+                        className="px-2 py-0.5 text-xs rounded border bg-red-50 border-red-200 text-red-600 hover:bg-red-100 transition-colors"
+                      >
+                        ← Undo
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Outcome */}
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-1 uppercase tracking-wide">Outcome</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setRundownOutcome('out'); setRundownSafeBase(null); }}
+                      className={`px-3 py-1 text-xs font-medium rounded border transition-colors ${rundownOutcome === 'out' ? 'bg-red-600 text-white border-red-700' : 'bg-white border-gray-300 text-gray-700 hover:border-red-400'}`}
+                    >
+                      Out
+                    </button>
+                    <button
+                      onClick={() => setRundownOutcome('safe')}
+                      className={`px-3 py-1 text-xs font-medium rounded border transition-colors ${rundownOutcome === 'safe' ? 'bg-green-600 text-white border-green-700' : 'bg-white border-gray-300 text-gray-700 hover:border-green-400'}`}
+                    >
+                      Safe
+                    </button>
+                  </div>
+                </div>
+
+                {/* Safe at base */}
+                {rundownOutcome === 'safe' && (
+                  <div>
+                    <p className="text-[10px] text-gray-400 mb-1 uppercase tracking-wide">Safe at</p>
+                    <div className="flex gap-1.5">
+                      {([1, 2, 3] as const).map((b) => (
+                        <button
+                          key={b}
+                          onClick={() => setRundownSafeBase(b)}
+                          className={`px-2.5 py-1 text-xs rounded border transition-colors ${rundownSafeBase === b ? 'bg-brand-600 text-white border-brand-700' : 'bg-white border-gray-300 text-gray-700 hover:border-brand-400'}`}
+                        >
+                          {b === 1 ? '1st' : b === 2 ? '2nd' : '3rd'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleRundown}
+                    disabled={!rundownRunnerId || !rundownOutcome || (rundownOutcome === 'safe' && !rundownSafeBase)}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Record Rundown
+                  </button>
+                  <button
+                    onClick={() => { setShowRundown(false); setRundownRunnerId(''); setRundownThrowSeq([]); setRundownOutcome(null); setRundownSafeBase(null); }}
+                    className="text-xs text-gray-400 hover:text-gray-600"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1442,17 +1713,17 @@ export function ScoringBoard({
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <p className="text-sm font-semibold text-gray-700 mb-3">Select new pitcher</p>
             <div className="space-y-1">
-              {lineup
-                .filter((l) => l.playerId !== gameState.currentPitcherId)
-                .map((l) => (
+              {(teamRoster ?? lineup.map((l) => l.player))
+                .filter((p) => p.id !== gameState.currentPitcherId)
+                .map((p) => (
                   <button
-                    key={l.playerId}
-                    onClick={() => handlePitchingChange(l.playerId)}
+                    key={p.id}
+                    onClick={() => handlePitchingChange(p.id)}
                     className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50 transition-colors"
                   >
-                    {l.player.lastName}, {l.player.firstName}
-                    {l.player.jerseyNumber != null && (
-                      <span className="text-gray-400 ml-1">#{l.player.jerseyNumber}</span>
+                    {p.lastName}, {p.firstName}
+                    {p.jerseyNumber != null && (
+                      <span className="text-gray-400 ml-1">#{p.jerseyNumber}</span>
                     )}
                   </button>
                 ))}
@@ -1463,6 +1734,170 @@ export function ScoringBoard({
             >
               Cancel
             </button>
+          </div>
+        )}
+
+        {/* ── Balk ──────────────────────────────────────────────────── */}
+        {isCoach && (
+          <button
+            onClick={handleBalk}
+            className="w-full text-sm text-gray-500 hover:text-gray-700 py-2"
+          >
+            Balk
+          </button>
+        )}
+
+        {/* ── Substitution ───────────────────────────────────────────── */}
+        {isCoach && !showSubstitution && (
+          <button
+            onClick={() => { setShowSubstitution(true); setSubType(null); setSubOutPlayerId(''); setSubInPlayerId(''); setSubRunnerBase(null); setSubNewPosition(''); }}
+            className="w-full text-sm text-gray-500 hover:text-gray-700 py-2"
+          >
+            Substitution…
+          </button>
+        )}
+        {isCoach && showSubstitution && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
+            <p className="text-sm font-semibold text-gray-700">Substitution</p>
+
+            {/* Team selector */}
+            <div className="flex gap-2">
+              {(['us', 'opponent'] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => { setSubTeam(t); setSubOutPlayerId(''); setSubInPlayerId(''); }}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${subTeam === t ? 'bg-brand-600 text-white border-brand-700' : 'border-gray-300 text-gray-600 bg-white hover:border-brand-400'}`}
+                >
+                  {t === 'us' ? 'Our Team' : 'Opponent'}
+                </button>
+              ))}
+            </div>
+
+            {/* Substitution type */}
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Type</p>
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  { value: 'pinch_hitter', label: 'Pinch Hitter' },
+                  { value: 'pinch_runner', label: 'Pinch Runner' },
+                  { value: 'defensive',   label: 'Defensive' },
+                ] as const).map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => setSubType(value)}
+                    className={`px-3 py-1 text-xs font-medium rounded border transition-colors ${subType === value ? 'bg-brand-600 text-white border-brand-700' : 'bg-white border-gray-300 text-gray-600 hover:border-brand-400'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {subType && (() => {
+              const isOpp = subTeam === 'opponent';
+              const currentRoster: { id: string; firstName: string; lastName: string; jerseyNumber: number | string | null }[] =
+                isOpp
+                  ? (opponentRoster ?? [])
+                  : (teamRoster ?? lineup.map((l) => l.player));
+              const currentLineupIds = new Set(
+                isOpp
+                  ? (opponentLineup ?? []).map((l) => l.playerId)
+                  : lineup.map((l) => l.playerId),
+              );
+
+              return (
+                <>
+                  {/* Player OUT */}
+                  <div>
+                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Out (leaving game)</p>
+                    <select
+                      value={subOutPlayerId}
+                      onChange={(e) => setSubOutPlayerId(e.target.value)}
+                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+                    >
+                      <option value="">Select player…</option>
+                      {currentRoster
+                        .filter((p) => currentLineupIds.has(p.id))
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.lastName}, {p.firstName}{p.jerseyNumber != null ? ` #${p.jerseyNumber}` : ''}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  {/* Player IN */}
+                  <div>
+                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">In (entering game)</p>
+                    <select
+                      value={subInPlayerId}
+                      onChange={(e) => setSubInPlayerId(e.target.value)}
+                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+                    >
+                      <option value="">Select player…</option>
+                      {currentRoster
+                        .filter((p) => !currentLineupIds.has(p.id) || p.id === subInPlayerId)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.lastName}, {p.firstName}{p.jerseyNumber != null ? ` #${p.jerseyNumber}` : ''}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  {/* Runner base — for pinch runner */}
+                  {subType === 'pinch_runner' && (
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Runner placed at</p>
+                      <div className="flex gap-2">
+                        {([1, 2, 3] as const).map((b) => (
+                          <button
+                            key={b}
+                            onClick={() => setSubRunnerBase(b)}
+                            className={`px-3 py-1 text-xs rounded border transition-colors ${subRunnerBase === b ? 'bg-brand-600 text-white border-brand-700' : 'bg-white border-gray-300 text-gray-600 hover:border-brand-400'}`}
+                          >
+                            {b === 1 ? '1st' : b === 2 ? '2nd' : '3rd'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* New position — for defensive sub */}
+                  {subType === 'defensive' && (
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">New position (optional)</p>
+                      <select
+                        value={subNewPosition}
+                        onChange={(e) => setSubNewPosition(e.target.value)}
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+                      >
+                        <option value="">Select…</option>
+                        {['P','C','1B','2B','3B','SS','LF','CF','RF','DH'].map((pos) => (
+                          <option key={pos} value={pos}>{pos}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={handleSubstitution}
+                disabled={!subOutPlayerId || !subInPlayerId || !subType}
+                className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Record Substitution
+              </button>
+              <button
+                onClick={() => setShowSubstitution(false)}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         )}
 

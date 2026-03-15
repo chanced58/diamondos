@@ -1,4 +1,4 @@
-import { EventType, type GameEvent, type PitchThrownPayload, type HitPayload, type SubstitutionPayload, type PitchingChangePayload, type ScorePayload, type BaserunnerMovePayload } from '../types/game-event';
+import { EventType, type GameEvent, type PitchThrownPayload, type HitPayload, type SubstitutionPayload, type PitchingChangePayload, type ScorePayload, type BaserunnerMovePayload, type RundownPayload } from '../types/game-event';
 import type { LiveGameState } from '../types/game';
 import { BALLS_FOR_WALK, STRIKES_FOR_STRIKEOUT, OUTS_PER_INNING } from '../constants/baseball';
 
@@ -186,6 +186,38 @@ export function deriveGameState(
         state.outs++;
         state.balls = 0;
         state.strikes = 0;
+        break;
+      }
+
+      case EventType.RUNDOWN: {
+        const p = event.payload as unknown as RundownPayload;
+        const runners = { ...state.runnersOnBase };
+        // Remove runner from starting base
+        if (p.startBase === 1) runners.first  = null;
+        else if (p.startBase === 2) runners.second = null;
+        else if (p.startBase === 3) runners.third  = null;
+
+        if (p.outcome === 'out') {
+          state.outs++;
+        } else if (p.outcome === 'safe') {
+          // safeAtBase is required by the type when outcome === 'safe';
+          // fall back to startBase defensively in case of malformed legacy events
+          const safeBase = p.safeAtBase ?? p.startBase;
+          if (safeBase === 1) runners.first  = p.runnerId;
+          else if (safeBase === 2) runners.second = p.runnerId;
+          else if (safeBase === 3) runners.third  = p.runnerId;
+        }
+        state.runnersOnBase = runners;
+        break;
+      }
+
+      case EventType.BALK: {
+        // All runners advance one base; runner on third scores (cleared by subsequent SCORE event)
+        const runners = { ...state.runnersOnBase };
+        runners.third  = runners.second;
+        runners.second = runners.first;
+        runners.first  = null;
+        state.runnersOnBase = runners;
         break;
       }
     }
