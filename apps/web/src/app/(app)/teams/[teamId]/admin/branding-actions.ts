@@ -16,7 +16,7 @@ export async function uploadTeamBrandingAction(
   const secondaryColor = formData.get('secondaryColor') as string;
   const logoFile      = formData.get('logo') as File | null;
 
-  if (!teamId || !logoFile) return { error: 'Missing required fields.' };
+  if (!teamId) return { error: 'Missing required fields.' };
 
   const db = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -36,51 +36,46 @@ export async function uploadTeamBrandingAction(
     return { error: 'Only coaches can update team branding.' };
   }
 
-  // Determine file extension and build storage path
-  const ext = logoFile.name.split('.').pop()?.toLowerCase() ?? 'png';
-  const storagePath = `${teamId}/logo.${ext}`;
+  // If a logo file was provided, upload it and update the logo URL
+  if (logoFile && logoFile.size > 0) {
+    const ext = logoFile.name.split('.').pop()?.toLowerCase() ?? 'png';
+    const storagePath = `${teamId}/logo.${ext}`;
 
-  // Ensure the bucket exists (idempotent — safe to call even if it already exists)
-  const { error: bucketError } = await db.storage.createBucket('team-logos', { public: true });
-  if (bucketError && !bucketError.message.toLowerCase().includes('already exists') && !bucketError.message.toLowerCase().includes('duplicate')) {
-    return { error: `Storage setup failed: ${bucketError.message}` };
+    // Ensure the bucket exists (idempotent)
+    const { error: bucketError } = await db.storage.createBucket('team-logos', { public: true });
+    if (bucketError && !bucketError.message.toLowerCase().includes('already exists') && !bucketError.message.toLowerCase().includes('duplicate')) {
+      return { error: `Storage setup failed: ${bucketError.message}` };
+    }
+
+    const { error: uploadError } = await db.storage
+      .from('team-logos')
+      .upload(storagePath, logoFile, { upsert: true, contentType: logoFile.type });
+
+    if (uploadError) return { error: `Upload failed: ${uploadError.message}` };
+
+    const { data: { publicUrl } } = db.storage.from('team-logos').getPublicUrl(storagePath);
+    const cacheBustedUrl = `${publicUrl}?v=${Date.now()}`;
+
+    const { error: logoError } = await db
+      .from('teams')
+      .update({ logo_url: cacheBustedUrl, updated_at: new Date().toISOString() })
+      .eq('id', teamId);
+
+    if (logoError) return { error: `Failed to save logo: ${logoError.message}` };
   }
 
-  // Upload to Supabase Storage (upsert = overwrite on re-upload)
-  const { error: uploadError } = await db.storage
-    .from('team-logos')
-    .upload(storagePath, logoFile, {
-      upsert: true,
-      contentType: logoFile.type,
-    });
-
-  if (uploadError) return { error: `Upload failed: ${uploadError.message}` };
-
-  // Get the public URL with cache-busting param to avoid stale browser cache
-  const { data: { publicUrl } } = db.storage
-    .from('team-logos')
-    .getPublicUrl(storagePath);
-  const cacheBustedUrl = `${publicUrl}?v=${Date.now()}`;
-
-  // Persist logo URL (always safe — column exists in base schema)
-  const { error: logoError } = await db
-    .from('teams')
-    .update({ logo_url: cacheBustedUrl, updated_at: new Date().toISOString() })
-    .eq('id', teamId);
-
-  if (logoError) return { error: `Failed to save logo: ${logoError.message}` };
-
-  // Persist colors — these columns are added by migration 20260306000000.
-  // If the migration hasn't been applied yet the update will fail silently so the
-  // logo upload still succeeds.
+  // Persist colors — always save when provided, even without a new logo
   if (primaryColor || secondaryColor) {
-    await db
+    const { error: colorError } = await db
       .from('teams')
       .update({
         primary_color:   primaryColor   || null,
         secondary_color: secondaryColor || null,
+        updated_at: new Date().toISOString(),
       })
       .eq('id', teamId);
+
+    if (colorError) return { error: `Failed to save colors: ${colorError.message}` };
   }
 
   revalidatePath('/', 'layout');

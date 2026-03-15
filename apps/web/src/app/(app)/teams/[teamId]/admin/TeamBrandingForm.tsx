@@ -66,11 +66,10 @@ export function TeamBrandingForm({
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!file) return;
 
     const formData = new FormData();
     formData.append('teamId', teamId);
-    formData.append('logo', file);
+    if (file) formData.append('logo', file);
     formData.append('primaryColor', primaryColor);
     formData.append('secondaryColor', secondaryColor);
 
@@ -183,7 +182,7 @@ export function TeamBrandingForm({
 
         <button
           type="submit"
-          disabled={!file || isPending}
+          disabled={isPending}
           className="bg-brand-700 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-brand-800 disabled:opacity-50 transition-colors"
         >
           {isPending ? 'Saving…' : 'Save Branding'}
