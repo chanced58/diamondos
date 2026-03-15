@@ -23,7 +23,7 @@ type LineupEntry = {
   battingOrder: number;
   startingPosition: string | null;
   player: {
-    id: string;
+    id: string | null;
     firstName: string;
     lastName: string;
     // number for our players (integer DB column); string for opponent players (text DB column)

@@ -76,11 +76,13 @@ export default async function ScorePage({ params }: { params: { gameId: string }
           .eq('is_active', true)
           .order('last_name')
       : Promise.resolve({ data: [] as { id: string; first_name: string; last_name: string; jersey_number: string | null }[] }),
-    db
-      .from('opponent_game_lineups')
-      .select('opponent_player_id, batting_order, starting_position, opponent_players(id, first_name, last_name, jersey_number)')
-      .eq('game_id', params.gameId)
-      .order('batting_order', { nullsLast: true }),
+    game.opponent_team_id
+      ? db
+          .from('opponent_game_lineups')
+          .select('opponent_player_id, batting_order, starting_position, opponent_players(id, first_name, last_name, jersey_number)')
+          .eq('game_id', params.gameId)
+          .order('batting_order', { nullsLast: true })
+      : Promise.resolve({ data: [] as { opponent_player_id: string; batting_order: number | null; starting_position: string | null; opponent_players: unknown }[] }),
   ]);
 
   const lineup = (lineupResult.data ?? []).map((l) => {
@@ -92,9 +94,9 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       battingOrder: (l.batting_order as number | null) ?? 0,
       startingPosition: l.starting_position ? DB_TO_POSITION[l.starting_position] ?? l.starting_position : null,
       player: {
-        id: p?.id as string,
-        firstName: p?.first_name as string,
-        lastName: p?.last_name as string,
+        id: p?.id ?? null,
+        firstName: p?.first_name ?? '',
+        lastName: p?.last_name ?? '',
         jerseyNumber: p?.jersey_number ?? null,
       },
     };
@@ -107,9 +109,9 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       battingOrder: (l.batting_order as number | null) ?? 0,
       startingPosition: l.starting_position ? DB_TO_POSITION[l.starting_position] ?? l.starting_position : null,
       player: {
-        id: p?.id as string,
-        firstName: p?.first_name as string,
-        lastName: p?.last_name as string,
+        id: p?.id ?? null,
+        firstName: p?.first_name ?? '',
+        lastName: p?.last_name ?? '',
         jerseyNumber: p?.jersey_number ?? null,
       },
     };
