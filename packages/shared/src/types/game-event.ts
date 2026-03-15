@@ -7,6 +7,7 @@ export enum EventType {
   // Pitching
   PITCH_THROWN = 'pitch_thrown',
   PICKOFF_ATTEMPT = 'pickoff_attempt',
+  BALK = 'balk',
 
   // Batting outcomes
   HIT = 'hit',
@@ -24,11 +25,29 @@ export enum EventType {
   CAUGHT_STEALING = 'caught_stealing',
   BASERUNNER_ADVANCE = 'baserunner_advance',
   BASERUNNER_OUT = 'baserunner_out',
+  RUNDOWN = 'rundown',
   SCORE = 'score',
 
   // Lineup changes
   SUBSTITUTION = 'substitution',
   PITCHING_CHANGE = 'pitching_change',
+}
+
+/** Why a baserunner advanced beyond their initial base */
+export enum AdvanceReason {
+  OVERTHROW  = 'overthrow',
+  ERROR      = 'error',
+  WILD_PITCH = 'wild_pitch',
+  PASSED_BALL = 'passed_ball',
+  BALK       = 'balk',
+  VOLUNTARY  = 'voluntary',
+}
+
+/** The type of in-game substitution */
+export enum SubstitutionType {
+  PINCH_HITTER = 'pinch_hitter',
+  PINCH_RUNNER = 'pinch_runner',
+  DEFENSIVE    = 'defensive',
 }
 
 export enum PitchType {
@@ -132,8 +151,11 @@ export interface SubstitutionPayload {
   outPlayerId: string;
   /** Set when the substitution involves opponent_players. */
   isOpponentSubstitution?: boolean;
+  substitutionType?: SubstitutionType;
   newPosition?: string;
   battingOrderPosition?: number;
+  /** For pinch runners: which base the incoming runner is placed on (1 | 2 | 3). */
+  runnerBase?: 1 | 2 | 3;
 }
 
 export interface PitchingChangePayload {
@@ -157,7 +179,24 @@ export interface BaserunnerMovePayload {
   isOpponentRunner?: boolean;
   fromBase: 1 | 2 | 3;
   toBase: 2 | 3 | 4;  // 4 = home plate / scored
+  /** Why the runner advanced (for BASERUNNER_ADVANCE events). */
+  reason?: AdvanceReason;
+  /** Fielder position number responsible for the error (1-9), when reason is error or overthrow. */
+  errorBy?: number;
 }
+
+/** Payload for RUNDOWN events — discriminated union enforces safeAtBase when outcome is 'safe' */
+export type RundownPayload = {
+  runnerId: string;
+  /** Set when the runner is an opponent_player. */
+  isOpponentRunner?: boolean;
+  startBase: 1 | 2 | 3;
+  /** Ordered list of fielder position numbers involved in the rundown throws (max 10). */
+  throwSequence: number[];
+} & (
+  | { outcome: 'out'; safeAtBase?: never }
+  | { outcome: 'safe'; safeAtBase: 1 | 2 | 3 }
+);
 
 export type GameEventPayload =
   | PitchThrownPayload
@@ -166,6 +205,8 @@ export type GameEventPayload =
   | SubstitutionPayload
   | PitchingChangePayload
   | ScorePayload
+  | BaserunnerMovePayload
+  | RundownPayload
   | Record<string, unknown>;
 
 export interface GameEvent {
