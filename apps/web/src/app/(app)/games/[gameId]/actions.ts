@@ -98,8 +98,31 @@ export async function startGameAction(_prevState: string | null | undefined, for
   if ('error' in result) return result.error ?? null;
   const { game } = result;
 
-  if (game.status !== 'scheduled') {
+  if (game.status !== 'scheduled' && game.status !== 'in_progress') {
     return 'Game is not in a schedulable state.';
+  }
+
+  // Fetch existing events once — used for both the idempotency check and nextSeq.
+  // This handles three cases:
+  //   1. Normal first start (scheduled, no events) — falls through to insert.
+  //   2. Retry where event was inserted but status update failed (scheduled, has
+  //      game_start) — redirects to avoid a duplicate event.
+  //   3. Stuck in_progress (no active game_start after last reset) — falls through
+  //      to insert the missing event.
+  const { data: existingEvents } = await supabase
+    .from('game_events')
+    .select('event_type, sequence_number')
+    .eq('game_id', gameId)
+    .order('sequence_number');
+
+  const eventList = existingEvents ?? [];
+  const types = eventList.map((e) => e.event_type as string);
+  const lastResetIdx = types.lastIndexOf('game_reset');
+  const activeTypes = lastResetIdx === -1 ? types : types.slice(lastResetIdx + 1);
+
+  if (activeTypes.includes('game_start')) {
+    // Active game_start already recorded — redirect without inserting a duplicate.
+    redirect(`/games/${gameId}/score`);
   }
 
   // Require at least one player in the lineup
@@ -123,32 +146,17 @@ export async function startGameAction(_prevState: string | null | undefined, for
 
   const now = new Date().toISOString();
 
-  // Update game status
-  const { error: updateError } = await supabase
-    .from('games')
-    .update({ status: 'in_progress', started_at: now, updated_at: now })
-    .eq('id', gameId);
-
-  if (updateError) return `Failed to start game: ${updateError.message}`;
-
   // Read scorekeeper config flags (default true if not provided)
-  const pitchTypeEnabled    = formData.get('pitchTypeEnabled')    !== 'false';
+  const pitchTypeEnabled     = formData.get('pitchTypeEnabled')     !== 'false';
   const pitchLocationEnabled = formData.get('pitchLocationEnabled') !== 'false';
-  const sprayChartEnabled   = formData.get('sprayChartEnabled')   !== 'false';
+  const sprayChartEnabled    = formData.get('sprayChartEnabled')    !== 'false';
 
-  // Derive next sequence number — avoids duplicate key if events already exist
-  // (e.g. a prior start was followed by a game reset back to scheduled)
-  const { data: lastEvent } = await supabase
-    .from('game_events')
-    .select('sequence_number')
-    .eq('game_id', gameId)
-    .order('sequence_number', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const nextSeq = (eventList.length > 0
+    ? (eventList[eventList.length - 1].sequence_number as number)
+    : 0) + 1;
 
-  const nextSeq = (lastEvent?.sequence_number ?? 0) + 1;
-
-  // Insert GAME_START event — config flags stored in payload for retrieval on the score page
+  // Insert GAME_START event BEFORE updating game status so that a failure here
+  // leaves the game in its current state and the coach can simply retry.
   const { error: eventError } = await supabase.from('game_events').insert({
     id: crypto.randomUUID(),
     game_id: gameId,
@@ -168,6 +176,16 @@ export async function startGameAction(_prevState: string | null | undefined, for
   });
 
   if (eventError) return `Failed to record game start: ${eventError.message}`;
+
+  // Update status only after the event is persisted; the extra status condition
+  // makes this a no-op if a concurrent request already moved the game forward.
+  const { error: updateError } = await supabase
+    .from('games')
+    .update({ status: 'in_progress', started_at: now, updated_at: now })
+    .eq('id', gameId)
+    .in('status', ['scheduled', 'in_progress']);
+
+  if (updateError) return `Failed to start game: ${updateError.message}`;
 
   redirect(`/games/${gameId}/score`);
 }
