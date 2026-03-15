@@ -1717,7 +1717,7 @@ export function ScoringBoard({
             <p className="text-sm font-semibold text-gray-700 mb-3">Select new pitcher</p>
             <div className="space-y-1">
               {(teamRoster ?? lineup.map((l) => l.player))
-                .filter((p) => p.id !== gameState.currentPitcherId)
+                .filter((p): p is typeof p & { id: string } => p.id !== null && p.id !== gameState.currentPitcherId)
                 .map((p) => (
                   <button
                     key={p.id}
