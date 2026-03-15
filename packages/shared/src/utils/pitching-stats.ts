@@ -196,10 +196,15 @@ export function derivePitchingStats(
       // ── PITCH_THROWN ────────────────────────────────────────────────────
       if (etype === EventType.PITCH_THROWN) {
         const p = payload as PitchThrownPayload;
-        const { pitcherId, batterId, outcome } = p;
+        const pitcherId = p.pitcherId ?? p.opponentPitcherId;
+        const batterId = p.batterId ?? p.opponentBatterId;
+        const { outcome } = p;
 
         // If we don't know who's pitching yet, infer from the event
-        if (!currentPitcherId) currentPitcherId = pitcherId;
+        if (!currentPitcherId) currentPitcherId = pitcherId ?? null;
+
+        // Skip if we lack enough context to track stats
+        if (!pitcherId || !batterId || !outcome) continue;
 
         if (!appearedThisGame.has(pitcherId)) {
           appearedThisGame.add(pitcherId);
@@ -277,11 +282,12 @@ export function derivePitchingStats(
       // ── HIT ─────────────────────────────────────────────────────────────
       if (etype === EventType.HIT) {
         const p = payload as HitPayload;
-        const { pitcherId, batterId } = p;
+        const pitcherId = p.pitcherId ?? p.opponentPitcherId;
+        const batterId = p.batterId ?? p.opponentBatterId;
         if (pitcherId) {
           const s = getStats(pitcherId);
           s.hitsAllowed += 1;
-          const contact = pendingContact.get(batterId);
+          const contact = batterId ? pendingContact.get(batterId) : undefined;
           if (contact && contact.pitcherId === pitcherId) {
             const cs = s.baByCount[contact.count];
             if (cs) {
@@ -289,29 +295,30 @@ export function derivePitchingStats(
               cs.hits += 1;
               cs.average = cs.hits / cs.atBats;
             }
-            pendingContact.delete(batterId);
+            if (batterId) pendingContact.delete(batterId);
           }
-          resetAtBat(batterId);
+          if (batterId) resetAtBat(batterId);
         }
       }
 
       // ── OUT (groundout, flyout, etc.) ────────────────────────────────────
       if (etype === EventType.OUT) {
         const p = payload as OutPayload;
-        const { pitcherId, batterId } = p;
+        const pitcherId = p.pitcherId ?? p.opponentPitcherId;
+        const batterId = p.batterId ?? p.opponentBatterId;
         if (pitcherId) {
           const s = getStats(pitcherId);
           s.inningsPitchedOuts += 1;
-          const contact = pendingContact.get(batterId);
+          const contact = batterId ? pendingContact.get(batterId) : undefined;
           if (contact && contact.pitcherId === pitcherId) {
             const cs = s.baByCount[contact.count];
             if (cs) {
               cs.atBats += 1;
               cs.average = cs.atBats > 0 ? cs.hits / cs.atBats : NaN;
             }
-            pendingContact.delete(batterId);
+            if (batterId) pendingContact.delete(batterId);
           }
-          resetAtBat(batterId);
+          if (batterId) resetAtBat(batterId);
         }
       }
 
