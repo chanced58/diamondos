@@ -19,6 +19,8 @@ export interface Game {
   seasonId: string;
   teamId: string;
   opponentName: string;
+  /** Optional FK to a structured opponent_teams record. */
+  opponentTeamId?: string;
   scheduledAt: string;
   locationType: GameLocationType;
   venueName?: string;

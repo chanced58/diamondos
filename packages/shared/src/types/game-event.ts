@@ -73,9 +73,22 @@ export enum HitTrajectory {
 }
 
 // Discriminated union payloads by event type
+//
+// Player ID conventions:
+//   pitcherId / batterId         — references players.id  (the platform team's players)
+//   opponentPitcherId / opponentBatterId — references opponent_players.id
+//
+// Exactly one of (pitcherId, opponentPitcherId) and one of (batterId, opponentBatterId)
+// should be set per event based on which half-inning is active.
+// Both platform and opponent fields are optional so the type enforces no implicit assumptions.
+
 export interface PitchThrownPayload {
-  pitcherId: string;
-  batterId: string;
+  pitcherId?: string;
+  batterId?: string;
+  /** Set when an opponent_player is pitching instead of a platform player. */
+  opponentPitcherId?: string;
+  /** Set when an opponent_player is batting instead of a platform player. */
+  opponentBatterId?: string;
   pitchType?: PitchType;
   outcome: PitchOutcome;
   velocity?: number;
@@ -86,8 +99,12 @@ export interface PitchThrownPayload {
 }
 
 export interface HitPayload {
-  batterId: string;
-  pitcherId: string;
+  batterId?: string;
+  pitcherId?: string;
+  /** Set when an opponent_player is batting. */
+  opponentBatterId?: string;
+  /** Set when an opponent_player is pitching. */
+  opponentPitcherId?: string;
   hitType: HitType;
   trajectory?: HitTrajectory;
   // Spray chart coordinates: 0-1 normalized, 0,0 = home plate
@@ -97,8 +114,12 @@ export interface HitPayload {
 }
 
 export interface OutPayload {
-  batterId: string;
-  pitcherId: string;
+  batterId?: string;
+  pitcherId?: string;
+  /** Set when an opponent_player is batting. */
+  opponentBatterId?: string;
+  /** Set when an opponent_player is pitching. */
+  opponentPitcherId?: string;
   outType: 'groundout' | 'flyout' | 'lineout' | 'popout' | 'strikeout' | 'other';
   trajectory?: HitTrajectory;
   fieldedBy?: string; // position abbreviation
@@ -109,6 +130,8 @@ export interface OutPayload {
 export interface SubstitutionPayload {
   inPlayerId: string;
   outPlayerId: string;
+  /** Set when the substitution involves opponent_players. */
+  isOpponentSubstitution?: boolean;
   newPosition?: string;
   battingOrderPosition?: number;
 }
@@ -116,16 +139,22 @@ export interface SubstitutionPayload {
 export interface PitchingChangePayload {
   newPitcherId: string;
   outgoingPitcherId: string;
+  /** Set when the pitching change involves opponent_players. */
+  isOpponentChange?: boolean;
 }
 
 export interface ScorePayload {
   scoringPlayerId: string;
+  /** Set when the scoring player is an opponent_player. */
+  isOpponentScore?: boolean;
   rbis: number;
 }
 
 /** Payload for STOLEN_BASE, BASERUNNER_ADVANCE, and CAUGHT_STEALING events */
 export interface BaserunnerMovePayload {
   runnerId: string;
+  /** Set when the runner is an opponent_player. */
+  isOpponentRunner?: boolean;
   fromBase: 1 | 2 | 3;
   toBase: 2 | 3 | 4;  // 4 = home plate / scored
 }

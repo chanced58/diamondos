@@ -3,6 +3,7 @@ export * from './team';
 export * from './player';
 export * from './game';
 export * from './game-event';
+export * from './opponent';
 export * from './messaging';
 export * from './compliance';
 export * from './pitching';
