@@ -11,7 +11,7 @@ const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 async function getAuthorizedCoach(supabase: SupabaseClient, userId: string, gameId: string) {
   const { data: game } = await supabase
     .from('games')
-    .select('team_id, opponent_name, scheduled_at, status')
+    .select('team_id, opponent_name, scheduled_at, status, location_type')
     .eq('id', gameId)
     .single();
   if (!game) return { error: 'Game not found.' };
@@ -165,7 +165,13 @@ export async function startGameAction(_prevState: string | null | undefined, for
     inning: 1,
     is_top_of_inning: true,
     payload: {
-      homeLineupPitcherId: startingPitcher?.player_id ?? null,
+      // When we're the home team, our pitcher fields in the TOP (homeLineupPitcherId).
+      // When we're the away team, our pitcher fields in the BOTTOM (awayLineupPitcherId).
+      // This prevents our starting pitcher from appearing as the pitcher when we are
+      // actually the batting team at the start of the game.
+      ...(game.location_type === 'away'
+        ? { awayLineupPitcherId: startingPitcher?.player_id ?? null }
+        : { homeLineupPitcherId: startingPitcher?.player_id ?? null }),
       pitchTypeEnabled,
       pitchLocationEnabled,
       sprayChartEnabled,
