@@ -95,7 +95,7 @@ export async function startGameAction(_prevState: string | null | undefined, for
   );
 
   const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error;
+  if ('error' in result) return result.error ?? null;
   const { game } = result;
 
   if (game.status !== 'scheduled') {
@@ -210,7 +210,9 @@ export async function updateGameAction(
   if (!opponent) return 'Opponent name is required.';
   if (!date)     return 'Game date is required.';
 
-  const scheduledAt  = new Date(`${date}T${time}`).toISOString();
+  const [year, month, day] = date.split('-').map(Number);
+  const [hour, minute]     = time.split(':').map(Number);
+  const scheduledAt        = new Date(Date.UTC(year, month - 1, day, hour, minute)).toISOString();
   const locationType = (formData.get('locationType') as string) || 'home';
   const venue        = (formData.get('venue') as string)?.trim() || null;
   const notes        = (formData.get('notes') as string)?.trim() || null;
@@ -259,15 +261,34 @@ export async function resetGameAction(
   );
 
   const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error;
+  if ('error' in result) return result.error ?? null;
   const { game } = result;
 
   if (game.status === 'scheduled') return 'Game is already in scheduled state.';
 
   const now = new Date().toISOString();
 
-  // Delete all game events (service role bypasses the append-only RLS)
-  await supabase.from('game_events').delete().eq('game_id', gameId);
+  // Append a game_reset event instead of deleting — game_events is append-only
+  const { data: lastEvent } = await supabase
+    .from('game_events')
+    .select('sequence_number')
+    .eq('game_id', gameId)
+    .order('sequence_number', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  await supabase.from('game_events').insert({
+    id: crypto.randomUUID(),
+    game_id: gameId,
+    sequence_number: (lastEvent?.sequence_number ?? 0) + 1,
+    event_type: 'game_reset',
+    inning: 1,
+    is_top_of_inning: true,
+    payload: { resetBy: user.id, previousStatus: game.status },
+    occurred_at: now,
+    created_by: user.id,
+    device_id: 'web',
+  });
 
   const { error } = await supabase
     .from('games')
@@ -335,13 +356,26 @@ export async function saveGameNotesAction(
       {
         game_id:       gameId,
         overall_notes: overallNotes || null,
-        coach_notes:   coachNotes || null,
         updated_by:    user.id,
         updated_at:    new Date().toISOString(),
       },
       { onConflict: 'game_id' },
     );
   if (notesError) return `Failed to save notes: ${notesError.message}`;
+
+  // coach_notes lives in a separate coach-only table
+  const { error: coachNotesError } = await supabase
+    .from('game_coach_notes')
+    .upsert(
+      {
+        game_id:     gameId,
+        coach_notes: coachNotes || null,
+        updated_by:  user.id,
+        updated_at:  new Date().toISOString(),
+      },
+      { onConflict: 'game_id' },
+    );
+  if (coachNotesError) return `Failed to save coach notes: ${coachNotesError.message}`;
 
   // Collect player categorical notes (keys: player_<uuid>_<category>)
   const playerMap = new Map<string, Record<string, string>>();
@@ -444,7 +478,7 @@ export async function endGameAction(_prevState: string | null | undefined, formD
   );
 
   const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error;
+  if ('error' in result) return result.error ?? null;
 
   const homeScore = parseInt(formData.get('homeScore') as string, 10) || 0;
   const awayScore = parseInt(formData.get('awayScore') as string, 10) || 0;

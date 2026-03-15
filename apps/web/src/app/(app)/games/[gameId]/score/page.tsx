@@ -172,9 +172,16 @@ export default async function ScorePage({ params }: { params: { gameId: string }
     }
   }
 
+  // ── Filter events to only those in the current "game session" ───────────────
+  // If the game has been reset, a game_reset event marks the boundary. Only
+  // replay events after the most recent reset so ScoringBoard starts clean.
+  const allEvents = eventsResult.data ?? [];
+  const lastResetIndex = allEvents.map((e) => e.event_type).lastIndexOf('game_reset');
+  const activeEvents = lastResetIndex === -1 ? allEvents : allEvents.slice(lastResetIndex + 1);
+
   // ── Scoring config — read from the game_start event payload ─────────────────
   // Defaults to all-enabled for games started before this feature shipped.
-  const gameStartEvent = (eventsResult.data ?? []).find((e) => e.event_type === 'game_start');
+  const gameStartEvent = activeEvents.find((e) => e.event_type === 'game_start');
   const gsp = (gameStartEvent?.payload ?? {}) as Record<string, unknown>;
   const scoringConfig = {
     pitchType:     gsp.pitchTypeEnabled     !== false,
@@ -191,7 +198,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
         teamId: game.team_id,
       }}
       lineup={lineup}
-      initialEvents={eventsResult.data ?? []}
+      initialEvents={activeEvents}
       currentUserId={user.id}
       isCoach={isCoach}
       seasonSprayPoints={seasonSprayPoints}

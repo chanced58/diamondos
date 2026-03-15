@@ -1,6 +1,7 @@
 'use client';
 import type { JSX } from 'react';
 
+import { useState, useEffect } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { savePlayerGameNotesAction } from './actions';
 
@@ -58,15 +59,24 @@ function EditableNotesForm({
   existingNotes: string;
 }) {
   const [state, formAction] = useFormState(savePlayerGameNotesAction, null);
-  const saved = state === 'saved';
+  const [showSaved, setShowSaved] = useState(false);
   const error = state && state !== 'saved' ? state : null;
 
+  // Auto-dismiss the success banner after 3 seconds
+  useEffect(() => {
+    if (state === 'saved') {
+      setShowSaved(true);
+      const timer = setTimeout(() => setShowSaved(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [state]);
+
   return (
-    <form action={formAction} className="space-y-4">
+    <form action={formAction} className="space-y-4" onChange={() => setShowSaved(false)}>
       <input type="hidden" name="gameId" value={gameId} />
       <input type="hidden" name="playerId" value={playerId} />
 
-      {saved && (
+      {showSaved && (
         <div className="bg-green-50 border border-green-200 text-green-800 text-sm px-4 py-3 rounded-lg">
           Notes saved.
         </div>
