@@ -98,8 +98,31 @@ export async function startGameAction(_prevState: string | null | undefined, for
   if ('error' in result) return result.error ?? null;
   const { game } = result;
 
-  if (game.status !== 'scheduled') {
+  // Allow re-starting an in_progress game that has no active game_start event.
+  // This recovers games that got stuck when a previous start attempt updated the
+  // status but failed to insert the game_start event.
+  if (game.status !== 'scheduled' && game.status !== 'in_progress') {
     return 'Game is not in a schedulable state.';
+  }
+
+  if (game.status === 'in_progress') {
+    // Check whether a game_start event already exists after the last reset.
+    // If one exists the game is legitimately running — send the coach straight to it.
+    const { data: allEvents } = await supabase
+      .from('game_events')
+      .select('event_type, sequence_number')
+      .eq('game_id', gameId)
+      .order('sequence_number');
+
+    const types = (allEvents ?? []).map((e) => e.event_type as string);
+    const lastResetIdx = types.lastIndexOf('game_reset');
+    const activeTypes = lastResetIdx === -1 ? types : types.slice(lastResetIdx + 1);
+
+    if (activeTypes.includes('game_start')) {
+      // Game is properly in progress — redirect to scoring board
+      redirect(`/games/${gameId}/score`);
+    }
+    // No active game_start event — game is stuck; fall through to insert one
   }
 
   // Require at least one player in the lineup
@@ -123,21 +146,12 @@ export async function startGameAction(_prevState: string | null | undefined, for
 
   const now = new Date().toISOString();
 
-  // Update game status
-  const { error: updateError } = await supabase
-    .from('games')
-    .update({ status: 'in_progress', started_at: now, updated_at: now })
-    .eq('id', gameId);
-
-  if (updateError) return `Failed to start game: ${updateError.message}`;
-
   // Read scorekeeper config flags (default true if not provided)
   const pitchTypeEnabled    = formData.get('pitchTypeEnabled')    !== 'false';
   const pitchLocationEnabled = formData.get('pitchLocationEnabled') !== 'false';
   const sprayChartEnabled   = formData.get('sprayChartEnabled')   !== 'false';
 
   // Derive next sequence number — avoids duplicate key if events already exist
-  // (e.g. a prior start was followed by a game reset back to scheduled)
   const { data: lastEvent } = await supabase
     .from('game_events')
     .select('sequence_number')
@@ -148,7 +162,8 @@ export async function startGameAction(_prevState: string | null | undefined, for
 
   const nextSeq = (lastEvent?.sequence_number ?? 0) + 1;
 
-  // Insert GAME_START event — config flags stored in payload for retrieval on the score page
+  // Insert GAME_START event BEFORE updating game status so that a failure here
+  // leaves the game in its current state and the coach can simply retry.
   const { error: eventError } = await supabase.from('game_events').insert({
     id: crypto.randomUUID(),
     game_id: gameId,
@@ -168,6 +183,14 @@ export async function startGameAction(_prevState: string | null | undefined, for
   });
 
   if (eventError) return `Failed to record game start: ${eventError.message}`;
+
+  // Update game status only after the event is safely persisted
+  const { error: updateError } = await supabase
+    .from('games')
+    .update({ status: 'in_progress', started_at: now, updated_at: now })
+    .eq('id', gameId);
+
+  if (updateError) return `Failed to start game: ${updateError.message}`;
 
   redirect(`/games/${gameId}/score`);
 }
