@@ -752,10 +752,12 @@ export function ScoringBoard({
         device_id: 'web',
       };
 
-      if (isDemo) {
-        setEventRows((prev) => [...prev, newRow]);
-        return;
-      }
+      // Optimistically add the event to local state immediately so the UI
+      // reflects the new count/outcome without waiting for Realtime round-trip.
+      // The Realtime subscription deduplicates by id, so the echoed insert is a no-op.
+      setEventRows((prev) => [...prev, newRow]);
+
+      if (isDemo) return;
 
       const supabase = createBrowserClient();
       await supabase.from('game_events').upsert(
