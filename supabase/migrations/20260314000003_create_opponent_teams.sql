@@ -3,7 +3,7 @@
 
 -- Named opponent team records owned by a coaching staff team.
 create table public.opponent_teams (
-  id           uuid primary key default uuid_generate_v4(),
+  id           uuid primary key default gen_random_uuid(),
   team_id      uuid not null references public.teams(id) on delete cascade,
   name         text not null,
   abbreviation text,
@@ -21,7 +21,7 @@ comment on table public.opponent_teams is
 
 -- Individual players on an opponent team.
 create table public.opponent_players (
-  id                uuid primary key default uuid_generate_v4(),
+  id                uuid primary key default gen_random_uuid(),
   opponent_team_id  uuid not null references public.opponent_teams(id) on delete cascade,
   first_name        text not null,
   last_name         text not null,
@@ -40,7 +40,7 @@ comment on table public.opponent_players is
 
 -- Game-specific batting order and starting positions for opponent players.
 create table public.opponent_game_lineups (
-  id                 uuid primary key default uuid_generate_v4(),
+  id                 uuid primary key default gen_random_uuid(),
   game_id            uuid not null references public.games(id) on delete cascade,
   opponent_player_id uuid not null references public.opponent_players(id) on delete cascade,
   batting_order      smallint check (batting_order between 1 and 9),
