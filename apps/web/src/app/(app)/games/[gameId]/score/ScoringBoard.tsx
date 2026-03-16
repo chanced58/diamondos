@@ -967,10 +967,11 @@ export function ScoringBoard({
     setAdvanceErrorBy(null);
   }
 
-  async function handleRunnerAdvance(runnerId: string, fromBase: 1 | 2 | 3, toBase: 2 | 3 | 4, reason?: string, errorBy?: number | null) {
+  async function handleRunnerAdvance(runnerId: string, fromBase: 1 | 2 | 3, toBase: 2 | 3 | 4, reason?: string, errorBy?: number | null, relatedEventId?: string | null) {
     const payload: Record<string, unknown> = { runnerId, fromBase, toBase };
     if (reason) payload.reason = reason;
     if (errorBy != null) payload.errorBy = errorBy;
+    if (relatedEventId) payload.relatedEventId = relatedEventId;
     await recordEvent('baserunner_advance', payload);
     if (toBase === 4) {
       await recordEvent('score', { scoringPlayerId: runnerId, rbis: 1 });
@@ -1556,21 +1557,38 @@ export function ScoringBoard({
                         <p className="text-xs font-semibold text-gray-500 mb-2">Reason for advance</p>
                         <div className="flex flex-wrap gap-1.5 mb-2">
                           {([
+                            { label: 'On Play',    value: 'on_play' },
                             { label: 'Overthrow',  value: 'overthrow' },
                             { label: 'Error',      value: 'error' },
                             { label: 'Wild Pitch', value: 'wild_pitch' },
                             { label: 'Passed Ball',value: 'passed_ball' },
                             { label: 'Balk',       value: 'balk' },
                             { label: 'Voluntary',  value: 'voluntary' },
-                          ] as const).map(({ label, value }) => (
-                            <button
-                              key={value}
-                              onClick={() => handleRunnerAdvance(pendingAdvance.runnerId, pendingAdvance.fromBase, pendingAdvance.toBase, value, advanceErrorBy)}
-                              className="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:border-brand-400 hover:text-brand-700 transition-colors"
-                            >
-                              {label}
-                            </button>
-                          ))}
+                          ] as const).map(({ label, value }) => {
+                            const isOnPlay = value === 'on_play';
+                            const lastInPlayEvent = isOnPlay
+                              ? [...eventRows].reverse().find(
+                                  (e) => (e.event_type as string) === 'pitch_thrown' &&
+                                    ((e.payload as Record<string, unknown>)?.outcome as string) === 'in_play'
+                                )
+                              : null;
+                            return (
+                              <button
+                                key={value}
+                                onClick={() => handleRunnerAdvance(
+                                  pendingAdvance.runnerId,
+                                  pendingAdvance.fromBase,
+                                  pendingAdvance.toBase,
+                                  value,
+                                  advanceErrorBy,
+                                  lastInPlayEvent ? (lastInPlayEvent.id as string) : null,
+                                )}
+                                className="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:border-brand-400 hover:text-brand-700 transition-colors"
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
                         </div>
                         {/* Fielder selector for overthrow/error */}
                         <div className="mb-2">
