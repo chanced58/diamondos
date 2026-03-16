@@ -66,4 +66,8 @@ export interface LiveGameState {
   currentBatterId: string | null;
   currentPitcherId: string | null;
   currentPitcherPitchCount: number;
+  /** Total completed plate appearances in top-half innings (cumulative across all innings). */
+  completedTopHalfPAs: number;
+  /** Total completed plate appearances in bottom-half innings (cumulative across all innings). */
+  completedBottomHalfPAs: number;
 }
