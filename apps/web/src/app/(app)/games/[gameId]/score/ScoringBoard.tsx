@@ -609,29 +609,20 @@ export function ScoringBoard({
     .filter((l) => l.battingOrder >= 1 && l.battingOrder <= 9)
     .sort((a, b) => a.battingOrder - b.battingOrder);
 
-  // Derive current batter by counting completed plate appearances in the event log.
-  // This correctly advances the batter after each terminal PA result, unlike relying on
-  // currentBatterId from PITCH_THROWN events (which lags until the next pitch is logged).
-  const TERMINAL_PA_EVENTS = new Set([
-    'walk', 'strikeout', 'hit', 'out', 'hit_by_pitch',
-    'sacrifice_bunt', 'sacrifice_fly', 'field_error', 'double_play',
-  ]);
+  // Derive current batter from the PA counts tracked by deriveGameState.
+  // completedTopHalfPAs / completedBottomHalfPAs accumulate across the whole game;
+  // modulo lineup size gives the correct batting-order position for each team.
   const opponentBatsInTop = game.locationType === 'home';
-  const teamBatsInTop = !opponentBatsInTop;
 
-  const completedTeamPAs = eventRows.filter(
-    (e) =>
-      e.is_top_of_inning === teamBatsInTop &&
-      TERMINAL_PA_EVENTS.has(e.event_type as string),
-  ).length;
+  const completedTeamPAs = opponentBatsInTop
+    ? gameState.completedBottomHalfPAs
+    : gameState.completedTopHalfPAs;
   const currentBatterIdx = starters.length > 0 ? completedTeamPAs % starters.length : 0;
   const currentBatter = starters[currentBatterIdx] ?? starters[0];
 
-  const completedOpponentPAs = eventRows.filter(
-    (e) =>
-      e.is_top_of_inning === opponentBatsInTop &&
-      TERMINAL_PA_EVENTS.has(e.event_type as string),
-  ).length;
+  const completedOpponentPAs = opponentBatsInTop
+    ? gameState.completedTopHalfPAs
+    : gameState.completedBottomHalfPAs;
   const opponentBatterIdx =
     opponentStarters.length > 0 ? completedOpponentPAs % opponentStarters.length : 0;
   const currentOpponentBatter = opponentStarters[opponentBatterIdx] ?? null;

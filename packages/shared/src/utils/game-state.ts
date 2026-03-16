@@ -25,6 +25,8 @@ export function deriveGameState(
     currentBatterId: null,
     currentPitcherId: null,
     currentPitcherPitchCount: 0,
+    completedTopHalfPAs: 0,
+    completedBottomHalfPAs: 0,
   };
 
   const pitcherCounts: Record<string, number> = {};
@@ -81,6 +83,7 @@ export function deriveGameState(
         state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, state.currentBatterId);
         state.balls = 0;
         state.strikes = 0;
+        incrementPA(state);
         break;
       }
 
@@ -98,6 +101,7 @@ export function deriveGameState(
         }
         state.balls = 0;
         state.strikes = 0;
+        incrementPA(state);
         break;
       }
 
@@ -113,6 +117,7 @@ export function deriveGameState(
         state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, state.currentBatterId);
         state.balls = 0;
         state.strikes = 0;
+        incrementPA(state);
         break;
       }
 
@@ -121,9 +126,25 @@ export function deriveGameState(
         state.outs++;
         state.balls = 0;
         state.strikes = 0;
-        if (state.outs >= OUTS_PER_INNING) {
-          // Inning over — will be finalized by INNING_CHANGE event
-        }
+        incrementPA(state);
+        break;
+      }
+
+      case EventType.SACRIFICE_BUNT:
+      case EventType.SACRIFICE_FLY: {
+        state.outs++;
+        state.balls = 0;
+        state.strikes = 0;
+        incrementPA(state);
+        break;
+      }
+
+      case EventType.DOUBLE_PLAY: {
+        // The batter's PA is complete; the second out is recorded separately
+        state.outs = Math.min(state.outs + 2, OUTS_PER_INNING);
+        state.balls = 0;
+        state.strikes = 0;
+        incrementPA(state);
         break;
       }
 
@@ -287,6 +308,14 @@ function forceAdvanceRunners(
     updated.first = batterId;
   }
   return updated;
+}
+
+function incrementPA(state: LiveGameState): void {
+  if (state.isTopOfInning) {
+    state.completedTopHalfPAs++;
+  } else {
+    state.completedBottomHalfPAs++;
+  }
 }
 
 function addRuns(state: LiveGameState, runs: number, isOffensiveTeamTop: boolean): void {
