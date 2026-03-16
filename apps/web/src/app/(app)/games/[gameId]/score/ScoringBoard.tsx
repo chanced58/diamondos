@@ -106,13 +106,10 @@ function BaserunnerDiamond({
 }
 
 const PITCH_TYPE_OPTIONS = [
-  { label: 'FB',  value: 'fastball' },
-  { label: 'CB',  value: 'curveball' },
-  { label: 'SL',  value: 'slider' },
-  { label: 'CH',  value: 'changeup' },
-  { label: 'SI',  value: 'sinker' },
-  { label: 'CT',  value: 'cutter' },
-  { label: 'KN',  value: 'knuckleball' },
+  { label: 'FB',    value: 'fastball' },
+  { label: 'CB',    value: 'curveball' },
+  { label: 'SL',    value: 'slider' },
+  { label: 'CH',    value: 'changeup' },
   { label: 'Other', value: 'other' },
 ];
 
