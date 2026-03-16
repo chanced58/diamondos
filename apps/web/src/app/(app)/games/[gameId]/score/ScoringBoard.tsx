@@ -659,6 +659,54 @@ export function ScoringBoard({
   const activeBatter = isOpponentBatting ? currentOpponentBatter : currentBatter;
   const activeBatterId = activeBatter?.playerId ?? null;
 
+  // Derive the current pitcher for each side from the lineup + pitching change events.
+  // This is independent of gameState.currentPitcherId which goes stale after inning changes
+  // (it only updates when the first pitch of the new half-inning is thrown).
+  function derivePitcher(
+    baseLineup: LineupEntry[],
+    roster: RosterEntry[] | undefined,
+    forOpponent: boolean,
+  ): { playerId: string; player: LineupEntry['player'] } | null {
+    const startingEntry = baseLineup.find((l) => l.startingPosition === 'P');
+    let pitcher: { playerId: string; player: LineupEntry['player'] } | null = startingEntry
+      ? { playerId: startingEntry.playerId, player: { ...startingEntry.player } }
+      : null;
+    for (const row of eventRows) {
+      if ((row.event_type as string) !== 'pitching_change') continue;
+      const p = (row.payload ?? {}) as Record<string, unknown>;
+      if (Boolean(p.isOpponentChange) !== forOpponent) continue;
+      const newId = p.newPitcherId as string;
+      if (!newId) continue;
+      const rosterEntry = (roster ?? []).find((r) => r.id === newId);
+      const lineupEntry = baseLineup.find((l) => l.playerId === newId);
+      pitcher = {
+        playerId: newId,
+        player: rosterEntry
+          ? { id: newId, firstName: rosterEntry.firstName, lastName: rosterEntry.lastName, jerseyNumber: rosterEntry.jerseyNumber }
+          : lineupEntry
+            ? { ...lineupEntry.player }
+            : { id: newId, firstName: '', lastName: '?', jerseyNumber: null },
+      };
+    }
+    return pitcher;
+  }
+
+  // When opponent is batting → our team pitches; when our team is batting → opponent pitches.
+  const currentTeamPitcher     = derivePitcher(lineup,              teamRoster,     false);
+  const currentOpponentPitcher = derivePitcher(opponentLineup ?? [], opponentRoster, true);
+  const activePitcher    = isOpponentBatting ? currentTeamPitcher : currentOpponentPitcher;
+  const activePitcherId  = activePitcher?.playerId ?? null;
+
+  // Count pitches thrown by the active pitcher from eventRows directly, so the
+  // count is correct even before the first pitch of a new half-inning.
+  const activePitcherPitchCount = activePitcherId
+    ? eventRows.filter((row) => {
+        if ((row.event_type as string) !== 'pitch_thrown') return false;
+        const p = (row.payload ?? {}) as Record<string, unknown>;
+        return p.pitcherId === activePitcherId || p.opponentPitcherId === activePitcherId;
+      }).length
+    : 0;
+
   // Hit spray points with count-at-contact — season history + current game.
   // We replay the current game's events to track the ball-strike count at the
   // moment each ball was put in play, then tag those hits with (balls, strikes).
@@ -813,7 +861,7 @@ export function ScoringBoard({
 
   async function handlePitch(outcome: string) {
     const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
+    const pitcherId = activePitcherId ?? 'unknown-pitcher';
 
     if (outcome === 'in_play') {
       setInPlayPending(true);
@@ -842,7 +890,7 @@ export function ScoringBoard({
     setInPlayPending(false);
     setPendingResult(null);
     const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
+    const pitcherId = activePitcherId ?? 'unknown-pitcher';
 
     // Capture annotation values before resetting
     const pitchExtra: Record<string, unknown> = {};
@@ -876,7 +924,7 @@ export function ScoringBoard({
     setInPlayPending(false);
     setErrorPending(false);
     const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
+    const pitcherId = activePitcherId ?? 'unknown-pitcher';
 
     const pitchExtra: Record<string, unknown> = {};
     if (pitchType) pitchExtra.pitchType = pitchType;
@@ -900,19 +948,19 @@ export function ScoringBoard({
 
   async function handleWalk() {
     const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
+    const pitcherId = activePitcherId ?? 'unknown-pitcher';
     await recordEvent('walk', { batterId, pitcherId });
   }
 
   async function handleStrikeout() {
     const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
+    const pitcherId = activePitcherId ?? 'unknown-pitcher';
     await recordEvent('strikeout', { batterId, pitcherId, outType: 'strikeout' });
   }
 
   async function handleHBP() {
     const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
+    const pitcherId = activePitcherId ?? 'unknown-pitcher';
     const extra: Record<string, unknown> = {};
     if (pitchType) extra.pitchType = pitchType;
     if (zoneLocation !== null) extra.zoneLocation = zoneLocation;
@@ -923,7 +971,7 @@ export function ScoringBoard({
 
   async function handleWildPitch() {
     const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
+    const pitcherId = activePitcherId ?? 'unknown-pitcher';
     const extra: Record<string, unknown> = {};
     if (pitchType) extra.pitchType = pitchType;
     if (zoneLocation !== null) extra.zoneLocation = zoneLocation;
@@ -936,7 +984,7 @@ export function ScoringBoard({
 
   async function handlePassedBall() {
     const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
+    const pitcherId = activePitcherId ?? 'unknown-pitcher';
     const extra: Record<string, unknown> = {};
     if (pitchType) extra.pitchType = pitchType;
     if (zoneLocation !== null) extra.zoneLocation = zoneLocation;
@@ -981,7 +1029,7 @@ export function ScoringBoard({
   }
 
   async function handleBalk() {
-    const balkPitcherId = gameState.currentPitcherId ?? 'unknown-pitcher';
+    const balkPitcherId = activePitcherId ?? 'unknown-pitcher';
     await recordEvent('balk', { pitcherId: balkPitcherId });
     // Runs scored on balks are not RBIs per official scoring rules
     const thirdRunner = gameState.runnersOnBase.third;
@@ -1039,7 +1087,7 @@ export function ScoringBoard({
   }
 
   async function handlePitchingChange(newPitcherId: string) {
-    const outgoingPitcherId = gameState.currentPitcherId ?? '';
+    const outgoingPitcherId = activePitcherId ?? '';
     await recordEvent('pitching_change', { newPitcherId, outgoingPitcherId });
     setShowPitchingChange(false);
   }
@@ -1201,10 +1249,12 @@ export function ScoringBoard({
             <div>
               <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Pitching</p>
               <p className="font-semibold text-gray-900">
-                {playerName(gameState.currentPitcherId)}
+                {activePitcher
+                  ? `${activePitcher.player.lastName} #${activePitcher.player.jerseyNumber ?? '—'}`
+                  : '—'}
               </p>
-              {gameState.currentPitcherPitchCount > 0 && (
-                <p className="text-xs text-gray-400">{gameState.currentPitcherPitchCount} pitches</p>
+              {activePitcherPitchCount > 0 && (
+                <p className="text-xs text-gray-400">{activePitcherPitchCount} pitches</p>
               )}
             </div>
           </div>
@@ -1760,7 +1810,7 @@ export function ScoringBoard({
             <p className="text-sm font-semibold text-gray-700 mb-3">Select new pitcher</p>
             <div className="space-y-1">
               {(teamRoster ?? lineup.map((lineupEntry) => lineupEntry.player))
-                .filter((pitcher): pitcher is typeof pitcher & { id: string } => pitcher.id !== null && pitcher.id !== gameState.currentPitcherId)
+                .filter((pitcher): pitcher is typeof pitcher & { id: string } => pitcher.id !== null && pitcher.id !== activePitcherId)
                 .map((pitcher) => (
                   <button
                     key={pitcher.id}
