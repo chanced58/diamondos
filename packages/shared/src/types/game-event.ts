@@ -41,6 +41,7 @@ export enum AdvanceReason {
   PASSED_BALL = 'passed_ball',
   BALK       = 'balk',
   VOLUNTARY  = 'voluntary',
+  ON_PLAY    = 'on_play',
 }
 
 /** The type of in-game substitution */
@@ -183,6 +184,8 @@ export interface BaserunnerMovePayload {
   reason?: AdvanceReason;
   /** Fielder position number responsible for the error (1-9), when reason is error or overthrow. */
   errorBy?: number;
+  /** ID of the associated pitch/hit/play event (used when reason is on_play). */
+  relatedEventId?: string;
 }
 
 /** Payload for RUNDOWN events — discriminated union enforces safeAtBase when outcome is 'safe' */
