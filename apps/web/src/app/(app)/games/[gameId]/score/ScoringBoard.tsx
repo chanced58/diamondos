@@ -614,18 +614,49 @@ export function ScoringBoard({
   // modulo lineup size gives the correct batting-order position for each team.
   const opponentBatsInTop = game.locationType === 'home';
 
+  // Apply substitution events to produce effective lineups so pinch hitters
+  // (and other subs) are reflected in the batter display.
+  function applySubstitutions(
+    base: LineupEntry[],
+    roster: RosterEntry[] | undefined,
+    forOpponent: boolean,
+  ): LineupEntry[] {
+    const result = base.map((s) => ({ ...s, player: { ...s.player } }));
+    for (const row of eventRows) {
+      if ((row.event_type as string) !== 'substitution') continue;
+      const p = (row.payload ?? {}) as Record<string, unknown>;
+      if (Boolean(p.isOpponentSubstitution) !== forOpponent) continue;
+      const outId = p.outPlayerId as string;
+      const inId  = p.inPlayerId  as string;
+      const idx = result.findIndex((s) => s.playerId === outId);
+      if (idx === -1) continue;
+      const rosterEntry = (roster ?? []).find((r) => r.id === inId);
+      result[idx] = {
+        ...result[idx],
+        playerId: inId,
+        player: rosterEntry
+          ? { id: inId, firstName: rosterEntry.firstName, lastName: rosterEntry.lastName, jerseyNumber: rosterEntry.jerseyNumber }
+          : { id: inId, firstName: 'Sub', lastName: 'Player', jerseyNumber: null },
+      };
+    }
+    return result;
+  }
+
+  const effectiveStarters         = applySubstitutions(starters,         teamRoster,     false);
+  const effectiveOpponentStarters = applySubstitutions(opponentStarters, opponentRoster, true);
+
   const completedTeamPAs = opponentBatsInTop
     ? gameState.completedBottomHalfPAs
     : gameState.completedTopHalfPAs;
-  const currentBatterIdx = starters.length > 0 ? completedTeamPAs % starters.length : 0;
-  const currentBatter = starters[currentBatterIdx] ?? starters[0];
+  const currentBatterIdx = effectiveStarters.length > 0 ? completedTeamPAs % effectiveStarters.length : 0;
+  const currentBatter = effectiveStarters[currentBatterIdx] ?? effectiveStarters[0];
 
   const completedOpponentPAs = opponentBatsInTop
     ? gameState.completedTopHalfPAs
     : gameState.completedBottomHalfPAs;
   const opponentBatterIdx =
-    opponentStarters.length > 0 ? completedOpponentPAs % opponentStarters.length : 0;
-  const currentOpponentBatter = opponentStarters[opponentBatterIdx] ?? null;
+    effectiveOpponentStarters.length > 0 ? completedOpponentPAs % effectiveOpponentStarters.length : 0;
+  const currentOpponentBatter = effectiveOpponentStarters[opponentBatterIdx] ?? null;
 
   // The batter currently at the plate (our player or opponent)
   const activeBatter = isOpponentBatting ? currentOpponentBatter : currentBatter;
@@ -1163,7 +1194,11 @@ export function ScoringBoard({
           <div className="space-y-2 text-sm">
             <div>
               <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Batting</p>
-              <p className="font-semibold text-gray-900">{playerName(activeBatterId)}</p>
+              <p className="font-semibold text-gray-900">
+                {activeBatter
+                  ? `${activeBatter.player.lastName} #${activeBatter.player.jerseyNumber ?? '—'}`
+                  : '—'}
+              </p>
             </div>
             <div>
               <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Pitching</p>

@@ -79,8 +79,14 @@ export function deriveGameState(
 
       case EventType.WALK:
       case EventType.HIT_BY_PITCH: {
-        // Force advance: only runners whose path is blocked by the batter move
+        // If bases are loaded, the runner on third is forced home — credit the run now.
+        const walkBasesLoaded = !!(
+          state.runnersOnBase.first &&
+          state.runnersOnBase.second &&
+          state.runnersOnBase.third
+        );
         state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, state.currentBatterId);
+        if (walkBasesLoaded) addRuns(state, 1, state.isTopOfInning);
         state.balls = 0;
         state.strikes = 0;
         incrementPA(state);
@@ -114,7 +120,14 @@ export function deriveGameState(
       case EventType.FIELD_ERROR: {
         // Batter reaches base on the error — force-advance any runners already
         // on base (same logic as a walk) and place batter on first.
+        // If bases were loaded, the runner on third is forced home.
+        const errorBasesLoaded = !!(
+          state.runnersOnBase.first &&
+          state.runnersOnBase.second &&
+          state.runnersOnBase.third
+        );
         state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, state.currentBatterId);
+        if (errorBasesLoaded) addRuns(state, 1, state.isTopOfInning);
         state.balls = 0;
         state.strikes = 0;
         incrementPA(state);
