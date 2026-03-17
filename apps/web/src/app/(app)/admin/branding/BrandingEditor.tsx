@@ -30,9 +30,9 @@ export function BrandingEditor({ initialSettings }: { initialSettings: SiteSetti
     accent_color: '#eff6ff',
     hero_headline: 'The coaching platform built for baseball.',
     hero_subtext: 'Scorekeeping, communication, practice planning, and compliance — all in one place.',
-    cta_button_text: 'Get Early Access',
-    form_headline: 'We\'re still building',
-    form_subtext: 'Drop your email to get notified when we go live.',
+    cta_button_text: 'Let Us Know',
+    form_headline: 'Still Building',
+    form_subtext: 'If you are interested, please let us know.',
     updated_at: new Date().toISOString(),
   };
 

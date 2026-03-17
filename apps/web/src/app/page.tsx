@@ -35,9 +35,9 @@ const DEFAULTS: SiteSettings = {
   accent_color: '#eff6ff',
   hero_headline: 'The Operating System for Baseball Coaches',
   hero_subtext: 'Scorekeeping, pitch count compliance, team communication, and statistics — all in one platform built for high school and youth baseball.',
-  cta_button_text: 'Get Early Access',
-  form_headline: 'We\'re still building',
-  form_subtext: 'Tell us about your program and we\'ll reach out when we go live.',
+  cta_button_text: 'Let Us Know',
+  form_headline: 'Still Building',
+  form_subtext: 'If you are interested, please let us know.',
 };
 
 // ── Feature data ────────────────────────────────────────────────────────────
