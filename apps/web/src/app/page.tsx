@@ -37,7 +37,7 @@ const DEFAULTS: SiteSettings = {
   hero_subtext: 'Scorekeeping, pitch count compliance, team communication, and statistics — all in one platform built for high school and youth baseball.',
   cta_button_text: 'Get Early Access',
   form_headline: 'We\'re still building',
-  form_subtext: 'Drop your email to get notified when we go live.',
+  form_subtext: 'Tell us about your program and we\'ll reach out when we go live.',
 };
 
 // ── Feature data ────────────────────────────────────────────────────────────
@@ -245,7 +245,7 @@ export default async function HomePage(): Promise<JSX.Element> {
       {/* ── CTA / Lead Capture ────────────────────────────────────────────── */}
       {!isLoggedIn && (
         <section className="py-16 px-6 bg-white">
-          <div className="max-w-md mx-auto text-center">
+          <div className="max-w-sm mx-auto text-center">
             <h2 className="text-xl font-bold text-gray-900 mb-1">{s.form_headline}</h2>
             <p className="text-sm text-gray-500 mb-5">{s.form_subtext}</p>
             <LeadCaptureForm
