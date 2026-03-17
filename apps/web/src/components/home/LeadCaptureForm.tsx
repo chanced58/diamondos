@@ -134,7 +134,7 @@ export function LeadCaptureForm({
 
         <button
           type="submit"
-          disabled={status === 'submitting' || !name || !email || !organization || !state}
+          disabled={status === 'submitting' || !name.trim() || !email.trim() || !organization.trim() || !state}
           className={`w-full px-5 py-2.5 text-sm font-semibold rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm ${buttonClass}`}
           style={buttonStyle}
         >

@@ -4,6 +4,15 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const SALES_EMAIL = 'sales@diamondos.app';
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /**
  * Lead capture endpoint — stores interested user info and notifies sales.
  *
@@ -15,6 +24,10 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
+
+  if (typeof body !== 'object' || body === null) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
@@ -45,10 +58,13 @@ export async function POST(request: NextRequest) {
 
   // Insert lead into Supabase using the service role key so RLS never blocks
   // a valid submission regardless of future policy changes.
-  const db = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error('[leads] Missing Supabase environment variables');
+    return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+  }
+  const db = createClient(supabaseUrl, supabaseServiceKey);
 
   const submittedAt = new Date();
 
@@ -93,10 +109,10 @@ export async function POST(request: NextRequest) {
         html: `
           <p>A new prospect submitted their info on the <strong>DiamondOS</strong> landing page.</p>
           <table cellpadding="4" style="font-family:sans-serif;font-size:14px;border-collapse:collapse">
-            <tr><td style="color:#6b7280;padding-right:16px">Name</td><td>${normalizedName}</td></tr>
-            <tr><td style="color:#6b7280;padding-right:16px">Email</td><td><a href="mailto:${normalizedEmail}">${normalizedEmail}</a></td></tr>
-            <tr><td style="color:#6b7280;padding-right:16px">Organization</td><td>${normalizedOrg}</td></tr>
-            <tr><td style="color:#6b7280;padding-right:16px">State</td><td>${normalizedState}</td></tr>
+            <tr><td style="color:#6b7280;padding-right:16px">Name</td><td>${escapeHtml(normalizedName)}</td></tr>
+            <tr><td style="color:#6b7280;padding-right:16px">Email</td><td><a href="mailto:${escapeHtml(normalizedEmail)}">${escapeHtml(normalizedEmail)}</a></td></tr>
+            <tr><td style="color:#6b7280;padding-right:16px">Organization</td><td>${escapeHtml(normalizedOrg)}</td></tr>
+            <tr><td style="color:#6b7280;padding-right:16px">State</td><td>${escapeHtml(normalizedState)}</td></tr>
             <tr><td style="color:#6b7280;padding-right:16px">Submitted</td><td>${submittedAt.toUTCString()}</td></tr>
           </table>
         `,
