@@ -587,8 +587,25 @@ export function ScoringBoard({
     setStashedOutResult(null);
   }
 
+  // Apply PITCH_REVERTED markers: each reverts the event list to a given sequence
+  // number, preserving the append-only event log while supporting undo.
+  const effectiveEventRows: EventRow[] = (() => {
+    const result: EventRow[] = [];
+    for (const row of eventRows) {
+      if ((row.event_type as string) === 'pitch_reverted') {
+        const p = (row.payload ?? {}) as Record<string, unknown>;
+        const keepUntilSeq = p.revertToSequenceNumber as number;
+        result.splice(0, result.length, ...result.filter((r) => (r.sequence_number as number) <= keepUntilSeq));
+        // The pitch_reverted marker itself is NOT added to the result
+      } else {
+        result.push(row);
+      }
+    }
+    return result;
+  })();
+
   // Derive game state from events
-  const events = eventRows.map(mapRowToEvent);
+  const events = effectiveEventRows.map(mapRowToEvent);
   const gameState = deriveGameState(game.id, events, game.teamId);
 
   // Sorted starters for batting order cycling
@@ -619,7 +636,7 @@ export function ScoringBoard({
     forOpponent: boolean,
   ): LineupEntry[] {
     const result = base.map((s) => ({ ...s, player: { ...s.player } }));
-    for (const row of eventRows) {
+    for (const row of effectiveEventRows) {
       if ((row.event_type as string) !== 'substitution') continue;
       const p = (row.payload ?? {}) as Record<string, unknown>;
       if (Boolean(p.isOpponentSubstitution) !== forOpponent) continue;
@@ -671,7 +688,7 @@ export function ScoringBoard({
     let pitcher: { playerId: string; player: LineupEntry['player'] } | null = startingEntry
       ? { playerId: startingEntry.playerId, player: { ...startingEntry.player } }
       : null;
-    for (const row of eventRows) {
+    for (const row of effectiveEventRows) {
       if ((row.event_type as string) !== 'pitching_change') continue;
       const p = (row.payload ?? {}) as Record<string, unknown>;
       if (Boolean(p.isOpponentChange) !== forOpponent) continue;
@@ -697,10 +714,10 @@ export function ScoringBoard({
   const activePitcher    = isOpponentBatting ? currentTeamPitcher : currentOpponentPitcher;
   const activePitcherId  = activePitcher?.playerId ?? null;
 
-  // Count pitches thrown by the active pitcher from eventRows directly, so the
+  // Count pitches thrown by the active pitcher from effectiveEventRows directly, so the
   // count is correct even before the first pitch of a new half-inning.
   const activePitcherPitchCount = activePitcherId
-    ? eventRows.filter((row) => {
+    ? effectiveEventRows.filter((row) => {
         if ((row.event_type as string) !== 'pitch_thrown') return false;
         const p = (row.payload ?? {}) as Record<string, unknown>;
         return p.pitcherId === activePitcherId || p.opponentPitcherId === activePitcherId;
@@ -719,7 +736,7 @@ export function ScoringBoard({
     let prevBatterId: string | null = null;
     let contactCount: { balls: number; strikes: number } | null = null;
 
-    for (const row of eventRows) {
+    for (const row of effectiveEventRows) {
       const etype = row.event_type as string;
       const p = (row.payload ?? {}) as Record<string, unknown>;
 
@@ -1082,6 +1099,33 @@ export function ScoringBoard({
     setSubNewPosition('');
   }
 
+  // ── Undo (pitch revert) ───────────────────────────────────────────────────
+  // Find the last pitch_thrown in the effective event list (reverts already applied).
+  const lastPitchRow = [...effectiveEventRows].reverse().find(
+    (r) => (r.event_type as string) === 'pitch_thrown',
+  );
+  const canUndo = !!lastPitchRow;
+  const lastPitchOutcome = lastPitchRow
+    ? ((lastPitchRow.payload as Record<string, unknown>)?.outcome as string | undefined)
+    : null;
+
+  async function handleUndo() {
+    if (!lastPitchRow) return;
+    // Record a revert marker that tells effectiveEventRows to drop everything
+    // after the pitch being undone. The marker is itself appended to eventRows
+    // (preserving the append-only log) and takes effect on the next render.
+    const revertToSeq = (lastPitchRow.sequence_number as number) - 1;
+    await recordEvent('pitch_reverted', { revertToSequenceNumber: revertToSeq });
+    // Clear any in-flight UI state that belongs to the reverted at-bat
+    setInPlayPending(false);
+    setPendingResult(null);
+    setPendingTrajectory(null);
+    setErrorPending(false);
+    setFieldingSequencePending(false);
+    setFieldingSequence([]);
+    setStashedOutResult(null);
+  }
+
   async function handleInningChange() {
     await recordEvent('inning_change', {});
   }
@@ -1217,20 +1261,36 @@ export function ScoringBoard({
             </div>
           </div>
 
-          {/* Count */}
-          <div className="flex items-center justify-center gap-6 text-xs text-gray-500 font-medium mt-2">
-            <div className="flex items-center gap-1.5">
-              <span>B</span>
-              {[0,1,2,3].map((i) => <Dot key={i} filled={i < gameState.balls} color="bg-green-500 border-green-600" />)}
+          {/* Count + Undo */}
+          <div className="flex items-center justify-between mt-2">
+            <div className="flex items-center gap-6 text-xs text-gray-500 font-medium flex-1 justify-center">
+              <div className="flex items-center gap-1.5">
+                <span>B</span>
+                {[0,1,2,3].map((i) => <Dot key={i} filled={i < gameState.balls} color="bg-green-500 border-green-600" />)}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span>S</span>
+                {[0,1].map((i) => <Dot key={i} filled={i < gameState.strikes} color="bg-yellow-400 border-yellow-500" />)}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span>O</span>
+                {[0,1].map((i) => <Dot key={i} filled={i < gameState.outs} color="bg-red-500 border-red-600" />)}
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span>S</span>
-              {[0,1].map((i) => <Dot key={i} filled={i < gameState.strikes} color="bg-yellow-400 border-yellow-500" />)}
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span>O</span>
-              {[0,1].map((i) => <Dot key={i} filled={i < gameState.outs} color="bg-red-500 border-red-600" />)}
-            </div>
+            {isCoach && (
+              <button
+                onClick={handleUndo}
+                disabled={!canUndo}
+                title={canUndo ? `Undo last pitch (${lastPitchOutcome ?? ''})` : 'Nothing to undo'}
+                className={`shrink-0 text-xs font-medium px-2.5 py-1 rounded border transition-colors ${
+                  canUndo
+                    ? 'border-gray-300 text-gray-600 bg-white hover:border-red-300 hover:text-red-600 hover:bg-red-50'
+                    : 'border-gray-200 text-gray-300 bg-white cursor-not-allowed'
+                }`}
+              >
+                ← Undo
+              </button>
+            )}
           </div>
         </div>
 
@@ -1617,7 +1677,7 @@ export function ScoringBoard({
                           ] as const).map(({ label, value }) => {
                             const isOnPlay = value === 'on_play';
                             const lastInPlayEvent = isOnPlay
-                              ? [...eventRows].reverse().find(
+                              ? [...effectiveEventRows].reverse().find(
                                   (e) => (e.event_type as string) === 'pitch_thrown' &&
                                     ((e.payload as Record<string, unknown>)?.outcome as string) === 'in_play'
                                 )
