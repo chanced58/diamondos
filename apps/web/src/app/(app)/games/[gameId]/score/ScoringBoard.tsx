@@ -503,6 +503,7 @@ export function ScoringBoard({
   teamRoster,
   opponentRoster,
   initialEvents,
+  minNextSequenceNumber,
   currentUserId,
   isCoach,
   isDemo = false,
@@ -515,6 +516,11 @@ export function ScoringBoard({
   teamRoster?: RosterEntry[];
   opponentRoster?: RosterEntry[];
   initialEvents: EventRow[];
+  /** Minimum sequence number for new events — must exceed the global max across
+   *  all game events, including those filtered out by a game_reset. Prevents new
+   *  events from being assigned a sequence number lower than a reset marker and
+   *  thus being silently treated as pre-reset events on next load. */
+  minNextSequenceNumber?: number;
   currentUserId: string;
   isCoach: boolean;
   isDemo?: boolean;
@@ -523,7 +529,11 @@ export function ScoringBoard({
 }): JSX.Element {
   const [eventRows, setEventRows] = useState<EventRow[]>(initialEvents);
   const nextSeqNum = useRef(
-    Math.max(...initialEvents.map((e) => e.sequence_number as number), 1) + 1,
+    Math.max(
+      ...initialEvents.map((e) => e.sequence_number as number),
+      minNextSequenceNumber != null ? minNextSequenceNumber - 1 : 0,
+      1,
+    ) + 1,
   );
 
   // Local scoring config — starts from the game_start event, overridable during the game

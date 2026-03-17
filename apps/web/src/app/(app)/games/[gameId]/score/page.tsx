@@ -231,6 +231,24 @@ export default async function ScorePage({ params }: { params: { gameId: string }
   const lastResetIndex = allEvents.map((e) => e.event_type).lastIndexOf('game_reset');
   const activeEvents = lastResetIndex === -1 ? allEvents : allEvents.slice(lastResetIndex + 1);
 
+  // Guard: if the active session has no game_start event the game hasn't been
+  // properly started for this session (e.g. a game_reset was recorded but the
+  // subsequent status update failed, leaving the game stuck in_progress with an
+  // empty active event list). Redirect to the game detail page so the coach can
+  // explicitly start a new session rather than seeing a blank scoring board.
+  if (!activeEvents.some((e) => e.event_type === 'game_start')) {
+    redirect(`/games/${params.gameId}`);
+  }
+
+  // Compute the global max sequence number across ALL events (not just the active
+  // session). This is passed to ScoringBoard so that new events are always
+  // assigned a sequence number higher than every existing event — preventing
+  // collisions with pre-reset events that share the same game_id.
+  const allEventsMaxSeq = allEvents.reduce(
+    (max, e) => Math.max(max, (e.sequence_number as number) ?? 0),
+    0,
+  );
+
   // ── Scoring config — read from the game_start event payload ─────────────────
   // Defaults to all-enabled for games started before this feature shipped.
   const gameStartEvent = activeEvents.find((e) => e.event_type === 'game_start');
@@ -254,6 +272,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       teamRoster={teamRoster}
       opponentRoster={opponentRoster}
       initialEvents={activeEvents}
+      minNextSequenceNumber={allEventsMaxSeq + 1}
       currentUserId={user.id}
       isCoach={isCoach}
       seasonSprayPoints={seasonSprayPoints}

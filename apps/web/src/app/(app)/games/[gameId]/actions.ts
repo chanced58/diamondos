@@ -331,7 +331,7 @@ export async function resetGameAction(
     .limit(1)
     .maybeSingle();
 
-  await supabase.from('game_events').insert({
+  const { error: resetEventError } = await supabase.from('game_events').insert({
     id: crypto.randomUUID(),
     game_id: gameId,
     sequence_number: (lastEvent?.sequence_number ?? 0) + 1,
@@ -343,6 +343,8 @@ export async function resetGameAction(
     created_by: user.id,
     device_id: 'web',
   });
+
+  if (resetEventError) return `Failed to reset game: ${resetEventError.message}`;
 
   const { error } = await supabase
     .from('games')
