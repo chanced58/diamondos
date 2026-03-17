@@ -31,6 +31,9 @@ export enum EventType {
   // Lineup changes
   SUBSTITUTION = 'substitution',
   PITCHING_CHANGE = 'pitching_change',
+
+  // Corrections
+  PITCH_REVERTED = 'pitch_reverted',
 }
 
 /** Why a baserunner advanced beyond their initial base */
