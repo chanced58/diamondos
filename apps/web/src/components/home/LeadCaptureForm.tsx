@@ -12,18 +12,36 @@ interface LeadCaptureFormProps {
   siteName?: string;
 }
 
+const US_STATES = [
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+  'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+  'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+  'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+  'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+];
+
 export function LeadCaptureForm({
-  ctaText = 'Get Started',
+  ctaText = 'Get Early Access',
   primaryColor,
   siteName = 'DiamondOS',
 }: LeadCaptureFormProps): JSX.Element {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [organization, setOrganization] = useState('');
+  const [state, setState] = useState('');
   const [status, setStatus] = useState<FormStatus>('idle');
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const trimmed = email.toLowerCase().trim();
-    if (!trimmed) return;
+
+    const payload = {
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+      organization: organization.trim(),
+      state,
+    };
+
+    if (!payload.name || !payload.email || !payload.organization || !payload.state) return;
 
     setStatus('submitting');
 
@@ -31,7 +49,7 @@ export function LeadCaptureForm({
       const res = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: trimmed }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -49,10 +67,10 @@ export function LeadCaptureForm({
 
   if (status === 'success') {
     return (
-      <div className="text-center py-2">
+      <div className="text-center py-4">
         <p className="text-lg font-semibold text-gray-900">Thanks! We&apos;ll be in touch.</p>
         <p className="text-sm text-gray-400 mt-1">
-          We sent a note to our team about your interest.
+          We&apos;ll reach out soon about bringing {siteName} to your program.
         </p>
       </div>
     );
@@ -60,37 +78,64 @@ export function LeadCaptureForm({
 
   if (status === 'duplicate') {
     return (
-      <div className="text-center py-2">
+      <div className="text-center py-4">
         <p className="text-lg font-semibold text-gray-900">You&apos;re already on the list!</p>
         <p className="text-sm text-gray-400 mt-1">
-          We have your email on file. We&apos;ll reach out soon.
+          We have your info on file. We&apos;ll reach out soon.
         </p>
       </div>
     );
   }
 
-  const buttonStyle = primaryColor
-    ? { backgroundColor: primaryColor }
-    : undefined;
-  const buttonClass = primaryColor
-    ? 'hover:opacity-90'
-    : 'bg-brand-700 hover:bg-brand-600';
+  const buttonStyle = primaryColor ? { backgroundColor: primaryColor } : undefined;
+  const buttonClass = primaryColor ? 'hover:opacity-90' : 'bg-brand-700 hover:bg-brand-600';
+
+  const inputClass =
+    'w-full border border-gray-300 rounded-lg px-4 py-2.5 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm';
 
   return (
     <div className="space-y-3">
-      <form onSubmit={handleSubmit} className="flex gap-2">
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Your name"
+          required
+          className={inputClass}
+        />
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@email.com"
+          placeholder="Email address"
           required
-          className="flex-1 min-w-0 border border-gray-300 rounded-lg px-4 py-2.5 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+          className={inputClass}
         />
+        <input
+          type="text"
+          value={organization}
+          onChange={(e) => setOrganization(e.target.value)}
+          placeholder="School or organization name"
+          required
+          className={inputClass}
+        />
+        <select
+          value={state}
+          onChange={(e) => setState(e.target.value)}
+          required
+          className={`${inputClass} ${!state ? 'text-gray-400' : 'text-gray-900'}`}
+        >
+          <option value="" disabled>State</option>
+          {US_STATES.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+
         <button
           type="submit"
-          disabled={status === 'submitting' || !email}
-          className={`px-5 py-2.5 text-sm font-semibold rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm whitespace-nowrap ${buttonClass}`}
+          disabled={status === 'submitting' || !name || !email || !organization || !state}
+          className={`w-full px-5 py-2.5 text-sm font-semibold rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm ${buttonClass}`}
           style={buttonStyle}
         >
           {status === 'submitting' ? 'Sending...' : ctaText}
@@ -104,7 +149,7 @@ export function LeadCaptureForm({
       )}
 
       <p className="text-xs text-gray-400 text-center">
-        We&apos;ll never sell or share your email. It&apos;s only used to keep you updated on {siteName}.
+        We&apos;ll never sell or share your information. It&apos;s only used to keep you updated on {siteName}.
       </p>
     </div>
   );

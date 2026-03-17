@@ -5,10 +5,10 @@ import { NextRequest, NextResponse } from 'next/server';
 const SALES_EMAIL = 'sales@diamondos.app';
 
 /**
- * Lead capture endpoint — stores interested user email and notifies sales.
+ * Lead capture endpoint — stores interested user info and notifies sales.
  *
  * POST /api/leads
- * Body: { email: string }
+ * Body: { name: string, email: string, organization: string, state: string }
  */
 export async function POST(request: NextRequest) {
   let body: unknown;
@@ -18,12 +18,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  const { email } = body as Record<string, unknown>;
+  const { name, email, organization, state } = body as Record<string, unknown>;
+
   if (!email || typeof email !== 'string') {
     return NextResponse.json({ error: 'Email is required' }, { status: 400 });
   }
+  if (!name || typeof name !== 'string') {
+    return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+  }
+  if (!organization || typeof organization !== 'string') {
+    return NextResponse.json({ error: 'Organization is required' }, { status: 400 });
+  }
+  if (!state || typeof state !== 'string') {
+    return NextResponse.json({ error: 'State is required' }, { status: 400 });
+  }
 
   const normalizedEmail = email.toLowerCase().trim();
+  const normalizedName = name.trim();
+  const normalizedOrg = organization.trim();
+  const normalizedState = state.trim().toUpperCase();
 
   // Basic email format validation
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
@@ -41,7 +54,12 @@ export async function POST(request: NextRequest) {
 
   const { error: insertError } = await db
     .from('leads')
-    .insert({ email: normalizedEmail });
+    .insert({
+      email: normalizedEmail,
+      contact_name: normalizedName,
+      organization: normalizedOrg,
+      state: normalizedState,
+    });
 
   // Handle duplicate email (unique constraint violation)
   if (insertError) {
@@ -62,18 +80,24 @@ export async function POST(request: NextRequest) {
       const { error: sendError } = await resend.emails.send({
         from: 'DiamondOS <noreply@diamondos.app>',
         to: SALES_EMAIL,
-        subject: `New lead: ${normalizedEmail}`,
+        subject: `New lead: ${normalizedName} — ${normalizedOrg} (${normalizedState})`,
         text: [
-          'A new prospect submitted their email on the DiamondOS landing page.',
+          'A new prospect submitted their info on the DiamondOS landing page.',
           '',
-          `Email:     ${normalizedEmail}`,
-          `Submitted: ${submittedAt.toUTCString()}`,
+          `Name:         ${normalizedName}`,
+          `Email:        ${normalizedEmail}`,
+          `Organization: ${normalizedOrg}`,
+          `State:        ${normalizedState}`,
+          `Submitted:    ${submittedAt.toUTCString()}`,
         ].join('\n'),
         html: `
-          <p>A new prospect submitted their email on the <strong>DiamondOS</strong> landing page.</p>
-          <table cellpadding="4" style="font-family:sans-serif;font-size:14px">
-            <tr><td style="color:#6b7280">Email</td><td><a href="mailto:${normalizedEmail}">${normalizedEmail}</a></td></tr>
-            <tr><td style="color:#6b7280">Submitted</td><td>${submittedAt.toUTCString()}</td></tr>
+          <p>A new prospect submitted their info on the <strong>DiamondOS</strong> landing page.</p>
+          <table cellpadding="4" style="font-family:sans-serif;font-size:14px;border-collapse:collapse">
+            <tr><td style="color:#6b7280;padding-right:16px">Name</td><td>${normalizedName}</td></tr>
+            <tr><td style="color:#6b7280;padding-right:16px">Email</td><td><a href="mailto:${normalizedEmail}">${normalizedEmail}</a></td></tr>
+            <tr><td style="color:#6b7280;padding-right:16px">Organization</td><td>${normalizedOrg}</td></tr>
+            <tr><td style="color:#6b7280;padding-right:16px">State</td><td>${normalizedState}</td></tr>
+            <tr><td style="color:#6b7280;padding-right:16px">Submitted</td><td>${submittedAt.toUTCString()}</td></tr>
           </table>
         `,
       });
