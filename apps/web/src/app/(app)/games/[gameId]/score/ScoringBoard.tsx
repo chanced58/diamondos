@@ -864,11 +864,14 @@ export function ScoringBoard({
       if (isDemo) return;
 
       const supabase = createBrowserClient();
-      await supabase.from('game_events').upsert(
+      const { error: upsertError } = await supabase.from('game_events').upsert(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         newRow as any,
         { onConflict: 'id', ignoreDuplicates: true },
       );
+      if (upsertError) {
+        console.error('[ScoringBoard] Failed to persist event:', eventType, upsertError);
+      }
     },
     [game.id, gameState.inning, gameState.isTopOfInning, currentUserId, isDemo],
   );
