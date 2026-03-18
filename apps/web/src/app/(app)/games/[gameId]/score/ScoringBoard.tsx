@@ -875,7 +875,7 @@ export function ScoringBoard({
         console.error('[ScoringBoard] Failed to persist event:', eventType, upsertError);
         // Roll back the optimistic insert so local state matches what is actually persisted.
         setEventRows((prev) => prev.filter((r) => r.id !== newRow.id));
-        setSaveError('Failed to save last action. Please try again.');
+        setSaveError(`Save failed (${upsertError.code ?? 'unknown'}: ${upsertError.message}). Please try again.`);
       }
     },
     [game.id, gameState.inning, gameState.isTopOfInning, currentUserId, isDemo],
