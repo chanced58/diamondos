@@ -584,6 +584,8 @@ export function ScoringBoard({
   const [sprayPoint, setSprayPoint] = useState<{ x: number; y: number } | null>(null);
   // End game form error
   const [endGameError, endGameFormAction] = useFormState(endGameAction, null);
+  // Shown when a game event fails to persist to Supabase
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   function resetAnnotations() {
     setPitchType(null);
@@ -871,6 +873,9 @@ export function ScoringBoard({
       );
       if (upsertError) {
         console.error('[ScoringBoard] Failed to persist event:', eventType, upsertError);
+        // Roll back the optimistic insert so local state matches what is actually persisted.
+        setEventRows((prev) => prev.filter((r) => r.id !== newRow.id));
+        setSaveError('Failed to save last action. Please try again.');
       }
     },
     [game.id, gameState.inning, gameState.isTopOfInning, currentUserId, isDemo],
@@ -1160,6 +1165,19 @@ export function ScoringBoard({
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* ── Save error banner ────────────────────────────────── */}
+      {saveError && (
+        <div className="bg-red-50 border-b border-red-200 px-6 py-2 flex items-center justify-between">
+          <p className="text-sm text-red-700 font-medium">{saveError}</p>
+          <button
+            onClick={() => setSaveError(null)}
+            className="text-red-500 hover:text-red-700 text-sm ml-4"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* ── Header ──────────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
         <Link
