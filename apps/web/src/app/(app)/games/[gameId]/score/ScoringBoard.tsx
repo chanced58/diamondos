@@ -1045,6 +1045,14 @@ export function ScoringBoard({
     await recordEvent('caught_stealing', { runnerId, fromBase, toBase });
   }
 
+  async function handlePickoffAttempt(runnerId: string, base: 1 | 2 | 3) {
+    await recordEvent('pickoff_attempt', {
+      runnerId,
+      base,
+      pitcherId: activePitcherId ?? 'unknown-pitcher',
+    });
+  }
+
   function handleAdvanceClick(runnerId: string, fromBase: 1 | 2 | 3, toBase: 2 | 3 | 4) {
     setPendingAdvance({ runnerId, fromBase, toBase });
     setAdvanceErrorBy(null);
@@ -1675,6 +1683,13 @@ export function ScoringBoard({
                         className="px-2 py-1 text-xs font-medium rounded border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
                       >
                         CS
+                      </button>
+                      <button
+                        onClick={() => handlePickoffAttempt(runnerId!, base)}
+                        className="px-2 py-1 text-xs font-medium rounded border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 transition-colors"
+                        title="Pickoff attempt (runner safe)"
+                      >
+                        PO
                       </button>
                       {base < 3 && (
                         <button
