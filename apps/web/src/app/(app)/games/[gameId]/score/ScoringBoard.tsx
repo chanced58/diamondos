@@ -573,7 +573,7 @@ export function ScoringBoard({
   // Substitution panel state
   const [showSubstitution, setShowSubstitution] = useState(false);
   const [subTeam, setSubTeam] = useState<'us' | 'opponent'>('us');
-  const [subType, setSubType] = useState<'pinch_hitter' | 'pinch_runner' | 'defensive' | null>(null);
+  const [subType, setSubType] = useState<'pinch_hitter' | 'pinch_runner' | 'defensive' | 'position_change' | null>(null);
   const [subOutPlayerId, setSubOutPlayerId] = useState('');
   const [subInPlayerId, setSubInPlayerId] = useState('');
   const [subRunnerBase, setSubRunnerBase] = useState<1 | 2 | 3 | null>(null);
@@ -586,6 +586,9 @@ export function ScoringBoard({
   const [endGameError, endGameFormAction] = useFormState(endGameAction, null);
   // Shown when a game event fails to persist to Supabase
   const [saveError, setSaveError] = useState<string | null>(null);
+  // WP / PB modifier toggles — applied to the next pitch recorded
+  const [wildPitchPending, setWildPitchPending] = useState(false);
+  const [passedBallPending, setPassedBallPending] = useState(false);
 
   function resetAnnotations() {
     setPitchType(null);
@@ -597,6 +600,8 @@ export function ScoringBoard({
     setFieldingSequencePending(false);
     setFieldingSequence([]);
     setStashedOutResult(null);
+    setWildPitchPending(false);
+    setPassedBallPending(false);
   }
 
   // Apply PITCH_REVERTED markers: each reverts the event list to a given sequence
@@ -656,6 +661,16 @@ export function ScoringBoard({
       const inId  = p.inPlayerId  as string;
       const idx = result.findIndex((s) => s.playerId === outId);
       if (idx === -1) continue;
+
+      // Position change: same player, just update their defensive position
+      if (p.substitutionType === 'position_change') {
+        result[idx] = {
+          ...result[idx],
+          startingPosition: (p.newPosition as string | null) ?? result[idx].startingPosition,
+        };
+        continue;
+      }
+
       const rosterEntry = (roster ?? []).find((r) => r.id === inId);
       result[idx] = {
         ...result[idx],
@@ -906,6 +921,8 @@ export function ScoringBoard({
     const extra: Record<string, unknown> = {};
     if (pitchType) extra.pitchType = pitchType;
     if (zoneLocation !== null) extra.zoneLocation = zoneLocation;
+    if (wildPitchPending) extra.isWildPitch = true;
+    if (passedBallPending) extra.isPassedBall = true;
 
     await recordEvent('pitch_thrown', { pitcherId, batterId, outcome, ...extra });
     resetAnnotations();
@@ -1004,31 +1021,6 @@ export function ScoringBoard({
     await recordEvent('hit_by_pitch', { batterId, pitcherId });
   }
 
-  async function handleWildPitch() {
-    const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = activePitcherId ?? 'unknown-pitcher';
-    const extra: Record<string, unknown> = {};
-    if (pitchType) extra.pitchType = pitchType;
-    if (zoneLocation !== null) extra.zoneLocation = zoneLocation;
-    await recordEvent('pitch_thrown', { pitcherId, batterId, outcome: 'ball', isWildPitch: true, ...extra });
-    resetAnnotations();
-    if (gameState.balls + 1 >= 4) {
-      await recordEvent('walk', { batterId, pitcherId });
-    }
-  }
-
-  async function handlePassedBall() {
-    const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = activePitcherId ?? 'unknown-pitcher';
-    const extra: Record<string, unknown> = {};
-    if (pitchType) extra.pitchType = pitchType;
-    if (zoneLocation !== null) extra.zoneLocation = zoneLocation;
-    await recordEvent('pitch_thrown', { pitcherId, batterId, outcome: 'ball', isPassedBall: true, ...extra });
-    resetAnnotations();
-    if (gameState.balls + 1 >= 4) {
-      await recordEvent('walk', { batterId, pitcherId });
-    }
-  }
 
   // ── Baserunner handlers ───────────────────────────────────────────────────
 
@@ -1043,6 +1035,14 @@ export function ScoringBoard({
   async function handleCaughtStealing(runnerId: string, fromBase: 1 | 2 | 3) {
     const toBase = (fromBase + 1) as 2 | 3 | 4;
     await recordEvent('caught_stealing', { runnerId, fromBase, toBase });
+  }
+
+  async function handlePickoffAttempt(runnerId: string, base: 1 | 2 | 3) {
+    await recordEvent('pickoff_attempt', {
+      runnerId,
+      base,
+      pitcherId: activePitcherId ?? 'unknown-pitcher',
+    });
   }
 
   function handleAdvanceClick(runnerId: string, fromBase: 1 | 2 | 3, toBase: 2 | 3 | 4) {
@@ -1098,16 +1098,20 @@ export function ScoringBoard({
   }
 
   async function handleSubstitution() {
-    if (!subOutPlayerId || !subInPlayerId || !subType) return;
+    if (!subOutPlayerId || !subType) return;
+    // Position change: inPlayerId === outPlayerId (same player, new position)
+    if (subType === 'position_change' && !subNewPosition) return;
+    if (subType !== 'position_change' && !subInPlayerId) return;
     const isOpponent = subTeam === 'opponent';
+    const effectiveInId = subType === 'position_change' ? subOutPlayerId : subInPlayerId;
     const payload: Record<string, unknown> = {
-      inPlayerId: subInPlayerId,
+      inPlayerId: effectiveInId,
       outPlayerId: subOutPlayerId,
       substitutionType: subType,
       isOpponentSubstitution: isOpponent,
     };
     if (subType === 'pinch_runner' && subRunnerBase != null) payload.runnerBase = subRunnerBase;
-    if (subType === 'defensive' && subNewPosition) payload.newPosition = subNewPosition;
+    if ((subType === 'defensive' || subType === 'position_change') && subNewPosition) payload.newPosition = subNewPosition;
     await recordEvent('substitution', payload);
     setShowSubstitution(false);
     setSubType(null);
@@ -1570,12 +1574,11 @@ export function ScoringBoard({
               <>
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Pitch outcome</p>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {[
-                      { label: 'Ball', outcome: 'ball' },
+                      { label: 'Ball',     outcome: 'ball' },
                       { label: 'Called K', outcome: 'called_strike' },
-                      { label: 'Swing K', outcome: 'swinging_strike' },
-                      { label: 'Foul', outcome: 'foul' },
+                      { label: 'Swing K',  outcome: 'swinging_strike' },
                     ].map(({ label, outcome }) => (
                       <button
                         key={outcome}
@@ -1589,18 +1592,41 @@ export function ScoringBoard({
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-2">
                     <button
-                      onClick={handleWildPitch}
+                      onClick={() => handlePitch('foul')}
                       disabled={!pitchAnnotationsReady}
-                      className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 disabled:hover:bg-orange-50"
+                      className="py-2.5 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-white hover:bg-gray-50 disabled:hover:bg-white"
                     >
-                      WP — Wild Pitch
+                      Foul
                     </button>
                     <button
-                      onClick={handlePassedBall}
+                      onClick={() => handlePitch('foul_tip')}
                       disabled={!pitchAnnotationsReady}
-                      className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 disabled:hover:bg-orange-50"
+                      className="py-2.5 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-white hover:bg-gray-50 disabled:hover:bg-white"
+                      title="Foul tip caught by catcher — strike (K on 2 strikes)"
                     >
-                      PB — Passed Ball
+                      Foul Tip {gameState.strikes === 2 ? '— K' : ''}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <button
+                      onClick={() => { setWildPitchPending((v) => !v); setPassedBallPending(false); }}
+                      className={`py-2 text-sm font-medium rounded-lg border transition-colors ${
+                        wildPitchPending
+                          ? 'border-orange-400 bg-orange-100 text-orange-800'
+                          : 'border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100'
+                      }`}
+                    >
+                      {wildPitchPending ? '✓ WP — Wild Pitch' : 'WP — Wild Pitch'}
+                    </button>
+                    <button
+                      onClick={() => { setPassedBallPending((v) => !v); setWildPitchPending(false); }}
+                      className={`py-2 text-sm font-medium rounded-lg border transition-colors ${
+                        passedBallPending
+                          ? 'border-orange-400 bg-orange-100 text-orange-800'
+                          : 'border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100'
+                      }`}
+                    >
+                      {passedBallPending ? '✓ PB — Passed Ball' : 'PB — Passed Ball'}
                     </button>
                   </div>
                   {!pitchAnnotationsReady && (
@@ -1675,6 +1701,13 @@ export function ScoringBoard({
                         className="px-2 py-1 text-xs font-medium rounded border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
                       >
                         CS
+                      </button>
+                      <button
+                        onClick={() => handlePickoffAttempt(runnerId!, base)}
+                        className="px-2 py-1 text-xs font-medium rounded border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 transition-colors"
+                        title="Pickoff attempt (runner safe)"
+                      >
+                        PO
                       </button>
                       {base < 3 && (
                         <button
@@ -1965,9 +1998,10 @@ export function ScoringBoard({
               <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Type</p>
               <div className="flex gap-2 flex-wrap">
                 {([
-                  { value: 'pinch_hitter', label: 'Pinch Hitter' },
-                  { value: 'pinch_runner', label: 'Pinch Runner' },
-                  { value: 'defensive',   label: 'Defensive' },
+                  { value: 'pinch_hitter',    label: 'Pinch Hitter' },
+                  { value: 'pinch_runner',    label: 'Pinch Runner' },
+                  { value: 'defensive',       label: 'Defensive' },
+                  { value: 'position_change', label: 'Position Change' },
                 ] as const).map(({ value, label }) => (
                   <button
                     key={value}
@@ -1994,77 +2028,117 @@ export function ScoringBoard({
 
               return (
                 <>
-                  {/* Player OUT */}
-                  <div>
-                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Out (leaving game)</p>
-                    <select
-                      value={subOutPlayerId}
-                      onChange={(e) => setSubOutPlayerId(e.target.value)}
-                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
-                    >
-                      <option value="">Select player…</option>
-                      {currentRoster
-                        .filter((p) => currentLineupIds.has(p.id))
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.lastName}, {p.firstName}{p.jerseyNumber != null ? ` #${p.jerseyNumber}` : ''}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-
-                  {/* Player IN */}
-                  <div>
-                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">In (entering game)</p>
-                    <select
-                      value={subInPlayerId}
-                      onChange={(e) => setSubInPlayerId(e.target.value)}
-                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
-                    >
-                      <option value="">Select player…</option>
-                      {currentRoster
-                        .filter((p) => !currentLineupIds.has(p.id) || p.id === subInPlayerId)
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.lastName}, {p.firstName}{p.jerseyNumber != null ? ` #${p.jerseyNumber}` : ''}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-
-                  {/* Runner base — for pinch runner */}
-                  {subType === 'pinch_runner' && (
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Runner placed at</p>
-                      <div className="flex gap-2">
-                        {([1, 2, 3] as const).map((b) => (
-                          <button
-                            key={b}
-                            onClick={() => setSubRunnerBase(b)}
-                            className={`px-3 py-1 text-xs rounded border transition-colors ${subRunnerBase === b ? 'bg-brand-600 text-white border-brand-700' : 'bg-white border-gray-300 text-gray-600 hover:border-brand-400'}`}
-                          >
-                            {b === 1 ? '1st' : b === 2 ? '2nd' : '3rd'}
-                          </button>
-                        ))}
+                  {subType === 'position_change' ? (
+                    <>
+                      {/* Position change: single player selector (must be in lineup) */}
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Player</p>
+                        <select
+                          value={subOutPlayerId}
+                          onChange={(e) => setSubOutPlayerId(e.target.value)}
+                          className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+                        >
+                          <option value="">Select player…</option>
+                          {currentRoster
+                            .filter((p) => currentLineupIds.has(p.id))
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.lastName}, {p.firstName}{p.jerseyNumber != null ? ` #${p.jerseyNumber}` : ''}
+                              </option>
+                            ))}
+                        </select>
                       </div>
-                    </div>
-                  )}
 
-                  {/* New position — for defensive sub */}
-                  {subType === 'defensive' && (
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">New position (optional)</p>
-                      <select
-                        value={subNewPosition}
-                        onChange={(e) => setSubNewPosition(e.target.value)}
-                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
-                      >
-                        <option value="">Select…</option>
-                        {['P','C','1B','2B','3B','SS','LF','CF','RF','DH'].map((pos) => (
-                          <option key={pos} value={pos}>{pos}</option>
-                        ))}
-                      </select>
-                    </div>
+                      {/* New position — required for position change */}
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">New position</p>
+                        <select
+                          value={subNewPosition}
+                          onChange={(e) => setSubNewPosition(e.target.value)}
+                          className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+                        >
+                          <option value="">Select…</option>
+                          {['P','C','1B','2B','3B','SS','LF','CF','RF','DH'].map((pos) => (
+                            <option key={pos} value={pos}>{pos}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Player OUT */}
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Out (leaving game)</p>
+                        <select
+                          value={subOutPlayerId}
+                          onChange={(e) => setSubOutPlayerId(e.target.value)}
+                          className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+                        >
+                          <option value="">Select player…</option>
+                          {currentRoster
+                            .filter((p) => currentLineupIds.has(p.id))
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.lastName}, {p.firstName}{p.jerseyNumber != null ? ` #${p.jerseyNumber}` : ''}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+
+                      {/* Player IN */}
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">In (entering game)</p>
+                        <select
+                          value={subInPlayerId}
+                          onChange={(e) => setSubInPlayerId(e.target.value)}
+                          className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+                        >
+                          <option value="">Select player…</option>
+                          {currentRoster
+                            .filter((p) => !currentLineupIds.has(p.id) || p.id === subInPlayerId)
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.lastName}, {p.firstName}{p.jerseyNumber != null ? ` #${p.jerseyNumber}` : ''}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+
+                      {/* Runner base — for pinch runner */}
+                      {subType === 'pinch_runner' && (
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Runner placed at</p>
+                          <div className="flex gap-2">
+                            {([1, 2, 3] as const).map((b) => (
+                              <button
+                                key={b}
+                                onClick={() => setSubRunnerBase(b)}
+                                className={`px-3 py-1 text-xs rounded border transition-colors ${subRunnerBase === b ? 'bg-brand-600 text-white border-brand-700' : 'bg-white border-gray-300 text-gray-600 hover:border-brand-400'}`}
+                              >
+                                {b === 1 ? '1st' : b === 2 ? '2nd' : '3rd'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* New position — for defensive sub */}
+                      {subType === 'defensive' && (
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">New position (optional)</p>
+                          <select
+                            value={subNewPosition}
+                            onChange={(e) => setSubNewPosition(e.target.value)}
+                            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+                          >
+                            <option value="">Select…</option>
+                            {['P','C','1B','2B','3B','SS','LF','CF','RF','DH'].map((pos) => (
+                              <option key={pos} value={pos}>{pos}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </>
                   )}
                 </>
               );
@@ -2073,7 +2147,11 @@ export function ScoringBoard({
             <div className="flex gap-3 pt-1">
               <button
                 onClick={handleSubstitution}
-                disabled={!subOutPlayerId || !subInPlayerId || !subType}
+                disabled={
+                  !subOutPlayerId ||
+                  !subType ||
+                  (subType === 'position_change' ? !subNewPosition : !subInPlayerId)
+                }
                 className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 Record Substitution

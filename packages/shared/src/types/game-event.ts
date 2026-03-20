@@ -49,9 +49,10 @@ export enum AdvanceReason {
 
 /** The type of in-game substitution */
 export enum SubstitutionType {
-  PINCH_HITTER = 'pinch_hitter',
-  PINCH_RUNNER = 'pinch_runner',
-  DEFENSIVE    = 'defensive',
+  PINCH_HITTER    = 'pinch_hitter',
+  PINCH_RUNNER    = 'pinch_runner',
+  DEFENSIVE       = 'defensive',
+  POSITION_CHANGE = 'position_change',
 }
 
 export enum PitchType {
