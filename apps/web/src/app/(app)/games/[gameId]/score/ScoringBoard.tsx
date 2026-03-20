@@ -586,6 +586,9 @@ export function ScoringBoard({
   const [endGameError, endGameFormAction] = useFormState(endGameAction, null);
   // Shown when a game event fails to persist to Supabase
   const [saveError, setSaveError] = useState<string | null>(null);
+  // WP / PB modifier toggles — applied to the next pitch recorded
+  const [wildPitchPending, setWildPitchPending] = useState(false);
+  const [passedBallPending, setPassedBallPending] = useState(false);
 
   function resetAnnotations() {
     setPitchType(null);
@@ -597,6 +600,8 @@ export function ScoringBoard({
     setFieldingSequencePending(false);
     setFieldingSequence([]);
     setStashedOutResult(null);
+    setWildPitchPending(false);
+    setPassedBallPending(false);
   }
 
   // Apply PITCH_REVERTED markers: each reverts the event list to a given sequence
@@ -906,6 +911,8 @@ export function ScoringBoard({
     const extra: Record<string, unknown> = {};
     if (pitchType) extra.pitchType = pitchType;
     if (zoneLocation !== null) extra.zoneLocation = zoneLocation;
+    if (wildPitchPending) extra.isWildPitch = true;
+    if (passedBallPending) extra.isPassedBall = true;
 
     await recordEvent('pitch_thrown', { pitcherId, batterId, outcome, ...extra });
     resetAnnotations();
@@ -1004,31 +1011,6 @@ export function ScoringBoard({
     await recordEvent('hit_by_pitch', { batterId, pitcherId });
   }
 
-  async function handleWildPitch() {
-    const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = activePitcherId ?? 'unknown-pitcher';
-    const extra: Record<string, unknown> = {};
-    if (pitchType) extra.pitchType = pitchType;
-    if (zoneLocation !== null) extra.zoneLocation = zoneLocation;
-    await recordEvent('pitch_thrown', { pitcherId, batterId, outcome: 'ball', isWildPitch: true, ...extra });
-    resetAnnotations();
-    if (gameState.balls + 1 >= 4) {
-      await recordEvent('walk', { batterId, pitcherId });
-    }
-  }
-
-  async function handlePassedBall() {
-    const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = activePitcherId ?? 'unknown-pitcher';
-    const extra: Record<string, unknown> = {};
-    if (pitchType) extra.pitchType = pitchType;
-    if (zoneLocation !== null) extra.zoneLocation = zoneLocation;
-    await recordEvent('pitch_thrown', { pitcherId, batterId, outcome: 'ball', isPassedBall: true, ...extra });
-    resetAnnotations();
-    if (gameState.balls + 1 >= 4) {
-      await recordEvent('walk', { batterId, pitcherId });
-    }
-  }
 
   // ── Baserunner handlers ───────────────────────────────────────────────────
 
@@ -1578,12 +1560,11 @@ export function ScoringBoard({
               <>
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Pitch outcome</p>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {[
-                      { label: 'Ball', outcome: 'ball' },
+                      { label: 'Ball',     outcome: 'ball' },
                       { label: 'Called K', outcome: 'called_strike' },
-                      { label: 'Swing K', outcome: 'swinging_strike' },
-                      { label: 'Foul', outcome: 'foul' },
+                      { label: 'Swing K',  outcome: 'swinging_strike' },
                     ].map(({ label, outcome }) => (
                       <button
                         key={outcome}
@@ -1597,18 +1578,41 @@ export function ScoringBoard({
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-2">
                     <button
-                      onClick={handleWildPitch}
+                      onClick={() => handlePitch('foul')}
                       disabled={!pitchAnnotationsReady}
-                      className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 disabled:hover:bg-orange-50"
+                      className="py-2.5 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-white hover:bg-gray-50 disabled:hover:bg-white"
                     >
-                      WP — Wild Pitch
+                      Foul
                     </button>
                     <button
-                      onClick={handlePassedBall}
+                      onClick={() => handlePitch('foul_tip')}
                       disabled={!pitchAnnotationsReady}
-                      className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 disabled:hover:bg-orange-50"
+                      className="py-2.5 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-white hover:bg-gray-50 disabled:hover:bg-white"
+                      title="Foul tip caught by catcher — strike (K on 2 strikes)"
                     >
-                      PB — Passed Ball
+                      Foul Tip {gameState.strikes === 2 ? '— K' : ''}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <button
+                      onClick={() => { setWildPitchPending((v) => !v); setPassedBallPending(false); }}
+                      className={`py-2 text-sm font-medium rounded-lg border transition-colors ${
+                        wildPitchPending
+                          ? 'border-orange-400 bg-orange-100 text-orange-800'
+                          : 'border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100'
+                      }`}
+                    >
+                      {wildPitchPending ? '✓ WP — Wild Pitch' : 'WP — Wild Pitch'}
+                    </button>
+                    <button
+                      onClick={() => { setPassedBallPending((v) => !v); setWildPitchPending(false); }}
+                      className={`py-2 text-sm font-medium rounded-lg border transition-colors ${
+                        passedBallPending
+                          ? 'border-orange-400 bg-orange-100 text-orange-800'
+                          : 'border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100'
+                      }`}
+                    >
+                      {passedBallPending ? '✓ PB — Passed Ball' : 'PB — Passed Ball'}
                     </button>
                   </div>
                   {!pitchAnnotationsReady && (
