@@ -573,7 +573,7 @@ export function ScoringBoard({
   // Substitution panel state
   const [showSubstitution, setShowSubstitution] = useState(false);
   const [subTeam, setSubTeam] = useState<'us' | 'opponent'>('us');
-  const [subType, setSubType] = useState<'pinch_hitter' | 'pinch_runner' | 'defensive' | null>(null);
+  const [subType, setSubType] = useState<'pinch_hitter' | 'pinch_runner' | 'defensive' | 'position_change' | null>(null);
   const [subOutPlayerId, setSubOutPlayerId] = useState('');
   const [subInPlayerId, setSubInPlayerId] = useState('');
   const [subRunnerBase, setSubRunnerBase] = useState<1 | 2 | 3 | null>(null);
@@ -661,6 +661,16 @@ export function ScoringBoard({
       const inId  = p.inPlayerId  as string;
       const idx = result.findIndex((s) => s.playerId === outId);
       if (idx === -1) continue;
+
+      // Position change: same player, just update their defensive position
+      if (p.substitutionType === 'position_change') {
+        result[idx] = {
+          ...result[idx],
+          startingPosition: (p.newPosition as string | null) ?? result[idx].startingPosition,
+        };
+        continue;
+      }
+
       const rosterEntry = (roster ?? []).find((r) => r.id === inId);
       result[idx] = {
         ...result[idx],
@@ -1088,16 +1098,20 @@ export function ScoringBoard({
   }
 
   async function handleSubstitution() {
-    if (!subOutPlayerId || !subInPlayerId || !subType) return;
+    if (!subOutPlayerId || !subType) return;
+    // Position change: inPlayerId === outPlayerId (same player, new position)
+    if (subType === 'position_change' && !subNewPosition) return;
+    if (subType !== 'position_change' && !subInPlayerId) return;
     const isOpponent = subTeam === 'opponent';
+    const effectiveInId = subType === 'position_change' ? subOutPlayerId : subInPlayerId;
     const payload: Record<string, unknown> = {
-      inPlayerId: subInPlayerId,
+      inPlayerId: effectiveInId,
       outPlayerId: subOutPlayerId,
       substitutionType: subType,
       isOpponentSubstitution: isOpponent,
     };
     if (subType === 'pinch_runner' && subRunnerBase != null) payload.runnerBase = subRunnerBase;
-    if (subType === 'defensive' && subNewPosition) payload.newPosition = subNewPosition;
+    if ((subType === 'defensive' || subType === 'position_change') && subNewPosition) payload.newPosition = subNewPosition;
     await recordEvent('substitution', payload);
     setShowSubstitution(false);
     setSubType(null);
@@ -1984,9 +1998,10 @@ export function ScoringBoard({
               <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Type</p>
               <div className="flex gap-2 flex-wrap">
                 {([
-                  { value: 'pinch_hitter', label: 'Pinch Hitter' },
-                  { value: 'pinch_runner', label: 'Pinch Runner' },
-                  { value: 'defensive',   label: 'Defensive' },
+                  { value: 'pinch_hitter',    label: 'Pinch Hitter' },
+                  { value: 'pinch_runner',    label: 'Pinch Runner' },
+                  { value: 'defensive',       label: 'Defensive' },
+                  { value: 'position_change', label: 'Position Change' },
                 ] as const).map(({ value, label }) => (
                   <button
                     key={value}
@@ -2013,77 +2028,117 @@ export function ScoringBoard({
 
               return (
                 <>
-                  {/* Player OUT */}
-                  <div>
-                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Out (leaving game)</p>
-                    <select
-                      value={subOutPlayerId}
-                      onChange={(e) => setSubOutPlayerId(e.target.value)}
-                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
-                    >
-                      <option value="">Select player…</option>
-                      {currentRoster
-                        .filter((p) => currentLineupIds.has(p.id))
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.lastName}, {p.firstName}{p.jerseyNumber != null ? ` #${p.jerseyNumber}` : ''}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-
-                  {/* Player IN */}
-                  <div>
-                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">In (entering game)</p>
-                    <select
-                      value={subInPlayerId}
-                      onChange={(e) => setSubInPlayerId(e.target.value)}
-                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
-                    >
-                      <option value="">Select player…</option>
-                      {currentRoster
-                        .filter((p) => !currentLineupIds.has(p.id) || p.id === subInPlayerId)
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.lastName}, {p.firstName}{p.jerseyNumber != null ? ` #${p.jerseyNumber}` : ''}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-
-                  {/* Runner base — for pinch runner */}
-                  {subType === 'pinch_runner' && (
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Runner placed at</p>
-                      <div className="flex gap-2">
-                        {([1, 2, 3] as const).map((b) => (
-                          <button
-                            key={b}
-                            onClick={() => setSubRunnerBase(b)}
-                            className={`px-3 py-1 text-xs rounded border transition-colors ${subRunnerBase === b ? 'bg-brand-600 text-white border-brand-700' : 'bg-white border-gray-300 text-gray-600 hover:border-brand-400'}`}
-                          >
-                            {b === 1 ? '1st' : b === 2 ? '2nd' : '3rd'}
-                          </button>
-                        ))}
+                  {subType === 'position_change' ? (
+                    <>
+                      {/* Position change: single player selector (must be in lineup) */}
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Player</p>
+                        <select
+                          value={subOutPlayerId}
+                          onChange={(e) => setSubOutPlayerId(e.target.value)}
+                          className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+                        >
+                          <option value="">Select player…</option>
+                          {currentRoster
+                            .filter((p) => currentLineupIds.has(p.id))
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.lastName}, {p.firstName}{p.jerseyNumber != null ? ` #${p.jerseyNumber}` : ''}
+                              </option>
+                            ))}
+                        </select>
                       </div>
-                    </div>
-                  )}
 
-                  {/* New position — for defensive sub */}
-                  {subType === 'defensive' && (
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">New position (optional)</p>
-                      <select
-                        value={subNewPosition}
-                        onChange={(e) => setSubNewPosition(e.target.value)}
-                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
-                      >
-                        <option value="">Select…</option>
-                        {['P','C','1B','2B','3B','SS','LF','CF','RF','DH'].map((pos) => (
-                          <option key={pos} value={pos}>{pos}</option>
-                        ))}
-                      </select>
-                    </div>
+                      {/* New position — required for position change */}
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">New position</p>
+                        <select
+                          value={subNewPosition}
+                          onChange={(e) => setSubNewPosition(e.target.value)}
+                          className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+                        >
+                          <option value="">Select…</option>
+                          {['P','C','1B','2B','3B','SS','LF','CF','RF','DH'].map((pos) => (
+                            <option key={pos} value={pos}>{pos}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Player OUT */}
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Out (leaving game)</p>
+                        <select
+                          value={subOutPlayerId}
+                          onChange={(e) => setSubOutPlayerId(e.target.value)}
+                          className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+                        >
+                          <option value="">Select player…</option>
+                          {currentRoster
+                            .filter((p) => currentLineupIds.has(p.id))
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.lastName}, {p.firstName}{p.jerseyNumber != null ? ` #${p.jerseyNumber}` : ''}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+
+                      {/* Player IN */}
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">In (entering game)</p>
+                        <select
+                          value={subInPlayerId}
+                          onChange={(e) => setSubInPlayerId(e.target.value)}
+                          className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+                        >
+                          <option value="">Select player…</option>
+                          {currentRoster
+                            .filter((p) => !currentLineupIds.has(p.id) || p.id === subInPlayerId)
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.lastName}, {p.firstName}{p.jerseyNumber != null ? ` #${p.jerseyNumber}` : ''}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+
+                      {/* Runner base — for pinch runner */}
+                      {subType === 'pinch_runner' && (
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">Runner placed at</p>
+                          <div className="flex gap-2">
+                            {([1, 2, 3] as const).map((b) => (
+                              <button
+                                key={b}
+                                onClick={() => setSubRunnerBase(b)}
+                                className={`px-3 py-1 text-xs rounded border transition-colors ${subRunnerBase === b ? 'bg-brand-600 text-white border-brand-700' : 'bg-white border-gray-300 text-gray-600 hover:border-brand-400'}`}
+                              >
+                                {b === 1 ? '1st' : b === 2 ? '2nd' : '3rd'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* New position — for defensive sub */}
+                      {subType === 'defensive' && (
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">New position (optional)</p>
+                          <select
+                            value={subNewPosition}
+                            onChange={(e) => setSubNewPosition(e.target.value)}
+                            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+                          >
+                            <option value="">Select…</option>
+                            {['P','C','1B','2B','3B','SS','LF','CF','RF','DH'].map((pos) => (
+                              <option key={pos} value={pos}>{pos}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </>
                   )}
                 </>
               );
@@ -2092,7 +2147,11 @@ export function ScoringBoard({
             <div className="flex gap-3 pt-1">
               <button
                 onClick={handleSubstitution}
-                disabled={!subOutPlayerId || !subInPlayerId || !subType}
+                disabled={
+                  !subOutPlayerId ||
+                  !subType ||
+                  (subType === 'position_change' ? !subNewPosition : !subInPlayerId)
+                }
                 className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 Record Substitution
