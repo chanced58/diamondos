@@ -1184,9 +1184,13 @@ export function ScoringBoard({
     await recordEvent('inning_change', {});
   }
 
-  async function handlePitchingChange(newPitcherId: string) {
+  async function handlePitchingChange(newPitcherId: string, isOpponent = false) {
     const outgoingPitcherId = activePitcherId ?? '';
-    await recordEvent('pitching_change', { newPitcherId, outgoingPitcherId });
+    await recordEvent('pitching_change', {
+      newPitcherId,
+      outgoingPitcherId,
+      ...(isOpponent ? { isOpponentChange: true } : {}),
+    });
     setShowPitchingChange(false);
   }
 
@@ -2131,23 +2135,36 @@ export function ScoringBoard({
         )}
         {isCoach && showPitchingChange && (
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-sm font-semibold text-gray-700 mb-3">Select new pitcher</p>
-            <div className="space-y-1">
-              {(teamRoster ?? lineup.map((lineupEntry) => lineupEntry.player))
-                .filter((pitcher): pitcher is typeof pitcher & { id: string } => pitcher.id !== null && pitcher.id !== activePitcherId)
-                .map((pitcher) => (
-                  <button
-                    key={pitcher.id}
-                    onClick={() => handlePitchingChange(pitcher.id)}
-                    className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    {pitcher.lastName}, {pitcher.firstName}
-                    {pitcher.jerseyNumber != null && (
-                      <span className="text-gray-400 ml-1">#{pitcher.jerseyNumber}</span>
-                    )}
-                  </button>
-                ))}
-            </div>
+            {(() => {
+              // Show the defensive team's pitchers: our team when opponent bats, opponent when we bat
+              const isOpponentPitching = !isOpponentBatting;
+              const pitcherPool = isOpponentPitching
+                ? (opponentRoster ?? (opponentLineup ?? []).map((e) => e.player))
+                : (teamRoster ?? lineup.map((e) => e.player));
+              return (
+                <>
+                  <p className="text-sm font-semibold text-gray-700 mb-3">
+                    New pitcher — {isOpponentPitching ? 'Opponent' : 'Our Team'}
+                  </p>
+                  <div className="space-y-1">
+                    {pitcherPool
+                      .filter((p): p is typeof p & { id: string } => p.id !== null && p.id !== activePitcherId)
+                      .map((pitcher) => (
+                        <button
+                          key={pitcher.id}
+                          onClick={() => handlePitchingChange(pitcher.id, isOpponentPitching)}
+                          className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                          {pitcher.lastName}, {pitcher.firstName}
+                          {pitcher.jerseyNumber != null && (
+                            <span className="text-gray-400 ml-1">#{pitcher.jerseyNumber}</span>
+                          )}
+                        </button>
+                      ))}
+                  </div>
+                </>
+              );
+            })()}
             <button
               onClick={() => setShowPitchingChange(false)}
               className="mt-2 text-xs text-gray-400 hover:text-gray-600"
@@ -2170,7 +2187,16 @@ export function ScoringBoard({
         {/* ── Substitution ───────────────────────────────────────────── */}
         {isCoach && !showSubstitution && (
           <button
-            onClick={() => { setShowSubstitution(true); setSubType(null); setSubOutPlayerId(''); setSubInPlayerId(''); setSubRunnerBase(null); setSubNewPosition(''); }}
+            onClick={() => {
+              setShowSubstitution(true);
+              // Default to the team currently on defense
+              setSubTeam(isOpponentBatting ? 'us' : 'opponent');
+              setSubType(null);
+              setSubOutPlayerId('');
+              setSubInPlayerId('');
+              setSubRunnerBase(null);
+              setSubNewPosition('');
+            }}
             className="w-full text-sm text-gray-500 hover:text-gray-700 py-2"
           >
             Substitution…
