@@ -948,6 +948,8 @@ export function ScoringBoard({
     const pitchExtra: Record<string, unknown> = {};
     if (pitchType) pitchExtra.pitchType = pitchType;
     if (zoneLocation !== null) pitchExtra.zoneLocation = zoneLocation;
+    if (wildPitchPending) pitchExtra.isWildPitch = true;
+    if (passedBallPending) pitchExtra.isPassedBall = true;
 
     const sprayExtra: Record<string, unknown> = sprayPoint
       ? { sprayX: sprayPoint.x, sprayY: sprayPoint.y }
@@ -956,6 +958,10 @@ export function ScoringBoard({
     await recordEvent('pitch_thrown', { pitcherId, batterId, outcome: 'in_play', ...pitchExtra });
     resetAnnotations();
 
+    const seqExtra: Record<string, unknown> = sequence && sequence.length > 0
+      ? { fieldingSequence: sequence }
+      : {};
+
     if (result === 'out' || result === 'field_choice') {
       const outTypeMap: Record<string, string> = {
         ground_ball: 'groundout',
@@ -963,10 +969,11 @@ export function ScoringBoard({
         fly_ball:    'flyout',
       };
       const outType = outTypeMap[trajectory] ?? 'other';
-      const seqExtra: Record<string, unknown> = sequence && sequence.length > 0
-        ? { fieldingSequence: sequence }
-        : {};
       await recordEvent('out', { batterId, pitcherId, outType, trajectory, ...sprayExtra, ...seqExtra });
+    } else if (result === 'double_play') {
+      await recordEvent('double_play', { batterId, pitcherId, trajectory, ...sprayExtra, ...seqExtra });
+    } else if (result === 'triple_play') {
+      await recordEvent('triple_play', { batterId, pitcherId, trajectory, ...sprayExtra, ...seqExtra });
     } else {
       await recordEvent('hit', { batterId, pitcherId, hitType: result, trajectory, rbis: 0, ...sprayExtra });
     }
@@ -981,6 +988,8 @@ export function ScoringBoard({
     const pitchExtra: Record<string, unknown> = {};
     if (pitchType) pitchExtra.pitchType = pitchType;
     if (zoneLocation !== null) pitchExtra.zoneLocation = zoneLocation;
+    if (wildPitchPending) pitchExtra.isWildPitch = true;
+    if (passedBallPending) pitchExtra.isPassedBall = true;
 
     const sprayExtra: Record<string, unknown> = sprayPoint
       ? { sprayX: sprayPoint.x, sprayY: sprayPoint.y }
@@ -1403,7 +1412,7 @@ export function ScoringBoard({
                   /* ── Step 3: Fielding sequence picker (for outs) ── */
                   <div>
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                      Fielding play order (up to 5)
+                      Fielding play order (up to 8)
                     </p>
                     {fieldingSequence.length > 0 && (
                       <div className="flex items-center gap-2 mb-2">
@@ -1423,11 +1432,11 @@ export function ScoringBoard({
                         <button
                           key={number}
                           onClick={() => {
-                            if (fieldingSequence.length < 5) {
+                            if (fieldingSequence.length < 8) {
                               setFieldingSequence((prev) => [...prev, number]);
                             }
                           }}
-                          disabled={fieldingSequence.length >= 5}
+                          disabled={fieldingSequence.length >= 8}
                           className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
                           {number} — {abbr}
@@ -1442,7 +1451,7 @@ export function ScoringBoard({
                         disabled={fieldingSequence.length === 0}
                         className="flex-1 py-2 text-sm font-semibold rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-brand-700 text-white hover:bg-brand-800 disabled:hover:bg-brand-700"
                       >
-                        Record Out{fieldingSequence.length > 0 ? ` (${formatFieldingSequence(fieldingSequence)})` : ''}
+                        {stashedOutResult === 'double_play' ? 'Record DP' : stashedOutResult === 'triple_play' ? 'Record TP' : 'Record Out'}{fieldingSequence.length > 0 ? ` (${formatFieldingSequence(fieldingSequence)})` : ''}
                       </button>
                       <button
                         onClick={() => {
@@ -1509,7 +1518,12 @@ export function ScoringBoard({
                               setPendingTrajectory(value);
                               setErrorPending(true);
                               setPendingResult(null);
-                            } else if (pendingResult === 'out' || pendingResult === 'field_choice') {
+                            } else if (
+                              pendingResult === 'out' ||
+                              pendingResult === 'field_choice' ||
+                              pendingResult === 'double_play' ||
+                              pendingResult === 'triple_play'
+                            ) {
                               setStashedOutResult(pendingResult);
                               setPendingTrajectory(value);
                               setPendingResult(null);
@@ -1539,14 +1553,23 @@ export function ScoringBoard({
                       In play — what happened?
                     </p>
                     <div className="grid grid-cols-3 gap-2">
-                      {(['single', 'double', 'triple', 'home_run', 'out', 'field_choice'] as const).map((r) => (
+                      {([
+                        { value: 'single',      label: 'Single' },
+                        { value: 'double',      label: 'Double' },
+                        { value: 'triple',      label: 'Triple' },
+                        { value: 'home_run',    label: 'HR' },
+                        { value: 'out',         label: 'Out' },
+                        { value: 'double_play', label: 'DP' },
+                        { value: 'triple_play', label: 'TP' },
+                        { value: 'field_choice', label: 'FC' },
+                      ] as const).map(({ value, label }) => (
                         <button
-                          key={r}
-                          onClick={() => setPendingResult(r)}
+                          key={value}
+                          onClick={() => setPendingResult(value)}
                           disabled={!sprayPoint}
-                          className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:hover:bg-gray-50 capitalize"
+                          className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:hover:bg-gray-50"
                         >
-                          {r === 'home_run' ? 'HR' : r === 'field_choice' ? 'FC' : r.charAt(0).toUpperCase() + r.slice(1)}
+                          {label}
                         </button>
                       ))}
                       <button
