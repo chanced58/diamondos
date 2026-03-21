@@ -161,6 +161,7 @@ type PbpHalfInning = {
   label: string;
   atBats: PbpAtBat[];
   runs: number;
+  sidelineEvents: string[]; // notes before the first at-bat (e.g. pre-inning pitching change)
 };
 
 function buildPlayByPlay(
@@ -191,7 +192,7 @@ function buildPlayByPlay(
         key: `${inning}-${isTop ? 'T' : 'B'}`,
         inning, isTop,
         label: `${ordinal(inning)} — ${isTop ? 'Top' : 'Bottom'}`,
-        atBats: [], runs: 0,
+        atBats: [], runs: 0, sidelineEvents: [],
       };
     }
   }
@@ -266,6 +267,8 @@ function buildPlayByPlay(
       if (currentAB) currentAB.sidelineEvents.push(note);
       else if (currentHalf && currentHalf.atBats.length > 0) {
         currentHalf.atBats[currentHalf.atBats.length - 1].sidelineEvents.push(note);
+      } else if (currentHalf) {
+        currentHalf.sidelineEvents.push(note);
       }
     } else if (etype === 'caught_stealing') {
       const runnerId = payload.runnerId as string | undefined;
@@ -274,6 +277,8 @@ function buildPlayByPlay(
       if (currentAB) currentAB.sidelineEvents.push(note);
       else if (currentHalf && currentHalf.atBats.length > 0) {
         currentHalf.atBats[currentHalf.atBats.length - 1].sidelineEvents.push(note);
+      } else if (currentHalf) {
+        currentHalf.sidelineEvents.push(note);
       }
     } else if (etype === 'pitching_change') {
       const newId = payload.newPitcherId as string | undefined;
@@ -282,6 +287,8 @@ function buildPlayByPlay(
       if (currentAB) currentAB.sidelineEvents.push(note);
       else if (currentHalf && currentHalf.atBats.length > 0) {
         currentHalf.atBats[currentHalf.atBats.length - 1].sidelineEvents.push(note);
+      } else if (currentHalf) {
+        currentHalf.sidelineEvents.push(note);
       }
     } else if (etype === 'substitution') {
       const inId = payload.inPlayerId as string | undefined;
@@ -294,6 +301,8 @@ function buildPlayByPlay(
       if (currentAB) currentAB.sidelineEvents.push(note);
       else if (currentHalf && currentHalf.atBats.length > 0) {
         currentHalf.atBats[currentHalf.atBats.length - 1].sidelineEvents.push(note);
+      } else if (currentHalf) {
+        currentHalf.sidelineEvents.push(note);
       }
     }
   }
@@ -686,6 +695,13 @@ function PlayByPlayView({
 
             {halfOpen && (
               <div className="divide-y divide-gray-100 bg-white">
+                {half.sidelineEvents.length > 0 && (
+                  <div className="px-5 py-2 space-y-0.5">
+                    {half.sidelineEvents.map((note, si) => (
+                      <div key={si} className="text-xs text-indigo-600 italic">{note}</div>
+                    ))}
+                  </div>
+                )}
                 {half.atBats.map((ab) => {
                   const abOpen = openABs.has(ab.key);
                   return (

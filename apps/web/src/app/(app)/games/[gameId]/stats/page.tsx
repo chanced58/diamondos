@@ -246,8 +246,9 @@ function computeOpponentBatting(
       if (etype === 'score') {
         const scoringId = payload.scoringPlayerId as string | undefined;
         const isOpp = payload.isOpponentScore as boolean | undefined;
-        if (scoringId && isOpp && stats.has(scoringId)) {
-          stats.get(scoringId)!.r++;
+        // Use get() to create a row for pinch runners who score but never batted
+        if (scoringId && isOpp && oppPlayerNameMap.has(scoringId)) {
+          get(scoringId).r++;
         }
       }
       continue;
@@ -314,12 +315,13 @@ export default async function GameStatsPage({
       .select('role')
       .eq('team_id', game.team_id)
       .eq('user_id', user.id)
+      .eq('is_active', true)
       .single();
     if (!membership) notFound();
   }
 
-  // Only show stats for games that have been started
-  if (game.status === 'scheduled') {
+  // Only show stats for games that have been started (in_progress or completed)
+  if (['scheduled', 'cancelled', 'postponed'].includes(game.status)) {
     return (
       <div className="p-8 max-w-2xl">
         <Link href={`/games/${params.gameId}`} className="text-sm text-brand-700 hover:underline">
