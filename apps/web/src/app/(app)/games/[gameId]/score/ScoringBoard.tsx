@@ -567,6 +567,7 @@ export function ScoringBoard({
     toBase: 2 | 3 | 4;
   } | null>(null);
   const [advanceErrorBy, setAdvanceErrorBy] = useState<number | null>(null);
+  const [advancePendingReason, setAdvancePendingReason] = useState<string | null>(null);
   // Rundown panel state
   const [showRundown, setShowRundown] = useState(false);
   const [rundownRunnerId, setRundownRunnerId] = useState('');
@@ -589,6 +590,8 @@ export function ScoringBoard({
   const [endGameError, endGameFormAction] = useFormState(endGameAction, null);
   // Shown when a game event fails to persist to Supabase
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Spray chart overlay toggle
+  const [showSprayChart, setShowSprayChart] = useState(false);
   // WP / PB modifier toggles — applied to the next pitch recorded
   const [wildPitchPending, setWildPitchPending] = useState(false);
   const [passedBallPending, setPassedBallPending] = useState(false);
@@ -1073,6 +1076,7 @@ export function ScoringBoard({
   function handleAdvanceClick(runnerId: string, fromBase: 1 | 2 | 3, toBase: 2 | 3 | 4) {
     setPendingAdvance({ runnerId, fromBase, toBase });
     setAdvanceErrorBy(null);
+    setAdvancePendingReason(null);
   }
 
   async function handleRunnerAdvance(runnerId: string, fromBase: 1 | 2 | 3, toBase: 2 | 3 | 4, reason?: string, errorBy?: number | null, relatedEventId?: string | null) {
@@ -1086,6 +1090,7 @@ export function ScoringBoard({
     }
     setPendingAdvance(null);
     setAdvanceErrorBy(null);
+    setAdvancePendingReason(null);
   }
 
   async function handleBalk() {
@@ -1179,9 +1184,13 @@ export function ScoringBoard({
     await recordEvent('inning_change', {});
   }
 
-  async function handlePitchingChange(newPitcherId: string) {
+  async function handlePitchingChange(newPitcherId: string, isOpponent = false) {
     const outgoingPitcherId = activePitcherId ?? '';
-    await recordEvent('pitching_change', { newPitcherId, outgoingPitcherId });
+    await recordEvent('pitching_change', {
+      newPitcherId,
+      outgoingPitcherId,
+      ...(isOpponent ? { isOpponentChange: true } : {}),
+    });
     setShowPitchingChange(false);
   }
 
@@ -1400,11 +1409,20 @@ export function ScoringBoard({
                       </div>
                     )}
                     {localConfig.sprayChart && !isOpponentBatting && currentBatter && (
-                      <BatterSprayChart
-                        allHitPoints={tendencyHitPointsWithCount}
-                        currentBalls={gameState.balls}
-                        currentStrikes={gameState.strikes}
-                      />
+                      <button
+                        onClick={() => setShowSprayChart((v) => !v)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                          showSprayChart
+                            ? 'bg-brand-600 text-white border-brand-700'
+                            : 'bg-white border-gray-300 text-gray-600 hover:border-brand-400'
+                        }`}
+                        title="Toggle batter tendency spray chart"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
+                        </svg>
+                        Spray Chart
+                      </button>
                     )}
                   </div>
                 )}
@@ -1877,67 +1895,104 @@ export function ScoringBoard({
                     {/* Advance reason picker — shown inline when this runner has a pending advance */}
                     {isPendingThis && pendingAdvance && (
                       <div className="mt-2 ml-7 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                        <p className="text-xs font-semibold text-gray-500 mb-2">Reason for advance</p>
-                        <div className="flex flex-wrap gap-1.5 mb-2">
-                          {([
-                            { label: 'On Play',    value: 'on_play' },
-                            { label: 'Overthrow',  value: 'overthrow' },
-                            { label: 'Error',      value: 'error' },
-                            { label: 'Wild Pitch', value: 'wild_pitch' },
-                            { label: 'Passed Ball',value: 'passed_ball' },
-                            { label: 'Balk',       value: 'balk' },
-                            { label: 'Voluntary',  value: 'voluntary' },
-                          ] as const).map(({ label, value }) => {
-                            const isOnPlay = value === 'on_play';
-                            const lastInPlayEvent = isOnPlay
-                              ? [...effectiveEventRows].reverse().find(
-                                  (e) => (e.event_type as string) === 'pitch_thrown' &&
-                                    ((e.payload as Record<string, unknown>)?.outcome as string) === 'in_play'
-                                )
-                              : null;
-                            return (
+                        {advancePendingReason === 'error' || advancePendingReason === 'overthrow' ? (
+                          /* ── Step 2: Fielder who committed the error/overthrow (required) ── */
+                          <>
+                            <p className="text-xs font-semibold text-gray-500 mb-2">
+                              Who made the {advancePendingReason === 'error' ? 'error' : 'overthrow'}?
+                            </p>
+                            <div className="flex flex-wrap gap-1 mb-3">
+                              {[
+                                { n: 1, label: 'P' }, { n: 2, label: 'C' }, { n: 3, label: '1B' },
+                                { n: 4, label: '2B' }, { n: 5, label: '3B' }, { n: 6, label: 'SS' },
+                                { n: 7, label: 'LF' }, { n: 8, label: 'CF' }, { n: 9, label: 'RF' },
+                              ].map(({ n, label }) => (
+                                <button
+                                  key={n}
+                                  onClick={() => setAdvanceErrorBy(advanceErrorBy === n ? null : n)}
+                                  className={`px-2.5 py-1 text-xs font-medium rounded border transition-colors ${advanceErrorBy === n ? 'bg-brand-600 text-white border-brand-700' : 'bg-white border-gray-300 text-gray-600 hover:border-brand-400'}`}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="flex items-center gap-3">
                               <button
-                                key={value}
                                 onClick={() => handleRunnerAdvance(
                                   pendingAdvance.runnerId,
                                   pendingAdvance.fromBase,
                                   pendingAdvance.toBase,
-                                  value,
+                                  advancePendingReason,
                                   advanceErrorBy,
-                                  lastInPlayEvent ? (lastInPlayEvent.id as string) : null,
+                                  null,
                                 )}
-                                className="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:border-brand-400 hover:text-brand-700 transition-colors"
+                                disabled={advanceErrorBy == null}
+                                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                               >
-                                {label}
+                                Confirm
                               </button>
-                            );
-                          })}
-                        </div>
-                        {/* Fielder selector for overthrow/error */}
-                        <div className="mb-2">
-                          <p className="text-[10px] text-gray-400 mb-1">Fielder (for OT/Error)</p>
-                          <div className="flex flex-wrap gap-1">
-                            {[
-                              { n: 1, label: 'P' }, { n: 2, label: 'C' }, { n: 3, label: '1B' },
-                              { n: 4, label: '2B' }, { n: 5, label: '3B' }, { n: 6, label: 'SS' },
-                              { n: 7, label: 'LF' }, { n: 8, label: 'CF' }, { n: 9, label: 'RF' },
-                            ].map(({ n, label }) => (
                               <button
-                                key={n}
-                                onClick={() => setAdvanceErrorBy(advanceErrorBy === n ? null : n)}
-                                className={`px-2 py-0.5 text-xs rounded border transition-colors ${advanceErrorBy === n ? 'bg-brand-600 text-white border-brand-700' : 'bg-white border-gray-300 text-gray-600 hover:border-brand-400'}`}
+                                onClick={() => { setAdvancePendingReason(null); setAdvanceErrorBy(null); }}
+                                className="text-xs text-gray-400 hover:text-gray-600"
                               >
-                                {label}
+                                ← Back
                               </button>
-                            ))}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => { setPendingAdvance(null); setAdvanceErrorBy(null); }}
-                          className="text-xs text-gray-400 hover:text-gray-600"
-                        >
-                          Cancel
-                        </button>
+                            </div>
+                          </>
+                        ) : (
+                          /* ── Step 1: Reason selection ── */
+                          <>
+                            <p className="text-xs font-semibold text-gray-500 mb-2">Reason for advance</p>
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                              {([
+                                { label: 'On Play',    value: 'on_play' },
+                                { label: 'Overthrow',  value: 'overthrow' },
+                                { label: 'Error',      value: 'error' },
+                                { label: 'Wild Pitch', value: 'wild_pitch' },
+                                { label: 'Passed Ball',value: 'passed_ball' },
+                                { label: 'Balk',       value: 'balk' },
+                                { label: 'Voluntary',  value: 'voluntary' },
+                              ] as const).map(({ label, value }) => {
+                                const needsFielder = value === 'error' || value === 'overthrow';
+                                const lastInPlayEvent = value === 'on_play'
+                                  ? [...effectiveEventRows].reverse().find(
+                                      (e) => (e.event_type as string) === 'pitch_thrown' &&
+                                        ((e.payload as Record<string, unknown>)?.outcome as string) === 'in_play'
+                                    )
+                                  : null;
+                                return (
+                                  <button
+                                    key={value}
+                                    onClick={() => {
+                                      if (needsFielder) {
+                                        setAdvancePendingReason(value);
+                                        setAdvanceErrorBy(null);
+                                      } else {
+                                        handleRunnerAdvance(
+                                          pendingAdvance.runnerId,
+                                          pendingAdvance.fromBase,
+                                          pendingAdvance.toBase,
+                                          value,
+                                          null,
+                                          lastInPlayEvent ? (lastInPlayEvent.id as string) : null,
+                                        );
+                                      }
+                                    }}
+                                    className="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:border-brand-400 hover:text-brand-700 transition-colors"
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <button
+                              onClick={() => { setPendingAdvance(null); setAdvancePendingReason(null); }}
+                              className="text-xs text-gray-400 hover:text-gray-600"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2080,23 +2135,36 @@ export function ScoringBoard({
         )}
         {isCoach && showPitchingChange && (
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-sm font-semibold text-gray-700 mb-3">Select new pitcher</p>
-            <div className="space-y-1">
-              {(teamRoster ?? lineup.map((lineupEntry) => lineupEntry.player))
-                .filter((pitcher): pitcher is typeof pitcher & { id: string } => pitcher.id !== null && pitcher.id !== activePitcherId)
-                .map((pitcher) => (
-                  <button
-                    key={pitcher.id}
-                    onClick={() => handlePitchingChange(pitcher.id)}
-                    className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    {pitcher.lastName}, {pitcher.firstName}
-                    {pitcher.jerseyNumber != null && (
-                      <span className="text-gray-400 ml-1">#{pitcher.jerseyNumber}</span>
-                    )}
-                  </button>
-                ))}
-            </div>
+            {(() => {
+              // Show the defensive team's pitchers: our team when opponent bats, opponent when we bat
+              const isOpponentPitching = !isOpponentBatting;
+              const pitcherPool = isOpponentPitching
+                ? (opponentRoster ?? (opponentLineup ?? []).map((e) => e.player))
+                : (teamRoster ?? lineup.map((e) => e.player));
+              return (
+                <>
+                  <p className="text-sm font-semibold text-gray-700 mb-3">
+                    New pitcher — {isOpponentPitching ? 'Opponent' : 'Our Team'}
+                  </p>
+                  <div className="space-y-1">
+                    {pitcherPool
+                      .filter((p): p is typeof p & { id: string } => p.id !== null && p.id !== activePitcherId)
+                      .map((pitcher) => (
+                        <button
+                          key={pitcher.id}
+                          onClick={() => handlePitchingChange(pitcher.id, isOpponentPitching)}
+                          className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                          {pitcher.lastName}, {pitcher.firstName}
+                          {pitcher.jerseyNumber != null && (
+                            <span className="text-gray-400 ml-1">#{pitcher.jerseyNumber}</span>
+                          )}
+                        </button>
+                      ))}
+                  </div>
+                </>
+              );
+            })()}
             <button
               onClick={() => setShowPitchingChange(false)}
               className="mt-2 text-xs text-gray-400 hover:text-gray-600"
@@ -2119,7 +2187,16 @@ export function ScoringBoard({
         {/* ── Substitution ───────────────────────────────────────────── */}
         {isCoach && !showSubstitution && (
           <button
-            onClick={() => { setShowSubstitution(true); setSubType(null); setSubOutPlayerId(''); setSubInPlayerId(''); setSubRunnerBase(null); setSubNewPosition(''); }}
+            onClick={() => {
+              setShowSubstitution(true);
+              // Default to the team currently on defense
+              setSubTeam(isOpponentBatting ? 'us' : 'opponent');
+              setSubType(null);
+              setSubOutPlayerId('');
+              setSubInPlayerId('');
+              setSubRunnerBase(null);
+              setSubNewPosition('');
+            }}
             className="w-full text-sm text-gray-500 hover:text-gray-700 py-2"
           >
             Substitution…
@@ -2356,6 +2433,45 @@ export function ScoringBoard({
           </div>
         )}
       </div>
+
+      {/* ── Spray Chart Modal ─────────────────────────────────── */}
+      {showSprayChart && localConfig.sprayChart && !isOpponentBatting && currentBatter && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          onClick={() => setShowSprayChart(false)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-sm shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 pt-4 pb-2 border-b border-gray-100">
+              <div>
+                <p className="font-semibold text-gray-900 text-sm">
+                  {currentBatter.player.firstName} {currentBatter.player.lastName}
+                  {currentBatter.player.jerseyNumber != null ? ` #${currentBatter.player.jerseyNumber}` : ''}
+                </p>
+                <p className="text-xs text-gray-400">Batter tendency — {gameState.balls}-{gameState.strikes} count</p>
+              </div>
+              <button
+                onClick={() => setShowSprayChart(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors"
+                aria-label="Close spray chart"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-5">
+              <BatterSprayChart
+                allHitPoints={tendencyHitPointsWithCount}
+                currentBalls={gameState.balls}
+                currentStrikes={gameState.strikes}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
