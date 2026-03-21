@@ -567,6 +567,7 @@ export function ScoringBoard({
     toBase: 2 | 3 | 4;
   } | null>(null);
   const [advanceErrorBy, setAdvanceErrorBy] = useState<number | null>(null);
+  const [advancePendingReason, setAdvancePendingReason] = useState<string | null>(null);
   // Rundown panel state
   const [showRundown, setShowRundown] = useState(false);
   const [rundownRunnerId, setRundownRunnerId] = useState('');
@@ -1075,6 +1076,7 @@ export function ScoringBoard({
   function handleAdvanceClick(runnerId: string, fromBase: 1 | 2 | 3, toBase: 2 | 3 | 4) {
     setPendingAdvance({ runnerId, fromBase, toBase });
     setAdvanceErrorBy(null);
+    setAdvancePendingReason(null);
   }
 
   async function handleRunnerAdvance(runnerId: string, fromBase: 1 | 2 | 3, toBase: 2 | 3 | 4, reason?: string, errorBy?: number | null, relatedEventId?: string | null) {
@@ -1088,6 +1090,7 @@ export function ScoringBoard({
     }
     setPendingAdvance(null);
     setAdvanceErrorBy(null);
+    setAdvancePendingReason(null);
   }
 
   async function handleBalk() {
@@ -1888,67 +1891,104 @@ export function ScoringBoard({
                     {/* Advance reason picker — shown inline when this runner has a pending advance */}
                     {isPendingThis && pendingAdvance && (
                       <div className="mt-2 ml-7 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                        <p className="text-xs font-semibold text-gray-500 mb-2">Reason for advance</p>
-                        <div className="flex flex-wrap gap-1.5 mb-2">
-                          {([
-                            { label: 'On Play',    value: 'on_play' },
-                            { label: 'Overthrow',  value: 'overthrow' },
-                            { label: 'Error',      value: 'error' },
-                            { label: 'Wild Pitch', value: 'wild_pitch' },
-                            { label: 'Passed Ball',value: 'passed_ball' },
-                            { label: 'Balk',       value: 'balk' },
-                            { label: 'Voluntary',  value: 'voluntary' },
-                          ] as const).map(({ label, value }) => {
-                            const isOnPlay = value === 'on_play';
-                            const lastInPlayEvent = isOnPlay
-                              ? [...effectiveEventRows].reverse().find(
-                                  (e) => (e.event_type as string) === 'pitch_thrown' &&
-                                    ((e.payload as Record<string, unknown>)?.outcome as string) === 'in_play'
-                                )
-                              : null;
-                            return (
+                        {advancePendingReason === 'error' || advancePendingReason === 'overthrow' ? (
+                          /* ── Step 2: Fielder who committed the error/overthrow (required) ── */
+                          <>
+                            <p className="text-xs font-semibold text-gray-500 mb-2">
+                              Who made the {advancePendingReason === 'error' ? 'error' : 'overthrow'}?
+                            </p>
+                            <div className="flex flex-wrap gap-1 mb-3">
+                              {[
+                                { n: 1, label: 'P' }, { n: 2, label: 'C' }, { n: 3, label: '1B' },
+                                { n: 4, label: '2B' }, { n: 5, label: '3B' }, { n: 6, label: 'SS' },
+                                { n: 7, label: 'LF' }, { n: 8, label: 'CF' }, { n: 9, label: 'RF' },
+                              ].map(({ n, label }) => (
+                                <button
+                                  key={n}
+                                  onClick={() => setAdvanceErrorBy(advanceErrorBy === n ? null : n)}
+                                  className={`px-2.5 py-1 text-xs font-medium rounded border transition-colors ${advanceErrorBy === n ? 'bg-brand-600 text-white border-brand-700' : 'bg-white border-gray-300 text-gray-600 hover:border-brand-400'}`}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="flex items-center gap-3">
                               <button
-                                key={value}
                                 onClick={() => handleRunnerAdvance(
                                   pendingAdvance.runnerId,
                                   pendingAdvance.fromBase,
                                   pendingAdvance.toBase,
-                                  value,
+                                  advancePendingReason,
                                   advanceErrorBy,
-                                  lastInPlayEvent ? (lastInPlayEvent.id as string) : null,
+                                  null,
                                 )}
-                                className="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:border-brand-400 hover:text-brand-700 transition-colors"
+                                disabled={advanceErrorBy == null}
+                                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                               >
-                                {label}
+                                Confirm
                               </button>
-                            );
-                          })}
-                        </div>
-                        {/* Fielder selector for overthrow/error */}
-                        <div className="mb-2">
-                          <p className="text-[10px] text-gray-400 mb-1">Fielder (for OT/Error)</p>
-                          <div className="flex flex-wrap gap-1">
-                            {[
-                              { n: 1, label: 'P' }, { n: 2, label: 'C' }, { n: 3, label: '1B' },
-                              { n: 4, label: '2B' }, { n: 5, label: '3B' }, { n: 6, label: 'SS' },
-                              { n: 7, label: 'LF' }, { n: 8, label: 'CF' }, { n: 9, label: 'RF' },
-                            ].map(({ n, label }) => (
                               <button
-                                key={n}
-                                onClick={() => setAdvanceErrorBy(advanceErrorBy === n ? null : n)}
-                                className={`px-2 py-0.5 text-xs rounded border transition-colors ${advanceErrorBy === n ? 'bg-brand-600 text-white border-brand-700' : 'bg-white border-gray-300 text-gray-600 hover:border-brand-400'}`}
+                                onClick={() => { setAdvancePendingReason(null); setAdvanceErrorBy(null); }}
+                                className="text-xs text-gray-400 hover:text-gray-600"
                               >
-                                {label}
+                                ← Back
                               </button>
-                            ))}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => { setPendingAdvance(null); setAdvanceErrorBy(null); }}
-                          className="text-xs text-gray-400 hover:text-gray-600"
-                        >
-                          Cancel
-                        </button>
+                            </div>
+                          </>
+                        ) : (
+                          /* ── Step 1: Reason selection ── */
+                          <>
+                            <p className="text-xs font-semibold text-gray-500 mb-2">Reason for advance</p>
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                              {([
+                                { label: 'On Play',    value: 'on_play' },
+                                { label: 'Overthrow',  value: 'overthrow' },
+                                { label: 'Error',      value: 'error' },
+                                { label: 'Wild Pitch', value: 'wild_pitch' },
+                                { label: 'Passed Ball',value: 'passed_ball' },
+                                { label: 'Balk',       value: 'balk' },
+                                { label: 'Voluntary',  value: 'voluntary' },
+                              ] as const).map(({ label, value }) => {
+                                const needsFielder = value === 'error' || value === 'overthrow';
+                                const lastInPlayEvent = value === 'on_play'
+                                  ? [...effectiveEventRows].reverse().find(
+                                      (e) => (e.event_type as string) === 'pitch_thrown' &&
+                                        ((e.payload as Record<string, unknown>)?.outcome as string) === 'in_play'
+                                    )
+                                  : null;
+                                return (
+                                  <button
+                                    key={value}
+                                    onClick={() => {
+                                      if (needsFielder) {
+                                        setAdvancePendingReason(value);
+                                        setAdvanceErrorBy(null);
+                                      } else {
+                                        handleRunnerAdvance(
+                                          pendingAdvance.runnerId,
+                                          pendingAdvance.fromBase,
+                                          pendingAdvance.toBase,
+                                          value,
+                                          null,
+                                          lastInPlayEvent ? (lastInPlayEvent.id as string) : null,
+                                        );
+                                      }
+                                    }}
+                                    className="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:border-brand-400 hover:text-brand-700 transition-colors"
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <button
+                              onClick={() => { setPendingAdvance(null); setAdvancePendingReason(null); }}
+                              className="text-xs text-gray-400 hover:text-gray-600"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
