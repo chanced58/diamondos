@@ -170,6 +170,14 @@ export function deriveGameState(
         break;
       }
 
+      case EventType.TRIPLE_PLAY: {
+        state.outs = Math.min(state.outs + 3, OUTS_PER_INNING);
+        state.balls = 0;
+        state.strikes = 0;
+        incrementPA(state);
+        break;
+      }
+
       case EventType.INNING_CHANGE: {
         state.outs = 0;
         state.balls = 0;
