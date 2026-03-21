@@ -205,6 +205,10 @@ function buildPlayByPlay(
 
     if (!inning) continue;
     ensureHalf(inning, isTop);
+    // Snapshot to a const so TypeScript doesn't widen through closure captures
+    // on the let variable across the else-if chain below.
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const half = currentHalf!;
 
     if (etype === 'pitch_thrown') {
       const batterId = ((payload.batterId ?? payload.opponentBatterId) as string | undefined) ?? null;
@@ -257,38 +261,38 @@ function buildPlayByPlay(
         currentAB.rbis = (payload.rbis as number) ?? 0;
       }
       pushAB();
-    } else if (etype === 'score' && currentHalf) {
-      currentHalf.runs += (payload.rbis as number) ?? 1;
+    } else if (etype === 'score') {
+      half.runs += (payload.rbis as number) ?? 1;
     } else if (etype === 'stolen_base') {
       const runnerId = payload.runnerId as string | undefined;
       const name = runnerId ? (nameMap.get(runnerId) ?? 'Runner') : 'Runner';
       const to = payload.toBase as number ?? 2;
       const note = `SB: ${name} stole ${ordinal(to)} base`;
       if (currentAB) currentAB.sidelineEvents.push(note);
-      else if (currentHalf && currentHalf.atBats.length > 0) {
-        currentHalf.atBats[currentHalf.atBats.length - 1].sidelineEvents.push(note);
-      } else if (currentHalf) {
-        currentHalf.sidelineEvents.push(note);
+      else if (half.atBats.length > 0) {
+        half.atBats[half.atBats.length - 1].sidelineEvents.push(note);
+      } else {
+        half.sidelineEvents.push(note);
       }
     } else if (etype === 'caught_stealing') {
       const runnerId = payload.runnerId as string | undefined;
       const name = runnerId ? (nameMap.get(runnerId) ?? 'Runner') : 'Runner';
       const note = `CS: ${name} caught stealing`;
       if (currentAB) currentAB.sidelineEvents.push(note);
-      else if (currentHalf && currentHalf.atBats.length > 0) {
-        currentHalf.atBats[currentHalf.atBats.length - 1].sidelineEvents.push(note);
-      } else if (currentHalf) {
-        currentHalf.sidelineEvents.push(note);
+      else if (half.atBats.length > 0) {
+        half.atBats[half.atBats.length - 1].sidelineEvents.push(note);
+      } else {
+        half.sidelineEvents.push(note);
       }
     } else if (etype === 'pitching_change') {
       const newId = payload.newPitcherId as string | undefined;
       const name = newId ? (nameMap.get(newId) ?? 'Unknown') : 'Unknown';
       const note = `Pitching change: ${name}`;
       if (currentAB) currentAB.sidelineEvents.push(note);
-      else if (currentHalf && currentHalf.atBats.length > 0) {
-        currentHalf.atBats[currentHalf.atBats.length - 1].sidelineEvents.push(note);
-      } else if (currentHalf) {
-        currentHalf.sidelineEvents.push(note);
+      else if (half.atBats.length > 0) {
+        half.atBats[half.atBats.length - 1].sidelineEvents.push(note);
+      } else {
+        half.sidelineEvents.push(note);
       }
     } else if (etype === 'substitution') {
       const inId = payload.inPlayerId as string | undefined;
@@ -299,10 +303,10 @@ function buildPlayByPlay(
       let note = `Sub: ${outName} → ${inName}`;
       if (subType === 'position_change') note = `Position change: ${inName}`;
       if (currentAB) currentAB.sidelineEvents.push(note);
-      else if (currentHalf && currentHalf.atBats.length > 0) {
-        currentHalf.atBats[currentHalf.atBats.length - 1].sidelineEvents.push(note);
-      } else if (currentHalf) {
-        currentHalf.sidelineEvents.push(note);
+      else if (half.atBats.length > 0) {
+        half.atBats[half.atBats.length - 1].sidelineEvents.push(note);
+      } else {
+        half.sidelineEvents.push(note);
       }
     }
   }
