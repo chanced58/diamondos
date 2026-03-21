@@ -227,6 +227,21 @@ export function deriveGameState(
         break;
       }
 
+      case EventType.BASERUNNER_OUT: {
+        // A specific runner is called out (e.g., on a fielder's choice).
+        // The batter's PA is handled by a subsequent HIT event, so do NOT
+        // reset balls/strikes or increment PA here.
+        const p = event.payload as Record<string, unknown>;
+        const runnerId = p.runnerId as string;
+        const runners = { ...state.runnersOnBase };
+        if (runners.first  === runnerId) runners.first  = null;
+        else if (runners.second === runnerId) runners.second = null;
+        else if (runners.third  === runnerId) runners.third  = null;
+        state.runnersOnBase = runners;
+        state.outs++;
+        break;
+      }
+
       case EventType.CAUGHT_STEALING: {
         const p = event.payload as unknown as BaserunnerMovePayload;
         const runners = { ...state.runnersOnBase };

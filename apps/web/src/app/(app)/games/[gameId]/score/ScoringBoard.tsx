@@ -558,6 +558,9 @@ export function ScoringBoard({
   // Out-assignment step for DP/TP: maps each out slot to a player ID
   const [outAssignmentPending, setOutAssignmentPending] = useState(false);
   const [outAssignments, setOutAssignments] = useState<(string | null)[]>([]);
+  // Fielder's choice: waiting for user to identify which runner is called out
+  const [fcRunnerOutPending, setFcRunnerOutPending] = useState(false);
+  const [fcOutRunnerId, setFcOutRunnerId] = useState<string | null>(null);
   // Track pitching change UI
   const [showPitchingChange, setShowPitchingChange] = useState(false);
   // Pending baserunner advance — waiting for reason selection
@@ -610,6 +613,8 @@ export function ScoringBoard({
     setPassedBallPending(false);
     setOutAssignmentPending(false);
     setOutAssignments([]);
+    setFcRunnerOutPending(false);
+    setFcOutRunnerId(null);
   }
 
   // Apply PITCH_REVERTED markers: each reverts the event list to a given sequence
@@ -998,6 +1003,39 @@ export function ScoringBoard({
     }
   }
 
+  // Fielder's choice: the identified runner is called out, batter reaches 1st,
+  // and deriveGameState's HIT(single) case naturally advances remaining runners
+  // and scores any runner who was on third.
+  async function handleFielderChoice(outRunnerId: string | null) {
+    setInPlayPending(false);
+    setFcRunnerOutPending(false);
+    const batterId = activeBatterId ?? 'unknown-batter';
+    const pitcherId = activePitcherId ?? 'unknown-pitcher';
+
+    const pitchExtra: Record<string, unknown> = {};
+    if (pitchType) pitchExtra.pitchType = pitchType;
+    if (zoneLocation !== null) pitchExtra.zoneLocation = zoneLocation;
+    if (wildPitchPending) pitchExtra.isWildPitch = true;
+    if (passedBallPending) pitchExtra.isPassedBall = true;
+
+    const sprayExtra: Record<string, unknown> = sprayPoint
+      ? { sprayX: sprayPoint.x, sprayY: sprayPoint.y }
+      : {};
+    const seqExtra: Record<string, unknown> = fieldingSequence.length > 0
+      ? { fieldingSequence: [...fieldingSequence] }
+      : {};
+    const trajectory = pendingTrajectory ?? 'ground_ball';
+
+    await recordEvent('pitch_thrown', { pitcherId, batterId, outcome: 'in_play', ...pitchExtra });
+    resetAnnotations();
+
+    if (outRunnerId) {
+      await recordEvent('baserunner_out', { runnerId: outRunnerId, pitcherId, ...seqExtra });
+    }
+    // Batter reaches 1st; deriveGameState advances remaining runners and scores runner on 3rd
+    await recordEvent('hit', { batterId, pitcherId, hitType: 'single', trajectory, rbis: 0, ...sprayExtra });
+  }
+
   async function handleError(errorPosition: string) {
     setInPlayPending(false);
     setErrorPending(false);
@@ -1178,6 +1216,8 @@ export function ScoringBoard({
     setStashedOutResult(null);
     setOutAssignmentPending(false);
     setOutAssignments([]);
+    setFcRunnerOutPending(false);
+    setFcOutRunnerId(null);
   }
 
   async function handleInningChange() {
@@ -1538,6 +1578,74 @@ export function ScoringBoard({
                       </div>
                     );
                   })()
+                ) : fcRunnerOutPending ? (
+                  /* ── Step 4b: Fielder's choice — which runner is called out? ── */
+                  (() => {
+                    const onBaseRunners: { id: string; label: string; base: 1 | 2 | 3 }[] = [];
+                    if (gameState.runnersOnBase.first) {
+                      onBaseRunners.push({ id: gameState.runnersOnBase.first, base: 1, label: `1st — ${getRunnerLabel(gameState.runnersOnBase.first)}` });
+                    }
+                    if (gameState.runnersOnBase.second) {
+                      onBaseRunners.push({ id: gameState.runnersOnBase.second, base: 2, label: `2nd — ${getRunnerLabel(gameState.runnersOnBase.second)}` });
+                    }
+                    if (gameState.runnersOnBase.third) {
+                      onBaseRunners.push({ id: gameState.runnersOnBase.third, base: 3, label: `3rd — ${getRunnerLabel(gameState.runnersOnBase.third)}` });
+                    }
+                    return (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                          Which runner is called out?
+                        </p>
+                        <p className="text-xs text-gray-400 mb-3">
+                          Batter reaches 1st. All other runners advance one base.
+                        </p>
+                        {onBaseRunners.length === 0 ? (
+                          <p className="text-xs text-gray-500 italic mb-3">No runners on base — batter will be placed on 1st.</p>
+                        ) : (
+                          <div className="space-y-1.5 mb-3">
+                            {onBaseRunners.map((r) => (
+                              <button
+                                key={r.id}
+                                onClick={() => setFcOutRunnerId(fcOutRunnerId === r.id ? null : r.id)}
+                                className={`w-full text-left px-3 py-2 text-sm rounded-lg border transition-colors ${
+                                  fcOutRunnerId === r.id
+                                    ? 'bg-brand-50 border-brand-400 text-brand-800 font-medium'
+                                    : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
+                                }`}
+                              >
+                                {r.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => handleFielderChoice(fcOutRunnerId)}
+                            disabled={onBaseRunners.length > 0 && fcOutRunnerId == null}
+                            className="flex-1 py-2 text-sm font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                          >
+                            Record FC
+                            {fieldingSequence.length > 0 ? ` (${formatFieldingSequence(fieldingSequence)})` : ''}
+                          </button>
+                          <button
+                            onClick={() => handleFielderChoice(null)}
+                            className="text-xs text-gray-400 hover:text-gray-600 underline"
+                          >
+                            Skip
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setFcRunnerOutPending(false);
+                            setFieldingSequencePending(true);
+                          }}
+                          className="text-xs text-gray-400 hover:text-gray-600 mt-2 block"
+                        >
+                          ← Back to fielding sequence
+                        </button>
+                      </div>
+                    );
+                  })()
                 ) : fieldingSequencePending && stashedOutResult ? (
                   /* ── Step 3: Fielding sequence picker (for outs) ── */
                   <div>
@@ -1581,6 +1689,10 @@ export function ScoringBoard({
                             setOutAssignments(new Array(numOuts).fill(null));
                             setOutAssignmentPending(true);
                             setFieldingSequencePending(false);
+                          } else if (stashedOutResult === 'field_choice') {
+                            setFcOutRunnerId(null);
+                            setFcRunnerOutPending(true);
+                            setFieldingSequencePending(false);
                           } else {
                             handleInPlay(stashedOutResult, pendingTrajectory ?? 'ground_ball', fieldingSequence);
                           }
@@ -1588,7 +1700,12 @@ export function ScoringBoard({
                         disabled={fieldingSequence.length === 0}
                         className="flex-1 py-2 text-sm font-semibold rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-brand-700 text-white hover:bg-brand-800 disabled:hover:bg-brand-700"
                       >
-                        {stashedOutResult === 'double_play' ? 'Next: Assign Outs' : stashedOutResult === 'triple_play' ? 'Next: Assign Outs' : 'Record Out'}{fieldingSequence.length > 0 ? ` (${formatFieldingSequence(fieldingSequence)})` : ''}
+                        {stashedOutResult === 'field_choice'
+                          ? 'Next: Select Out Runner'
+                          : (stashedOutResult === 'double_play' || stashedOutResult === 'triple_play')
+                            ? 'Next: Assign Outs'
+                            : 'Record Out'}
+                        {fieldingSequence.length > 0 ? ` (${formatFieldingSequence(fieldingSequence)})` : ''}
                       </button>
                       <button
                         onClick={() => {
@@ -1597,13 +1714,17 @@ export function ScoringBoard({
                             setOutAssignments(new Array(numOuts).fill(null));
                             setOutAssignmentPending(true);
                             setFieldingSequencePending(false);
+                          } else if (stashedOutResult === 'field_choice') {
+                            setFcOutRunnerId(null);
+                            setFcRunnerOutPending(true);
+                            setFieldingSequencePending(false);
                           } else {
                             handleInPlay(stashedOutResult, pendingTrajectory ?? 'ground_ball');
                           }
                         }}
                         className="text-xs text-gray-400 hover:text-gray-600 underline"
                       >
-                        {stashedOutResult === 'double_play' || stashedOutResult === 'triple_play' ? 'Skip sequence' : 'Skip'}
+                        {stashedOutResult === 'field_choice' ? 'Skip sequence' : stashedOutResult === 'double_play' || stashedOutResult === 'triple_play' ? 'Skip sequence' : 'Skip'}
                       </button>
                     </div>
                     <button
