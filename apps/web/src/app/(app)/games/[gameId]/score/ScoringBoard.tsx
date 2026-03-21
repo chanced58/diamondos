@@ -555,6 +555,9 @@ export function ScoringBoard({
   const [fieldingSequence, setFieldingSequence] = useState<number[]>([]);
   // Stashed result/trajectory for the fielding sequence step (so pendingResult can be cleared)
   const [stashedOutResult, setStashedOutResult] = useState<string | null>(null);
+  // Out-assignment step for DP/TP: maps each out slot to a player ID
+  const [outAssignmentPending, setOutAssignmentPending] = useState(false);
+  const [outAssignments, setOutAssignments] = useState<(string | null)[]>([]);
   // Track pitching change UI
   const [showPitchingChange, setShowPitchingChange] = useState(false);
   // Pending baserunner advance — waiting for reason selection
@@ -602,6 +605,8 @@ export function ScoringBoard({
     setStashedOutResult(null);
     setWildPitchPending(false);
     setPassedBallPending(false);
+    setOutAssignmentPending(false);
+    setOutAssignments([]);
   }
 
   // Apply PITCH_REVERTED markers: each reverts the event list to a given sequence
@@ -822,6 +827,13 @@ export function ScoringBoard({
     return entry?.player.jerseyNumber != null ? `#${entry.player.jerseyNumber}` : null;
   };
 
+  const getRunnerLabel = (playerId: string): string => {
+    const entry = [...lineup, ...(opponentLineup ?? [])].find((l) => l.playerId === playerId);
+    if (!entry) return 'Unknown';
+    const num = entry.player.jerseyNumber != null ? ` #${entry.player.jerseyNumber}` : '';
+    return `${entry.player.lastName}${num}`;
+  };
+
   const runnerLabels = {
     first:  runnerJerseyLabel(gameState.runnersOnBase.first),
     second: runnerJerseyLabel(gameState.runnersOnBase.second),
@@ -938,8 +950,9 @@ export function ScoringBoard({
     }
   }
 
-  async function handleInPlay(result: string, trajectory: string, sequence?: number[]) {
+  async function handleInPlay(result: string, trajectory: string, sequence?: number[], assignments?: (string | null)[]) {
     setInPlayPending(false);
+    setOutAssignmentPending(false);
     setPendingResult(null);
     const batterId = activeBatterId ?? 'unknown-batter';
     const pitcherId = activePitcherId ?? 'unknown-pitcher';
@@ -948,6 +961,8 @@ export function ScoringBoard({
     const pitchExtra: Record<string, unknown> = {};
     if (pitchType) pitchExtra.pitchType = pitchType;
     if (zoneLocation !== null) pitchExtra.zoneLocation = zoneLocation;
+    if (wildPitchPending) pitchExtra.isWildPitch = true;
+    if (passedBallPending) pitchExtra.isPassedBall = true;
 
     const sprayExtra: Record<string, unknown> = sprayPoint
       ? { sprayX: sprayPoint.x, sprayY: sprayPoint.y }
@@ -956,6 +971,13 @@ export function ScoringBoard({
     await recordEvent('pitch_thrown', { pitcherId, batterId, outcome: 'in_play', ...pitchExtra });
     resetAnnotations();
 
+    const seqExtra: Record<string, unknown> = sequence && sequence.length > 0
+      ? { fieldingSequence: sequence }
+      : {};
+    const assignExtra: Record<string, unknown> = assignments && assignments.some(Boolean)
+      ? { outAssignments: assignments }
+      : {};
+
     if (result === 'out' || result === 'field_choice') {
       const outTypeMap: Record<string, string> = {
         ground_ball: 'groundout',
@@ -963,10 +985,11 @@ export function ScoringBoard({
         fly_ball:    'flyout',
       };
       const outType = outTypeMap[trajectory] ?? 'other';
-      const seqExtra: Record<string, unknown> = sequence && sequence.length > 0
-        ? { fieldingSequence: sequence }
-        : {};
       await recordEvent('out', { batterId, pitcherId, outType, trajectory, ...sprayExtra, ...seqExtra });
+    } else if (result === 'double_play') {
+      await recordEvent('double_play', { batterId, pitcherId, trajectory, ...sprayExtra, ...seqExtra, ...assignExtra });
+    } else if (result === 'triple_play') {
+      await recordEvent('triple_play', { batterId, pitcherId, trajectory, ...sprayExtra, ...seqExtra, ...assignExtra });
     } else {
       await recordEvent('hit', { batterId, pitcherId, hitType: result, trajectory, rbis: 0, ...sprayExtra });
     }
@@ -981,6 +1004,8 @@ export function ScoringBoard({
     const pitchExtra: Record<string, unknown> = {};
     if (pitchType) pitchExtra.pitchType = pitchType;
     if (zoneLocation !== null) pitchExtra.zoneLocation = zoneLocation;
+    if (wildPitchPending) pitchExtra.isWildPitch = true;
+    if (passedBallPending) pitchExtra.isPassedBall = true;
 
     const sprayExtra: Record<string, unknown> = sprayPoint
       ? { sprayX: sprayPoint.x, sprayY: sprayPoint.y }
@@ -1146,6 +1171,8 @@ export function ScoringBoard({
     setFieldingSequencePending(false);
     setFieldingSequence([]);
     setStashedOutResult(null);
+    setOutAssignmentPending(false);
+    setOutAssignments([]);
   }
 
   async function handleInningChange() {
@@ -1396,14 +1423,108 @@ export function ScoringBoard({
               </div>
             ) : inPlayPending ? (
               <div className="space-y-3">
-                {/* Field spray chart — mark where the ball was hit/error occurred */}
-                <SprayChartPicker value={sprayPoint} onChange={setSprayPoint} />
+                {/* Field spray chart — hidden during out-assignment step (already captured) */}
+                {!outAssignmentPending && (
+                  <SprayChartPicker value={sprayPoint} onChange={setSprayPoint} />
+                )}
 
-                {fieldingSequencePending && stashedOutResult ? (
+                {outAssignmentPending ? (
+                  /* ── Step 4: Assign outs to players (DP / TP only) ── */
+                  (() => {
+                    const numOuts = stashedOutResult === 'triple_play' ? 3 : 2;
+                    const ordinals = ['1st', '2nd', '3rd'];
+                    const availablePlayers: { id: string; label: string }[] = [];
+                    if (activeBatterId && activeBatter) {
+                      availablePlayers.push({
+                        id: activeBatterId,
+                        label: `Batter — ${activeBatter.player.lastName}`,
+                      });
+                    }
+                    if (gameState.runnersOnBase.first) {
+                      availablePlayers.push({
+                        id: gameState.runnersOnBase.first,
+                        label: `Runner on 1st — ${getRunnerLabel(gameState.runnersOnBase.first)}`,
+                      });
+                    }
+                    if (gameState.runnersOnBase.second) {
+                      availablePlayers.push({
+                        id: gameState.runnersOnBase.second,
+                        label: `Runner on 2nd — ${getRunnerLabel(gameState.runnersOnBase.second)}`,
+                      });
+                    }
+                    if (gameState.runnersOnBase.third) {
+                      availablePlayers.push({
+                        id: gameState.runnersOnBase.third,
+                        label: `Runner on 3rd — ${getRunnerLabel(gameState.runnersOnBase.third)}`,
+                      });
+                    }
+                    return (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                          Who was put out?
+                        </p>
+                        <p className="text-xs text-gray-400 mb-3">
+                          Assign each out to the batter or a baserunner.
+                        </p>
+                        <div className="space-y-2">
+                          {Array.from({ length: numOuts }, (_, i) => (
+                            <div key={i}>
+                              <p className="text-xs text-gray-500 mb-1">{ordinals[i]} Out</p>
+                              <select
+                                value={outAssignments[i] ?? ''}
+                                onChange={(e) => {
+                                  setOutAssignments((prev) => {
+                                    const next = [...prev];
+                                    next[i] = e.target.value || null;
+                                    return next;
+                                  });
+                                }}
+                                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+                              >
+                                <option value="">Select player…</option>
+                                {availablePlayers.map((p) => (
+                                  <option key={p.id} value={p.id}>{p.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-3 mt-3">
+                          <button
+                            onClick={() => {
+                              handleInPlay(stashedOutResult!, pendingTrajectory ?? 'ground_ball', fieldingSequence, outAssignments);
+                            }}
+                            className="flex-1 py-2 text-sm font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 transition-colors"
+                          >
+                            {stashedOutResult === 'double_play' ? 'Record DP' : 'Record TP'}
+                            {fieldingSequence.length > 0 ? ` (${formatFieldingSequence(fieldingSequence)})` : ''}
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleInPlay(stashedOutResult!, pendingTrajectory ?? 'ground_ball', fieldingSequence);
+                            }}
+                            className="text-xs text-gray-400 hover:text-gray-600 underline"
+                          >
+                            Skip
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setOutAssignmentPending(false);
+                            setFieldingSequencePending(true);
+                          }}
+                          className="text-xs text-gray-400 hover:text-gray-600 mt-2 block"
+                        >
+                          ← Back to fielding sequence
+                        </button>
+                      </div>
+                    );
+                  })()
+                ) : fieldingSequencePending && stashedOutResult ? (
                   /* ── Step 3: Fielding sequence picker (for outs) ── */
                   <div>
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                      Fielding play order (up to 5)
+                      Fielding play order (up to 8)
                     </p>
                     {fieldingSequence.length > 0 && (
                       <div className="flex items-center gap-2 mb-2">
@@ -1423,11 +1544,11 @@ export function ScoringBoard({
                         <button
                           key={number}
                           onClick={() => {
-                            if (fieldingSequence.length < 5) {
+                            if (fieldingSequence.length < 8) {
                               setFieldingSequence((prev) => [...prev, number]);
                             }
                           }}
-                          disabled={fieldingSequence.length >= 5}
+                          disabled={fieldingSequence.length >= 8}
                           className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
                           {number} — {abbr}
@@ -1437,20 +1558,34 @@ export function ScoringBoard({
                     <div className="flex items-center gap-3 mt-3">
                       <button
                         onClick={() => {
-                          handleInPlay(stashedOutResult, pendingTrajectory ?? 'ground_ball', fieldingSequence);
+                          if (stashedOutResult === 'double_play' || stashedOutResult === 'triple_play') {
+                            const numOuts = stashedOutResult === 'triple_play' ? 3 : 2;
+                            setOutAssignments(new Array(numOuts).fill(null));
+                            setOutAssignmentPending(true);
+                            setFieldingSequencePending(false);
+                          } else {
+                            handleInPlay(stashedOutResult, pendingTrajectory ?? 'ground_ball', fieldingSequence);
+                          }
                         }}
                         disabled={fieldingSequence.length === 0}
                         className="flex-1 py-2 text-sm font-semibold rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-brand-700 text-white hover:bg-brand-800 disabled:hover:bg-brand-700"
                       >
-                        Record Out{fieldingSequence.length > 0 ? ` (${formatFieldingSequence(fieldingSequence)})` : ''}
+                        {stashedOutResult === 'double_play' ? 'Next: Assign Outs' : stashedOutResult === 'triple_play' ? 'Next: Assign Outs' : 'Record Out'}{fieldingSequence.length > 0 ? ` (${formatFieldingSequence(fieldingSequence)})` : ''}
                       </button>
                       <button
                         onClick={() => {
-                          handleInPlay(stashedOutResult, pendingTrajectory ?? 'ground_ball');
+                          if (stashedOutResult === 'double_play' || stashedOutResult === 'triple_play') {
+                            const numOuts = stashedOutResult === 'triple_play' ? 3 : 2;
+                            setOutAssignments(new Array(numOuts).fill(null));
+                            setOutAssignmentPending(true);
+                            setFieldingSequencePending(false);
+                          } else {
+                            handleInPlay(stashedOutResult, pendingTrajectory ?? 'ground_ball');
+                          }
                         }}
                         className="text-xs text-gray-400 hover:text-gray-600 underline"
                       >
-                        Skip
+                        {stashedOutResult === 'double_play' || stashedOutResult === 'triple_play' ? 'Skip sequence' : 'Skip'}
                       </button>
                     </div>
                     <button
@@ -1509,7 +1644,12 @@ export function ScoringBoard({
                               setPendingTrajectory(value);
                               setErrorPending(true);
                               setPendingResult(null);
-                            } else if (pendingResult === 'out' || pendingResult === 'field_choice') {
+                            } else if (
+                              pendingResult === 'out' ||
+                              pendingResult === 'field_choice' ||
+                              pendingResult === 'double_play' ||
+                              pendingResult === 'triple_play'
+                            ) {
                               setStashedOutResult(pendingResult);
                               setPendingTrajectory(value);
                               setPendingResult(null);
@@ -1539,14 +1679,23 @@ export function ScoringBoard({
                       In play — what happened?
                     </p>
                     <div className="grid grid-cols-3 gap-2">
-                      {(['single', 'double', 'triple', 'home_run', 'out', 'field_choice'] as const).map((r) => (
+                      {([
+                        { value: 'single',      label: 'Single' },
+                        { value: 'double',      label: 'Double' },
+                        { value: 'triple',      label: 'Triple' },
+                        { value: 'home_run',    label: 'HR' },
+                        { value: 'out',         label: 'Out' },
+                        { value: 'double_play', label: 'DP' },
+                        { value: 'triple_play', label: 'TP' },
+                        { value: 'field_choice', label: 'FC' },
+                      ] as const).map(({ value, label }) => (
                         <button
-                          key={r}
-                          onClick={() => setPendingResult(r)}
+                          key={value}
+                          onClick={() => setPendingResult(value)}
                           disabled={!sprayPoint}
-                          className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:hover:bg-gray-50 capitalize"
+                          className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:hover:bg-gray-50"
                         >
-                          {r === 'home_run' ? 'HR' : r === 'field_choice' ? 'FC' : r.charAt(0).toUpperCase() + r.slice(1)}
+                          {label}
                         </button>
                       ))}
                       <button

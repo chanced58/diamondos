@@ -19,6 +19,7 @@ export enum EventType {
   SACRIFICE_FLY = 'sacrifice_fly',
   FIELD_ERROR = 'field_error',
   DOUBLE_PLAY = 'double_play',
+  TRIPLE_PLAY = 'triple_play',
 
   // Baserunning
   STOLEN_BASE = 'stolen_base',
