@@ -1171,6 +1171,8 @@ export function ScoringBoard({
     setFieldingSequencePending(false);
     setFieldingSequence([]);
     setStashedOutResult(null);
+    setOutAssignmentPending(false);
+    setOutAssignments([]);
   }
 
   async function handleInningChange() {
