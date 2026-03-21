@@ -117,6 +117,14 @@ export default async function GameDetailPage({
           >
             Notes
           </Link>
+          {(game.status === 'completed' || game.status === 'in_progress') && (
+            <Link
+              href={`/games/${game.id}/stats`}
+              className="text-sm text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              Stats
+            </Link>
+          )}
         </div>
       </div>
 
