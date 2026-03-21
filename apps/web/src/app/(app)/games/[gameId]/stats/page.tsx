@@ -27,12 +27,20 @@ const ABBR_TO_NUM: Record<string, number> = {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function applyPitchReverted(events: Record<string, unknown>[]): Record<string, unknown>[] {
-  const revertedIds = new Set(
-    events
-      .filter((e) => e.event_type === 'pitch_reverted')
-      .map((e) => ((e.payload as Record<string, unknown>)?.revertedEventId as string)),
-  );
-  return events.filter((e) => e.event_type !== 'pitch_reverted' && !revertedIds.has(e.id as string));
+  // Mirrors the effectiveEventRows logic in ScoringBoard: each pitch_reverted event
+  // trims the list back to sequence numbers <= revertToSequenceNumber.
+  const result: Record<string, unknown>[] = [];
+  for (const event of events) {
+    if ((event.event_type as string) === 'pitch_reverted') {
+      const payload = (event.payload ?? {}) as Record<string, unknown>;
+      const keepUntilSeq = payload.revertToSequenceNumber as number;
+      result.splice(0, result.length, ...result.filter((e) => (e.sequence_number as number) <= keepUntilSeq));
+      // pitch_reverted marker itself is not added
+    } else {
+      result.push(event);
+    }
+  }
+  return result;
 }
 
 function computeLineScore(events: Record<string, unknown>[]): LineScoreData {
@@ -253,7 +261,6 @@ function computeOpponentBatting(
     } else if (etype === 'out' || etype === 'double_play' || etype === 'triple_play') {
       const s = get(batterId);
       s.pa++; s.ab++;
-      if (etype === 'strikeout') s.k++;
     } else if (etype === 'strikeout') {
       const s = get(batterId);
       s.pa++; s.ab++; s.k++;

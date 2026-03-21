@@ -69,9 +69,10 @@ export interface GameStatsClientProps {
 // ── Display helpers ──────────────────────────────────────────────────────────
 
 function ordinal(n: number): string {
-  const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;
-  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]);
+  if (v >= 11 && v <= 13) return `${n}th`;
+  const s = ['th', 'st', 'nd', 'rd'];
+  return n + (s[n % 10] ?? s[0]);
 }
 
 function fmtRate(v: number): string {
@@ -623,7 +624,7 @@ function FieldingTable({ rows }: { rows: FieldingStatRow[] }) {
                 <td className="px-3 py-2 text-center">{s.assists}</td>
                 <td className={`px-3 py-2 text-center ${s.errors > 0 ? 'text-red-600 font-semibold' : ''}`}>{s.errors}</td>
                 <td className="px-3 py-2 text-center">{tc}</td>
-                <td className="px-3 py-2 text-center font-mono">{isNaN(fpct) ? '---' : fpct.toFixed(3).replace(/^0/, '')}</td>
+                <td className="px-3 py-2 text-center font-mono">{isNaN(fpct) ? '---' : fpct.toFixed(3).replace(/^0(?=\.)/, '')}</td>
               </tr>
             );
           })}
