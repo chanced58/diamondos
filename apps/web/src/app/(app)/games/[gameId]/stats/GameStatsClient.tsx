@@ -2,7 +2,7 @@
 
 import type { JSX, ReactNode } from 'react';
 import { useState } from 'react';
-import type { BattingStats, PitchingStats, StatTier } from '@baseball/shared';
+import type { BattingStats, PitchingStats } from '@baseball/shared';
 import { formatBattingRate, formatInningsPitched } from '@baseball/shared';
 
 // ── Shared types (imported by page.tsx) ─────────────────────────────────────
