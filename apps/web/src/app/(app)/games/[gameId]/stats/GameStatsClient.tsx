@@ -36,17 +36,21 @@ export type PlayerInfo = {
   position?: string;
 };
 
-// Lightweight opponent batting row (opponentBatterId-based events)
 export type OppBattingRow = {
   playerId: string;
   playerName: string;
-  pa: number; ab: number; r: number; h: number; hr: number;
+  pa: number; ab: number; r: number; h: number;
+  doubles: number; triples: number; hr: number;
   rbi: number; bb: number; k: number;
-  avg: number;
+  hbp: number; sf: number; sh: number;
+  sb: number; cs: number;
+  avg: number; obp: number; slg: number; ops: number;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type RawGameEvent = Record<string, any>;
+
+export type StatTier = 'youth' | 'high_school' | 'college';
 
 export interface GameStatsClientProps {
   game: {
@@ -63,7 +67,9 @@ export interface GameStatsClientProps {
   oppPitching: PitchingStats[];
   ourFielding: FieldingStatRow[];
   lineScore: LineScoreData;
-  players: PlayerInfo[]; // all players (our team + opponent)
+  players: PlayerInfo[];
+  tier: StatTier;
+  baserunning: Record<string, { sb: number; cs: number }>;
 }
 
 // ── Display helpers ──────────────────────────────────────────────────────────
@@ -75,28 +81,12 @@ function ordinal(n: number): string {
   return n + (s[n % 10] ?? s[0]);
 }
 
-function fmtRate(v: number): string {
-  return formatBattingRate(v);
-}
-
-function fmtPct(v: number): string {
-  return formatBattingPct(v);
-}
-
-function fmtEra(v: number): string {
-  if (!isFinite(v)) return '---';
-  return v.toFixed(2);
-}
-
-function fmtWhip(v: number): string {
-  if (!isFinite(v)) return '---';
-  return v.toFixed(2);
-}
-
-function fmtPer7(v: number): string {
-  if (!isFinite(v) || isNaN(v)) return '---';
-  return v.toFixed(1);
-}
+function fmtRate(v: number): string { return formatBattingRate(v); }
+function fmtPct(v: number): string { return formatBattingPct(v); }
+function fmtEra(v: number): string { return isFinite(v) ? v.toFixed(2) : '---'; }
+function fmtWhip(v: number): string { return isFinite(v) ? v.toFixed(2) : '---'; }
+function fmtDec1(v: number): string { return isFinite(v) && !isNaN(v) ? v.toFixed(1) : '---'; }
+function fmtRatio(v: number): string { return isFinite(v) && !isNaN(v) ? v.toFixed(2) : '---'; }
 
 function outcomeLabel(outcome: string): string {
   const map: Record<string, string> = {
@@ -132,6 +122,185 @@ function resultColor(etype: string): string {
   return 'text-gray-700 bg-gray-100';
 }
 
+// ── Color coding for rate stats ─────────────────────────────────────────────
+
+const RATE_THRESHOLDS: Record<string, { good: number; bad: number; higher: boolean }> = {
+  avg:   { good: 0.300, bad: 0.200, higher: true },
+  obp:   { good: 0.380, bad: 0.280, higher: true },
+  slg:   { good: 0.450, bad: 0.300, higher: true },
+  ops:   { good: 0.800, bad: 0.600, higher: true },
+  iso:   { good: 0.180, bad: 0.080, higher: true },
+  woba:  { good: 0.350, bad: 0.290, higher: true },
+  babip: { good: 0.350, bad: 0.240, higher: true },
+  kPct:  { good: 0.15, bad: 0.28, higher: false },
+  bbPct: { good: 0.10, bad: 0.04, higher: true },
+  hardHitPct: { good: 0.35, bad: 0.18, higher: true },
+  era:   { good: 2.50, bad: 5.50, higher: false },
+  whip:  { good: 1.10, bad: 1.60, higher: false },
+  strikePercentage: { good: 0.65, bad: 0.50, higher: true },
+  firstPitchStrikePercentage: { good: 0.65, bad: 0.50, higher: true },
+};
+
+function rateColor(key: string, value: number): string {
+  const t = RATE_THRESHOLDS[key];
+  if (!t || !isFinite(value)) return '';
+  if (t.higher) {
+    if (value >= t.good) return 'bg-green-50';
+    if (value <= t.bad) return 'bg-red-50';
+  } else {
+    if (value <= t.good) return 'bg-green-50';
+    if (value >= t.bad) return 'bg-red-50';
+  }
+  return '';
+}
+
+// ── Batting column configuration ────────────────────────────────────────────
+
+type BatCol = {
+  label: string;
+  get: (s: BattingStats, br: { sb: number; cs: number }) => number;
+  fmt: (v: number) => string;
+  mono?: boolean;
+  color?: string; // key into RATE_THRESHOLDS
+};
+
+const BAT: Record<string, BatCol> = {
+  AB:    { label: 'AB',    get: (s) => s.atBats, fmt: String },
+  R:     { label: 'R',     get: (s) => s.runs, fmt: String },
+  H:     { label: 'H',     get: (s) => s.hits, fmt: String },
+  '2B':  { label: '2B',    get: (s) => s.doubles, fmt: String },
+  '3B':  { label: '3B',    get: (s) => s.triples, fmt: String },
+  HR:    { label: 'HR',    get: (s) => s.homeRuns, fmt: String },
+  RBI:   { label: 'RBI',   get: (s) => s.rbi, fmt: String },
+  BB:    { label: 'BB',    get: (s) => s.walks, fmt: String },
+  K:     { label: 'K',     get: (s) => s.strikeouts, fmt: String },
+  HBP:   { label: 'HBP',   get: (s) => s.hitByPitch, fmt: String },
+  SF:    { label: 'SF',    get: (s) => s.sacrificeFlies, fmt: String },
+  SH:    { label: 'SH',    get: (s) => s.sacrificeHits, fmt: String },
+  SB:    { label: 'SB',    get: (_, br) => br.sb, fmt: String },
+  CS:    { label: 'CS',    get: (_, br) => br.cs, fmt: String },
+  TB:    { label: 'TB',    get: (s) => s.hits + s.doubles + 2 * s.triples + 3 * s.homeRuns, fmt: String },
+  PA:    { label: 'PA',    get: (s) => s.plateAppearances, fmt: String },
+  AVG:   { label: 'AVG',   get: (s) => s.avg, fmt: fmtRate, mono: true, color: 'avg' },
+  OBP:   { label: 'OBP',   get: (s) => s.obp, fmt: fmtRate, mono: true, color: 'obp' },
+  SLG:   { label: 'SLG',   get: (s) => s.slg, fmt: fmtRate, mono: true, color: 'slg' },
+  OPS:   { label: 'OPS',   get: (s) => s.ops, fmt: fmtRate, mono: true, color: 'ops' },
+  ISO:   { label: 'ISO',   get: (s) => s.iso, fmt: fmtRate, mono: true, color: 'iso' },
+  BABIP: { label: 'BABIP', get: (s) => s.babip, fmt: fmtRate, mono: true, color: 'babip' },
+  'K%':  { label: 'K%',    get: (s) => s.kPct, fmt: fmtPct, color: 'kPct' },
+  'BB%': { label: 'BB%',   get: (s) => s.bbPct, fmt: fmtPct, color: 'bbPct' },
+  wOBA:  { label: 'wOBA',  get: (s) => s.woba, fmt: fmtRate, mono: true, color: 'woba' },
+  'HH%': { label: 'HH%',  get: (s) => s.hardHitPct, fmt: fmtPct, color: 'hardHitPct' },
+};
+
+const BAT_TIER: Record<StatTier, Record<'standard' | 'advanced', string[]>> = {
+  youth: {
+    standard: ['AB', 'R', 'H', 'RBI', 'BB', 'K', 'SB', 'AVG', 'OBP', 'OPS'],
+    advanced: ['PA', 'OBP', 'SLG', 'OPS', 'BB%', 'K%', 'HH%'],
+  },
+  high_school: {
+    standard: ['AB', 'R', 'H', '2B', '3B', 'HR', 'RBI', 'BB', 'K', 'HBP', 'SB', 'AVG'],
+    advanced: ['PA', 'OBP', 'SLG', 'OPS', 'ISO', 'BABIP', 'K%', 'BB%', 'wOBA', 'HH%'],
+  },
+  college: {
+    standard: ['AB', 'R', 'H', '2B', '3B', 'HR', 'RBI', 'BB', 'K', 'HBP', 'SF', 'SB', 'CS', 'TB', 'AVG'],
+    advanced: ['PA', 'OBP', 'SLG', 'OPS', 'ISO', 'BABIP', 'K%', 'BB%', 'wOBA', 'HH%', 'TB'],
+  },
+};
+
+const BOX_BAT: Record<StatTier, string[]> = {
+  youth:       ['AB', 'R', 'H', 'RBI', 'BB', 'K', 'AVG'],
+  high_school: ['AB', 'R', 'H', '2B', '3B', 'HR', 'RBI', 'BB', 'K', 'AVG'],
+  college:     ['AB', 'R', 'H', '2B', '3B', 'HR', 'RBI', 'BB', 'K', 'AVG'],
+};
+
+// ── Pitching column configuration ───────────────────────────────────────────
+
+type PitchCol = {
+  label: string;
+  get: (s: PitchingStats) => number;
+  fmt: (v: number) => string;
+  mono?: boolean;
+  color?: string;
+};
+
+const PIT: Record<string, PitchCol> = {
+  IP:       { label: 'IP',       get: (s) => s.inningsPitchedOuts, fmt: (v) => formatInningsPitched(v), mono: true },
+  H:        { label: 'H',        get: (s) => s.hitsAllowed, fmt: String },
+  R:        { label: 'R',        get: (s) => s.runsAllowed, fmt: String },
+  BB:       { label: 'BB',       get: (s) => s.walksAllowed, fmt: String },
+  K:        { label: 'K',        get: (s) => s.strikeouts, fmt: String },
+  HBP:      { label: 'HBP',      get: (s) => s.hitBatters, fmt: String },
+  WP:       { label: 'WP',       get: (s) => s.wildPitches, fmt: String },
+  PC:       { label: 'PC',       get: (s) => s.totalPitches, fmt: String },
+  BF:       { label: 'BF',       get: (s) => s.totalPAs, fmt: String },
+  'Strike%': { label: 'Strike%', get: (s) => s.strikePercentage, fmt: fmtPct, color: 'strikePercentage' },
+  'FPS%':   { label: 'FPS%',     get: (s) => s.firstPitchStrikePercentage, fmt: fmtPct, color: 'firstPitchStrikePercentage' },
+  ERA:      { label: 'ERA',      get: (s) => s.era, fmt: fmtEra, mono: true, color: 'era' },
+  WHIP:     { label: 'WHIP',     get: (s) => s.whip, fmt: fmtWhip, mono: true, color: 'whip' },
+  'K/7':    { label: 'K/7',      get: (s) => s.strikeoutsPerSeven, fmt: fmtDec1 },
+  'BB/7':   { label: 'BB/7',     get: (s) => s.walksPerSeven, fmt: fmtDec1 },
+  'K/BB':   { label: 'K/BB',     get: (s) => s.walksAllowed > 0 ? s.strikeouts / s.walksAllowed : Infinity, fmt: fmtRatio },
+  'K-BB%':  { label: 'K-BB%',    get: (s) => s.totalPAs > 0 ? (s.strikeouts - s.walksAllowed) / s.totalPAs : NaN, fmt: fmtPct },
+  '3-Ball%': { label: '3-Ball%', get: (s) => s.threeBallCountPercentage, fmt: fmtPct },
+  'P/IP':   { label: 'P/IP',     get: (s) => s.inningsPitchedOuts > 0 ? s.totalPitches / (s.inningsPitchedOuts / 3) : NaN, fmt: fmtDec1 },
+  OBA:      { label: 'OBA',      get: (s) => { const ab = s.totalPAs - s.walksAllowed - s.hitBatters; return ab > 0 ? s.hitsAllowed / ab : NaN; }, fmt: fmtRate, mono: true },
+};
+
+const PIT_TIER: Record<StatTier, Record<'standard' | 'advanced', string[]>> = {
+  youth: {
+    standard: ['PC', 'IP', 'H', 'BB', 'K', 'WP', 'HBP', 'Strike%', 'FPS%', 'ERA'],
+    advanced: ['P/IP', 'Strike%', 'FPS%', 'K/7', 'BB/7', '3-Ball%', 'WHIP'],
+  },
+  high_school: {
+    standard: ['IP', 'H', 'R', 'BB', 'K', 'HBP', 'WP', 'PC', 'Strike%', 'FPS%', 'ERA', 'WHIP'],
+    advanced: ['K/7', 'BB/7', 'K/BB', 'FPS%', '3-Ball%', 'P/IP', 'ERA', 'WHIP'],
+  },
+  college: {
+    standard: ['IP', 'H', 'R', 'BB', 'K', 'HBP', 'WP', 'PC', 'BF', 'Strike%', 'ERA', 'WHIP'],
+    advanced: ['K/7', 'BB/7', 'K/BB', 'K-BB%', 'FPS%', '3-Ball%', 'P/IP', 'OBA', 'ERA', 'WHIP'],
+  },
+};
+
+const BOX_PIT: Record<StatTier, string[]> = {
+  youth:       ['PC', 'IP', 'H', 'BB', 'K', 'Strike%', 'ERA'],
+  high_school: ['IP', 'H', 'R', 'BB', 'K', 'PC', 'ERA'],
+  college:     ['IP', 'H', 'R', 'BB', 'K', 'PC', 'ERA'],
+};
+
+// ── Opponent batting column configuration ───────────────────────────────────
+
+type OppCol = {
+  label: string;
+  get: (s: OppBattingRow) => number;
+  fmt: (v: number) => string;
+  mono?: boolean;
+};
+
+const OPP: Record<string, OppCol> = {
+  AB:   { label: 'AB',   get: (s) => s.ab, fmt: String },
+  R:    { label: 'R',    get: (s) => s.r, fmt: String },
+  H:    { label: 'H',    get: (s) => s.h, fmt: String },
+  '2B': { label: '2B',   get: (s) => s.doubles, fmt: String },
+  '3B': { label: '3B',   get: (s) => s.triples, fmt: String },
+  HR:   { label: 'HR',   get: (s) => s.hr, fmt: String },
+  RBI:  { label: 'RBI',  get: (s) => s.rbi, fmt: String },
+  BB:   { label: 'BB',   get: (s) => s.bb, fmt: String },
+  K:    { label: 'K',    get: (s) => s.k, fmt: String },
+  HBP:  { label: 'HBP',  get: (s) => s.hbp, fmt: String },
+  SB:   { label: 'SB',   get: (s) => s.sb, fmt: String },
+  AVG:  { label: 'AVG',  get: (s) => s.avg, fmt: fmtRate, mono: true },
+  OBP:  { label: 'OBP',  get: (s) => s.obp, fmt: fmtRate, mono: true },
+  SLG:  { label: 'SLG',  get: (s) => s.slg, fmt: fmtRate, mono: true },
+  OPS:  { label: 'OPS',  get: (s) => s.ops, fmt: fmtRate, mono: true },
+};
+
+const OPP_TIER: Record<StatTier, string[]> = {
+  youth:       ['AB', 'R', 'H', 'RBI', 'BB', 'K', 'AVG'],
+  high_school: ['AB', 'R', 'H', '2B', '3B', 'HR', 'RBI', 'BB', 'K', 'HBP', 'AVG', 'OBP'],
+  college:     ['AB', 'R', 'H', '2B', '3B', 'HR', 'RBI', 'BB', 'K', 'HBP', 'SB', 'AVG', 'OBP', 'SLG', 'OPS'],
+};
+
 // ── Play-by-Play builder ─────────────────────────────────────────────────────
 
 type PbpPitch = {
@@ -151,7 +320,7 @@ type PbpAtBat = {
   result: string;
   resultLabel: string;
   rbis: number;
-  sidelineEvents: string[]; // SBs, substitutions, etc. logged against this AB
+  sidelineEvents: string[];
 };
 
 type PbpHalfInning = {
@@ -161,7 +330,7 @@ type PbpHalfInning = {
   label: string;
   atBats: PbpAtBat[];
   runs: number;
-  sidelineEvents: string[]; // notes before the first at-bat (e.g. pre-inning pitching change)
+  sidelineEvents: string[];
 };
 
 function buildPlayByPlay(
@@ -335,32 +504,40 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
   );
 }
 
+function ToggleButton({
+  label, active, onClick, color = 'brand',
+}: {
+  label: string; active: boolean; onClick: () => void; color?: 'brand' | 'gray';
+}) {
+  const activeClass = color === 'brand' ? 'bg-brand-600 text-white' : 'bg-gray-800 text-white';
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 font-medium transition-colors text-sm ${active ? activeClass : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+    >
+      {label}
+    </button>
+  );
+}
+
 // ── Sub-components ───────────────────────────────────────────────────────────
 
 function LineScoreTable({
-  lineScore,
-  usLabel,
-  oppLabel,
-  weAreHome,
+  lineScore, usLabel, oppLabel, weAreHome,
 }: {
-  lineScore: LineScoreData;
-  usLabel: string;
-  oppLabel: string;
-  weAreHome: boolean;
+  lineScore: LineScoreData; usLabel: string; oppLabel: string; weAreHome: boolean;
 }) {
   const maxInnings = Math.max(lineScore.awayRunsByInning.length, lineScore.homeRunsByInning.length, 9);
   const inningNums = Array.from({ length: maxInnings }, (_, i) => i + 1);
 
-  // away = top half batting; home = bottom half batting
-  // if we're home: our runs are homeRunsByInning, opponent's are awayRunsByInning
-  const ourRunsByInning  = weAreHome ? lineScore.homeRunsByInning : lineScore.awayRunsByInning;
-  const oppRunsByInning  = weAreHome ? lineScore.awayRunsByInning : lineScore.homeRunsByInning;
-  const ourTotalRuns  = weAreHome ? lineScore.homeRuns : lineScore.awayRuns;
-  const oppTotalRuns  = weAreHome ? lineScore.awayRuns : lineScore.homeRuns;
-  const ourHits  = weAreHome ? lineScore.homeHits : lineScore.awayHits;
-  const oppHits  = weAreHome ? lineScore.awayHits : lineScore.homeHits;
-  const ourErrors  = weAreHome ? lineScore.homeErrors : lineScore.awayErrors;
-  const oppErrors  = weAreHome ? lineScore.awayErrors : lineScore.homeErrors;
+  const ourRunsByInning = weAreHome ? lineScore.homeRunsByInning : lineScore.awayRunsByInning;
+  const oppRunsByInning = weAreHome ? lineScore.awayRunsByInning : lineScore.homeRunsByInning;
+  const ourTotalRuns = weAreHome ? lineScore.homeRuns : lineScore.awayRuns;
+  const oppTotalRuns = weAreHome ? lineScore.awayRuns : lineScore.homeRuns;
+  const ourHits = weAreHome ? lineScore.homeHits : lineScore.awayHits;
+  const oppHits = weAreHome ? lineScore.awayHits : lineScore.homeHits;
+  const ourErrors = weAreHome ? lineScore.homeErrors : lineScore.awayErrors;
+  const oppErrors = weAreHome ? lineScore.awayErrors : lineScore.homeErrors;
 
   const cellBase = 'text-center text-sm font-mono px-2 py-2 border-l border-gray-200';
   const labelCell = 'text-sm font-semibold text-gray-700 px-3 py-2 w-28 truncate';
@@ -421,86 +598,62 @@ function CollapsibleSection({ title, children, defaultOpen = true }: { title: st
   );
 }
 
-function BattingTable({
-  rows,
-  advanced,
+// ── Column-driven stat tables ───────────────────────────────────────────────
+
+function BattingStatTable({
+  rows, columns, baserunning,
 }: {
   rows: BattingStats[];
-  advanced: boolean;
+  columns: string[];
+  baserunning: Record<string, { sb: number; cs: number }>;
 }) {
   const sorted = [...rows].sort((a, b) => b.plateAppearances - a.plateAppearances);
-
   if (sorted.length === 0) {
     return <p className="text-sm text-gray-400 px-5 py-4">No batting data available.</p>;
   }
-
-  if (!advanced) {
-    return (
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              {['Player', 'AB', 'R', 'H', '2B', '3B', 'HR', 'RBI', 'BB', 'K', 'HBP', 'AVG'].map((h) => (
-                <th key={h} className={`px-3 py-2 font-semibold text-gray-600 ${h === 'Player' ? 'text-left' : 'text-center'}`}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {sorted.map((s) => (
-              <tr key={s.playerId} className="hover:bg-gray-50">
-                <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{s.playerName}</td>
-                <td className="px-3 py-2 text-center">{s.atBats}</td>
-                <td className="px-3 py-2 text-center">{s.runs}</td>
-                <td className="px-3 py-2 text-center">{s.hits}</td>
-                <td className="px-3 py-2 text-center">{s.doubles}</td>
-                <td className="px-3 py-2 text-center">{s.triples}</td>
-                <td className="px-3 py-2 text-center">{s.homeRuns}</td>
-                <td className="px-3 py-2 text-center">{s.rbi}</td>
-                <td className="px-3 py-2 text-center">{s.walks}</td>
-                <td className="px-3 py-2 text-center">{s.strikeouts}</td>
-                <td className="px-3 py-2 text-center">{s.hitByPitch}</td>
-                <td className="px-3 py-2 text-center font-mono">{fmtRate(s.avg)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-200">
-            {['Player', 'PA', 'OBP', 'SLG', 'OPS', 'ISO', 'BABIP', 'K%', 'BB%', 'wOBA', 'HH%'].map((h) => (
-              <th key={h} className={`px-3 py-2 font-semibold text-gray-600 ${h === 'Player' ? 'text-left' : 'text-center'}`}>{h}</th>
+            <th className="px-3 py-2 font-semibold text-gray-600 text-left">Player</th>
+            {columns.map((k) => (
+              <th key={k} className="px-3 py-2 font-semibold text-gray-600 text-center">{BAT[k]?.label ?? k}</th>
             ))}
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {sorted.map((s) => (
-            <tr key={s.playerId} className="hover:bg-gray-50">
-              <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{s.playerName}</td>
-              <td className="px-3 py-2 text-center">{s.plateAppearances}</td>
-              <td className="px-3 py-2 text-center font-mono">{fmtRate(s.obp)}</td>
-              <td className="px-3 py-2 text-center font-mono">{fmtRate(s.slg)}</td>
-              <td className="px-3 py-2 text-center font-mono">{fmtRate(s.ops)}</td>
-              <td className="px-3 py-2 text-center font-mono">{fmtRate(s.iso)}</td>
-              <td className="px-3 py-2 text-center font-mono">{fmtRate(s.babip)}</td>
-              <td className="px-3 py-2 text-center">{fmtPct(s.kPct)}</td>
-              <td className="px-3 py-2 text-center">{fmtPct(s.bbPct)}</td>
-              <td className="px-3 py-2 text-center font-mono">{fmtRate(s.woba)}</td>
-              <td className="px-3 py-2 text-center">{fmtPct(s.hardHitPct)}</td>
-            </tr>
-          ))}
+          {sorted.map((s) => {
+            const br = baserunning[s.playerId] ?? { sb: 0, cs: 0 };
+            return (
+              <tr key={s.playerId} className="hover:bg-gray-50">
+                <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{s.playerName}</td>
+                {columns.map((k) => {
+                  const col = BAT[k];
+                  if (!col) return <td key={k} className="px-3 py-2 text-center">—</td>;
+                  const val = col.get(s, br);
+                  const cc = col.color ? rateColor(col.color, val) : '';
+                  return (
+                    <td key={k} className={`px-3 py-2 text-center ${col.mono ? 'font-mono' : ''} ${cc}`}>
+                      {col.fmt(val)}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
 
-function OppBattingTable({ rows }: { rows: OppBattingRow[] }) {
+function OppBattingStatTable({
+  rows, columns,
+}: {
+  rows: OppBattingRow[];
+  columns: string[];
+}) {
   const sorted = [...rows].sort((a, b) => b.pa - a.pa);
   if (sorted.length === 0) {
     return <p className="text-sm text-gray-400 px-5 py-4">No batting data available.</p>;
@@ -510,8 +663,9 @@ function OppBattingTable({ rows }: { rows: OppBattingRow[] }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-200">
-            {['Player', 'AB', 'R', 'H', 'HR', 'RBI', 'BB', 'K', 'AVG'].map((h) => (
-              <th key={h} className={`px-3 py-2 font-semibold text-gray-600 ${h === 'Player' ? 'text-left' : 'text-center'}`}>{h}</th>
+            <th className="px-3 py-2 font-semibold text-gray-600 text-left">Player</th>
+            {columns.map((k) => (
+              <th key={k} className="px-3 py-2 font-semibold text-gray-600 text-center">{OPP[k]?.label ?? k}</th>
             ))}
           </tr>
         </thead>
@@ -519,14 +673,15 @@ function OppBattingTable({ rows }: { rows: OppBattingRow[] }) {
           {sorted.map((s) => (
             <tr key={s.playerId} className="hover:bg-gray-50">
               <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{s.playerName}</td>
-              <td className="px-3 py-2 text-center">{s.ab}</td>
-              <td className="px-3 py-2 text-center">{s.r}</td>
-              <td className="px-3 py-2 text-center">{s.h}</td>
-              <td className="px-3 py-2 text-center">{s.hr}</td>
-              <td className="px-3 py-2 text-center">{s.rbi}</td>
-              <td className="px-3 py-2 text-center">{s.bb}</td>
-              <td className="px-3 py-2 text-center">{s.k}</td>
-              <td className="px-3 py-2 text-center font-mono">{fmtRate(s.avg)}</td>
+              {columns.map((k) => {
+                const col = OPP[k];
+                if (!col) return <td key={k} className="px-3 py-2 text-center">—</td>;
+                return (
+                  <td key={k} className={`px-3 py-2 text-center ${col.mono ? 'font-mono' : ''}`}>
+                    {col.fmt(col.get(s))}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
@@ -535,60 +690,24 @@ function OppBattingTable({ rows }: { rows: OppBattingRow[] }) {
   );
 }
 
-function PitchingTable({
-  rows,
-  advanced,
+function PitchingStatTable({
+  rows, columns,
 }: {
   rows: PitchingStats[];
-  advanced: boolean;
+  columns: string[];
 }) {
   const sorted = [...rows].sort((a, b) => b.inningsPitchedOuts - a.inningsPitchedOuts);
-
   if (sorted.length === 0) {
     return <p className="text-sm text-gray-400 px-5 py-4">No pitching data available.</p>;
   }
-
-  if (!advanced) {
-    return (
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              {['Pitcher', 'IP', 'H', 'R', 'BB', 'K', 'HBP', 'WP', 'PC', 'Strike%', 'ERA', 'WHIP'].map((h) => (
-                <th key={h} className={`px-3 py-2 font-semibold text-gray-600 ${h === 'Pitcher' ? 'text-left' : 'text-center'}`}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {sorted.map((s) => (
-              <tr key={s.playerId} className="hover:bg-gray-50">
-                <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{s.playerName}</td>
-                <td className="px-3 py-2 text-center font-mono">{formatInningsPitched(s.inningsPitchedOuts)}</td>
-                <td className="px-3 py-2 text-center">{s.hitsAllowed}</td>
-                <td className="px-3 py-2 text-center">{s.runsAllowed}</td>
-                <td className="px-3 py-2 text-center">{s.walksAllowed}</td>
-                <td className="px-3 py-2 text-center">{s.strikeouts}</td>
-                <td className="px-3 py-2 text-center">{s.hitBatters}</td>
-                <td className="px-3 py-2 text-center">{s.wildPitches}</td>
-                <td className="px-3 py-2 text-center">{s.totalPitches}</td>
-                <td className="px-3 py-2 text-center">{fmtPct(s.strikePercentage)}</td>
-                <td className="px-3 py-2 text-center font-mono">{fmtEra(s.era)}</td>
-                <td className="px-3 py-2 text-center font-mono">{fmtWhip(s.whip)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-200">
-            {['Pitcher', 'K/7', 'BB/7', 'FPS%', '3-Ball%', 'ERA', 'WHIP'].map((h) => (
-              <th key={h} className={`px-3 py-2 font-semibold text-gray-600 ${h === 'Pitcher' ? 'text-left' : 'text-center'}`}>{h}</th>
+            <th className="px-3 py-2 font-semibold text-gray-600 text-left">Pitcher</th>
+            {columns.map((k) => (
+              <th key={k} className="px-3 py-2 font-semibold text-gray-600 text-center">{PIT[k]?.label ?? k}</th>
             ))}
           </tr>
         </thead>
@@ -596,12 +715,17 @@ function PitchingTable({
           {sorted.map((s) => (
             <tr key={s.playerId} className="hover:bg-gray-50">
               <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{s.playerName}</td>
-              <td className="px-3 py-2 text-center">{fmtPer7(s.strikeoutsPerSeven)}</td>
-              <td className="px-3 py-2 text-center">{fmtPer7(s.walksPerSeven)}</td>
-              <td className="px-3 py-2 text-center">{fmtPct(s.firstPitchStrikePercentage)}</td>
-              <td className="px-3 py-2 text-center">{fmtPct(s.threeBallCountPercentage)}</td>
-              <td className="px-3 py-2 text-center font-mono">{fmtEra(s.era)}</td>
-              <td className="px-3 py-2 text-center font-mono">{fmtWhip(s.whip)}</td>
+              {columns.map((k) => {
+                const col = PIT[k];
+                if (!col) return <td key={k} className="px-3 py-2 text-center">—</td>;
+                const val = col.get(s);
+                const cc = col.color ? rateColor(col.color, val) : '';
+                return (
+                  <td key={k} className={`px-3 py-2 text-center ${col.mono ? 'font-mono' : ''} ${cc}`}>
+                    {col.fmt(val)}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
@@ -647,11 +771,9 @@ function FieldingTable({ rows }: { rows: FieldingStatRow[] }) {
   );
 }
 
-function PlayByPlayView({
-  halfInnings,
-}: {
-  halfInnings: PbpHalfInning[];
-}) {
+// ── Play-by-Play view ───────────────────────────────────────────────────────
+
+function PlayByPlayView({ halfInnings }: { halfInnings: PbpHalfInning[] }) {
   const [openHalves, setOpenHalves] = useState<Set<string>>(new Set());
   const [openABs, setOpenABs] = useState<Set<string>>(new Set());
 
@@ -767,16 +889,15 @@ function PlayByPlayView({
 
 // ── Main component ───────────────────────────────────────────────────────────
 
+const TIER_LABEL: Record<StatTier, string> = {
+  youth: 'Youth',
+  high_school: 'HS',
+  college: 'College',
+};
+
 export function GameStatsClient({
-  game,
-  events,
-  ourBatting,
-  oppBatting,
-  ourPitching,
-  oppPitching,
-  ourFielding,
-  lineScore,
-  players,
+  game, events, ourBatting, oppBatting, ourPitching, oppPitching,
+  ourFielding, lineScore, players, tier, baserunning,
 }: GameStatsClientProps): JSX.Element {
   const [tab, setTab] = useState<Tab>('box_score');
   const [battingTeam, setBattingTeam] = useState<'us' | 'opp'>('us');
@@ -788,19 +909,13 @@ export function GameStatsClient({
   const ourLabel = game.teamName;
   const oppLabel = game.opponentName;
 
-  // Build player name map for play-by-play
   const nameMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const p of players) m.set(p.id, p.name);
     return m;
   }, [players]);
 
-  // Build play-by-play tree
   const playByPlay = useMemo(() => buildPlayByPlay(events, nameMap), [events, nameMap]);
-
-  // Box score batting summary (standard cols only)
-  const ourBattingSummary = [...ourBatting].sort((a, b) => b.atBats - a.atBats);
-  const ourPitchingSummary = [...ourPitching].sort((a, b) => b.inningsPitchedOuts - a.inningsPitchedOuts);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'box_score', label: 'Box Score' },
@@ -812,82 +927,35 @@ export function GameStatsClient({
 
   return (
     <div className="w-full">
-      {/* Tab bar */}
-      <div className="border-b border-gray-200 flex overflow-x-auto">
-        {tabs.map((t) => (
-          <TabButton key={t.id} label={t.label} active={tab === t.id} onClick={() => setTab(t.id)} />
-        ))}
+      {/* Tab bar with tier indicator */}
+      <div className="flex items-center justify-between border-b border-gray-200">
+        <div className="flex overflow-x-auto">
+          {tabs.map((t) => (
+            <TabButton key={t.id} label={t.label} active={tab === t.id} onClick={() => setTab(t.id)} />
+          ))}
+        </div>
+        <span className="text-xs text-gray-400 px-3 shrink-0">{TIER_LABEL[tier]} Stats</span>
       </div>
 
       {/* ── Box Score ──────────────────────────────────────────────── */}
       {tab === 'box_score' && (
         <div className="p-4 space-y-4">
-          <LineScoreTable
-            lineScore={lineScore}
-            usLabel={ourLabel}
-            oppLabel={oppLabel}
-            weAreHome={weAreHome}
-          />
+          <LineScoreTable lineScore={lineScore} usLabel={ourLabel} oppLabel={oppLabel} weAreHome={weAreHome} />
 
-          {/* Batting summary */}
           <CollapsibleSection title={`Batting — ${ourLabel}`}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    {['Player', 'AB', 'R', 'H', '2B', '3B', 'HR', 'RBI', 'BB', 'K', 'AVG'].map((h) => (
-                      <th key={h} className={`px-3 py-2 text-xs font-semibold text-gray-600 ${h === 'Player' ? 'text-left' : 'text-center'}`}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {ourBattingSummary.map((s) => (
-                    <tr key={s.playerId} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{s.playerName}</td>
-                      <td className="px-3 py-2 text-center text-sm">{s.atBats}</td>
-                      <td className="px-3 py-2 text-center text-sm">{s.runs}</td>
-                      <td className="px-3 py-2 text-center text-sm">{s.hits}</td>
-                      <td className="px-3 py-2 text-center text-sm">{s.doubles}</td>
-                      <td className="px-3 py-2 text-center text-sm">{s.triples}</td>
-                      <td className="px-3 py-2 text-center text-sm">{s.homeRuns}</td>
-                      <td className="px-3 py-2 text-center text-sm">{s.rbi}</td>
-                      <td className="px-3 py-2 text-center text-sm">{s.walks}</td>
-                      <td className="px-3 py-2 text-center text-sm">{s.strikeouts}</td>
-                      <td className="px-3 py-2 text-center text-sm font-mono">{fmtRate(s.avg)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <BattingStatTable rows={ourBatting} columns={BOX_BAT[tier]} baserunning={baserunning} />
           </CollapsibleSection>
 
-          {/* Pitching summary */}
+          <CollapsibleSection title={`Batting — ${oppLabel}`} defaultOpen={false}>
+            <OppBattingStatTable rows={oppBatting} columns={OPP_TIER[tier]} />
+          </CollapsibleSection>
+
           <CollapsibleSection title={`Pitching — ${ourLabel}`}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    {['Pitcher', 'IP', 'H', 'R', 'BB', 'K', 'PC', 'ERA'].map((h) => (
-                      <th key={h} className={`px-3 py-2 text-xs font-semibold text-gray-600 ${h === 'Pitcher' ? 'text-left' : 'text-center'}`}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {ourPitchingSummary.map((s) => (
-                    <tr key={s.playerId} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{s.playerName}</td>
-                      <td className="px-3 py-2 text-center font-mono">{formatInningsPitched(s.inningsPitchedOuts)}</td>
-                      <td className="px-3 py-2 text-center">{s.hitsAllowed}</td>
-                      <td className="px-3 py-2 text-center">{s.runsAllowed}</td>
-                      <td className="px-3 py-2 text-center">{s.walksAllowed}</td>
-                      <td className="px-3 py-2 text-center">{s.strikeouts}</td>
-                      <td className="px-3 py-2 text-center">{s.totalPitches}</td>
-                      <td className="px-3 py-2 text-center font-mono">{fmtEra(s.era)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <PitchingStatTable rows={ourPitching} columns={BOX_PIT[tier]} />
+          </CollapsibleSection>
+
+          <CollapsibleSection title={`Pitching — ${oppLabel}`} defaultOpen={false}>
+            <PitchingStatTable rows={oppPitching} columns={BOX_PIT[tier]} />
           </CollapsibleSection>
         </div>
       )}
@@ -896,45 +964,24 @@ export function GameStatsClient({
       {tab === 'batting' && (
         <div className="p-4 space-y-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            {/* Team toggle */}
-            <div className="flex border border-gray-200 rounded-lg overflow-hidden text-sm">
-              <button
-                onClick={() => setBattingTeam('us')}
-                className={`px-4 py-2 font-medium transition-colors ${battingTeam === 'us' ? 'bg-brand-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              >
-                {ourLabel}
-              </button>
-              <button
-                onClick={() => setBattingTeam('opp')}
-                className={`px-4 py-2 font-medium transition-colors border-l border-gray-200 ${battingTeam === 'opp' ? 'bg-brand-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              >
-                {oppLabel}
-              </button>
+            <div className="flex border border-gray-200 rounded-lg overflow-hidden">
+              <ToggleButton label={ourLabel} active={battingTeam === 'us'} onClick={() => setBattingTeam('us')} />
+              <div className="border-l border-gray-200" />
+              <ToggleButton label={oppLabel} active={battingTeam === 'opp'} onClick={() => setBattingTeam('opp')} />
             </div>
-
-            {/* Standard/Advanced toggle (only for our team — opponent data is limited) */}
             {battingTeam === 'us' && (
-              <div className="flex border border-gray-200 rounded-lg overflow-hidden text-sm">
-                <button
-                  onClick={() => setBattingMode('standard')}
-                  className={`px-4 py-2 font-medium transition-colors ${battingMode === 'standard' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                >
-                  Standard
-                </button>
-                <button
-                  onClick={() => setBattingMode('advanced')}
-                  className={`px-4 py-2 font-medium transition-colors border-l border-gray-200 ${battingMode === 'advanced' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                >
-                  Advanced
-                </button>
+              <div className="flex border border-gray-200 rounded-lg overflow-hidden">
+                <ToggleButton label="Standard" active={battingMode === 'standard'} onClick={() => setBattingMode('standard')} color="gray" />
+                <div className="border-l border-gray-200" />
+                <ToggleButton label="Advanced" active={battingMode === 'advanced'} onClick={() => setBattingMode('advanced')} color="gray" />
               </div>
             )}
           </div>
 
           <div className="border border-gray-200 rounded-xl overflow-hidden">
             {battingTeam === 'us'
-              ? <BattingTable rows={ourBatting} advanced={battingMode === 'advanced'} />
-              : <OppBattingTable rows={oppBatting} />
+              ? <BattingStatTable rows={ourBatting} columns={BAT_TIER[tier][battingMode]} baserunning={baserunning} />
+              : <OppBattingStatTable rows={oppBatting} columns={OPP_TIER[tier]} />
             }
           </div>
         </div>
@@ -944,41 +991,22 @@ export function GameStatsClient({
       {tab === 'pitching' && (
         <div className="p-4 space-y-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex border border-gray-200 rounded-lg overflow-hidden text-sm">
-              <button
-                onClick={() => setPitchingTeam('us')}
-                className={`px-4 py-2 font-medium transition-colors ${pitchingTeam === 'us' ? 'bg-brand-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              >
-                {ourLabel}
-              </button>
-              <button
-                onClick={() => setPitchingTeam('opp')}
-                className={`px-4 py-2 font-medium transition-colors border-l border-gray-200 ${pitchingTeam === 'opp' ? 'bg-brand-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              >
-                {oppLabel}
-              </button>
+            <div className="flex border border-gray-200 rounded-lg overflow-hidden">
+              <ToggleButton label={ourLabel} active={pitchingTeam === 'us'} onClick={() => setPitchingTeam('us')} />
+              <div className="border-l border-gray-200" />
+              <ToggleButton label={oppLabel} active={pitchingTeam === 'opp'} onClick={() => setPitchingTeam('opp')} />
             </div>
-
-            <div className="flex border border-gray-200 rounded-lg overflow-hidden text-sm">
-              <button
-                onClick={() => setPitchingMode('standard')}
-                className={`px-4 py-2 font-medium transition-colors ${pitchingMode === 'standard' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              >
-                Standard
-              </button>
-              <button
-                onClick={() => setPitchingMode('advanced')}
-                className={`px-4 py-2 font-medium transition-colors border-l border-gray-200 ${pitchingMode === 'advanced' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              >
-                Advanced
-              </button>
+            <div className="flex border border-gray-200 rounded-lg overflow-hidden">
+              <ToggleButton label="Standard" active={pitchingMode === 'standard'} onClick={() => setPitchingMode('standard')} color="gray" />
+              <div className="border-l border-gray-200" />
+              <ToggleButton label="Advanced" active={pitchingMode === 'advanced'} onClick={() => setPitchingMode('advanced')} color="gray" />
             </div>
           </div>
 
           <div className="border border-gray-200 rounded-xl overflow-hidden">
-            <PitchingTable
+            <PitchingStatTable
               rows={pitchingTeam === 'us' ? ourPitching : oppPitching}
-              advanced={pitchingMode === 'advanced'}
+              columns={PIT_TIER[tier][pitchingMode]}
             />
           </div>
         </div>
