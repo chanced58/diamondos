@@ -88,6 +88,12 @@ export default async function TeamAdminPage({
       description: 'View and manage the full team roster.',
       icon: '📑',
     },
+    {
+      href: `/teams/${params.teamId}/admin/seasons`,
+      title: 'Seasons',
+      description: 'Create and manage seasons (Spring, Summer, Fall).',
+      icon: '📅',
+    },
   ];
 
   return (

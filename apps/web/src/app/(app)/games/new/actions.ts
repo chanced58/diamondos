@@ -53,6 +53,14 @@ export async function createGameAction(_prevState: string | null | undefined, fo
 
   if (!isCoach) return 'Only coaches can schedule games.';
 
+  // Look up active season so the game is automatically linked
+  const { data: activeSeason } = await supabase
+    .from('seasons')
+    .select('id')
+    .eq('team_id', teamId)
+    .eq('is_active', true)
+    .maybeSingle();
+
   const { data: game, error } = await supabase
     .from('games')
     .insert({
@@ -67,6 +75,7 @@ export async function createGameAction(_prevState: string | null | undefined, fo
       place_id:      placeId,
       notes,
       created_by:    user.id,
+      season_id:     activeSeason?.id ?? null,
     })
     .select()
     .single();

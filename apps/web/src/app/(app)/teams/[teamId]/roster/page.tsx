@@ -189,7 +189,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       .from('seasons')
       .select('id, name')
       .eq('team_id', params.teamId)
-      .eq('is_current', true)
+      .eq('is_active', true)
       .maybeSingle(),
     db
       .from('team_members')

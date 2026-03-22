@@ -9,6 +9,7 @@ import { derivePitchingStats, deriveBattingStats } from '@baseball/shared';
 import type { PitchingStats, BattingStats } from '@baseball/shared';
 import { PitchingStatsTable } from './PitchingStatsTable';
 import { BattingStatsTable } from './BattingStatsTable';
+import { SeasonPicker } from './SeasonPicker';
 
 export const metadata: Metadata = { title: 'Stats' };
 
@@ -32,7 +33,7 @@ const RELEVANT_EVENT_TYPES = [
 export default async function CompliancePage({
   searchParams,
 }: {
-  searchParams: { tab?: string };
+  searchParams: { tab?: string; season?: string };
 }): Promise<JSX.Element | null> {
   const VALID_TABS = ['pitching', 'hitting'] as const;
   const tab = VALID_TABS.includes(searchParams.tab as typeof VALID_TABS[number])
@@ -64,15 +65,28 @@ export default async function CompliancePage({
     : teamLevel === 'college' || teamLevel === 'pro' ? 'college'
     : 'high_school';
 
-  // Get current season
-  const { data: season } = await db
+  // Fetch all seasons for the picker
+  const { data: allSeasons } = await db
     .from('seasons')
-    .select('id, name')
+    .select('id, name, is_active')
     .eq('team_id', activeTeam.id)
-    .eq('is_current', true)
-    .maybeSingle();
+    .order('start_date', { ascending: false });
 
-  // Get games — from the current season if one exists, otherwise all completed/in-progress games
+  // Determine which season to display:
+  // 1. Explicit season param from URL
+  // 2. Active season (default)
+  // 3. No season → show all games
+  let season: { id: string; name: string } | null = null;
+  if (searchParams.season) {
+    const match = (allSeasons ?? []).find((s) => s.id === searchParams.season);
+    if (match) season = { id: match.id, name: match.name };
+    // If param is invalid, fall through to "all games"
+  } else {
+    const active = (allSeasons ?? []).find((s) => s.is_active);
+    if (active) season = { id: active.id, name: active.name };
+  }
+
+  // Get games — from the selected season if one exists, otherwise all completed/in-progress games
   const gameIds: string[] = [];
   if (season) {
     const { data: games } = await db
@@ -83,7 +97,6 @@ export default async function CompliancePage({
       .in('status', ['completed', 'in_progress']);
     for (const g of games ?? []) gameIds.push(g.id);
   } else {
-    // No current season — show stats from all completed/in-progress games for this team
     const { data: games } = await db
       .from('games')
       .select('id')
@@ -164,7 +177,13 @@ export default async function CompliancePage({
   return (
     <div className="p-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Stats</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-gray-900">Stats</h1>
+          <SeasonPicker
+            seasons={(allSeasons ?? []).map((s) => ({ id: s.id, name: s.name }))}
+            currentSeasonId={season?.id ?? null}
+          />
+        </div>
         <p className="text-gray-500 text-sm mt-1">
           {season
             ? `Season: ${season.name} · ${gameIds.length} ${gameIds.length === 1 ? 'game' : 'games'}`
@@ -175,7 +194,7 @@ export default async function CompliancePage({
       {/* Tab strip */}
       <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
         <Link
-          href="/compliance?tab=pitching"
+          href={`/compliance?tab=pitching${season ? `&season=${season.id}` : ''}`}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
             tab === 'pitching'
               ? 'bg-white text-gray-900 shadow-sm'
@@ -185,7 +204,7 @@ export default async function CompliancePage({
           Pitching
         </Link>
         <Link
-          href="/compliance?tab=hitting"
+          href={`/compliance?tab=hitting${season ? `&season=${season.id}` : ''}`}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
             tab === 'hitting'
               ? 'bg-white text-gray-900 shadow-sm'
