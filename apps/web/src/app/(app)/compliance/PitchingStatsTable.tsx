@@ -1,9 +1,11 @@
 'use client';
 import type { JSX } from 'react';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import type { PitchingStats } from '@baseball/shared';
 import { formatInningsPitched, formatAverage } from '@baseball/shared';
+
+type StatTier = 'youth' | 'high_school' | 'college';
 
 type ComplianceInfo = {
   pitchCount: number;
@@ -16,6 +18,7 @@ type Props = {
   stats: PitchingStats[];
   complianceMap: Record<string, ComplianceInfo>;
   today: string;
+  tier?: StatTier;
 };
 
 type SortKey =
@@ -35,47 +38,69 @@ type SortKey =
   | 'hitBatters'
   | 'wildPitches';
 
-const COLUMNS: { key: SortKey; label: string; title: string }[] = [
-  { key: 'playerName',               label: 'Pitcher',  title: 'Pitcher name' },
-  { key: 'inningsPitchedOuts',       label: 'IP',       title: 'Innings pitched' },
-  { key: 'totalPitches',             label: 'PC',       title: 'Pitch count' },
-  { key: 'strikePercentage',         label: 'STR%',     title: 'Strike percentage' },
-  { key: 'firstPitchStrikePercentage', label: 'FPS%',  title: 'First-pitch strike percentage' },
-  { key: 'threeBallCountPercentage', label: '3B%',      title: '% of PAs with a 3-ball count' },
-  { key: 'era',                      label: 'ERA',      title: 'Earned run average (per 7 innings)' },
-  { key: 'whip',                     label: 'WHIP',     title: 'Walks + hits per inning pitched' },
-  { key: 'strikeoutsPerSeven',       label: 'K/7',      title: 'Strikeouts per 7 innings' },
-  { key: 'walksPerSeven',            label: 'BB/7',     title: 'Walks per 7 innings' },
-  { key: 'hitsAllowed',              label: 'H',        title: 'Hits allowed' },
-  { key: 'walksAllowed',             label: 'BB',       title: 'Walks' },
-  { key: 'strikeouts',               label: 'K',        title: 'Strikeouts' },
-  { key: 'hitBatters',               label: 'HBP',      title: 'Hit batters' },
-  { key: 'wildPitches',              label: 'WP',       title: 'Wild pitches' },
-];
-
-// Ball-strike count grid rows/cols
-const COUNT_ROWS = [0, 1, 2, 3]; // balls
-const COUNT_COLS = [0, 1, 2];    // strikes
+type ColDef = { key: SortKey; label: string; title: string; fmt: (s: PitchingStats) => string };
 
 function pct(value: number): string {
   if (!isFinite(value) || isNaN(value)) return '---';
   return `${(value * 100).toFixed(1)}%`;
 }
 
-function stat(value: number, decimals = 2): string {
+function dec(value: number, decimals = 2): string {
   if (!isFinite(value) || isNaN(value)) return '---';
   return value.toFixed(decimals);
 }
+
+const ALL_COLUMNS: ColDef[] = [
+  { key: 'playerName',               label: 'Pitcher',  title: 'Pitcher name',                         fmt: (s) => s.playerName },
+  { key: 'inningsPitchedOuts',       label: 'IP',       title: 'Innings pitched',                      fmt: (s) => formatInningsPitched(s.inningsPitchedOuts) },
+  { key: 'totalPitches',             label: 'PC',       title: 'Pitch count',                          fmt: (s) => String(s.totalPitches) },
+  { key: 'strikePercentage',         label: 'STR%',     title: 'Strike percentage',                    fmt: (s) => pct(s.strikePercentage) },
+  { key: 'firstPitchStrikePercentage', label: 'FPS%',   title: 'First-pitch strike percentage',        fmt: (s) => pct(s.firstPitchStrikePercentage) },
+  { key: 'threeBallCountPercentage', label: '3B%',      title: '% of PAs with a 3-ball count',         fmt: (s) => pct(s.threeBallCountPercentage) },
+  { key: 'era',                      label: 'ERA',      title: 'Earned run average (per 7 innings)',    fmt: (s) => dec(s.era) },
+  { key: 'whip',                     label: 'WHIP',     title: 'Walks + hits per inning pitched',       fmt: (s) => dec(s.whip) },
+  { key: 'strikeoutsPerSeven',       label: 'K/7',      title: 'Strikeouts per 7 innings',             fmt: (s) => dec(s.strikeoutsPerSeven) },
+  { key: 'walksPerSeven',            label: 'BB/7',     title: 'Walks per 7 innings',                  fmt: (s) => dec(s.walksPerSeven) },
+  { key: 'hitsAllowed',              label: 'H',        title: 'Hits allowed',                         fmt: (s) => String(s.hitsAllowed) },
+  { key: 'walksAllowed',             label: 'BB',       title: 'Walks',                                fmt: (s) => String(s.walksAllowed) },
+  { key: 'strikeouts',               label: 'K',        title: 'Strikeouts',                           fmt: (s) => String(s.strikeouts) },
+  { key: 'hitBatters',               label: 'HBP',      title: 'Hit batters',                          fmt: (s) => String(s.hitBatters) },
+  { key: 'wildPitches',              label: 'WP',       title: 'Wild pitches',                         fmt: (s) => String(s.wildPitches) },
+];
+
+const TIER_KEYS: Record<StatTier, Set<SortKey>> = {
+  youth: new Set<SortKey>([
+    'playerName', 'inningsPitchedOuts', 'totalPitches',
+    'strikePercentage', 'firstPitchStrikePercentage',
+    'era', 'walksAllowed', 'strikeouts', 'wildPitches', 'hitBatters',
+  ]),
+  high_school: new Set<SortKey>([
+    'playerName', 'inningsPitchedOuts', 'totalPitches',
+    'strikePercentage', 'firstPitchStrikePercentage', 'threeBallCountPercentage',
+    'era', 'whip', 'strikeoutsPerSeven', 'walksPerSeven',
+    'hitsAllowed', 'walksAllowed', 'strikeouts', 'hitBatters', 'wildPitches',
+  ]),
+  college: new Set<SortKey>(ALL_COLUMNS.map((c) => c.key)),
+};
+
+// Ball-strike count grid
+const COUNT_ROWS = [0, 1, 2, 3];
+const COUNT_COLS = [0, 1, 2];
 
 function getValue(s: PitchingStats, key: SortKey): number | string {
   if (key === 'playerName') return s.playerName;
   return s[key];
 }
 
-export function PitchingStatsTable({ stats, complianceMap, today }: Props): JSX.Element | null {
+export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_school' }: Props): JSX.Element | null {
   const [sortKey, setSortKey] = useState<SortKey>('inningsPitchedOuts');
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const columns = useMemo(
+    () => ALL_COLUMNS.filter((col) => TIER_KEYS[tier].has(col.key)),
+    [tier],
+  );
 
   function handleSort(key: SortKey) {
     if (key === sortKey) {
@@ -94,7 +119,6 @@ export function PitchingStatsTable({ stats, complianceMap, today }: Props): JSX.
     }
     const an = av as number;
     const bn = bv as number;
-    // Treat Infinity as very large (ERA/WHIP for 0 IP pitchers go last)
     const af = isFinite(an) ? an : 1e10;
     const bf = isFinite(bn) ? bn : 1e10;
     return sortAsc ? af - bf : bf - af;
@@ -105,7 +129,7 @@ export function PitchingStatsTable({ stats, complianceMap, today }: Props): JSX.
       <table className="min-w-full text-sm">
         <thead className="bg-gray-50 border-b border-gray-200">
           <tr>
-            {COLUMNS.map((col) => (
+            {columns.map((col) => (
               <th
                 key={col.key}
                 title={col.title}
@@ -125,63 +149,50 @@ export function PitchingStatsTable({ stats, complianceMap, today }: Props): JSX.
             </th>
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-100">
-          {sorted.map((s) => {
-            const compliance = complianceMap[s.playerId];
-            const isExpanded = expandedId === s.playerId;
+        {sorted.map((s) => {
+          const compliance = complianceMap[s.playerId];
+          const isExpanded = expandedId === s.playerId;
 
-            return (
-              <>
-                <tr
-                  key={s.playerId}
+          return (
+            <tbody key={s.playerId} className="bg-white divide-y divide-gray-100">
+              <tr
                   className="hover:bg-gray-50 cursor-pointer transition-colors"
                   onClick={() => setExpandedId(isExpanded ? null : s.playerId)}
                 >
-                  {/* Pitcher name — links to player profile */}
-                  <td className="px-3 py-3 font-medium text-gray-900 whitespace-nowrap">
-                    <span
-                      className="text-brand-700 hover:underline"
-                      onClick={(e) => e.stopPropagation()}
+                  {columns.map((col) => (
+                    <td
+                      key={col.key}
+                      className={`px-3 py-3 tabular-nums whitespace-nowrap ${
+                        col.key === 'playerName' ? 'font-medium text-gray-900' : 'text-gray-700'
+                      }`}
                     >
-                      {s.playerName}
-                    </span>
-                    <span className="ml-2 text-xs text-gray-400">
-                      {isExpanded ? '▲' : '▼'}
-                    </span>
-                  </td>
-                  <td className="px-3 py-3 text-gray-700 tabular-nums">
-                    {formatInningsPitched(s.inningsPitchedOuts)}
-                  </td>
-                  <td className="px-3 py-3 text-gray-700 tabular-nums">{s.totalPitches}</td>
-                  <td className="px-3 py-3 text-gray-700 tabular-nums">{pct(s.strikePercentage)}</td>
-                  <td className="px-3 py-3 text-gray-700 tabular-nums">{pct(s.firstPitchStrikePercentage)}</td>
-                  <td className="px-3 py-3 text-gray-700 tabular-nums">{pct(s.threeBallCountPercentage)}</td>
-                  <td className="px-3 py-3 text-gray-700 tabular-nums">{stat(s.era)}</td>
-                  <td className="px-3 py-3 text-gray-700 tabular-nums">{stat(s.whip)}</td>
-                  <td className="px-3 py-3 text-gray-700 tabular-nums">{stat(s.strikeoutsPerSeven)}</td>
-                  <td className="px-3 py-3 text-gray-700 tabular-nums">{stat(s.walksPerSeven)}</td>
-                  <td className="px-3 py-3 text-gray-700 tabular-nums">{s.hitsAllowed}</td>
-                  <td className="px-3 py-3 text-gray-700 tabular-nums">{s.walksAllowed}</td>
-                  <td className="px-3 py-3 text-gray-700 tabular-nums">{s.strikeouts}</td>
-                  <td className="px-3 py-3 text-gray-700 tabular-nums">{s.hitBatters}</td>
-                  <td className="px-3 py-3 text-gray-700 tabular-nums">{s.wildPitches}</td>
-                  {/* Compliance / rest days */}
+                      {col.key === 'playerName' ? (
+                        <>
+                          <span className="text-brand-700 hover:underline" onClick={(e) => e.stopPropagation()}>
+                            {s.playerName}
+                          </span>
+                          <span className="ml-2 text-xs text-gray-400">{isExpanded ? '▲' : '▼'}</span>
+                        </>
+                      ) : (
+                        col.fmt(s)
+                      )}
+                    </td>
+                  ))}
                   <td className="px-3 py-3 whitespace-nowrap">
                     <ComplianceBadge compliance={compliance} today={today} />
                   </td>
                 </tr>
 
                 {isExpanded && (
-                  <tr key={`${s.playerId}-expand`}>
-                    <td colSpan={COLUMNS.length + 1} className="px-6 py-4 bg-gray-50 border-t border-gray-100">
+                  <tr>
+                    <td colSpan={columns.length + 1} className="px-6 py-4 bg-gray-50 border-t border-gray-100">
                       <BaByCountGrid stats={s} />
                     </td>
                   </tr>
-                )}
-              </>
-            );
-          })}
-        </tbody>
+              )}
+            </tbody>
+          );
+        })}
       </table>
     </div>
   );
@@ -200,7 +211,7 @@ function ComplianceBadge({
 
   const { requiredRestDays, canPitchNextDay, lastGameDate } = compliance;
 
-  if (requiredRestDays == null) {
+  if (requiredRestDays == null || requiredRestDays === 0 || canPitchNextDay) {
     return (
       <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
         Eligible
@@ -208,15 +219,6 @@ function ComplianceBadge({
     );
   }
 
-  if (requiredRestDays === 0 || canPitchNextDay) {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
-        Eligible
-      </span>
-    );
-  }
-
-  // Calculate days elapsed since last game
   let daysElapsed = 0;
   if (lastGameDate) {
     const last = new Date(lastGameDate);
@@ -248,7 +250,6 @@ function BaByCountGrid({ stats }: { stats: PitchingStats }) {
         Batting Average Against by Count
       </p>
       <div className="inline-block">
-        {/* Header row */}
         <div className="flex">
           <div className="w-16" />
           {COUNT_COLS.map((s) => (
@@ -257,7 +258,6 @@ function BaByCountGrid({ stats }: { stats: PitchingStats }) {
             </div>
           ))}
         </div>
-        {/* Data rows */}
         {COUNT_ROWS.map((b) => (
           <div key={b} className="flex items-center">
             <div className="w-16 text-xs font-semibold text-gray-500 pr-2 text-right">
@@ -291,7 +291,6 @@ function BaByCountGrid({ stats }: { stats: PitchingStats }) {
         ))}
       </div>
 
-      {/* Summary stats */}
       <div className="mt-4 flex flex-wrap gap-4 text-xs text-gray-600">
         <span>
           <span className="font-semibold text-gray-800">FPS%:</span>{' '}

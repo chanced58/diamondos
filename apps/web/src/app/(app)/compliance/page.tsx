@@ -51,6 +51,19 @@ export default async function CompliancePage({
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
+  // Get team level for tier-aware stat display
+  const { data: teamData } = await db
+    .from('teams')
+    .select('*')
+    .eq('id', activeTeam.id)
+    .single();
+  const teamLevel = teamData?.level ?? 'high_school';
+  type StatTier = 'youth' | 'high_school' | 'college';
+  const tier: StatTier =
+    teamLevel === 'youth' || teamLevel === 'middle_school' ? 'youth'
+    : teamLevel === 'college' || teamLevel === 'pro' ? 'college'
+    : 'high_school';
+
   // Get current season
   const { data: season } = await db
     .from('seasons')
@@ -153,7 +166,9 @@ export default async function CompliancePage({
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Stats</h1>
         <p className="text-gray-500 text-sm mt-1">
-          {season ? `Season stats — ${season.name}` : 'All games — no active season set'}
+          {season
+            ? `Season: ${season.name} · ${gameIds.length} ${gameIds.length === 1 ? 'game' : 'games'}`
+            : `All games · ${gameIds.length} ${gameIds.length === 1 ? 'game' : 'games'} scored`}
         </p>
       </div>
 
@@ -197,6 +212,7 @@ export default async function CompliancePage({
             stats={allPitchingStats}
             complianceMap={complianceMap}
             today={today}
+            tier={tier}
           />
         )
       )}
@@ -213,7 +229,7 @@ export default async function CompliancePage({
             </p>
           </div>
         ) : (
-          <BattingStatsTable stats={allBattingStats} />
+          <BattingStatsTable stats={allBattingStats} tier={tier} />
         )
       )}
     </div>

@@ -1,13 +1,15 @@
 'use client';
 import type { JSX } from 'react';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import type { BattingStats } from '@baseball/shared';
 import { formatBattingRate, formatBattingPct } from '@baseball/shared';
 
+type StatTier = 'youth' | 'high_school' | 'college';
+
 type SortKey = keyof Omit<BattingStats, 'playerId' | 'playerName'> | 'playerName';
 
-const COLUMNS: { key: SortKey; label: string; title: string }[] = [
+const ALL_COLUMNS: { key: SortKey; label: string; title: string }[] = [
   { key: 'playerName',      label: 'Batter',  title: 'Player name' },
   { key: 'gamesAppeared',   label: 'G',       title: 'Games appeared' },
   { key: 'plateAppearances', label: 'PA',     title: 'Plate appearances' },
@@ -35,6 +37,23 @@ const COLUMNS: { key: SortKey; label: string; title: string }[] = [
   { key: 'hardHitPct',      label: 'HHB%',    title: 'Hard Hit Ball rate (HHB / total batted balls)' },
 ];
 
+// Which columns are visible at each tier
+const TIER_KEYS: Record<StatTier, Set<SortKey>> = {
+  youth: new Set<SortKey>([
+    'playerName', 'gamesAppeared', 'plateAppearances', 'atBats',
+    'runs', 'hits', 'rbi', 'walks', 'strikeouts',
+    'avg', 'obp', 'ops', 'hardHitPct',
+  ]),
+  high_school: new Set<SortKey>([
+    'playerName', 'gamesAppeared', 'plateAppearances', 'atBats',
+    'runs', 'hits', 'doubles', 'triples', 'homeRuns', 'rbi',
+    'walks', 'strikeouts', 'hitByPitch', 'sacrificeFlies',
+    'avg', 'obp', 'slg', 'ops', 'iso', 'babip',
+    'kPct', 'bbPct', 'woba', 'hardHitPct',
+  ]),
+  college: new Set<SortKey>(ALL_COLUMNS.map((c) => c.key)),
+};
+
 function getValue(s: BattingStats, key: SortKey): number | string {
   if (key === 'playerName') return s.playerName;
   return s[key as keyof Omit<BattingStats, 'playerId' | 'playerName'>];
@@ -43,7 +62,6 @@ function getValue(s: BattingStats, key: SortKey): number | string {
 function displayStat(s: BattingStats, key: SortKey): string {
   if (key === 'playerName') return s.playerName;
 
-  // Integer counting stats
   const intKeys: SortKey[] = [
     'gamesAppeared', 'plateAppearances', 'atBats', 'runs', 'hits',
     'doubles', 'triples', 'homeRuns', 'rbi', 'walks', 'strikeouts',
@@ -53,19 +71,22 @@ function displayStat(s: BattingStats, key: SortKey): string {
     return String(s[key as keyof typeof s]);
   }
 
-  // Percentage stats (formatted as XX.X%)
   const pctKeys: SortKey[] = ['kPct', 'bbPct', 'hardHitPct'];
   if (pctKeys.includes(key)) {
     return formatBattingPct(s[key as keyof typeof s] as number);
   }
 
-  // All other rate stats (.XXX format)
   return formatBattingRate(s[key as keyof typeof s] as number);
 }
 
-export function BattingStatsTable({ stats }: { stats: BattingStats[] }): JSX.Element | null {
+export function BattingStatsTable({ stats, tier = 'high_school' }: { stats: BattingStats[]; tier?: StatTier }): JSX.Element | null {
   const [sortKey, setSortKey] = useState<SortKey>('plateAppearances');
   const [sortAsc, setSortAsc] = useState(false);
+
+  const columns = useMemo(
+    () => ALL_COLUMNS.filter((col) => TIER_KEYS[tier].has(col.key)),
+    [tier],
+  );
 
   function handleSort(key: SortKey) {
     if (key === sortKey) {
@@ -94,7 +115,7 @@ export function BattingStatsTable({ stats }: { stats: BattingStats[] }): JSX.Ele
       <table className="min-w-full text-sm">
         <thead className="bg-gray-50 border-b border-gray-200">
           <tr>
-            {COLUMNS.map((col) => (
+            {columns.map((col) => (
               <th
                 key={col.key}
                 title={col.title}
@@ -114,7 +135,7 @@ export function BattingStatsTable({ stats }: { stats: BattingStats[] }): JSX.Ele
         <tbody className="bg-white divide-y divide-gray-100">
           {sorted.map((s) => (
             <tr key={s.playerId} className="hover:bg-gray-50 transition-colors">
-              {COLUMNS.map((col) => (
+              {columns.map((col) => (
                 <td
                   key={col.key}
                   className={`px-3 py-3 tabular-nums whitespace-nowrap ${
