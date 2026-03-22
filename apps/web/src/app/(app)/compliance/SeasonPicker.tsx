@@ -19,13 +19,14 @@ export function SeasonPicker({
   const searchParams = useSearchParams();
 
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const params = new URLSearchParams(searchParams.toString());
     const value = e.target.value;
-    const tab = searchParams.get('tab') ?? 'pitching';
-    const tier = searchParams.get('tier');
-    let url = `/compliance?tab=${tab}`;
-    if (value) url += `&season=${value}`;
-    if (tier) url += `&tier=${tier}`;
-    router.push(url);
+    if (value) {
+      params.set('season', value);
+    } else {
+      params.delete('season');
+    }
+    router.push(`/compliance?${params.toString()}`);
   }
 
   if (seasons.length === 0) return null;

@@ -3,7 +3,7 @@
 import type { JSX } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-type StatTier = 'youth' | 'high_school' | 'college';
+import type { StatTier } from '@baseball/shared';
 
 const TIERS: { value: StatTier; label: string }[] = [
   { value: 'youth', label: 'Basic' },
@@ -20,12 +20,9 @@ export function TierToggle({
   const searchParams = useSearchParams();
 
   function handleClick(tier: StatTier) {
-    const tab = searchParams.get('tab') ?? 'pitching';
-    const season = searchParams.get('season');
-    let url = `/compliance?tab=${tab}`;
-    if (season) url += `&season=${season}`;
-    url += `&tier=${tier}`;
-    router.push(url);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tier', tier);
+    router.push(`/compliance?${params.toString()}`);
   }
 
   return (

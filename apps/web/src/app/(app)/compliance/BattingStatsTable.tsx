@@ -2,10 +2,8 @@
 import type { JSX } from 'react';
 
 import { useState, useMemo } from 'react';
-import type { BattingStats } from '@baseball/shared';
+import type { BattingStats, StatTier } from '@baseball/shared';
 import { formatBattingRate, formatBattingPct } from '@baseball/shared';
-
-type StatTier = 'youth' | 'high_school' | 'college';
 
 type SortKey = keyof Omit<BattingStats, 'playerId' | 'playerName'> | 'playerName';
 

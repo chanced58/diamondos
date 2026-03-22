@@ -2,10 +2,8 @@
 import type { JSX } from 'react';
 
 import { useState, useMemo } from 'react';
-import type { PitchingStats } from '@baseball/shared';
+import type { PitchingStats, StatTier } from '@baseball/shared';
 import { formatInningsPitched, formatAverage } from '@baseball/shared';
-
-type StatTier = 'youth' | 'high_school' | 'college';
 
 type ComplianceInfo = {
   pitchCount: number;

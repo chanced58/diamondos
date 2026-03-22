@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { derivePitchingStats, deriveBattingStats } from '@baseball/shared';
-import type { PitchingStats, BattingStats } from '@baseball/shared';
+import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
 import { PitchingStatsTable } from './PitchingStatsTable';
 import { BattingStatsTable } from './BattingStatsTable';
 import { SeasonPicker } from './SeasonPicker';
@@ -60,7 +60,6 @@ export default async function CompliancePage({
     .eq('id', activeTeam.id)
     .single();
   const teamLevel = teamData?.level ?? 'high_school';
-  type StatTier = 'youth' | 'high_school' | 'college';
   const VALID_TIERS: StatTier[] = ['youth', 'high_school', 'college'];
   const defaultTier: StatTier =
     teamLevel === 'youth' || teamLevel === 'middle_school' ? 'youth'
