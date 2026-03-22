@@ -8,7 +8,7 @@ import { getUserAccess } from '@/lib/user-access';
 import { deriveBattingStats, derivePitchingStats } from '@baseball/shared';
 import type { BattingStats, PitchingStats } from '@baseball/shared';
 import { GameStatsClient } from './GameStatsClient';
-import type { FieldingStatRow, LineScoreData, OppBattingRow, PlayerInfo, StatTier } from './GameStatsClient';
+import type { FieldingStatRow, LineScoreData, OppBattingRow } from './GameStatsClient';
 
 export const metadata: Metadata = { title: 'Game Stats' };
 
@@ -330,11 +330,6 @@ function computeBaserunningStats(
   return result;
 }
 
-function getStatTier(level: string): StatTier {
-  if (level === 'youth' || level === 'middle_school') return 'youth';
-  if (level === 'college' || level === 'pro') return 'college';
-  return 'high_school';
-}
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -422,8 +417,6 @@ export default async function GameStatsPage({
     ]);
 
   const teamName = teamResult.data?.name ?? 'Our Team';
-  const teamLevel = teamResult.data?.level ?? 'high_school';
-  const tier = getStatTier(teamLevel);
 
   const lineup: LineupEntry[] = (lineupResult.data ?? []).map((l) => {
     const p = l.players as unknown as { id: string; first_name: string; last_name: string; jersey_number: number | null } | null;
@@ -562,43 +555,6 @@ export default async function GameStatsPage({
 
   // ── Line score ──────────────────────────────────────────────────────────────
   const lineScore = computeLineScore(effectiveEvents);
-
-  // ── Player info for play-by-play name lookups ───────────────────────────────
-  const players: PlayerInfo[] = [
-    ...lineup.map((e) => ({
-      id: e.playerId,
-      name: `${e.player.firstName} ${e.player.lastName}`,
-      jerseyNumber: e.player.jerseyNumber,
-      isOpponent: false,
-      battingOrder: e.battingOrder,
-      position: e.startingPosition ?? undefined,
-    })),
-    ...opponentLineup.map((e) => ({
-      id: e.playerId,
-      name: `${e.player.firstName} ${e.player.lastName}`,
-      jerseyNumber: e.player.jerseyNumber,
-      isOpponent: true,
-      battingOrder: e.battingOrder,
-      position: e.startingPosition ?? undefined,
-    })),
-    // Include full rosters for substitutes who may appear in events
-    ...teamRoster
-      .filter((p) => !lineup.some((l) => l.playerId === p.id))
-      .map((p) => ({
-        id: p.id,
-        name: `${p.firstName} ${p.lastName}`,
-        jerseyNumber: p.jerseyNumber,
-        isOpponent: false,
-      })),
-    ...opponentRoster
-      .filter((p) => !opponentLineup.some((l) => l.playerId === p.id))
-      .map((p) => ({
-        id: p.id,
-        name: `${p.firstName} ${p.lastName}`,
-        jerseyNumber: p.jerseyNumber,
-        isOpponent: true,
-      })),
-  ];
 
   return (
     <div className="flex flex-col h-full">
