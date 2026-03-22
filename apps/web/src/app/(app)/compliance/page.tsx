@@ -34,7 +34,10 @@ export default async function CompliancePage({
 }: {
   searchParams: { tab?: string };
 }): Promise<JSX.Element | null> {
-  const tab = searchParams.tab === 'hitting' ? 'hitting' : 'pitching';
+  const validTabs = ['pitching', 'hitting'] as const;
+  const tab = validTabs.includes(searchParams.tab as typeof validTabs[number])
+    ? (searchParams.tab as typeof validTabs[number])
+    : 'pitching';
 
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
@@ -56,14 +59,23 @@ export default async function CompliancePage({
     .eq('is_current', true)
     .maybeSingle();
 
-  // Get all games for this season
+  // Get games — from the current season if one exists, otherwise all completed/in-progress games
   const gameIds: string[] = [];
   if (season) {
     const { data: games } = await db
       .from('games')
       .select('id')
       .eq('team_id', activeTeam.id)
-      .eq('season_id', season.id);
+      .eq('season_id', season.id)
+      .in('status', ['completed', 'in_progress']);
+    for (const g of games ?? []) gameIds.push(g.id);
+  } else {
+    // No current season — show stats from all completed/in-progress games for this team
+    const { data: games } = await db
+      .from('games')
+      .select('id')
+      .eq('team_id', activeTeam.id)
+      .in('status', ['completed', 'in_progress']);
     for (const g of games ?? []) gameIds.push(g.id);
   }
 
@@ -136,7 +148,7 @@ export default async function CompliancePage({
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Stats</h1>
         <p className="text-gray-500 text-sm mt-1">
-          {season ? `Season stats — ${season.name}` : 'No active season found.'}
+          {season ? `Season stats — ${season.name}` : 'All games — no active season set'}
         </p>
       </div>
 

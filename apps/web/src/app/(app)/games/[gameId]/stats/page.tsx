@@ -615,15 +615,12 @@ export default async function GameStatsPage({
             status: game.status,
             teamName,
           }}
-          events={effectiveEvents}
           ourBatting={ourBatting}
           oppBatting={oppBatting}
           ourPitching={ourPitching}
           oppPitching={oppPitching}
           ourFielding={ourFielding}
           lineScore={lineScore}
-          players={players}
-          tier={tier}
           baserunning={baserunning}
         />
       </div>
