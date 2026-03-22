@@ -1,3 +1,5 @@
+export type StatTier = 'youth' | 'high_school' | 'college';
+
 export interface Team {
   id: string;
   name: string;

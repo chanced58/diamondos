@@ -2,7 +2,7 @@
 
 import type { JSX, ReactNode } from 'react';
 import { useState } from 'react';
-import type { BattingStats, PitchingStats } from '@baseball/shared';
+import type { BattingStats, PitchingStats, StatTier } from '@baseball/shared';
 import { formatBattingRate, formatInningsPitched } from '@baseball/shared';
 
 // ── Shared types (imported by page.tsx) ─────────────────────────────────────
@@ -50,7 +50,7 @@ export type OppBattingRow = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type RawGameEvent = Record<string, any>;
 
-export type StatTier = 'youth' | 'high_school' | 'college';
+export type { StatTier } from '@baseball/shared';
 
 export interface GameStatsClientProps {
   game: {

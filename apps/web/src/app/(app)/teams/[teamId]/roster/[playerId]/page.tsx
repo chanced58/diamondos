@@ -103,7 +103,7 @@ export default async function PlayerPage({
       .from('seasons')
       .select('id')
       .eq('team_id', params.teamId)
-      .eq('is_current', true)
+      .eq('is_active', true)
       .maybeSingle();
 
     if (season) {
