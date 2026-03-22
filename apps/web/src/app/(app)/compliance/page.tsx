@@ -93,12 +93,12 @@ export default async function CompliancePage({
     for (const e of events ?? []) rawEvents.push(e);
   }
 
-  // Get all players on the team for name lookup
+  // Fetch ALL players (not just active) so deactivated players who
+  // participated in past games still resolve their names in stats.
   const { data: players } = await db
     .from('players')
     .select('id, first_name, last_name')
-    .eq('team_id', activeTeam.id)
-    .eq('is_active', true);
+    .eq('team_id', activeTeam.id);
 
   const playerList = (players ?? []).map((p) => ({
     id: p.id,
@@ -106,14 +106,19 @@ export default async function CompliancePage({
     lastName: p.last_name,
   }));
 
+  // Fallback IDs used by ScoringBoard when a player slot is empty
+  const FALLBACK_IDS = new Set(['unknown-batter', 'unknown-pitcher']);
+
   // Compute pitching stats
   const pitchingStatsMap = derivePitchingStats(rawEvents, playerList);
   const allPitchingStats: PitchingStats[] = Array.from(pitchingStatsMap.values())
+    .filter((s) => !FALLBACK_IDS.has(s.playerId))
     .sort((a, b) => b.inningsPitchedOuts - a.inningsPitchedOuts);
 
   // Compute batting stats
   const battingStatsMap = deriveBattingStats(rawEvents, playerList);
   const allBattingStats: BattingStats[] = Array.from(battingStatsMap.values())
+    .filter((s) => !FALLBACK_IDS.has(s.playerId))
     .sort((a, b) => b.plateAppearances - a.plateAppearances);
 
   // Get compliance data (pitch counts, rest days) for today

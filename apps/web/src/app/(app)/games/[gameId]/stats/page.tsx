@@ -392,11 +392,12 @@ export default async function GameStatsPage({
         .select('*')
         .eq('game_id', params.gameId)
         .order('sequence_number'),
+      // Fetch ALL players (not just active) so deactivated players who
+      // participated in this game still resolve their names in stats.
       db
         .from('players')
         .select('id, first_name, last_name, jersey_number')
         .eq('team_id', game.team_id)
-        .eq('is_active', true)
         .order('last_name'),
       db.from('teams').select('*').eq('id', game.team_id).single(),
       game.opponent_team_id
@@ -404,7 +405,6 @@ export default async function GameStatsPage({
             .from('opponent_players')
             .select('id, first_name, last_name, jersey_number')
             .eq('opponent_team_id', game.opponent_team_id)
-            .eq('is_active', true)
             .order('last_name')
         : Promise.resolve({ data: [] as { id: string; first_name: string; last_name: string; jersey_number: string | null }[] }),
       game.opponent_team_id
@@ -477,9 +477,13 @@ export default async function GameStatsPage({
     lastName: p.lastName,
   }));
 
+  // Fallback IDs used by ScoringBoard when a player slot is empty
+  const FALLBACK_IDS = new Set(['unknown-batter', 'unknown-pitcher']);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ourBattingMap = deriveBattingStats(effectiveEvents as any, ourPlayers);
-  const ourBatting: BattingStats[] = Array.from(ourBattingMap.values()).filter((s) => s.plateAppearances > 0);
+  const ourBatting: BattingStats[] = Array.from(ourBattingMap.values())
+    .filter((s) => s.plateAppearances > 0 && !FALLBACK_IDS.has(s.playerId));
 
   // ── Pitching stats (both teams) ─────────────────────────────────────────────
   const allPlayersForPitching = [
@@ -493,9 +497,9 @@ export default async function GameStatsPage({
   const oppPlayerIds = new Set(opponentRoster.map((p) => p.id));
 
   const ourPitching: PitchingStats[] = Array.from(allPitchingMap.values())
-    .filter((s) => ourPlayerIds.has(s.playerId) && s.totalPitches > 0);
+    .filter((s) => ourPlayerIds.has(s.playerId) && s.totalPitches > 0 && !FALLBACK_IDS.has(s.playerId));
   const oppPitching: PitchingStats[] = Array.from(allPitchingMap.values())
-    .filter((s) => oppPlayerIds.has(s.playerId) && s.totalPitches > 0);
+    .filter((s) => oppPlayerIds.has(s.playerId) && s.totalPitches > 0 && !FALLBACK_IDS.has(s.playerId));
 
   // ── Opponent batting (simplified) ───────────────────────────────────────────
   const oppPlayerNameMap = new Map(opponentRoster.map((p) => [p.id, `${p.firstName} ${p.lastName}`]));
@@ -505,7 +509,8 @@ export default async function GameStatsPage({
       oppPlayerNameMap.set(entry.playerId, `${entry.player.firstName} ${entry.player.lastName}`);
     }
   }
-  const oppBatting = computeOpponentBatting(effectiveEvents, oppPlayerNameMap);
+  const oppBatting = computeOpponentBatting(effectiveEvents, oppPlayerNameMap)
+    .filter((s) => !FALLBACK_IDS.has(s.playerId));
 
   // ── Fielding stats (our team) ───────────────────────────────────────────────
   const ourPlayerNameMap = new Map<string, { name: string; position: string }>();
