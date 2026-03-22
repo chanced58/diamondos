@@ -21,11 +21,11 @@ export function SeasonPicker({
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const value = e.target.value;
     const tab = searchParams.get('tab') ?? 'pitching';
-    if (value) {
-      router.push(`/compliance?tab=${tab}&season=${value}`);
-    } else {
-      router.push(`/compliance?tab=${tab}`);
-    }
+    const tier = searchParams.get('tier');
+    let url = `/compliance?tab=${tab}`;
+    if (value) url += `&season=${value}`;
+    if (tier) url += `&tier=${tier}`;
+    router.push(url);
   }
 
   if (seasons.length === 0) return null;

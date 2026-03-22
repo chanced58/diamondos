@@ -10,6 +10,7 @@ import type { PitchingStats, BattingStats } from '@baseball/shared';
 import { PitchingStatsTable } from './PitchingStatsTable';
 import { BattingStatsTable } from './BattingStatsTable';
 import { SeasonPicker } from './SeasonPicker';
+import { TierToggle } from './TierToggle';
 
 export const metadata: Metadata = { title: 'Stats' };
 
@@ -33,7 +34,7 @@ const RELEVANT_EVENT_TYPES = [
 export default async function CompliancePage({
   searchParams,
 }: {
-  searchParams: { tab?: string; season?: string };
+  searchParams: { tab?: string; season?: string; tier?: string };
 }): Promise<JSX.Element | null> {
   const VALID_TABS = ['pitching', 'hitting'] as const;
   const tab = VALID_TABS.includes(searchParams.tab as typeof VALID_TABS[number])
@@ -60,10 +61,14 @@ export default async function CompliancePage({
     .single();
   const teamLevel = teamData?.level ?? 'high_school';
   type StatTier = 'youth' | 'high_school' | 'college';
-  const tier: StatTier =
+  const VALID_TIERS: StatTier[] = ['youth', 'high_school', 'college'];
+  const defaultTier: StatTier =
     teamLevel === 'youth' || teamLevel === 'middle_school' ? 'youth'
     : teamLevel === 'college' || teamLevel === 'pro' ? 'college'
     : 'high_school';
+  const tier: StatTier = VALID_TIERS.includes(searchParams.tier as StatTier)
+    ? (searchParams.tier as StatTier)
+    : defaultTier;
 
   // Fetch all seasons for the picker
   const { data: allSeasons } = await db
@@ -179,17 +184,20 @@ export default async function CompliancePage({
             currentSeasonId={season?.id ?? null}
           />
         </div>
-        <p className="text-gray-500 text-sm mt-1">
-          {season
-            ? `Season: ${season.name} · ${gameIds.length} ${gameIds.length === 1 ? 'game' : 'games'}`
-            : `All games · ${gameIds.length} ${gameIds.length === 1 ? 'game' : 'games'} scored`}
-        </p>
+        <div className="flex items-center gap-3 mt-2">
+          <p className="text-gray-500 text-sm">
+            {season
+              ? `Season: ${season.name} · ${gameIds.length} ${gameIds.length === 1 ? 'game' : 'games'}`
+              : `All games · ${gameIds.length} ${gameIds.length === 1 ? 'game' : 'games'} scored`}
+          </p>
+          <TierToggle currentTier={tier} />
+        </div>
       </div>
 
       {/* Tab strip */}
       <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
         <Link
-          href={`/compliance?tab=pitching${season ? `&season=${season.id}` : ''}`}
+          href={`/compliance?tab=pitching${season ? `&season=${season.id}` : ''}&tier=${tier}`}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
             tab === 'pitching'
               ? 'bg-white text-gray-900 shadow-sm'
@@ -199,7 +207,7 @@ export default async function CompliancePage({
           Pitching
         </Link>
         <Link
-          href={`/compliance?tab=hitting${season ? `&season=${season.id}` : ''}`}
+          href={`/compliance?tab=hitting${season ? `&season=${season.id}` : ''}&tier=${tier}`}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
             tab === 'hitting'
               ? 'bg-white text-gray-900 shadow-sm'
