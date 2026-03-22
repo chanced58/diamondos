@@ -87,23 +87,18 @@ export default async function CompliancePage({
   }
 
   // Get games — from the selected season if one exists, otherwise all completed/in-progress games
-  const gameIds: string[] = [];
+  let gamesQuery = db
+    .from('games')
+    .select('id')
+    .eq('team_id', activeTeam.id)
+    .in('status', ['completed', 'in_progress']);
+
   if (season) {
-    const { data: games } = await db
-      .from('games')
-      .select('id')
-      .eq('team_id', activeTeam.id)
-      .eq('season_id', season.id)
-      .in('status', ['completed', 'in_progress']);
-    for (const g of games ?? []) gameIds.push(g.id);
-  } else {
-    const { data: games } = await db
-      .from('games')
-      .select('id')
-      .eq('team_id', activeTeam.id)
-      .in('status', ['completed', 'in_progress']);
-    for (const g of games ?? []) gameIds.push(g.id);
+    gamesQuery = gamesQuery.eq('season_id', season.id);
   }
+
+  const { data: gamesData } = await gamesQuery;
+  const gameIds = (gamesData ?? []).map((g) => g.id);
 
   // Get all relevant events for those games
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase select('*') returns untyped rows
