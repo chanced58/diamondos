@@ -60,7 +60,7 @@ export async function postAnnouncementAction(
 
   if (error) return `Failed to post announcement: ${error.message}`;
 
-  revalidatePath('/messages');
+  revalidatePath('/messages', 'layout');
   revalidatePath('/dashboard');
   return 'sent';
 }

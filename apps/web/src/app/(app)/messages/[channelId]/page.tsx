@@ -1,7 +1,6 @@
 import type { JSX } from 'react';
 import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { MessageThread } from './MessageThread';
@@ -109,9 +108,6 @@ export default async function ChannelPage({
     <div className="flex flex-col h-full">
       {/* ── Channel header ───────────────────────────────────────────── */}
       <div className="shrink-0 border-b border-gray-200 bg-white px-6 py-4 flex items-center gap-3">
-        <Link href="/messages" className="text-gray-400 hover:text-gray-600 transition-colors">
-          ←
-        </Link>
         <span className="text-gray-400 font-mono">{icon}</span>
         <div>
           <h1 className="text-base font-semibold text-gray-900">{displayName}</h1>
