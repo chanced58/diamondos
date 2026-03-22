@@ -65,6 +65,7 @@ export interface GameStatsClientProps {
   ourPitching: PitchingStats[];
   oppPitching: PitchingStats[];
   ourFielding: FieldingStatRow[];
+  oppFielding: FieldingStatRow[];
   lineScore: LineScoreData;
   baserunning: Record<string, { sb: number; cs: number }>;
 }
@@ -82,16 +83,19 @@ function fmtPct(v: number): string {
 
 function Section({ title, children, defaultOpen = true }: { title: string; children: ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
+  const contentId = `section-${title.replace(/\W+/g, '-').toLowerCase()}`;
   return (
     <div className="border border-gray-200 rounded-xl overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-controls={contentId}
         className="w-full flex items-center justify-between px-5 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
       >
         <span className="text-sm font-semibold text-gray-700">{title}</span>
         <span className="text-gray-400 text-xs">{open ? '▲' : '▼'}</span>
       </button>
-      {open && <div>{children}</div>}
+      {open && <div id={contentId}>{children}</div>}
     </div>
   );
 }
@@ -108,10 +112,10 @@ function LineScoreTable({
   const oppRuns = weAreHome ? lineScore.awayRunsByInning : lineScore.homeRunsByInning;
   const ourTotal = weAreHome ? lineScore.homeRuns : lineScore.awayRuns;
   const oppTotal = weAreHome ? lineScore.awayRuns : lineScore.homeRuns;
-  const ourH = weAreHome ? lineScore.homeHits : lineScore.awayHits;
-  const oppH = weAreHome ? lineScore.awayHits : lineScore.homeHits;
-  const ourE = weAreHome ? lineScore.homeErrors : lineScore.awayErrors;
-  const oppE = weAreHome ? lineScore.awayErrors : lineScore.homeErrors;
+  const ourHits = weAreHome ? lineScore.homeHits : lineScore.awayHits;
+  const oppHits = weAreHome ? lineScore.awayHits : lineScore.homeHits;
+  const ourErrors = weAreHome ? lineScore.homeErrors : lineScore.awayErrors;
+  const oppErrors = weAreHome ? lineScore.awayErrors : lineScore.homeErrors;
 
   const cell = 'text-center text-sm font-mono px-2 py-2 border-l border-gray-200';
   const label = 'text-sm font-semibold text-gray-700 px-3 py-2 w-28 truncate';
@@ -136,15 +140,15 @@ function LineScoreTable({
             <td className={label}>{oppLabel}</td>
             {inningNums.map((_, i) => <td key={i} className={cell}>{oppRuns[i] ?? '·'}</td>)}
             <td className={summary}>{oppTotal}</td>
-            <td className={summary}>{oppH}</td>
-            <td className={summary}>{oppE}</td>
+            <td className={summary}>{oppHits}</td>
+            <td className={summary}>{oppErrors}</td>
           </tr>
           <tr className="bg-white">
             <td className={label}>{usLabel}</td>
             {inningNums.map((_, i) => <td key={i} className={cell}>{ourRuns[i] ?? '·'}</td>)}
             <td className={summary}>{ourTotal}</td>
-            <td className={summary}>{ourH}</td>
-            <td className={summary}>{ourE}</td>
+            <td className={summary}>{ourHits}</td>
+            <td className={summary}>{ourErrors}</td>
           </tr>
         </tbody>
       </table>
@@ -300,7 +304,7 @@ function FieldingSummary({ rows }: { rows: FieldingStatRow[] }) {
 
 export function GameStatsClient({
   game, ourBatting, oppBatting, ourPitching, oppPitching,
-  ourFielding, lineScore, baserunning,
+  ourFielding, oppFielding, lineScore, baserunning,
 }: GameStatsClientProps): JSX.Element {
   const weAreHome = game.locationType === 'home';
   const ourLabel = game.teamName;
@@ -332,6 +336,10 @@ export function GameStatsClient({
       {/* Fielding */}
       <Section title={`Fielding — ${ourLabel}`} defaultOpen={false}>
         <FieldingSummary rows={ourFielding} />
+      </Section>
+
+      <Section title={`Fielding — ${oppLabel}`} defaultOpen={false}>
+        <FieldingSummary rows={oppFielding} />
       </Section>
     </div>
   );

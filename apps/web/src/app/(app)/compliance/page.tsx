@@ -34,9 +34,9 @@ export default async function CompliancePage({
 }: {
   searchParams: { tab?: string };
 }): Promise<JSX.Element | null> {
-  const validTabs = ['pitching', 'hitting'] as const;
-  const tab = validTabs.includes(searchParams.tab as typeof validTabs[number])
-    ? (searchParams.tab as typeof validTabs[number])
+  const VALID_TABS = ['pitching', 'hitting'] as const;
+  const tab = VALID_TABS.includes(searchParams.tab as typeof VALID_TABS[number])
+    ? (searchParams.tab as typeof VALID_TABS[number])
     : 'pitching';
 
   const auth = createServerClient();
@@ -180,7 +180,9 @@ export default async function CompliancePage({
       {tab === 'pitching' && (
         allPitchingStats.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-xl px-5 py-12 text-center">
-            <p className="text-gray-500 text-sm">No pitching data for this season yet.</p>
+            <p className="text-gray-500 text-sm">
+              {season ? `No pitching data for ${season.name} yet.` : 'No pitching data yet.'}
+            </p>
             <p className="text-gray-400 text-xs mt-1">
               Stats will appear once games have been scored.
             </p>
@@ -198,7 +200,9 @@ export default async function CompliancePage({
       {tab === 'hitting' && (
         allBattingStats.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-xl px-5 py-12 text-center">
-            <p className="text-gray-500 text-sm">No hitting data for this season yet.</p>
+            <p className="text-gray-500 text-sm">
+              {season ? `No hitting data for ${season.name} yet.` : 'No hitting data yet.'}
+            </p>
             <p className="text-gray-400 text-xs mt-1">
               Stats will appear once games have been scored.
             </p>

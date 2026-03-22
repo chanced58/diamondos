@@ -107,14 +107,15 @@ type LineupEntry = {
 
 function computeFieldingStats(
   events: Record<string, unknown>[],
-  ourLineup: LineupEntry[],
+  teamLineup: LineupEntry[],
   locationType: string,
-  ourPlayerNameMap: Map<string, { name: string; position: string }>,
+  playerNameMap: Map<string, { name: string; position: string }>,
+  forOpponent = false,
 ): FieldingStatRow[] {
-  // Position number → playerId for OUR team's defensive lineup
+  // Position number → playerId for this team's defensive lineup
   const posToPlayer = new Map<number, string>();
 
-  for (const entry of ourLineup) {
+  for (const entry of teamLineup) {
     if (entry.startingPosition) {
       const num = ABBR_TO_NUM[entry.startingPosition];
       if (num) posToPlayer.set(num, entry.playerId);
@@ -125,7 +126,7 @@ function computeFieldingStats(
 
   function getRow(playerId: string): FieldingStatRow {
     if (!stats.has(playerId)) {
-      const info = ourPlayerNameMap.get(playerId);
+      const info = playerNameMap.get(playerId);
       stats.set(playerId, {
         playerId,
         playerName: info?.name ?? 'Unknown',
@@ -148,9 +149,9 @@ function computeFieldingStats(
     }
 
     if (etype === 'pitching_change') {
-      // Only update OUR position map when it's our pitching change
       const isOppChange = payload.isOpponentChange as boolean | undefined;
-      if (!isOppChange) {
+      // Track this team's pitching changes: our team = !isOppChange, opponent = isOppChange
+      if (forOpponent ? !!isOppChange : !isOppChange) {
         const newId = payload.newPitcherId as string | undefined;
         if (newId) posToPlayer.set(1, newId);
       }
@@ -159,14 +160,13 @@ function computeFieldingStats(
 
     if (etype === 'substitution') {
       const isOppSub = payload.isOpponentSubstitution as boolean | undefined;
-      if (!isOppSub) {
+      if (forOpponent ? !!isOppSub : !isOppSub) {
         const inId = payload.inPlayerId as string | undefined;
         const outId = payload.outPlayerId as string | undefined;
         const newPos = payload.newPosition as string | undefined;
         if (inId && newPos && ABBR_TO_NUM[newPos]) {
           posToPlayer.set(ABBR_TO_NUM[newPos], inId);
         } else if (inId && outId) {
-          // Replace outgoing player's position with incoming player
           for (const [num, pid] of posToPlayer.entries()) {
             if (pid === outId) { posToPlayer.set(num, inId); break; }
           }
@@ -175,11 +175,12 @@ function computeFieldingStats(
       continue;
     }
 
-    // Determine if our team is fielding at this moment.
     // Home team fields in top half; away team fields in bottom half.
     const weAreHome = locationType === 'home';
-    const ourTeamIsFielding = weAreHome ? isTopOfInning : !isTopOfInning;
-    if (!ourTeamIsFielding) continue;
+    const teamIsFielding = forOpponent
+      ? (weAreHome ? !isTopOfInning : isTopOfInning)
+      : (weAreHome ? isTopOfInning : !isTopOfInning);
+    if (!teamIsFielding) continue;
 
     if (
       etype === 'out' || etype === 'double_play' || etype === 'triple_play' ||
@@ -534,6 +535,28 @@ export default async function GameStatsPage({
     ourPlayerNameMap,
   );
 
+  // ── Fielding stats (opponent) ─────────────────────────────────────────────
+  const oppFieldingNameMap = new Map<string, { name: string; position: string }>();
+  for (const entry of opponentLineup) {
+    oppFieldingNameMap.set(entry.playerId, {
+      name: `${entry.player.firstName} ${entry.player.lastName}`,
+      position: entry.startingPosition ?? '',
+    });
+  }
+  for (const p of opponentRoster) {
+    if (!oppFieldingNameMap.has(p.id)) {
+      oppFieldingNameMap.set(p.id, { name: `${p.firstName} ${p.lastName}`, position: '' });
+    }
+  }
+
+  const oppFielding = computeFieldingStats(
+    effectiveEvents,
+    opponentLineup,
+    game.location_type,
+    oppFieldingNameMap,
+    true, // forOpponent
+  );
+
   // ── Baserunning stats (our team) ────────────────────────────────────────────
   const baserunning = computeBaserunningStats(effectiveEvents, ourPlayerIds);
 
@@ -620,6 +643,7 @@ export default async function GameStatsPage({
           ourPitching={ourPitching}
           oppPitching={oppPitching}
           ourFielding={ourFielding}
+          oppFielding={oppFielding}
           lineScore={lineScore}
           baserunning={baserunning}
         />
