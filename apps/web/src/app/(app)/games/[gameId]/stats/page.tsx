@@ -8,7 +8,7 @@ import { getUserAccess } from '@/lib/user-access';
 import { deriveBattingStats, derivePitchingStats } from '@baseball/shared';
 import type { BattingStats, PitchingStats } from '@baseball/shared';
 import { GameStatsClient } from './GameStatsClient';
-import type { FieldingStatRow, LineScoreData, OppBattingRow, PlayerInfo } from './GameStatsClient';
+import type { FieldingStatRow, LineScoreData, OppBattingRow, PlayerInfo, StatTier } from './GameStatsClient';
 
 export const metadata: Metadata = { title: 'Game Stats' };
 
@@ -231,7 +231,12 @@ function computeOpponentBatting(
       stats.set(id, {
         playerId: id,
         playerName: oppPlayerNameMap.get(id) ?? 'Unknown',
-        pa: 0, ab: 0, r: 0, h: 0, hr: 0, rbi: 0, bb: 0, k: 0, avg: NaN,
+        pa: 0, ab: 0, r: 0, h: 0,
+        doubles: 0, triples: 0, hr: 0,
+        rbi: 0, bb: 0, k: 0,
+        hbp: 0, sf: 0, sh: 0,
+        sb: 0, cs: 0,
+        avg: NaN, obp: NaN, slg: NaN, ops: NaN,
       });
     }
     return stats.get(id)!;
@@ -246,9 +251,15 @@ function computeOpponentBatting(
       if (etype === 'score') {
         const scoringId = payload.scoringPlayerId as string | undefined;
         const isOpp = payload.isOpponentScore as boolean | undefined;
-        // Use get() to create a row for pinch runners who score but never batted
         if (scoringId && isOpp && oppPlayerNameMap.has(scoringId)) {
           get(scoringId).r++;
+        }
+      }
+      if (etype === 'stolen_base' || etype === 'caught_stealing') {
+        const runnerId = payload.runnerId as string | undefined;
+        if (runnerId && oppPlayerNameMap.has(runnerId)) {
+          if (etype === 'stolen_base') get(runnerId).sb++;
+          else get(runnerId).cs++;
         }
       }
       continue;
@@ -258,7 +269,10 @@ function computeOpponentBatting(
       const s = get(batterId);
       s.pa++; s.ab++; s.h++;
       s.rbi += (payload.rbis as number) ?? 0;
-      if (payload.hitType === 'home_run') s.hr++;
+      const hitType = payload.hitType as string;
+      if (hitType === 'double') s.doubles++;
+      else if (hitType === 'triple') s.triples++;
+      else if (hitType === 'home_run') s.hr++;
     } else if (etype === 'out' || etype === 'double_play' || etype === 'triple_play') {
       const s = get(batterId);
       s.pa++; s.ab++;
@@ -266,10 +280,17 @@ function computeOpponentBatting(
       const s = get(batterId);
       s.pa++; s.ab++; s.k++;
     } else if (etype === 'walk') {
-      get(batterId).pa++;
-      get(batterId).bb++;
-    } else if (etype === 'hit_by_pitch' || etype === 'sacrifice_fly' || etype === 'sacrifice_bunt') {
-      get(batterId).pa++;
+      const s = get(batterId);
+      s.pa++; s.bb++;
+    } else if (etype === 'hit_by_pitch') {
+      const s = get(batterId);
+      s.pa++; s.hbp++;
+    } else if (etype === 'sacrifice_fly') {
+      const s = get(batterId);
+      s.pa++; s.sf++;
+    } else if (etype === 'sacrifice_bunt') {
+      const s = get(batterId);
+      s.pa++; s.sh++;
     } else if (etype === 'field_error') {
       const s = get(batterId);
       s.pa++; s.ab++;
@@ -278,9 +299,40 @@ function computeOpponentBatting(
 
   for (const s of stats.values()) {
     s.avg = s.ab > 0 ? s.h / s.ab : NaN;
+    const obpDenom = s.ab + s.bb + s.hbp + s.sf;
+    s.obp = obpDenom > 0 ? (s.h + s.bb + s.hbp) / obpDenom : NaN;
+    const singles = s.h - s.doubles - s.triples - s.hr;
+    const tb = singles + 2 * s.doubles + 3 * s.triples + 4 * s.hr;
+    s.slg = s.ab > 0 ? tb / s.ab : NaN;
+    s.ops = (isFinite(s.obp) ? s.obp : 0) + (isFinite(s.slg) ? s.slg : 0);
+    if (!isFinite(s.obp) && !isFinite(s.slg)) s.ops = NaN;
   }
 
   return Array.from(stats.values());
+}
+
+function computeBaserunningStats(
+  events: Record<string, unknown>[],
+  ourPlayerIds: Set<string>,
+): Record<string, { sb: number; cs: number }> {
+  const result: Record<string, { sb: number; cs: number }> = {};
+  for (const event of events) {
+    const etype = event.event_type as string;
+    if (etype !== 'stolen_base' && etype !== 'caught_stealing') continue;
+    const payload = (event.payload ?? {}) as Record<string, unknown>;
+    const runnerId = payload.runnerId as string | undefined;
+    if (!runnerId || !ourPlayerIds.has(runnerId)) continue;
+    if (!result[runnerId]) result[runnerId] = { sb: 0, cs: 0 };
+    if (etype === 'stolen_base') result[runnerId].sb++;
+    else result[runnerId].cs++;
+  }
+  return result;
+}
+
+function getStatTier(level: string): StatTier {
+  if (level === 'youth' || level === 'middle_school') return 'youth';
+  if (level === 'college' || level === 'pro') return 'college';
+  return 'high_school';
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -350,7 +402,7 @@ export default async function GameStatsPage({
         .eq('team_id', game.team_id)
         .eq('is_active', true)
         .order('last_name'),
-      db.from('teams').select('name').eq('id', game.team_id).single(),
+      db.from('teams').select('name, level').eq('id', game.team_id).single(),
       game.opponent_team_id
         ? db
             .from('opponent_players')
@@ -369,6 +421,8 @@ export default async function GameStatsPage({
     ]);
 
   const teamName = teamResult.data?.name ?? 'Our Team';
+  const teamLevel = teamResult.data?.level ?? 'high_school';
+  const tier = getStatTier(teamLevel);
 
   const lineup: LineupEntry[] = (lineupResult.data ?? []).map((l) => {
     const p = l.players as unknown as { id: string; first_name: string; last_name: string; jersey_number: number | null } | null;
@@ -480,6 +534,9 @@ export default async function GameStatsPage({
     ourPlayerNameMap,
   );
 
+  // ── Baserunning stats (our team) ────────────────────────────────────────────
+  const baserunning = computeBaserunningStats(effectiveEvents, ourPlayerIds);
+
   // ── Line score ──────────────────────────────────────────────────────────────
   const lineScore = computeLineScore(effectiveEvents);
 
@@ -566,6 +623,8 @@ export default async function GameStatsPage({
           ourFielding={ourFielding}
           lineScore={lineScore}
           players={players}
+          tier={tier}
+          baserunning={baserunning}
         />
       </div>
     </div>
