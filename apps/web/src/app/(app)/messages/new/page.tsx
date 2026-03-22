@@ -1,7 +1,6 @@
 import type { JSX } from 'react';
 import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getUserAccess } from '@/lib/user-access';
@@ -22,12 +21,8 @@ export default async function NewChannelPage(): Promise<JSX.Element | null> {
   if (!isCoach) redirect('/messages');
 
   return (
-    <div className="p-8 max-w-lg">
-      <Link href="/messages" className="text-sm text-brand-700 hover:underline">
-        ← Back to messages
-      </Link>
-
-      <div className="mt-4 mb-8">
+    <div className="p-8 max-w-lg overflow-y-auto">
+      <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">New Channel</h1>
         <p className="text-gray-500 text-sm mt-1">
           All current team members will be added automatically.

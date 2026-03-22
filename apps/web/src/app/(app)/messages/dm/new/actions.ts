@@ -1,6 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 
@@ -43,6 +44,7 @@ export async function startDmAction(formData: FormData) {
       .single();
 
     if (match) {
+      revalidatePath('/messages', 'layout');
       redirect(`/messages/${match.channel_id}`);
     }
   }
@@ -66,5 +68,6 @@ export async function startDmAction(formData: FormData) {
     { channel_id: channel.id, user_id: targetUserId,  can_post: true },
   ]);
 
+  revalidatePath('/messages', 'layout');
   redirect(`/messages/${channel.id}`);
 }

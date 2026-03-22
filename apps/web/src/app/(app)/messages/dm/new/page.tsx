@@ -1,7 +1,6 @@
 import type { JSX } from 'react';
 import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
@@ -38,11 +37,32 @@ export default async function NewDmPage(): Promise<JSX.Element | null> {
   );
 
   // 1. Team members with accounts (coaches, parents, athletic directors, etc.)
-  const { data: teamMembers } = await db
+  //    Two-step query: PostgREST can't resolve the indirect FK path
+  //    (team_members.user_id → auth.users → user_profiles.id)
+  const { data: teamMembers, error: tmError } = await db
     .from('team_members')
-    .select('user_id, role, user_profiles(first_name, last_name)')
+    .select('user_id, role')
     .eq('team_id', activeTeam.id)
     .neq('user_id', user.id);
+
+  if (tmError) console.error('Failed to fetch team_members:', tmError.message);
+
+  // Fetch profiles separately and build a lookup map
+  const memberUserIds = (teamMembers ?? []).map((m) => m.user_id);
+  const profileMap = new Map<string, { first_name: string; last_name: string }>();
+
+  if (memberUserIds.length > 0) {
+    const { data: profiles, error: profError } = await db
+      .from('user_profiles')
+      .select('id, first_name, last_name')
+      .in('id', memberUserIds);
+
+    if (profError) console.error('Failed to fetch user_profiles:', profError.message);
+
+    for (const p of profiles ?? []) {
+      profileMap.set(p.id, { first_name: p.first_name, last_name: p.last_name });
+    }
+  }
 
   // 2. Players who have linked user accounts (user_id IS NOT NULL)
   const { data: playersWithAccounts } = await db
@@ -60,7 +80,7 @@ export default async function NewDmPage(): Promise<JSX.Element | null> {
   for (const m of teamMembers ?? []) {
     if (seen.has(m.user_id)) continue;
     seen.add(m.user_id);
-    const profile = m.user_profiles as unknown as { first_name: string; last_name: string } | null;
+    const profile = profileMap.get(m.user_id);
     targets.push({
       userId:    m.user_id,
       firstName: profile?.first_name ?? '',
@@ -86,12 +106,8 @@ export default async function NewDmPage(): Promise<JSX.Element | null> {
   );
 
   return (
-    <div className="p-8 max-w-lg">
-      <Link href="/messages" className="text-sm text-brand-700 hover:underline">
-        ← Back to messages
-      </Link>
-
-      <div className="mt-4 mb-8">
+    <div className="p-8 max-w-lg overflow-y-auto">
+      <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">New Direct Message</h1>
         <p className="text-gray-500 text-sm mt-1">Select a teammate to start a conversation.</p>
       </div>

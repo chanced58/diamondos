@@ -1,6 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 
@@ -68,5 +69,6 @@ export async function createChannelAction(_prevState: string | null | undefined,
     );
   }
 
+  revalidatePath('/messages', 'layout');
   redirect(`/messages/${channel.id}`);
 }
