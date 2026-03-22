@@ -34,7 +34,10 @@ export default async function CompliancePage({
 }: {
   searchParams: { tab?: string };
 }): Promise<JSX.Element | null> {
-  const tab = searchParams.tab === 'hitting' ? 'hitting' : 'pitching';
+  const VALID_TABS = ['pitching', 'hitting'] as const;
+  const tab = VALID_TABS.includes(searchParams.tab as typeof VALID_TABS[number])
+    ? (searchParams.tab as typeof VALID_TABS[number])
+    : 'pitching';
 
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
@@ -56,14 +59,23 @@ export default async function CompliancePage({
     .eq('is_current', true)
     .maybeSingle();
 
-  // Get all games for this season
+  // Get games — from the current season if one exists, otherwise all completed/in-progress games
   const gameIds: string[] = [];
   if (season) {
     const { data: games } = await db
       .from('games')
       .select('id')
       .eq('team_id', activeTeam.id)
-      .eq('season_id', season.id);
+      .eq('season_id', season.id)
+      .in('status', ['completed', 'in_progress']);
+    for (const g of games ?? []) gameIds.push(g.id);
+  } else {
+    // No current season — show stats from all completed/in-progress games for this team
+    const { data: games } = await db
+      .from('games')
+      .select('id')
+      .eq('team_id', activeTeam.id)
+      .in('status', ['completed', 'in_progress']);
     for (const g of games ?? []) gameIds.push(g.id);
   }
 
@@ -136,7 +148,7 @@ export default async function CompliancePage({
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Stats</h1>
         <p className="text-gray-500 text-sm mt-1">
-          {season ? `Season stats — ${season.name}` : 'No active season found.'}
+          {season ? `Season stats — ${season.name}` : 'All games — no active season set'}
         </p>
       </div>
 
@@ -168,7 +180,9 @@ export default async function CompliancePage({
       {tab === 'pitching' && (
         allPitchingStats.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-xl px-5 py-12 text-center">
-            <p className="text-gray-500 text-sm">No pitching data for this season yet.</p>
+            <p className="text-gray-500 text-sm">
+              {season ? `No pitching data for ${season.name} yet.` : 'No pitching data yet.'}
+            </p>
             <p className="text-gray-400 text-xs mt-1">
               Stats will appear once games have been scored.
             </p>
@@ -186,7 +200,9 @@ export default async function CompliancePage({
       {tab === 'hitting' && (
         allBattingStats.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-xl px-5 py-12 text-center">
-            <p className="text-gray-500 text-sm">No hitting data for this season yet.</p>
+            <p className="text-gray-500 text-sm">
+              {season ? `No hitting data for ${season.name} yet.` : 'No hitting data yet.'}
+            </p>
             <p className="text-gray-400 text-xs mt-1">
               Stats will appear once games have been scored.
             </p>
