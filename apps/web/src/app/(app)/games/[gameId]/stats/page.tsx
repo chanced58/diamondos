@@ -402,7 +402,7 @@ export default async function GameStatsPage({
         .eq('team_id', game.team_id)
         .eq('is_active', true)
         .order('last_name'),
-      db.from('teams').select('name, level').eq('id', game.team_id).single(),
+      db.from('teams').select('*').eq('id', game.team_id).single(),
       game.opponent_team_id
         ? db
             .from('opponent_players')
