@@ -1,3 +1,5 @@
+import 'server-only';
+
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
@@ -35,20 +37,36 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
+  // Verify user is actually a member of this team before any queries/mutations
+  const { data: membership, error: membershipError } = await db
+    .from('team_members')
+    .select('role')
+    .eq('team_id', activeTeam.id)
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (membershipError || !membership) return null;
+
   const { isCoach } = await getUserAccess(activeTeam.id, user.id);
 
   // Get channel IDs the user belongs to
-  const { data: memberOf } = await db
+  const { data: memberOf, error: memberOfError } = await db
     .from('channel_members')
     .select('channel_id')
     .eq('user_id', user.id);
+
+  if (memberOfError) {
+    console.error('Failed to fetch channel_members:', memberOfError.message);
+    return null;
+  }
 
   const channelIds = memberOf?.map((m) => m.channel_id) ?? [];
 
   // Fetch those channels with all member profiles (for DM display names)
   let channels: SidebarChannel[] = [];
   if (channelIds.length > 0) {
-    const { data } = await db
+    const { data: channelsData, error: channelsError } = await db
       .from('channels')
       .select(`
         id, name, channel_type, description,
@@ -57,21 +75,32 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
       .eq('team_id', activeTeam.id)
       .in('id', channelIds)
       .order('name');
-    channels = (data ?? []) as unknown as SidebarChannel[];
+
+    if (channelsError) {
+      console.error('Failed to fetch channels:', channelsError.message);
+      return null;
+    }
+
+    channels = (channelsData ?? []) as unknown as SidebarChannel[];
   }
 
   // Seed defaults if first visit
   if (channels.length === 0) {
     await seedDefaultChannels(db, activeTeam.id, user.id);
 
-    const { data: freshMemberOf } = await db
+    const { data: freshMemberOf, error: freshMemberError } = await db
       .from('channel_members')
       .select('channel_id')
       .eq('user_id', user.id);
 
+    if (freshMemberError) {
+      console.error('Failed to fetch channel_members after seed:', freshMemberError.message);
+      return null;
+    }
+
     const freshIds = freshMemberOf?.map((m) => m.channel_id) ?? [];
     if (freshIds.length > 0) {
-      const { data } = await db
+      const { data: freshChannelsData, error: freshChannelsError } = await db
         .from('channels')
         .select(`
           id, name, channel_type, description,
@@ -80,7 +109,13 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
         .eq('team_id', activeTeam.id)
         .in('id', freshIds)
         .order('name');
-      channels = (data ?? []) as unknown as SidebarChannel[];
+
+      if (freshChannelsError) {
+        console.error('Failed to fetch channels after seed:', freshChannelsError.message);
+        return null;
+      }
+
+      channels = (freshChannelsData ?? []) as unknown as SidebarChannel[];
     }
   }
 

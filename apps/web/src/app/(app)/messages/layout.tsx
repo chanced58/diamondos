@@ -1,6 +1,6 @@
 import type { JSX, ReactNode } from 'react';
 import { getChannelSidebarData } from './get-channels';
-import { ChannelSidebar } from './ChannelSidebar';
+import { ChannelSidebar } from './channel-sidebar';
 
 export default async function MessagesLayout({
   children,

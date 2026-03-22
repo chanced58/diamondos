@@ -21,7 +21,7 @@ export default async function NewChannelPage(): Promise<JSX.Element | null> {
   if (!isCoach) redirect('/messages');
 
   return (
-    <div className="p-8 max-w-lg overflow-y-auto">
+    <div className="flex-1 min-h-0 p-8 max-w-lg overflow-y-auto">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">New Channel</h1>
         <p className="text-gray-500 text-sm mt-1">

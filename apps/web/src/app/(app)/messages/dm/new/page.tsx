@@ -45,7 +45,14 @@ export default async function NewDmPage(): Promise<JSX.Element | null> {
     .eq('team_id', activeTeam.id)
     .neq('user_id', user.id);
 
-  if (tmError) console.error('Failed to fetch team_members:', tmError.message);
+  if (tmError) {
+    console.error('Failed to fetch team_members:', tmError.message);
+    return (
+      <div className="flex-1 min-h-0 p-8">
+        <p className="text-sm text-red-600">Failed to load team members. Please try again.</p>
+      </div>
+    );
+  }
 
   // Fetch profiles separately and build a lookup map
   const memberUserIds = (teamMembers ?? []).map((m) => m.user_id);
@@ -57,7 +64,14 @@ export default async function NewDmPage(): Promise<JSX.Element | null> {
       .select('id, first_name, last_name')
       .in('id', memberUserIds);
 
-    if (profError) console.error('Failed to fetch user_profiles:', profError.message);
+    if (profError) {
+      console.error('Failed to fetch user_profiles:', profError.message);
+      return (
+        <div className="flex-1 min-h-0 p-8">
+          <p className="text-sm text-red-600">Failed to load user profiles. Please try again.</p>
+        </div>
+      );
+    }
 
     for (const p of profiles ?? []) {
       profileMap.set(p.id, { first_name: p.first_name, last_name: p.last_name });
@@ -74,6 +88,7 @@ export default async function NewDmPage(): Promise<JSX.Element | null> {
     .neq('user_id', user.id);
 
   // Merge, deduplicating by userId (a player might also be in team_members)
+  // Skip team members whose profile could not be resolved
   const seen = new Set<string>();
   const targets: DmTarget[] = [];
 
@@ -81,10 +96,11 @@ export default async function NewDmPage(): Promise<JSX.Element | null> {
     if (seen.has(m.user_id)) continue;
     seen.add(m.user_id);
     const profile = profileMap.get(m.user_id);
+    if (!profile) continue;
     targets.push({
       userId:    m.user_id,
-      firstName: profile?.first_name ?? '',
-      lastName:  profile?.last_name  ?? '',
+      firstName: profile.first_name,
+      lastName:  profile.last_name,
       roleLabel: ROLE_LABELS[m.role] ?? m.role,
     });
   }
@@ -106,7 +122,7 @@ export default async function NewDmPage(): Promise<JSX.Element | null> {
   );
 
   return (
-    <div className="p-8 max-w-lg overflow-y-auto">
+    <div className="flex-1 min-h-0 p-8 max-w-lg overflow-y-auto">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">New Direct Message</h1>
         <p className="text-gray-500 text-sm mt-1">Select a teammate to start a conversation.</p>
