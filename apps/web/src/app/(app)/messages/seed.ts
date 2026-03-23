@@ -12,13 +12,11 @@ export async function seedDefaultChannels(
   teamId: string,
   userId: string,
 ) {
-  // Get all current team members
+  // Get all current team members (may be empty for platform-admin-only teams)
   const { data: teamMembers } = await db
     .from('team_members')
     .select('user_id, role')
     .eq('team_id', teamId);
-
-  if (!teamMembers || teamMembers.length === 0) return;
 
   // Create "Team Announcements"
   const { data: announcementChannel } = await db
@@ -46,23 +44,27 @@ export async function seedDefaultChannels(
     .select('id')
     .single();
 
-  if (announcementChannel) {
-    await db.from('channel_members').insert(
-      teamMembers.map((m) => ({
-        channel_id: announcementChannel.id,
-        user_id: m.user_id,
-        can_post: COACH_ROLES.includes(m.role),
-      })),
-    );
-  }
+  // Add existing team members to channels (platform admins are added separately
+  // by the caller via addToTeamChannels since they can't be in team_members).
+  if (teamMembers && teamMembers.length > 0) {
+    if (announcementChannel) {
+      await db.from('channel_members').insert(
+        teamMembers.map((m) => ({
+          channel_id: announcementChannel.id,
+          user_id: m.user_id,
+          can_post: COACH_ROLES.includes(m.role),
+        })),
+      );
+    }
 
-  if (generalChannel) {
-    await db.from('channel_members').insert(
-      teamMembers.map((m) => ({
-        channel_id: generalChannel.id,
-        user_id: m.user_id,
-        can_post: true,
-      })),
-    );
+    if (generalChannel) {
+      await db.from('channel_members').insert(
+        teamMembers.map((m) => ({
+          channel_id: generalChannel.id,
+          user_id: m.user_id,
+          can_post: true,
+        })),
+      );
+    }
   }
 }

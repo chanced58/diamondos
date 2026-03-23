@@ -134,14 +134,37 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
     ? createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey)
     : null;
 
+  // Check platform admin status early — admins have implicit access to all teams
+  // and are blocked from team_members by a database trigger.
+  let isPlatformAdmin = false;
+  if (db) {
+    const { data: profile } = await db
+      .from('user_profiles')
+      .select('is_platform_admin')
+      .eq('id', user.id)
+      .maybeSingle();
+    isPlatformAdmin = profile?.is_platform_admin === true;
+  }
+
   // Resolve team — auth client first (cookie-based, matches games/dashboard pattern),
   // service-role fallback, then self-healing from created_by / invitations.
   let activeTeam = await getActiveTeam(auth, user.id);
   if (!activeTeam && db) {
     activeTeam = await getActiveTeam(db, user.id);
   }
-  if (!activeTeam && db) {
+  if (!activeTeam && !isPlatformAdmin && db) {
     activeTeam = await selfHealMembership(db, user.id, user.email);
+  }
+  // Platform admins without a team from getActiveTeam: resolve via created_by directly
+  if (!activeTeam && isPlatformAdmin && db) {
+    const { data: ownTeam } = await db
+      .from('teams')
+      .select(TEAM_SELECT)
+      .eq('created_by', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (ownTeam) activeTeam = ownTeam as ActiveTeam;
   }
   if (!activeTeam) return null;
 
@@ -149,33 +172,46 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
   // fall back to auth client when the service-role key is not configured.
   const queryClient = db ?? auth;
 
-  // Verify membership, with self-healing if missing
-  let { data: membership, error: membershipError } = await queryClient
-    .from('team_members')
-    .select('role')
-    .eq('team_id', activeTeam.id)
-    .eq('user_id', user.id)
-    .eq('is_active', true)
-    .maybeSingle();
+  // Verify membership — platform admins bypass this check (trigger blocks them
+  // from team_members; they get implicit coach-level access via is_platform_admin).
+  if (!isPlatformAdmin) {
+    let { data: membership, error: membershipError } = await queryClient
+      .from('team_members')
+      .select('role')
+      .eq('team_id', activeTeam.id)
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .maybeSingle();
 
-  if ((membershipError || !membership) && db) {
-    const healed = await selfHealMembership(db, user.id, user.email, activeTeam.id);
-    if (healed) {
-      const { data: retried } = await queryClient
-        .from('team_members')
-        .select('role')
-        .eq('team_id', activeTeam.id)
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .maybeSingle();
-      membership = retried;
-      membershipError = null;
+    if ((membershipError || !membership) && db) {
+      const healed = await selfHealMembership(db, user.id, user.email, activeTeam.id);
+      if (healed) {
+        const { data: retried } = await queryClient
+          .from('team_members')
+          .select('role')
+          .eq('team_id', activeTeam.id)
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .maybeSingle();
+        membership = retried;
+        membershipError = null;
+      }
     }
+
+    if (membershipError || !membership) return null;
   }
 
-  if (membershipError || !membership) return null;
-
   const { isCoach } = await getUserAccess(activeTeam.id, user.id);
+
+  // Platform admins aren't in team_members, so seedDefaultChannels won't add them.
+  // Ensure they have channel_members rows for all non-DM channels on this team.
+  if (isPlatformAdmin && db) {
+    try {
+      await addToTeamChannels(db, activeTeam.id, user.id, 'head_coach');
+    } catch {
+      // Channels may not exist yet — will retry after seed below
+    }
+  }
 
   // Get channel IDs the user belongs to
   const { data: memberOf, error: memberOfError } = await queryClient
@@ -214,6 +250,16 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
   // Seed defaults if first visit
   if (channels.length === 0) {
     await seedDefaultChannels(queryClient, activeTeam.id, user.id);
+
+    // seedDefaultChannels only adds team_members to channels — platform admins
+    // aren't in team_members, so add them explicitly after seeding.
+    if (isPlatformAdmin && db) {
+      try {
+        await addToTeamChannels(db, activeTeam.id, user.id, 'head_coach');
+      } catch {
+        // Non-fatal
+      }
+    }
 
     const { data: freshMemberOf, error: freshMemberError } = await queryClient
       .from('channel_members')
