@@ -29,13 +29,16 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;
 
-  const activeTeam = await getActiveTeam(auth, user.id);
-  if (!activeTeam) return null;
-
   const db = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  // Use service-role client for team resolution to bypass RLS —
+  // the auth client can fail in standalone deployments when session
+  // cookies aren't forwarded correctly to the Supabase PostgREST layer.
+  const activeTeam = await getActiveTeam(db, user.id);
+  if (!activeTeam) return null;
 
   // Verify user is actually a member of this team before any queries/mutations
   const { data: membership, error: membershipError } = await db
