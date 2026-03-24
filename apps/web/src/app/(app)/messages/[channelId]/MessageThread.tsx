@@ -162,6 +162,14 @@ export function MessageThread({
               const showHeader = !prev || prev.sender_id !== msg.sender_id;
               const canDelete = isOwn || isCoach;
 
+              async function handleDeleteMessage() {
+                const label = isAnnouncement ? 'announcement' : 'message';
+                if (!window.confirm(`Delete this ${label}?`)) return;
+                const error = await deleteMessageAction(msg.id);
+                if (error) { setSendError(error); }
+                else { setMessages((prev) => prev.filter((m) => m.id !== msg.id)); }
+              }
+
               if (isAnnouncement) {
                 return (
                   <div key={msg.id} className="group my-3">
@@ -181,14 +189,9 @@ export function MessageThread({
                           </span>
                           {canDelete && (
                             <button
-                              onClick={async () => {
-                                if (!window.confirm('Delete this announcement?')) return;
-                                const error = await deleteMessageAction(msg.id);
-                                if (error) { setSendError(error); }
-                                else { setMessages((prev) => prev.filter((m) => m.id !== msg.id)); }
-                              }}
-                              className="text-xs text-brand-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity px-1"
-                              title="Delete announcement"
+                              onClick={handleDeleteMessage}
+                              aria-label="Delete announcement"
+                              className="text-xs text-brand-300 hover:text-red-500 opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100 transition-opacity px-1"
                             >
                               ✕
                             </button>
@@ -244,14 +247,9 @@ export function MessageThread({
 
                   {canDelete && (
                     <button
-                      onClick={async () => {
-                        if (!window.confirm('Delete this message?')) return;
-                        const error = await deleteMessageAction(msg.id);
-                        if (error) { setSendError(error); }
-                        else { setMessages((prev) => prev.filter((m) => m.id !== msg.id)); }
-                      }}
-                      className="shrink-0 self-start mt-1 text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity px-1"
-                      title="Delete message"
+                      onClick={handleDeleteMessage}
+                      aria-label="Delete message"
+                      className="shrink-0 self-start mt-1 text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100 transition-opacity px-1"
                     >
                       ✕
                     </button>
