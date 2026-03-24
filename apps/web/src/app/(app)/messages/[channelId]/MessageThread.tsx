@@ -4,6 +4,7 @@ import type { JSX } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { formatDate, formatTime } from '@baseball/shared';
+import { deleteMessageAction } from '../delete-actions';
 
 type MessageRow = {
   id: string;
@@ -23,6 +24,7 @@ type Props = {
   canPost: boolean;
   currentUserId: string;
   memberProfiles: Record<string, MemberProfile>;
+  isCoach: boolean;
 };
 
 function getInitials(profile: { first_name: string; last_name: string } | MemberProfile | null) {
@@ -45,6 +47,7 @@ export function MessageThread({
   canPost,
   currentUserId,
   memberProfiles,
+  isCoach,
 }: Props): JSX.Element | null {
   const [messages, setMessages] = useState<MessageRow[]>(initialMessages);
   const [draft, setDraft]       = useState('');
@@ -156,8 +159,10 @@ export function MessageThread({
               const prev    = i > 0 ? group.messages[i - 1] : null;
               const showHeader = !prev || prev.sender_id !== msg.sender_id;
 
+              const canDelete = isOwn || isCoach;
+
               return (
-                <div key={msg.id} className={`flex gap-3 ${showHeader ? 'mt-3' : 'mt-0.5'}`}>
+                <div key={msg.id} className={`group flex gap-3 ${showHeader ? 'mt-3' : 'mt-0.5'}`}>
                   {/* Avatar (only on first message in a run) */}
                   <div className="w-8 shrink-0 mt-0.5">
                     {showHeader && (
@@ -191,6 +196,24 @@ export function MessageThread({
                       <span className="text-xs text-gray-400 italic"> (edited)</span>
                     )}
                   </div>
+
+                  {canDelete && (
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm('Delete this message?')) return;
+                        const error = await deleteMessageAction(msg.id);
+                        if (error) {
+                          setSendError(error);
+                        } else {
+                          setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+                        }
+                      }}
+                      className="shrink-0 self-start mt-1 text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity px-1"
+                      title="Delete message"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
               );
             })}

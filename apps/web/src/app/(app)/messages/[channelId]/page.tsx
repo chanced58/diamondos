@@ -3,7 +3,9 @@ import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { getUserAccess } from '@/lib/user-access';
 import { MessageThread } from './MessageThread';
+import { DeleteChannelButton } from './DeleteChannelButton';
 
 type MessageRow = {
   id: string;
@@ -51,13 +53,15 @@ export default async function ChannelPage({
   const { data: channel } = await db
     .from('channels')
     .select(`
-      id, name, channel_type, description,
+      id, name, channel_type, description, team_id,
       channel_members(user_id, user_profiles(first_name, last_name))
     `)
     .eq('id', params.channelId)
     .single();
 
   if (!channel) redirect('/messages');
+
+  const { isCoach } = await getUserAccess(channel.team_id, user.id);
 
   // Fetch initial 50 messages (oldest first) with sender profiles
   const { data: messages } = await db
@@ -103,18 +107,22 @@ export default async function ChannelPage({
   }
 
   const icon = CHANNEL_TYPE_ICONS[channel.channel_type] ?? '#';
+  const canDeleteChannel = isCoach && channel.channel_type !== 'direct';
 
   return (
     <div className="flex flex-col h-full">
       {/* ── Channel header ───────────────────────────────────────────── */}
       <div className="shrink-0 border-b border-gray-200 bg-white px-6 py-4 flex items-center gap-3">
         <span className="text-gray-400 font-mono">{icon}</span>
-        <div>
+        <div className="flex-1 min-w-0">
           <h1 className="text-base font-semibold text-gray-900">{displayName}</h1>
           {channel.description && (
             <p className="text-xs text-gray-400">{channel.description}</p>
           )}
         </div>
+        {canDeleteChannel && (
+          <DeleteChannelButton channelId={params.channelId} channelName={displayName} />
+        )}
       </div>
 
       {/* ── Message thread (real-time) ───────────────────────────────── */}
@@ -132,6 +140,7 @@ export default async function ChannelPage({
         canPost={myMembership.can_post}
         currentUserId={user.id}
         memberProfiles={memberProfiles}
+        isCoach={isCoach}
       />
     </div>
   );
