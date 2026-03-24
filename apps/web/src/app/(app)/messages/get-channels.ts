@@ -153,7 +153,7 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
     isPlatformAdmin = profile?.is_platform_admin === true;
   }
 
-  console.error(`[messages] user=${user.id} isPlatformAdmin=${isPlatformAdmin} db=${!!db}`);
+  console.info(`[messages] user=${user.id} isPlatformAdmin=${isPlatformAdmin} db=${!!db}`);
 
   // Resolve team — auth client first (cookie-based, matches games/dashboard pattern),
   // service-role fallback, then self-healing from created_by / invitations.
@@ -164,30 +164,34 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
   } catch (e) {
     console.error('[messages] getActiveTeam(auth) threw:', e);
   }
-  console.error(`[messages] getActiveTeam(auth): ${activeTeam ? activeTeam.id : 'null'}`);
+  console.info(`[messages] getActiveTeam(auth): ${activeTeam ? activeTeam.id : 'null'}`);
   if (!activeTeam && db) {
     try {
       activeTeam = await getActiveTeam(db, user.id);
     } catch (e) {
       console.error('[messages] getActiveTeam(db) threw:', e);
     }
-    console.error(`[messages] getActiveTeam(db): ${activeTeam ? activeTeam.id : 'null'}`);
+    console.info(`[messages] getActiveTeam(db): ${activeTeam ? activeTeam.id : 'null'}`);
   }
   if (!activeTeam && !isPlatformAdmin && db) {
     activeTeam = await selfHealMembership(db, user.id, user.email);
-    console.error(`[messages] selfHealMembership: ${activeTeam ? activeTeam.id : 'null'}`);
+    console.info(`[messages] selfHealMembership: ${activeTeam ? activeTeam.id : 'null'}`);
   }
   // Platform admins without a team from getActiveTeam: resolve via created_by directly
   if (!activeTeam && isPlatformAdmin && db) {
-    const { data: ownTeam } = await db
-      .from('teams')
-      .select(TEAM_SELECT)
-      .eq('created_by', user.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (ownTeam) activeTeam = ownTeam as ActiveTeam;
-    console.error(`[messages] admin created_by lookup: ${activeTeam ? activeTeam.id : 'null'}`);
+    try {
+      const { data: ownTeam } = await db
+        .from('teams')
+        .select(TEAM_SELECT)
+        .eq('created_by', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (ownTeam) activeTeam = ownTeam as ActiveTeam;
+    } catch (e) {
+      console.error('[messages] admin created_by lookup error:', e);
+    }
+    console.info(`[messages] admin created_by lookup: ${activeTeam ? activeTeam.id : 'null'}`);
   }
   if (!activeTeam) {
     console.error('[messages] FAILED: no activeTeam after all resolution attempts');
@@ -231,7 +235,7 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
   }
 
   const { isCoach } = await getUserAccess(activeTeam.id, user.id);
-  console.error(`[messages] resolved: team=${activeTeam.id} name=${activeTeam.name} isCoach=${isCoach} isPlatformAdmin=${isPlatformAdmin}`);
+  console.info(`[messages] resolved: team=${activeTeam.id} name=${activeTeam.name} isCoach=${isCoach} isPlatformAdmin=${isPlatformAdmin}`);
 
   // Platform admins aren't in team_members, so seedDefaultChannels won't add them.
   // Ensure they have channel_members rows for all non-DM channels on this team.
