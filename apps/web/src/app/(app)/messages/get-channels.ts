@@ -126,13 +126,20 @@ async function selfHealMembership(
 export async function getChannelSidebarData(): Promise<ChannelSidebarData | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
-  if (!user) return null;
+  if (!user) {
+    console.error('[messages] getChannelSidebarData: no authenticated user');
+    return null;
+  }
 
   // Service-role client for writes that bypass RLS (guarded — null when key is missing)
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const db = serviceRoleKey
     ? createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey)
     : null;
+
+  if (!db) {
+    console.error('[messages] SUPABASE_SERVICE_ROLE_KEY is not configured — service-role client unavailable');
+  }
 
   // Check platform admin status early — admins have implicit access to all teams
   // and are blocked from team_members by a database trigger.
@@ -146,27 +153,50 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
     isPlatformAdmin = profile?.is_platform_admin === true;
   }
 
+  console.info(`[messages] user=${user.id} isPlatformAdmin=${isPlatformAdmin} db=${!!db}`);
+
   // Resolve team — auth client first (cookie-based, matches games/dashboard pattern),
   // service-role fallback, then self-healing from created_by / invitations.
-  let activeTeam = await getActiveTeam(auth, user.id);
+  // Wrapped in try-catch because getTeamsForUser throws on Supabase errors.
+  let activeTeam: ActiveTeam | null = null;
+  try {
+    activeTeam = await getActiveTeam(auth, user.id);
+  } catch (e) {
+    console.error('[messages] getActiveTeam(auth) threw:', e);
+  }
+  console.info(`[messages] getActiveTeam(auth): ${activeTeam ? activeTeam.id : 'null'}`);
   if (!activeTeam && db) {
-    activeTeam = await getActiveTeam(db, user.id);
+    try {
+      activeTeam = await getActiveTeam(db, user.id);
+    } catch (e) {
+      console.error('[messages] getActiveTeam(db) threw:', e);
+    }
+    console.info(`[messages] getActiveTeam(db): ${activeTeam ? activeTeam.id : 'null'}`);
   }
   if (!activeTeam && !isPlatformAdmin && db) {
     activeTeam = await selfHealMembership(db, user.id, user.email);
+    console.info(`[messages] selfHealMembership: ${activeTeam ? activeTeam.id : 'null'}`);
   }
   // Platform admins without a team from getActiveTeam: resolve via created_by directly
   if (!activeTeam && isPlatformAdmin && db) {
-    const { data: ownTeam } = await db
-      .from('teams')
-      .select(TEAM_SELECT)
-      .eq('created_by', user.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (ownTeam) activeTeam = ownTeam as ActiveTeam;
+    try {
+      const { data: ownTeam } = await db
+        .from('teams')
+        .select(TEAM_SELECT)
+        .eq('created_by', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (ownTeam) activeTeam = ownTeam as ActiveTeam;
+    } catch (e) {
+      console.error('[messages] admin created_by lookup error:', e);
+    }
+    console.info(`[messages] admin created_by lookup: ${activeTeam ? activeTeam.id : 'null'}`);
   }
-  if (!activeTeam) return null;
+  if (!activeTeam) {
+    console.error('[messages] FAILED: no activeTeam after all resolution attempts');
+    return null;
+  }
 
   // Prefer service-role for read queries (bypasses RLS issues in standalone mode);
   // fall back to auth client when the service-role key is not configured.
@@ -198,10 +228,14 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
       }
     }
 
-    if (membershipError || !membership) return null;
+    if (membershipError || !membership) {
+      console.error(`[messages] FAILED: membership check failed for team=${activeTeam.id} error=${membershipError?.message ?? 'no membership row'}`);
+      return null;
+    }
   }
 
   const { isCoach } = await getUserAccess(activeTeam.id, user.id);
+  console.info(`[messages] resolved: team=${activeTeam.id} name=${activeTeam.name} isCoach=${isCoach} isPlatformAdmin=${isPlatformAdmin}`);
 
   // Platform admins aren't in team_members, so seedDefaultChannels won't add them.
   // Ensure they have channel_members rows for all non-DM channels on this team.
