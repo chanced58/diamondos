@@ -128,6 +128,7 @@ export default async function ChannelPage({
       {/* ── Message thread (real-time) ───────────────────────────────── */}
       <MessageThread
         channelId={params.channelId}
+        channelType={channel.channel_type}
         initialMessages={(messages ?? []).map((m): MessageRow => ({
           id: m.id,
           body: m.body,

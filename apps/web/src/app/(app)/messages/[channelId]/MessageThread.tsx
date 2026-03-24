@@ -20,6 +20,7 @@ type MemberProfile = { firstName: string; lastName: string };
 
 type Props = {
   channelId: string;
+  channelType: string;
   initialMessages: MessageRow[];
   canPost: boolean;
   currentUserId: string;
@@ -43,12 +44,14 @@ function getFullName(profile: { first_name: string; last_name: string } | Member
 
 export function MessageThread({
   channelId,
+  channelType,
   initialMessages,
   canPost,
   currentUserId,
   memberProfiles,
   isCoach,
 }: Props): JSX.Element | null {
+  const isAnnouncement = channelType === 'announcement';
   const [messages, setMessages] = useState<MessageRow[]>(initialMessages);
   const [draft, setDraft]       = useState('');
   const [sending, setSending]   = useState(false);
@@ -155,11 +158,56 @@ export function MessageThread({
             {group.messages.map((msg, i) => {
               const profile = msg.user_profiles;
               const isOwn   = msg.sender_id === currentUserId;
-              // Collapse consecutive messages from same sender
               const prev    = i > 0 ? group.messages[i - 1] : null;
               const showHeader = !prev || prev.sender_id !== msg.sender_id;
-
               const canDelete = isOwn || isCoach;
+
+              async function handleDeleteMessage() {
+                const label = isAnnouncement ? 'announcement' : 'message';
+                if (!window.confirm(`Delete this ${label}?`)) return;
+                const error = await deleteMessageAction(msg.id);
+                if (error) { setSendError(error); }
+                else { setMessages((prev) => prev.filter((m) => m.id !== msg.id)); }
+              }
+
+              if (isAnnouncement) {
+                return (
+                  <div key={msg.id} className="group my-3">
+                    <div className="bg-brand-50 border border-brand-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-brand-700 text-white flex items-center justify-center text-xs font-bold">
+                            {getInitials(profile)}
+                          </div>
+                          <span className="text-sm font-bold text-brand-900">
+                            {isOwn ? 'You' : getFullName(profile)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-brand-500 font-medium">
+                            {formatDate(msg.created_at)} &middot; {formatTime(msg.created_at)}
+                          </span>
+                          {canDelete && (
+                            <button
+                              onClick={handleDeleteMessage}
+                              aria-label="Delete announcement"
+                              className="text-xs text-brand-300 hover:text-red-500 opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100 transition-opacity px-1"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-sm font-medium text-gray-900 leading-relaxed whitespace-pre-wrap break-words">
+                        {msg.body}
+                      </p>
+                      {msg.edited_at && (
+                        <span className="text-xs text-brand-400 italic mt-1 block">(edited)</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
 
               return (
                 <div key={msg.id} className={`group flex gap-3 ${showHeader ? 'mt-3' : 'mt-0.5'}`}>
@@ -199,17 +247,9 @@ export function MessageThread({
 
                   {canDelete && (
                     <button
-                      onClick={async () => {
-                        if (!window.confirm('Delete this message?')) return;
-                        const error = await deleteMessageAction(msg.id);
-                        if (error) {
-                          setSendError(error);
-                        } else {
-                          setMessages((prev) => prev.filter((m) => m.id !== msg.id));
-                        }
-                      }}
-                      className="shrink-0 self-start mt-1 text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity px-1"
-                      title="Delete message"
+                      onClick={handleDeleteMessage}
+                      aria-label="Delete message"
+                      className="shrink-0 self-start mt-1 text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100 transition-opacity px-1"
                     >
                       ✕
                     </button>
