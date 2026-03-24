@@ -12,6 +12,15 @@ export async function seedDefaultChannels(
   teamId: string,
   userId: string,
 ) {
+  // Check if channels already exist for this team (idempotency guard)
+  const { data: existing } = await db
+    .from('channels')
+    .select('id')
+    .eq('team_id', teamId)
+    .limit(1);
+
+  if (existing && existing.length > 0) return;
+
   // Get all current team members (may be empty for platform-admin-only teams)
   const { data: teamMembers } = await db
     .from('team_members')
