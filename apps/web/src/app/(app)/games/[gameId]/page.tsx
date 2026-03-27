@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
-import { formatDate, formatTime } from '@baseball/shared';
+import { formatDate, formatTime, weAreHome } from '@baseball/shared';
 import { CancelGameForm } from './CancelGameForm';
 import { StartGameForm } from './StartGameForm';
 import { LocationMap } from '@/components/maps/LocationMap';
@@ -71,11 +71,12 @@ export default async function GameDetailPage({
   const hasOpponentLineup = (opponentLineupCount ?? 0) > 0;
 
   const statusStyle = STATUS_STYLES[game.status] ?? STATUS_STYLES.scheduled;
+  const isHome = weAreHome(game.location_type, game.neutral_home_team);
   const locationLabel =
     game.location_type === 'home' ? 'Home'
     : game.location_type === 'away' ? 'Away'
-    : 'Neutral site';
-  const vsAt = game.location_type === 'away' ? '@' : 'vs';
+    : `Neutral site (${game.neutral_home_team === 'opponent' ? 'away' : 'home'})`;
+  const vsAt = isHome ? 'vs' : '@';
   const isCompleted = game.status === 'completed';
 
   // Parse date and time for the edit form using local timezone so the form
@@ -137,6 +138,7 @@ export default async function GameDetailPage({
             scheduledDate={scheduledDate}
             scheduledTime={scheduledTime}
             locationType={game.location_type}
+            neutralHomeTeam={game.neutral_home_team ?? ''}
             venueName={game.venue_name ?? ''}
             notes={game.notes ?? ''}
           />
@@ -152,19 +154,19 @@ export default async function GameDetailPage({
           <div className="flex items-center justify-center gap-8">
             <div>
               <p className="text-sm text-gray-500 mb-1">
-                {game.location_type === 'home' ? 'Us' : game.opponent_name}
+                {isHome ? 'Us' : game.opponent_name}
               </p>
               <p className="text-5xl font-bold text-gray-900">
-                {game.location_type === 'home' ? game.home_score : game.away_score}
+                {isHome ? game.home_score : game.away_score}
               </p>
             </div>
             <div className="text-2xl text-gray-300 font-light">—</div>
             <div>
               <p className="text-sm text-gray-500 mb-1">
-                {game.location_type === 'home' ? game.opponent_name : 'Us'}
+                {isHome ? game.opponent_name : 'Us'}
               </p>
               <p className="text-5xl font-bold text-gray-900">
-                {game.location_type === 'home' ? game.away_score : game.home_score}
+                {isHome ? game.away_score : game.home_score}
               </p>
             </div>
           </div>

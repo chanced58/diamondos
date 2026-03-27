@@ -398,6 +398,7 @@ export type Database = {
           latitude: number | null
           location_type: Database["public"]["Enums"]["game_location_type"]
           longitude: number | null
+          neutral_home_team: string | null
           notes: string | null
           opponent_name: string
           opponent_team_id: string | null
@@ -424,6 +425,7 @@ export type Database = {
           latitude?: number | null
           location_type?: Database["public"]["Enums"]["game_location_type"]
           longitude?: number | null
+          neutral_home_team?: string | null
           notes?: string | null
           opponent_name: string
           opponent_team_id?: string | null
@@ -450,6 +452,7 @@ export type Database = {
           latitude?: number | null
           location_type?: Database["public"]["Enums"]["game_location_type"]
           longitude?: number | null
+          neutral_home_team?: string | null
           notes?: string | null
           opponent_name?: string
           opponent_team_id?: string | null

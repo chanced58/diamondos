@@ -1,6 +1,7 @@
 'use client';
 import type { JSX } from 'react';
 
+import { useState } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { updateGameAction } from './actions';
 import { AddressAutocomplete } from '@/components/maps/AddressAutocomplete';
@@ -30,6 +31,7 @@ type Props = {
   defaultDate: string;   // YYYY-MM-DD
   defaultTime: string;   // HH:MM
   defaultLocationType: string;
+  defaultNeutralHomeTeam: string;
   defaultVenue: string;
   defaultNotes: string;
   onCancel: () => void;
@@ -41,11 +43,13 @@ export function EditGameForm({
   defaultDate,
   defaultTime,
   defaultLocationType,
+  defaultNeutralHomeTeam,
   defaultVenue,
   defaultNotes,
   onCancel,
 }: Props): JSX.Element | null {
   const [error, formAction] = useFormState(updateGameAction, null);
+  const [locationType, setLocationType] = useState(defaultLocationType);
 
   return (
     <form action={formAction} className="space-y-5">
@@ -83,12 +87,31 @@ export function EditGameForm({
       {/* Location type */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-        <select name="locationType" defaultValue={defaultLocationType} className={selectClass}>
+        <select
+          name="locationType"
+          value={locationType}
+          onChange={(e) => setLocationType(e.target.value)}
+          className={selectClass}
+        >
           <option value="home">Home</option>
           <option value="away">Away</option>
           <option value="neutral">Neutral site</option>
         </select>
       </div>
+
+      {/* Neutral site — home team designation */}
+      {locationType === 'neutral' && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Home team</label>
+          <select name="neutralHomeTeam" defaultValue={defaultNeutralHomeTeam || 'us'} className={selectClass}>
+            <option value="us">Us</option>
+            <option value="opponent">Opponent</option>
+          </select>
+          <p className="text-xs text-gray-400 mt-1">
+            The home team bats in the bottom of each inning.
+          </p>
+        </div>
+      )}
 
       {/* Venue */}
       <div>

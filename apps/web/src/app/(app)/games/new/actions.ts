@@ -17,6 +17,9 @@ export async function createGameAction(_prevState: string | null | undefined, fo
   const time         = (formData.get('time') as string) || '12:00';
   const locationType = (formData.get('locationType') as string) || 'home';
   const venue        = (formData.get('venue') as string)?.trim() || null;
+  const neutralHomeTeam = locationType === 'neutral'
+    ? ((formData.get('neutralHomeTeam') as string) || 'us')
+    : null;
   const notes        = (formData.get('notes') as string)?.trim() || null;
 
   // Structured address fields from AddressAutocomplete
@@ -67,8 +70,9 @@ export async function createGameAction(_prevState: string | null | undefined, fo
       team_id:       teamId,
       opponent_name: opponent,
       scheduled_at:  scheduledAt,
-      location_type: locationType,
-      venue_name:    venue,
+      location_type:     locationType,
+      neutral_home_team: neutralHomeTeam,
+      venue_name:        venue,
       address,
       latitude,
       longitude,

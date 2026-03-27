@@ -18,6 +18,7 @@ export const schema = appSchema({
         { name: 'opponent_name', type: 'string' },
         { name: 'scheduled_at', type: 'number' },           // Unix ms timestamp
         { name: 'location_type', type: 'string' },
+        { name: 'neutral_home_team', type: 'string', isOptional: true },
         { name: 'venue_name', type: 'string', isOptional: true },
         { name: 'status', type: 'string' },
         { name: 'home_score', type: 'number' },

@@ -10,6 +10,7 @@ const DEMO_GAME = {
   id: 'demo-game',
   opponentName: 'Demo Opponent',
   locationType: 'home',
+  neutralHomeTeam: null,
   teamId: 'demo-team',
 };
 

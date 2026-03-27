@@ -23,6 +23,8 @@ export interface Game {
   opponentTeamId?: string;
   scheduledAt: string;
   locationType: GameLocationType;
+  /** When location_type is 'neutral', which team is designated home: 'us' or 'opponent'. */
+  neutralHomeTeam?: string | null;
   venueName?: string;
   status: GameStatus;
   homeScore: number;
@@ -36,6 +38,20 @@ export interface Game {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Returns true when our team is the designated home team.
+ * For neutral-site games, checks the neutralHomeTeam field (defaults to 'us' if not set).
+ */
+export function weAreHome(
+  locationType: string,
+  neutralHomeTeam?: string | null,
+): boolean {
+  if (locationType === 'home') return true;
+  if (locationType === 'away') return false;
+  // neutral — default to 'us' if not specified
+  return neutralHomeTeam !== 'opponent';
 }
 
 export interface GameLineup {

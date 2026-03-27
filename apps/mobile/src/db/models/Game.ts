@@ -15,6 +15,7 @@ export class Game extends Model {
   @field('opponent_name') opponentName!: string;
   @field('scheduled_at') scheduledAt!: number;
   @field('location_type') locationType!: string;
+  @field('neutral_home_team') neutralHomeTeam!: string | undefined;
   @field('venue_name') venueName!: string | undefined;
   @field('status') status!: string;
   @field('home_score') homeScore!: number;

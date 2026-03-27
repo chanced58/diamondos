@@ -200,6 +200,7 @@ create table public.games (
   opponent_name     text not null,
   scheduled_at      timestamptz not null,
   location_type     public.game_location_type not null default 'home',
+  neutral_home_team text check (neutral_home_team in ('us', 'opponent')),
   venue_name        text,
   status            public.game_status not null default 'scheduled',
   home_score        smallint not null default 0,
