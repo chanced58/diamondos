@@ -47,9 +47,9 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
     { href: '/dashboard',                                  label: 'Dashboard',       icon: '⚾' },
     { href: '/games',                                      label: 'Schedule',        icon: '📋' },
     { href: '/practices',                                  label: 'Practices',       icon: '🏋️' },
-    { href: teamId ? `/teams/${teamId}/admin` : '/teams',  label: 'Team Management', icon: '👥' },
     { href: '/compliance',                                 label: 'Stats',           icon: '📊' },
     { href: '/messages',                                   label: 'Messages',        icon: '💬' },
+    { href: teamId ? `/teams/${teamId}/admin` : '/teams',  label: 'Team Management', icon: '👥' },
     // Non-platform-admins see the generic Admin link; platform admins get the dedicated link below
     ...(!isPlatformAdmin ? [{ href: '/admin', label: 'Admin', icon: '⚙️' }] : []),
   ];
