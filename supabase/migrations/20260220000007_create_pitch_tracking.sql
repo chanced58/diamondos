@@ -5,7 +5,7 @@
 -- edge function on every PITCH_THROWN event insert.
 
 create table public.pitch_counts (
-  id                  uuid primary key default uuid_generate_v4(),
+  id                  uuid primary key default gen_random_uuid(),
   game_id             uuid not null references public.games(id) on delete cascade,
   player_id           uuid not null references public.players(id),
   season_id           uuid not null references public.seasons(id),

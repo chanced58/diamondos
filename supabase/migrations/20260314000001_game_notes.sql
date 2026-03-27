@@ -7,7 +7,7 @@
 -- One row per game. overall_notes is public to the team;
 -- coach_notes is visible to coaches only (enforced in application layer).
 create table public.game_notes (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   game_id       uuid references public.games(id) on delete cascade not null unique,
   overall_notes text,
   coach_notes   text,
@@ -21,7 +21,7 @@ comment on table public.game_notes is
 
 -- ─── game_player_notes ───────────────────────────────────────────────────────
 create table public.game_player_notes (
-  id                uuid primary key default uuid_generate_v4(),
+  id                uuid primary key default gen_random_uuid(),
   game_id           uuid references public.games(id) on delete cascade not null,
   player_id         uuid references public.players(id) on delete cascade not null,
   pitching          text,

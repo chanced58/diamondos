@@ -17,7 +17,7 @@ create type public.player_position as enum (
 create type public.bats_throws as enum ('right', 'left', 'switch');
 
 create table public.players (
-  id                uuid primary key default uuid_generate_v4(),
+  id                uuid primary key default gen_random_uuid(),
   team_id           uuid not null references public.teams(id) on delete cascade,
   -- Links to auth.users if the player has an account (optional for youth players)
   user_id           uuid references auth.users(id) on delete set null,
@@ -40,7 +40,7 @@ comment on table public.players is 'An athlete on a team roster. PII — date_of
 
 -- Parent / guardian links to player records for access control
 create table public.parent_player_links (
-  id              uuid primary key default uuid_generate_v4(),
+  id              uuid primary key default gen_random_uuid(),
   parent_user_id  uuid not null references auth.users(id) on delete cascade,
   player_id       uuid not null references public.players(id) on delete cascade,
   relationship    text,           -- 'parent', 'guardian', 'stepparent', etc.
@@ -53,7 +53,7 @@ comment on table public.parent_player_links is
 
 -- Which players are on a given season''s roster
 create table public.season_rosters (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   season_id   uuid not null references public.seasons(id) on delete cascade,
   player_id   uuid not null references public.players(id) on delete cascade,
   added_at    timestamptz not null default now(),

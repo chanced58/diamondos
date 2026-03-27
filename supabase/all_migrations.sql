@@ -47,7 +47,7 @@ create type public.team_role as enum (
 );
 
 create table public.teams (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   name          text not null,
   organization  text,
   logo_url      text,
@@ -61,7 +61,7 @@ comment on table public.teams is 'A baseball team. One user may belong to multip
 comment on column public.teams.state_code is 'Two-letter US state code for pitch compliance rule lookup.';
 
 create table public.seasons (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   team_id     uuid not null references public.teams(id) on delete cascade,
   name        text not null,
   start_date  date not null,
@@ -78,7 +78,7 @@ create unique index seasons_one_active_per_team
   where is_active = true;
 
 create table public.team_members (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   team_id     uuid not null references public.teams(id) on delete cascade,
   user_id     uuid not null references auth.users(id) on delete cascade,
   role        public.team_role not null,
@@ -139,7 +139,7 @@ create type public.player_position as enum (
 create type public.bats_throws as enum ('right', 'left', 'switch');
 
 create table public.players (
-  id                uuid primary key default uuid_generate_v4(),
+  id                uuid primary key default gen_random_uuid(),
   team_id           uuid not null references public.teams(id) on delete cascade,
   -- Links to auth.users if the player has an account (optional for youth players)
   user_id           uuid references auth.users(id) on delete set null,
@@ -162,7 +162,7 @@ comment on table public.players is 'An athlete on a team roster. PII — date_of
 
 -- Parent / guardian links to player records for access control
 create table public.parent_player_links (
-  id              uuid primary key default uuid_generate_v4(),
+  id              uuid primary key default gen_random_uuid(),
   parent_user_id  uuid not null references auth.users(id) on delete cascade,
   player_id       uuid not null references public.players(id) on delete cascade,
   relationship    text,           -- 'parent', 'guardian', 'stepparent', etc.
@@ -175,7 +175,7 @@ comment on table public.parent_player_links is
 
 -- Which players are on a given season''s roster
 create table public.season_rosters (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   season_id   uuid not null references public.seasons(id) on delete cascade,
   player_id   uuid not null references public.players(id) on delete cascade,
   added_at    timestamptz not null default now(),
@@ -194,7 +194,7 @@ create type public.game_status as enum (
 create type public.game_location_type as enum ('home', 'away', 'neutral');
 
 create table public.games (
-  id                uuid primary key default uuid_generate_v4(),
+  id                uuid primary key default gen_random_uuid(),
   season_id         uuid not null references public.seasons(id) on delete cascade,
   team_id           uuid not null references public.teams(id),
   opponent_name     text not null,
@@ -220,7 +220,7 @@ comment on table public.games is 'A single scheduled or completed game for a sea
 
 -- The batting order for a game (pre-set before game start, updated via substitutions)
 create table public.game_lineups (
-  id                uuid primary key default uuid_generate_v4(),
+  id                uuid primary key default gen_random_uuid(),
   game_id           uuid not null references public.games(id) on delete cascade,
   player_id         uuid not null references public.players(id),
   batting_order     smallint not null check (batting_order between 1 and 9),
@@ -273,7 +273,7 @@ create index game_events_pitcher_id_idx
 -- edge function on every PITCH_THROWN event insert.
 
 create table public.pitch_counts (
-  id                  uuid primary key default uuid_generate_v4(),
+  id                  uuid primary key default gen_random_uuid(),
   game_id             uuid not null references public.games(id) on delete cascade,
   player_id           uuid not null references public.players(id),
   season_id           uuid not null references public.seasons(id),
@@ -304,7 +304,7 @@ create type public.rsvp_status as enum (
 );
 
 create table public.channels (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   team_id       uuid not null references public.teams(id) on delete cascade,
   channel_type  public.channel_type not null,
   name          text,           -- null for direct channels
@@ -315,7 +315,7 @@ create table public.channels (
 );
 
 create table public.channel_members (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   channel_id    uuid not null references public.channels(id) on delete cascade,
   user_id       uuid not null references auth.users(id) on delete cascade,
   can_post      boolean not null default false,  -- false for parents/players in announcement channels
@@ -325,7 +325,7 @@ create table public.channel_members (
 );
 
 create table public.messages (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   channel_id  uuid not null references public.channels(id) on delete cascade,
   sender_id   uuid not null references auth.users(id),
   body        text not null,
@@ -338,7 +338,7 @@ create table public.messages (
 
 -- RSVP tracking for scheduled games
 create table public.game_rsvps (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   game_id       uuid not null references public.games(id) on delete cascade,
   user_id       uuid not null references auth.users(id) on delete cascade,
   status        public.rsvp_status not null,
@@ -349,7 +349,7 @@ create table public.game_rsvps (
 
 -- Expo push notification tokens registered by mobile clients
 create table public.push_tokens (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references auth.users(id) on delete cascade,
   token       text not null unique,
   platform    text not null check (platform in ('ios', 'android')),
@@ -359,7 +359,7 @@ create table public.push_tokens (
 -- Pitch count compliance rules (per-state / per-organization)
 
 create table public.pitch_compliance_rules (
-  id                    uuid primary key default uuid_generate_v4(),
+  id                    uuid primary key default gen_random_uuid(),
   -- null team_id = system-level preset (NFHS, Little League, etc.)
   team_id               uuid references public.teams(id) on delete cascade,
   rule_name             text not null,

@@ -13,7 +13,7 @@ create type public.rsvp_status as enum (
 );
 
 create table public.channels (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   team_id       uuid not null references public.teams(id) on delete cascade,
   channel_type  public.channel_type not null,
   name          text,           -- null for direct channels
@@ -24,7 +24,7 @@ create table public.channels (
 );
 
 create table public.channel_members (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   channel_id    uuid not null references public.channels(id) on delete cascade,
   user_id       uuid not null references auth.users(id) on delete cascade,
   can_post      boolean not null default false,  -- false for parents/players in announcement channels
@@ -34,7 +34,7 @@ create table public.channel_members (
 );
 
 create table public.messages (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   channel_id  uuid not null references public.channels(id) on delete cascade,
   sender_id   uuid not null references auth.users(id),
   body        text not null,
@@ -47,7 +47,7 @@ create table public.messages (
 
 -- RSVP tracking for scheduled games
 create table public.game_rsvps (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   game_id       uuid not null references public.games(id) on delete cascade,
   user_id       uuid not null references auth.users(id) on delete cascade,
   status        public.rsvp_status not null,
@@ -58,7 +58,7 @@ create table public.game_rsvps (
 
 -- Expo push notification tokens registered by mobile clients
 create table public.push_tokens (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references auth.users(id) on delete cascade,
   token       text not null unique,
   platform    text not null check (platform in ('ios', 'android')),

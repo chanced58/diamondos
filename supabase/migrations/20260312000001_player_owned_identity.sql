@@ -6,7 +6,7 @@
 
 -- 1. Create player_team_memberships junction table
 CREATE TABLE public.player_team_memberships (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   player_id       UUID NOT NULL REFERENCES public.players(id) ON DELETE RESTRICT,
   team_id         UUID NOT NULL REFERENCES public.teams(id) ON DELETE RESTRICT,
   jersey_number   SMALLINT,
@@ -37,7 +37,7 @@ CREATE UNIQUE INDEX ptm_team_jersey_active_idx
 
 -- 2. Create player_transfers audit log
 CREATE TABLE public.player_transfers (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   player_id       UUID NOT NULL REFERENCES public.players(id) ON DELETE RESTRICT,
   from_team_id    UUID REFERENCES public.teams(id),
   to_team_id      UUID REFERENCES public.teams(id),

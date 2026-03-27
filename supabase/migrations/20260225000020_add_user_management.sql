@@ -18,7 +18,7 @@ ALTER TABLE public.user_profiles
 --    team_members requires a real auth.users FK so we can't store "ghost" rows there.
 --    This table holds the invite data until the user accepts and creates their account.
 CREATE TABLE IF NOT EXISTS public.team_invitations (
-  id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   team_id     uuid NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
   email       text NOT NULL,
   first_name  text,

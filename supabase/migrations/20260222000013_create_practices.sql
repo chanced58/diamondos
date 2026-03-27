@@ -4,7 +4,7 @@
 
 -- ─── practices ───────────────────────────────────────────────────────────────
 create table public.practices (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   team_id       uuid references public.teams(id) on delete cascade not null,
   scheduled_at  timestamptz not null,
   duration_minutes int,
@@ -20,7 +20,7 @@ comment on table public.practices is 'A single team practice session.';
 -- One row per practice. overall_notes is public to the team;
 -- coach_notes is visible to coaches only (enforced in application layer).
 create table public.practice_notes (
-  id             uuid primary key default uuid_generate_v4(),
+  id             uuid primary key default gen_random_uuid(),
   practice_id    uuid references public.practices(id) on delete cascade not null unique,
   overall_notes  text,
   coach_notes    text,
@@ -34,7 +34,7 @@ comment on table public.practice_notes is
 
 -- ─── practice_player_notes ───────────────────────────────────────────────────
 create table public.practice_player_notes (
-  id                uuid primary key default uuid_generate_v4(),
+  id                uuid primary key default gen_random_uuid(),
   practice_id       uuid references public.practices(id) on delete cascade not null,
   player_id         uuid references public.players(id) on delete cascade not null,
   pitching          text,

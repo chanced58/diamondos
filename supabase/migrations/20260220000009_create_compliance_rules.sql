@@ -1,7 +1,7 @@
 -- Pitch count compliance rules (per-state / per-organization)
 
 create table public.pitch_compliance_rules (
-  id                    uuid primary key default uuid_generate_v4(),
+  id                    uuid primary key default gen_random_uuid(),
   -- null team_id = system-level preset (NFHS, Little League, etc.)
   team_id               uuid references public.teams(id) on delete cascade,
   rule_name             text not null,
