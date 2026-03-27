@@ -236,16 +236,15 @@ export function CalendarView({ year, month, events, isCoach: _isCoach, teamId: _
         </div>
       )}
 
-      {/* ── Full month list (shown when no day selected) ──────── */}
-      {selectedDay === null && allMonthEvents.length > 0 && (
-        <div className="mt-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
-            <h3 className="text-sm font-semibold text-gray-900">
-              All events — {MONTH_NAMES[month - 1]} {year}
-            </h3>
-          </div>
+      {/* ── Upcoming & Past event lists (shown when no day selected) ── */}
+      {selectedDay === null && (() => {
+        const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        const upcoming = allMonthEvents.filter((ev) => ev.dateKey >= todayKey);
+        const past = allMonthEvents.filter((ev) => ev.dateKey < todayKey).reverse();
+
+        const renderEventList = (items: CalendarEvent[]) => (
           <ul className="divide-y divide-gray-100">
-            {allMonthEvents.map((ev) => {
+            {items.map((ev) => {
               const day = parseInt(ev.dateKey.split('-')[2], 10);
               return (
                 <li key={ev.id}>
@@ -270,14 +269,40 @@ export function CalendarView({ year, month, events, isCoach: _isCoach, teamId: _
               );
             })}
           </ul>
-        </div>
-      )}
+        );
 
-      {selectedDay === null && allMonthEvents.length === 0 && (
-        <div className="mt-4 bg-white rounded-xl border border-gray-100 px-5 py-10 text-center text-gray-400 text-sm">
-          No events scheduled for {MONTH_NAMES[month - 1]} {year}.
-        </div>
-      )}
+        return (
+          <>
+            {/* Upcoming Events */}
+            <div className="mt-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Upcoming Events
+                </h3>
+              </div>
+              {upcoming.length > 0 ? renderEventList(upcoming) : (
+                <div className="px-5 py-6 text-center text-gray-400 text-sm">
+                  No upcoming events for {MONTH_NAMES[month - 1]} {year}.
+                </div>
+              )}
+            </div>
+
+            {/* Past Events */}
+            <div className="mt-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Past Events
+                </h3>
+              </div>
+              {past.length > 0 ? renderEventList(past) : (
+                <div className="px-5 py-6 text-center text-gray-400 text-sm">
+                  No past events for {MONTH_NAMES[month - 1]} {year}.
+                </div>
+              )}
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
