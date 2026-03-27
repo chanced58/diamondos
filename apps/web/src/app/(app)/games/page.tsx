@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getUserAccess } from '@/lib/user-access';
+import { weAreHome } from '@baseball/shared';
 import { CalendarView, CalendarEvent } from './CalendarView';
 
 export const metadata: Metadata = { title: 'Schedule' };
@@ -58,7 +59,7 @@ export default async function SchedulePage({
     const [gamesResult, practicesResult, teamEventsResult] = await Promise.all([
       db
         .from('games')
-        .select('id, opponent_name, scheduled_at, location_type, status')
+        .select('id, opponent_name, scheduled_at, location_type, neutral_home_team, status')
         .eq('team_id', activeTeam.id)
         .neq('status', 'cancelled')
         .gte('scheduled_at', rangeStart)
@@ -85,7 +86,7 @@ export default async function SchedulePage({
     isCoach = access.isCoach;
 
     for (const g of gamesResult.data ?? []) {
-      const loc = g.location_type === 'home' ? 'vs' : g.location_type === 'away' ? '@' : 'vs';
+      const loc = weAreHome(g.location_type, g.neutral_home_team) ? 'vs' : '@';
       events.push({
         id:      g.id,
         type:    'game',

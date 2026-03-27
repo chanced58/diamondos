@@ -12,6 +12,7 @@ type GameEditProps = {
   scheduledDate: string;   // YYYY-MM-DD
   scheduledTime: string;   // HH:MM
   locationType: string;
+  neutralHomeTeam: string;
   venueName: string;
   notes: string;
 };
@@ -42,6 +43,7 @@ export function EditGameButton(props: GameEditProps): JSX.Element {
               defaultDate={props.scheduledDate}
               defaultTime={props.scheduledTime}
               defaultLocationType={props.locationType}
+              defaultNeutralHomeTeam={props.neutralHomeTeam}
               defaultVenue={props.venueName}
               defaultNotes={props.notes}
               onCancel={() => setEditing(false)}

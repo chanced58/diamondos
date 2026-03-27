@@ -5,7 +5,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { createClient } from '@supabase/supabase-js';
 import { getActiveTeam } from '@/lib/active-team';
 import { getUserAccess } from '@/lib/user-access';
-import { formatTime } from '@baseball/shared';
+import { formatTime, weAreHome } from '@baseball/shared';
 import { NewAnnouncementForm } from '../messages/NewAnnouncementForm';
 
 export const metadata: Metadata = { title: 'Dashboard' };
@@ -87,7 +87,7 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
     announcementChannelsResult,
   ] = await Promise.all([
     db.from('games')
-      .select('id, opponent_name, scheduled_at, location_type, venue_name')
+      .select('id, opponent_name, scheduled_at, location_type, neutral_home_team, venue_name')
       .eq('team_id', activeTeam.id)
       .in('status', ['scheduled', 'in_progress'])
       .gte('scheduled_at', now)
@@ -107,7 +107,7 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
       .lte('starts_at', fourWeeksOut)
       .order('starts_at'),
     db.from('games')
-      .select('id, opponent_name, scheduled_at, location_type, home_score, away_score, completed_at')
+      .select('id, opponent_name, scheduled_at, location_type, neutral_home_team, home_score, away_score, completed_at')
       .eq('team_id', activeTeam.id)
       .eq('status', 'completed')
       .order('completed_at', { ascending: false })
@@ -124,13 +124,14 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
   // Build upcoming items list
   const upcomingItems: UpcomingItem[] = [
     ...(upcomingGamesResult.data ?? []).map((g) => {
+      const isHome = weAreHome(g.location_type, g.neutral_home_team);
       const locTag = g.location_type === 'home' ? 'Home' : g.location_type === 'away' ? 'Away' : 'Neutral';
       const parts = [locTag, g.venue_name].filter(Boolean);
       return {
         kind: 'game' as const,
         id: g.id,
         date: g.scheduled_at,
-        label: `${g.location_type === 'away' ? '@' : 'vs'} ${g.opponent_name}`,
+        label: `${isHome ? 'vs' : '@'} ${g.opponent_name}`,
         sublabel: parts.join(' · '),
         href: `/games/${g.id}`,
       };
@@ -155,7 +156,7 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
 
   // Build recent games list
   const recentGames: RecentGame[] = (recentGamesResult.data ?? []).map((g) => {
-    const isHome = g.location_type === 'home';
+    const isHome = weAreHome(g.location_type, g.neutral_home_team);
     const ourScore   = isHome ? g.home_score : g.away_score;
     const theirScore = isHome ? g.away_score : g.home_score;
     return {

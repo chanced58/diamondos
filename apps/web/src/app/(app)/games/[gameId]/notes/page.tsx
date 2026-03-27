@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
-import { formatDate, formatTime } from '@baseball/shared';
+import { formatDate, formatTime, weAreHome } from '@baseball/shared';
 import { GameNotesForm } from '../GameNotesForm';
 import { PlayerGameView } from '../PlayerGameView';
 
@@ -79,7 +79,7 @@ export default async function GameNotesPage({
       p !== null && p.team_id === game.team_id,
     );
 
-  const vsAt = game.location_type === 'away' ? '@' : 'vs';
+  const vsAt = weAreHome(game.location_type, game.neutral_home_team) ? 'vs' : '@';
 
   const header = (
     <div className="mb-8">

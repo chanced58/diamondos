@@ -28,7 +28,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
 
   const { data: game } = await db
     .from('games')
-    .select('id, team_id, opponent_name, location_type, status, home_score, away_score, season_id, opponent_team_id')
+    .select('id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, season_id, opponent_team_id')
     .eq('id', params.gameId)
     .single();
 
@@ -265,6 +265,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
         id: game.id,
         opponentName: game.opponent_name,
         locationType: game.location_type,
+        neutralHomeTeam: game.neutral_home_team,
         teamId: game.team_id,
       }}
       lineup={lineup}

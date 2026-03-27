@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { weAreHome } from '@baseball/shared';
 import { OpponentLineupManager } from './OpponentLineupManager';
 
 export const metadata: Metadata = { title: 'Opponent Lineup' };
@@ -29,7 +30,7 @@ export default async function OpponentLineupPage({
 
   const { data: game } = await db
     .from('games')
-    .select('id, team_id, opponent_name, opponent_team_id, location_type')
+    .select('id, team_id, opponent_name, opponent_team_id, location_type, neutral_home_team')
     .eq('id', params.gameId)
     .single();
 
@@ -87,7 +88,7 @@ export default async function OpponentLineupPage({
     startingPosition: l.starting_position,
   }));
 
-  const vsAt = game.location_type === 'away' ? '@' : 'vs';
+  const vsAt = weAreHome(game.location_type, game.neutral_home_team) ? 'vs' : '@';
 
   return (
     <div className="p-8 max-w-2xl">

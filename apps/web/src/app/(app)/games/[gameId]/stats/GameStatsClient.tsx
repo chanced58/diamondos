@@ -2,6 +2,7 @@
 
 import type { JSX, ReactNode } from 'react';
 import { useState } from 'react';
+import { weAreHome as weAreHomeFn } from '@baseball/shared';
 import type { BattingStats, PitchingStats } from '@baseball/shared';
 import { formatBattingRate, formatInningsPitched } from '@baseball/shared';
 
@@ -57,6 +58,7 @@ export interface GameStatsClientProps {
     id: string;
     opponentName: string;
     locationType: string;
+    neutralHomeTeam: string | null;
     status: string;
     teamName: string;
   };
@@ -306,7 +308,7 @@ export function GameStatsClient({
   game, ourBatting, oppBatting, ourPitching, oppPitching,
   ourFielding, oppFielding, lineScore, baserunning,
 }: GameStatsClientProps): JSX.Element {
-  const weAreHome = game.locationType === 'home';
+  const weAreHome = weAreHomeFn(game.locationType, game.neutralHomeTeam);
   const ourLabel = game.teamName;
   const oppLabel = game.opponentName;
 

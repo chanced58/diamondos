@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence } from '@baseball/shared';
+import { deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome } from '@baseball/shared';
 import type { GameEvent } from '@baseball/shared';
 import { endGameAction } from '../actions';
 
@@ -15,6 +15,7 @@ type GameRow = {
   id: string;
   opponentName: string;
   locationType: string;
+  neutralHomeTeam: string | null;
   teamId: string;
 };
 
@@ -645,8 +646,9 @@ export function ScoringBoard({
 
   // Is the opponent currently batting?
   // Home team bats in bottom (isTopOfInning = false); away team bats in top (true).
+  const isHome = weAreHome(game.locationType, game.neutralHomeTeam);
   const isOpponentBatting =
-    game.locationType === 'home' ? gameState.isTopOfInning : !gameState.isTopOfInning;
+    isHome ? gameState.isTopOfInning : !gameState.isTopOfInning;
 
   // Opponent starters sorted by batting order
   const opponentStarters = (opponentLineup ?? [])
@@ -656,7 +658,7 @@ export function ScoringBoard({
   // Derive current batter from the PA counts tracked by deriveGameState.
   // completedTopHalfPAs / completedBottomHalfPAs accumulate across the whole game;
   // modulo lineup size gives the correct batting-order position for each team.
-  const opponentBatsInTop = game.locationType === 'home';
+  const opponentBatsInTop = isHome;
 
   // Apply substitution events to produce effective lineups so pinch hitters
   // (and other subs) are reflected in the batter display.
@@ -1239,9 +1241,9 @@ export function ScoringBoard({
     (!localConfig.pitchType     || pitchType    !== null) &&
     (!localConfig.pitchLocation || zoneLocation !== null);
 
-  const vsAt = game.locationType === 'away' ? '@' : 'vs';
-  const usScore = game.locationType === 'home' ? gameState.homeScore : gameState.awayScore;
-  const themScore = game.locationType === 'home' ? gameState.awayScore : gameState.homeScore;
+  const vsAt = isHome ? 'vs' : '@';
+  const usScore = isHome ? gameState.homeScore : gameState.awayScore;
+  const themScore = isHome ? gameState.awayScore : gameState.homeScore;
 
   return (
     <div className="min-h-screen bg-gray-50">

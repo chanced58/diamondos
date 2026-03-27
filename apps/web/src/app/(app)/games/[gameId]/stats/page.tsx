@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
-import { deriveBattingStats, derivePitchingStats } from '@baseball/shared';
+import { deriveBattingStats, derivePitchingStats, weAreHome } from '@baseball/shared';
 import type { BattingStats, PitchingStats } from '@baseball/shared';
 import { GameStatsClient } from './GameStatsClient';
 import type { FieldingStatRow, LineScoreData, OppBattingRow } from './GameStatsClient';
@@ -108,7 +108,7 @@ type LineupEntry = {
 function computeFieldingStats(
   events: Record<string, unknown>[],
   teamLineup: LineupEntry[],
-  locationType: string,
+  isHome: boolean,
   playerNameMap: Map<string, { name: string; position: string }>,
   forOpponent = false,
 ): FieldingStatRow[] {
@@ -176,10 +176,9 @@ function computeFieldingStats(
     }
 
     // Home team fields in top half; away team fields in bottom half.
-    const weAreHome = locationType === 'home';
     const teamIsFielding = forOpponent
-      ? (weAreHome ? !isTopOfInning : isTopOfInning)
-      : (weAreHome ? isTopOfInning : !isTopOfInning);
+      ? (isHome ? !isTopOfInning : isTopOfInning)
+      : (isHome ? isTopOfInning : !isTopOfInning);
     if (!teamIsFielding) continue;
 
     if (
@@ -349,7 +348,7 @@ export default async function GameStatsPage({
 
   const { data: game } = await db
     .from('games')
-    .select('id, team_id, opponent_name, location_type, status, home_score, away_score, season_id, opponent_team_id')
+    .select('id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, season_id, opponent_team_id')
     .eq('id', params.gameId)
     .single();
 
@@ -526,10 +525,12 @@ export default async function GameStatsPage({
     }
   }
 
+  const isHome = weAreHome(game.location_type, game.neutral_home_team);
+
   const ourFielding = computeFieldingStats(
     effectiveEvents,
     lineup,
-    game.location_type,
+    isHome,
     ourPlayerNameMap,
   );
 
@@ -550,7 +551,7 @@ export default async function GameStatsPage({
   const oppFielding = computeFieldingStats(
     effectiveEvents,
     opponentLineup,
-    game.location_type,
+    isHome,
     oppFieldingNameMap,
     true, // forOpponent
   );
@@ -574,7 +575,7 @@ export default async function GameStatsPage({
           </h1>
           <div className="flex items-center gap-2">
             <span className="text-xl font-bold text-gray-900">
-              {game.location_type === 'home'
+              {isHome
                 ? `${lineScore.homeRuns} – ${lineScore.awayRuns}`
                 : `${lineScore.awayRuns} – ${lineScore.homeRuns}`}
             </span>
@@ -596,6 +597,7 @@ export default async function GameStatsPage({
             id: game.id,
             opponentName: game.opponent_name,
             locationType: game.location_type,
+            neutralHomeTeam: game.neutral_home_team,
             status: game.status,
             teamName,
           }}

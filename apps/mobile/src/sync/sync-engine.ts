@@ -128,6 +128,7 @@ function mapGame(r: Record<string, unknown>) {
     opponent_name: r.opponent_name,
     scheduled_at: new Date(r.scheduled_at as string).getTime(),
     location_type: r.location_type,
+    neutral_home_team: r.neutral_home_team ?? null,
     venue_name: r.venue_name ?? null,
     status: r.status,
     home_score: r.home_score,

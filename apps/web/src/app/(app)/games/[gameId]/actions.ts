@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { formatDate } from '@baseball/shared';
+import { formatDate, weAreHome } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
@@ -11,7 +11,7 @@ const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 async function getAuthorizedCoach(supabase: SupabaseClient, userId: string, gameId: string) {
   const { data: game } = await supabase
     .from('games')
-    .select('team_id, opponent_name, scheduled_at, status, location_type')
+    .select('team_id, opponent_name, scheduled_at, status, location_type, neutral_home_team')
     .eq('id', gameId)
     .single();
   if (!game) return { error: 'Game not found.' };
@@ -181,14 +181,14 @@ export async function startGameAction(_prevState: string | null | undefined, for
       // Home team pitches in the TOP; away team pitches in the BOTTOM.
       // Store both our pitcher and the opponent's pitcher in the correct fields
       // so game-state can resolve the active pitcher for each half-inning.
-      ...(game.location_type === 'away'
+      ...(weAreHome(game.location_type, game.neutral_home_team)
         ? {
-            awayLineupPitcherId: startingPitcher?.player_id ?? null,
-            homeLineupPitcherId: opponentStartingPitcher?.opponent_player_id ?? null,
-          }
-        : {
             homeLineupPitcherId: startingPitcher?.player_id ?? null,
             awayLineupPitcherId: opponentStartingPitcher?.opponent_player_id ?? null,
+          }
+        : {
+            awayLineupPitcherId: startingPitcher?.player_id ?? null,
+            homeLineupPitcherId: opponentStartingPitcher?.opponent_player_id ?? null,
           }),
       pitchTypeEnabled,
       pitchLocationEnabled,
@@ -268,6 +268,9 @@ export async function updateGameAction(
   const [hour, minute]     = time.split(':').map(Number);
   const scheduledAt        = new Date(Date.UTC(year, month - 1, day, hour, minute)).toISOString();
   const locationType = (formData.get('locationType') as string) || 'home';
+  const neutralHomeTeam = locationType === 'neutral'
+    ? ((formData.get('neutralHomeTeam') as string) || 'us')
+    : null;
   const venue        = (formData.get('venue') as string)?.trim() || null;
   const notes        = (formData.get('notes') as string)?.trim() || null;
 
@@ -283,8 +286,9 @@ export async function updateGameAction(
     .update({
       opponent_name: opponent,
       scheduled_at:  scheduledAt,
-      location_type: locationType,
-      venue_name:    venue,
+      location_type:     locationType,
+      neutral_home_team: neutralHomeTeam,
+      venue_name:        venue,
       address,
       latitude,
       longitude,
