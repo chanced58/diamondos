@@ -1,10 +1,13 @@
 'use client';
 import type { JSX } from 'react';
 
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
+
+const SIDEBAR_KEY = 'sidebar-collapsed';
 
 interface SidebarProps {
   teamName?: string;
@@ -19,6 +22,20 @@ interface SidebarProps {
 export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, secondaryColor, isPlatformAdmin }: SidebarProps): JSX.Element | null {
   const pathname = usePathname();
   const router = useRouter();
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(SIDEBAR_KEY);
+    if (saved === 'true') setCollapsed(true);
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(SIDEBAR_KEY, String(next));
+      return next;
+    });
+  }
 
   // Platform admin on /admin routes = neutral mode (no team branding)
   const isAdminPanel = isPlatformAdmin && pathname.startsWith('/admin');
@@ -55,39 +72,47 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
 
   return (
     <aside
-      className="w-64 text-white flex flex-col"
+      className={`${collapsed ? 'w-16' : 'w-64'} text-white flex flex-col transition-all duration-200 shrink-0`}
       style={{ backgroundColor: bg, '--sidebar-active': active } as React.CSSProperties}
     >
-      <div className="p-6 border-b border-white/10">
+      <div className={`${collapsed ? 'p-3' : 'p-6'} border-b border-white/10`}>
         {isAdminPanel ? (
           <>
-            <div className="text-2xl mb-2">&#9881;</div>
-            <h1 className="text-xl font-bold leading-tight">Platform Admin</h1>
-            <p className="text-xs text-white/60 mt-0.5">System Administration</p>
+            <div className={`text-2xl ${collapsed ? 'text-center' : 'mb-2'}`}>&#9881;</div>
+            {!collapsed && (
+              <>
+                <h1 className="text-xl font-bold leading-tight">Platform Admin</h1>
+                <p className="text-xs text-white/60 mt-0.5">System Administration</p>
+              </>
+            )}
           </>
         ) : (
           <>
             {logoUrl && (
-              <div className="mb-3">
+              <div className={collapsed ? 'flex justify-center' : 'mb-3'}>
                 <Image
                   src={logoUrl}
                   alt="Team logo"
                   width={80}
                   height={80}
-                  className="h-12 w-auto object-contain"
+                  className={`${collapsed ? 'h-8 w-8' : 'h-12 w-auto'} object-contain`}
                   unoptimized
                 />
               </div>
             )}
-            <h1 className="text-xl font-bold leading-tight">{teamName ?? 'Baseball Coaches'}</h1>
-            {teamOrg && (
-              <p className="text-xs text-white/60 mt-0.5 truncate">{teamOrg}</p>
+            {!collapsed && (
+              <>
+                <h1 className="text-xl font-bold leading-tight">{teamName ?? 'Baseball Coaches'}</h1>
+                {teamOrg && (
+                  <p className="text-xs text-white/60 mt-0.5 truncate">{teamOrg}</p>
+                )}
+              </>
             )}
           </>
         )}
       </div>
 
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className={`flex-1 ${collapsed ? 'p-2' : 'p-4'} space-y-1`}>
         {navItems.map((item) => {
           const isActive = isAdminPanel
             ? (item.href === '/admin' ? pathname === '/admin' : pathname.startsWith(item.href))
@@ -96,7 +121,8 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
             <Link
               key={item.label}
               href={item.href}
-              className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              title={collapsed ? item.label : undefined}
+              className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 isActive
                   ? 'text-white'
                   : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -104,7 +130,7 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
               style={isActive ? { backgroundColor: active } : undefined}
             >
               <span>{item.icon}</span>
-              {item.label}
+              {!collapsed && item.label}
             </Link>
           );
         })}
@@ -114,10 +140,11 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
             <div className="border-t border-white/10 my-3" />
             <a
               href="/dashboard"
-              className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition-colors"
+              title={collapsed ? 'Back to Team' : undefined}
+              className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition-colors`}
             >
               <span>↩</span>
-              Back to Team
+              {!collapsed && 'Back to Team'}
             </a>
           </>
         )}
@@ -127,22 +154,32 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
             <div className="border-t border-white/10 my-3" />
             <a
               href="/admin"
-              className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition-colors"
+              title={collapsed ? 'Platform Admin' : undefined}
+              className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition-colors`}
             >
               <span>&#9881;</span>
-              Platform Admin
+              {!collapsed && 'Platform Admin'}
             </a>
           </>
         )}
       </nav>
 
-      <div className="p-4 border-t border-white/10">
+      <div className={`${collapsed ? 'p-2' : 'p-4'} border-t border-white/10 space-y-1`}>
+        <button
+          onClick={toggleCollapsed}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition-colors w-full`}
+        >
+          <span>{collapsed ? '»' : '«'}</span>
+          {!collapsed && 'Collapse'}
+        </button>
         <button
           onClick={handleSignOut}
-          className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition-colors w-full"
+          title={collapsed ? 'Sign Out' : undefined}
+          className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition-colors w-full`}
         >
           <span>🚪</span>
-          Sign Out
+          {!collapsed && 'Sign Out'}
         </button>
       </div>
     </aside>
