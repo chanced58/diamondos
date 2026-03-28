@@ -5,10 +5,12 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
-import { derivePitchingStats, deriveBattingStats } from '@baseball/shared';
-import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
+import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, weAreHome } from '@baseball/shared';
+import type { PitchingStats, BattingStats, StatTier, OppBattingRow } from '@baseball/shared';
 import { PitchingStatsTable } from './PitchingStatsTable';
 import { BattingStatsTable } from './BattingStatsTable';
+import { OpponentsStatsTable } from './OpponentsStatsTable';
+import type { OpponentTeamStats } from './OpponentsStatsTable';
 import { SeasonPicker } from './SeasonPicker';
 import { TierToggle } from './TierToggle';
 
@@ -29,6 +31,8 @@ const RELEVANT_EVENT_TYPES = [
   'sacrifice_bunt',
   'sacrifice_fly',
   'field_error',
+  'stolen_base',
+  'caught_stealing',
 ] as const;
 
 export default async function CompliancePage({
@@ -36,7 +40,7 @@ export default async function CompliancePage({
 }: {
   searchParams: { tab?: string; season?: string; tier?: string };
 }): Promise<JSX.Element | null> {
-  const VALID_TABS = ['pitching', 'hitting'] as const;
+  const VALID_TABS = ['pitching', 'hitting', 'opponents'] as const;
   const tab = VALID_TABS.includes(searchParams.tab as typeof VALID_TABS[number])
     ? (searchParams.tab as typeof VALID_TABS[number])
     : 'pitching';
@@ -93,7 +97,7 @@ export default async function CompliancePage({
   // Get games — from the selected season if one exists, otherwise all completed/in-progress games
   let gamesQuery = db
     .from('games')
-    .select('id')
+    .select('id, opponent_team_id, opponent_name, home_score, away_score, location_type, neutral_home_team')
     .eq('team_id', activeTeam.id)
     .in('status', ['completed', 'in_progress']);
 
@@ -131,19 +135,21 @@ export default async function CompliancePage({
     lastName: p.last_name,
   }));
 
-  // Fallback IDs used by ScoringBoard when a player slot is empty
-  const FALLBACK_IDS = new Set(['unknown-batter', 'unknown-pitcher']);
+  // Only show stats for players on our team roster (filters out opponent
+  // player IDs that leak through derivePitchingStats' fallback coalesce
+  // of pitcherId ?? opponentPitcherId, and any misattributed batting IDs).
+  const teamPlayerIds = new Set(playerList.map((p) => p.id));
 
   // Compute pitching stats
   const pitchingStatsMap = derivePitchingStats(rawEvents, playerList);
   const allPitchingStats: PitchingStats[] = Array.from(pitchingStatsMap.values())
-    .filter((s) => !FALLBACK_IDS.has(s.playerId))
+    .filter((s) => teamPlayerIds.has(s.playerId))
     .sort((a, b) => b.inningsPitchedOuts - a.inningsPitchedOuts);
 
   // Compute batting stats
   const battingStatsMap = deriveBattingStats(rawEvents, playerList);
   const allBattingStats: BattingStats[] = Array.from(battingStatsMap.values())
-    .filter((s) => !FALLBACK_IDS.has(s.playerId))
+    .filter((s) => teamPlayerIds.has(s.playerId))
     .sort((a, b) => b.plateAppearances - a.plateAppearances);
 
   // Get compliance data (pitch counts, rest days) for today
@@ -170,6 +176,98 @@ export default async function CompliancePage({
         canPitchNextDay: row.can_pitch_next_day,
         lastGameDate: row.game_date,
       };
+    }
+  }
+
+  // ── Opponents tab data ──────────────────────────────────────────────────────
+  let opponentTeamStats: OpponentTeamStats[] = [];
+
+  if (tab === 'opponents') {
+    // Collect unique opponent_team_ids from games
+    const oppTeamIds = [...new Set(
+      (gamesData ?? [])
+        .map((g) => g.opponent_team_id as string | null)
+        .filter((id): id is string => id != null),
+    )];
+
+    if (oppTeamIds.length > 0) {
+      const [oppTeamsResult, oppPlayersResult] = await Promise.all([
+        db
+          .from('opponent_teams')
+          .select('id, name, abbreviation')
+          .in('id', oppTeamIds),
+        db
+          .from('opponent_players')
+          .select('id, opponent_team_id, first_name, last_name')
+          .in('opponent_team_id', oppTeamIds),
+      ]);
+
+      const oppTeams = oppTeamsResult.data ?? [];
+      const oppPlayers = oppPlayersResult.data ?? [];
+
+      // Build name map for all opponent players
+      const oppPlayerNameMap = new Map<string, string>(
+        oppPlayers.map((p) => [p.id, `${p.first_name} ${p.last_name}`]),
+      );
+
+      // Map opponent player ID → opponent team ID
+      const playerToTeam = new Map<string, string>(
+        oppPlayers.map((p) => [p.id, p.opponent_team_id]),
+      );
+
+      // Compute opponent batting across all games
+      const oppBattingRows = computeOpponentBatting(rawEvents, oppPlayerNameMap);
+
+      // Compute opponent pitching across all games
+      const oppPlayerList = oppPlayers.map((p) => ({
+        id: p.id,
+        firstName: p.first_name,
+        lastName: p.last_name,
+      }));
+      const oppPitchingMap = derivePitchingStats(rawEvents, oppPlayerList);
+      const oppPlayerIds = new Set(oppPlayers.map((p) => p.id));
+      const oppPitchingRows: PitchingStats[] = Array.from(oppPitchingMap.values())
+        .filter((s) => oppPlayerIds.has(s.playerId) && s.totalPitches > 0);
+
+      // Build W-L record per opponent team
+      const recordMap = new Map<string, { wins: number; losses: number; ties: number; gamesPlayed: number }>();
+      for (const game of gamesData ?? []) {
+        const oppId = game.opponent_team_id as string | null;
+        if (!oppId) continue;
+        if (!recordMap.has(oppId)) recordMap.set(oppId, { wins: 0, losses: 0, ties: 0, gamesPlayed: 0 });
+        const rec = recordMap.get(oppId)!;
+        rec.gamesPlayed++;
+
+        const homeScore = (game.home_score as number | null) ?? 0;
+        const awayScore = (game.away_score as number | null) ?? 0;
+        if (homeScore === 0 && awayScore === 0) continue; // no score recorded yet
+
+        const isHome = weAreHome(
+          game.location_type as string,
+          game.neutral_home_team as string | null,
+        );
+        const ourScore = isHome ? homeScore : awayScore;
+        const theirScore = isHome ? awayScore : homeScore;
+
+        if (ourScore > theirScore) rec.wins++;
+        else if (theirScore > ourScore) rec.losses++;
+        else rec.ties++;
+      }
+
+      // Assemble per-team stats
+      opponentTeamStats = oppTeams.map((team) => {
+        const record = recordMap.get(team.id) ?? { wins: 0, losses: 0, ties: 0, gamesPlayed: 0 };
+        return {
+          teamId: team.id,
+          teamName: team.name,
+          gamesPlayed: record.gamesPlayed,
+          wins: record.wins,
+          losses: record.losses,
+          ties: record.ties,
+          batting: oppBattingRows.filter((r) => playerToTeam.get(r.playerId) === team.id),
+          pitching: oppPitchingRows.filter((r) => playerToTeam.get(r.playerId) === team.id),
+        };
+      }).filter((t) => t.gamesPlayed > 0);
     }
   }
 
@@ -215,6 +313,16 @@ export default async function CompliancePage({
         >
           Hitting
         </Link>
+        <Link
+          href={`/compliance?tab=opponents${season ? `&season=${season.id}` : ''}&tier=${tier}`}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            tab === 'opponents'
+              ? 'bg-white text-gray-900 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          Opponents
+        </Link>
       </div>
 
       {/* Pitching tab */}
@@ -252,6 +360,11 @@ export default async function CompliancePage({
         ) : (
           <BattingStatsTable stats={allBattingStats} tier={tier} />
         )
+      )}
+
+      {/* Opponents tab */}
+      {tab === 'opponents' && (
+        <OpponentsStatsTable teams={opponentTeamStats} />
       )}
     </div>
   );

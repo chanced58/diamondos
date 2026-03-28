@@ -3,7 +3,7 @@
 import type { JSX, ReactNode } from 'react';
 import { useState } from 'react';
 import { weAreHome as weAreHomeFn } from '@baseball/shared';
-import type { BattingStats, PitchingStats } from '@baseball/shared';
+import type { BattingStats, PitchingStats, OppBattingRow } from '@baseball/shared';
 import { formatBattingRate, formatInningsPitched } from '@baseball/shared';
 
 // ── Shared types (imported by page.tsx) ─────────────────────────────────────
@@ -37,16 +37,7 @@ export type PlayerInfo = {
   position?: string;
 };
 
-export type OppBattingRow = {
-  playerId: string;
-  playerName: string;
-  pa: number; ab: number; r: number; h: number;
-  doubles: number; triples: number; hr: number;
-  rbi: number; bb: number; k: number;
-  hbp: number; sf: number; sh: number;
-  sb: number; cs: number;
-  avg: number; obp: number; slg: number; ops: number;
-};
+export type { OppBattingRow } from '@baseball/shared';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type RawGameEvent = Record<string, any>;
