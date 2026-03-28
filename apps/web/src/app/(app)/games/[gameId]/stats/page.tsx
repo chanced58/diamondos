@@ -385,13 +385,12 @@ export default async function GameStatsPage({
     lastName: p.lastName,
   }));
 
-  // Fallback IDs used by ScoringBoard when a player slot is empty
-  const FALLBACK_IDS = new Set(['unknown-batter', 'unknown-pitcher']);
+  const ourPlayerIds = new Set(teamRoster.map((p) => p.id));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ourBattingMap = deriveBattingStats(effectiveEvents as any, ourPlayers);
   const ourBatting: BattingStats[] = Array.from(ourBattingMap.values())
-    .filter((s) => s.plateAppearances > 0 && !FALLBACK_IDS.has(s.playerId));
+    .filter((s) => s.plateAppearances > 0 && ourPlayerIds.has(s.playerId));
 
   // ── Pitching stats (both teams) ─────────────────────────────────────────────
   const allPlayersForPitching = [
@@ -401,13 +400,12 @@ export default async function GameStatsPage({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allPitchingMap = derivePitchingStats(effectiveEvents as any, allPlayersForPitching);
 
-  const ourPlayerIds = new Set(teamRoster.map((p) => p.id));
   const oppPlayerIds = new Set(opponentRoster.map((p) => p.id));
 
   const ourPitching: PitchingStats[] = Array.from(allPitchingMap.values())
-    .filter((s) => ourPlayerIds.has(s.playerId) && s.totalPitches > 0 && !FALLBACK_IDS.has(s.playerId));
+    .filter((s) => ourPlayerIds.has(s.playerId) && s.totalPitches > 0);
   const oppPitching: PitchingStats[] = Array.from(allPitchingMap.values())
-    .filter((s) => oppPlayerIds.has(s.playerId) && s.totalPitches > 0 && !FALLBACK_IDS.has(s.playerId));
+    .filter((s) => oppPlayerIds.has(s.playerId) && s.totalPitches > 0);
 
   // ── Opponent batting (simplified) ───────────────────────────────────────────
   const oppPlayerNameMap = new Map(opponentRoster.map((p) => [p.id, `${p.firstName} ${p.lastName}`]));
@@ -417,8 +415,7 @@ export default async function GameStatsPage({
       oppPlayerNameMap.set(entry.playerId, `${entry.player.firstName} ${entry.player.lastName}`);
     }
   }
-  const oppBatting = computeOpponentBatting(effectiveEvents, oppPlayerNameMap)
-    .filter((s) => !FALLBACK_IDS.has(s.playerId));
+  const oppBatting = computeOpponentBatting(effectiveEvents, oppPlayerNameMap);
 
   // ── Fielding stats (our team) ───────────────────────────────────────────────
   const ourPlayerNameMap = new Map<string, { name: string; position: string }>();
