@@ -137,6 +137,19 @@ export function derivePitchingStats(
     // Current pitcher on the mound for the active half-inning
     let currentPitcherId: string | null = null;
 
+    // ── Base-runner tracking for run attribution to pitchers ────────────────
+    let r1 = false, r2 = false, r3 = false;
+    function clearRunners() { r1 = false; r2 = false; r3 = false; }
+    function addRunToPitcher(count = 1) {
+      if (currentPitcherId && count > 0) getStats(currentPitcherId).runsAllowed += count;
+    }
+    function forceAdvanceRunners(placeBatter: boolean) {
+      if (r1 && r2 && r3) addRunToPitcher(1); // bases loaded → runner on 3rd scores
+      if (r1 && r2) r3 = r2 || r3;
+      if (r1) r2 = true;
+      if (placeBatter) r1 = true;
+    }
+
     // Per-at-bat state for the current pitcher (reset when batter changes)
     // batterId → { balls, strikes, isFirstPitch, reachedThreeBalls, contactCount }
     const atBatState = new Map<
@@ -197,6 +210,7 @@ export function derivePitchingStats(
       if (etype === EventType.INNING_CHANGE) {
         atBatState.clear();
         pendingContact.clear();
+        clearRunners();
       }
 
       // ── PITCH_THROWN ────────────────────────────────────────────────────
@@ -315,6 +329,26 @@ export function derivePitchingStats(
           }
           if (batterId) resetAtBat(batterId);
         }
+        // ── Attribute runs from hit to current pitcher ──
+        const bases = p.hitType === 'home_run' ? 4
+          : p.hitType === 'triple' ? 3
+          : p.hitType === 'double' ? 2
+          : 1;
+        if (bases === 4) {
+          let runs = 1; // batter
+          if (r3) runs++; if (r2) runs++; if (r1) runs++;
+          addRunToPitcher(runs);
+          clearRunners();
+        } else {
+          let runs = 0;
+          if (r3) runs++;
+          if (r2 && 2 + bases >= 4) runs++;
+          if (r1 && 1 + bases >= 4) runs++;
+          addRunToPitcher(runs);
+          if (bases === 1) { r3 = r2 || r3; r2 = r1; r1 = true; }
+          else if (bases === 2) { r3 = r1; r2 = true; r1 = false; }
+          else if (bases === 3) { r3 = true; r2 = false; r1 = false; }
+        }
       }
 
       // ── OUT (groundout, flyout, etc.) ────────────────────────────────────
@@ -355,9 +389,9 @@ export function derivePitchingStats(
         const pitcherId: string | undefined = payload?.pitcherId;
         const batterId: string | undefined = payload?.batterId;
         if (pitcherId && batterId) {
-          // Only count if not already tallied via pitch progression
           resetAtBat(batterId);
         }
+        forceAdvanceRunners(true);
       }
 
       // ── HIT_BY_PITCH (explicit event) ────────────────────────────────────
@@ -367,6 +401,7 @@ export function derivePitchingStats(
         if (pitcherId && batterId) {
           resetAtBat(batterId);
         }
+        forceAdvanceRunners(true);
       }
 
       // ── DOUBLE_PLAY / SACRIFICE → still counts as outs ──────────────────
@@ -381,11 +416,42 @@ export function derivePitchingStats(
             resetAtBat(batterId);
           }
         }
+        // Sac fly: runner on 3rd scores
+        if (etype === EventType.SACRIFICE_FLY && r3) {
+          addRunToPitcher(1);
+          r3 = false;
+        }
       }
 
-      // ── SCORE → attribute run to current pitcher ─────────────────────────
-      if (etype === EventType.SCORE && currentPitcherId) {
-        getStats(currentPitcherId).runsAllowed += 1;
+      // ── FIELD_ERROR → batter reaches, force advance runners ────────────
+      if (etype === EventType.FIELD_ERROR) {
+        forceAdvanceRunners(true);
+      }
+
+      // ── SCORE (explicit — stolen home, balk, runner advance) ───────────
+      if (etype === EventType.SCORE) {
+        addRunToPitcher(1);
+      }
+
+      // ── STOLEN_BASE / BASERUNNER_ADVANCE → update runner state ─────────
+      if (etype === 'stolen_base' || etype === 'baserunner_advance') {
+        const toBase: number | undefined = payload?.toBase;
+        const fromBase: number | undefined = payload?.fromBase;
+        if (fromBase === 1) r1 = false;
+        else if (fromBase === 2) r2 = false;
+        else if (fromBase === 3) r3 = false;
+        // Score handled by SCORE event above; just track base state
+        if (toBase === 3) r3 = true;
+        else if (toBase === 2) r2 = true;
+        else if (toBase === 1) r1 = true;
+      }
+
+      // ── CAUGHT_STEALING → remove runner ────────────────────────────────
+      if (etype === 'caught_stealing') {
+        const fromBase: number | undefined = payload?.fromBase;
+        if (fromBase === 1) r1 = false;
+        else if (fromBase === 2) r2 = false;
+        else if (fromBase === 3) r3 = false;
       }
     }
   }
