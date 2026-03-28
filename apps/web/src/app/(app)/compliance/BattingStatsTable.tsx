@@ -77,6 +77,46 @@ function displayStat(s: BattingStats, key: SortKey): string {
   return formatBattingRate(s[key as keyof typeof s] as number);
 }
 
+function computeTotals(rows: BattingStats[]): BattingStats {
+  const t = rows.reduce((acc, s) => ({
+    g: acc.g + s.gamesAppeared, pa: acc.pa + s.plateAppearances,
+    ab: acc.ab + s.atBats, r: acc.r + s.runs, h: acc.h + s.hits,
+    d: acc.d + s.doubles, tr: acc.tr + s.triples, hr: acc.hr + s.homeRuns,
+    rbi: acc.rbi + s.rbi, bb: acc.bb + s.walks, k: acc.k + s.strikeouts,
+    hbp: acc.hbp + s.hitByPitch, sf: acc.sf + s.sacrificeFlies, sh: acc.sh + s.sacrificeHits,
+    batted: acc.batted + s.battedBalls, hhb: acc.hhb + s.hardHitBalls,
+  }), { g: 0, pa: 0, ab: 0, r: 0, h: 0, d: 0, tr: 0, hr: 0, rbi: 0, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, batted: 0, hhb: 0 });
+
+  const singles = t.h - t.d - t.tr - t.hr;
+  const tb = singles + 2 * t.d + 3 * t.tr + 4 * t.hr;
+  const avg = t.ab > 0 ? t.h / t.ab : NaN;
+  const slg = t.ab > 0 ? tb / t.ab : NaN;
+  const obpD = t.ab + t.bb + t.hbp + t.sf;
+  const obp = obpD > 0 ? (t.h + t.bb + t.hbp) / obpD : NaN;
+  const ops = (isNaN(obp) || isNaN(slg)) ? NaN : obp + slg;
+  const iso = (isNaN(slg) || isNaN(avg)) ? NaN : slg - avg;
+  const babipD = t.ab - t.k - t.hr + t.sf;
+  const babip = babipD > 0 ? (t.h - t.hr) / babipD : NaN;
+  const wobaDenom = t.ab + t.bb + t.sf + t.hbp;
+  const woba = wobaDenom > 0
+    ? (0.69 * t.bb + 0.72 * t.hbp + 0.89 * singles + 1.27 * t.d + 1.62 * t.tr + 2.10 * t.hr) / wobaDenom
+    : NaN;
+
+  return {
+    playerId: '__totals__', playerName: 'Totals',
+    gamesAppeared: t.g, plateAppearances: t.pa, atBats: t.ab,
+    runs: t.r, hits: t.h, doubles: t.d, triples: t.tr, homeRuns: t.hr,
+    rbi: t.rbi, walks: t.bb, strikeouts: t.k, hitByPitch: t.hbp,
+    sacrificeFlies: t.sf, sacrificeHits: t.sh,
+    avg, obp, slg, ops, iso, babip,
+    kPct: t.pa > 0 ? t.k / t.pa : NaN,
+    bbPct: t.pa > 0 ? t.bb / t.pa : NaN,
+    woba,
+    battedBalls: t.batted, hardHitBalls: t.hhb,
+    hardHitPct: t.batted > 0 ? t.hhb / t.batted : NaN,
+  };
+}
+
 export function BattingStatsTable({ stats, tier = 'high_school' }: { stats: BattingStats[]; tier?: StatTier }): JSX.Element | null {
   const [sortKey, setSortKey] = useState<SortKey>('plateAppearances');
   const [sortAsc, setSortAsc] = useState(false);
@@ -148,6 +188,25 @@ export function BattingStatsTable({ stats, tier = 'high_school' }: { stats: Batt
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          {(() => {
+            const totals = computeTotals(sorted);
+            return (
+              <tr className="bg-white border-t-2 border-gray-300 font-semibold text-gray-900">
+                {columns.map((col) => (
+                  <td
+                    key={col.key}
+                    className={`px-3 py-3 tabular-nums whitespace-nowrap ${
+                      col.key === 'playerName' ? 'font-bold' : ''
+                    }`}
+                  >
+                    {col.key === 'playerName' ? 'Totals' : displayStat(totals, col.key)}
+                  </td>
+                ))}
+              </tr>
+            );
+          })()}
+        </tfoot>
       </table>
     </div>
   );

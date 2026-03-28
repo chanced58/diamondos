@@ -381,6 +381,28 @@ function FieldingSummary({ rows }: { rows: FieldingStatRow[] }) {
             );
           })}
         </tbody>
+        <tfoot>
+          <tr className="bg-gray-50 border-t border-gray-300 font-semibold text-gray-900">
+            {(() => {
+              const t = sorted.reduce((acc, s) => ({
+                po: acc.po + s.putouts, a: acc.a + s.assists, e: acc.e + s.errors,
+              }), { po: 0, a: 0, e: 0 });
+              const tc = t.po + t.a + t.e;
+              const fpct = tc > 0 ? (t.po + t.a) / tc : NaN;
+              return (
+                <>
+                  <td className="px-3 py-2">Totals</td>
+                  <td className="px-3 py-2 text-center" />
+                  <td className="px-3 py-2 text-center">{t.po}</td>
+                  <td className="px-3 py-2 text-center">{t.a}</td>
+                  <td className="px-3 py-2 text-center">{t.e}</td>
+                  <td className="px-3 py-2 text-center">{tc}</td>
+                  <td className="px-3 py-2 text-center font-mono">{isNaN(fpct) ? '---' : fpct.toFixed(3).replace(/^0(?=\.)/, '')}</td>
+                </>
+              );
+            })()}
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
