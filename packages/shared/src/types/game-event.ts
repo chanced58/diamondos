@@ -195,8 +195,10 @@ export interface BaserunnerMovePayload {
   fieldingSequence?: number[];
 }
 
-/** Payload for PICKOFF_ATTEMPT events */
-export type PickoffPayload = {
+/** Payload for PICKOFF_ATTEMPT events.
+ *  `outcome` is optional for backward compatibility with older events that omitted it;
+ *  consumers should treat an absent outcome as 'safe' (no state change). */
+export interface PickoffPayload {
   runnerId: string;
   /** Set when the runner is an opponent_player. */
   isOpponentRunner?: boolean;
@@ -204,10 +206,8 @@ export type PickoffPayload = {
   pitcherId: string;
   /** Defensive play sequence as position numbers, e.g. [1, 3] for P-to-1B. */
   fieldingSequence?: number[];
-} & (
-  | { outcome: 'safe' }
-  | { outcome: 'out' }
-);
+  outcome?: 'safe' | 'out';
+}
 
 /** Payload for RUNDOWN events — discriminated union enforces safeAtBase when outcome is 'safe' */
 export type RundownPayload = {

@@ -1108,6 +1108,9 @@ export function ScoringBoard({
   }
 
   function handleCaughtStealingClick(runnerId: string, fromBase: 1 | 2 | 3) {
+    setPendingAdvance(null);
+    setAdvanceErrorBy(null);
+    setAdvancePendingReason(null);
     setPendingCSPickoff({ type: 'cs', runnerId, base: fromBase });
     setCsPickoffFieldingSeq([]);
   }
@@ -1124,6 +1127,9 @@ export function ScoringBoard({
   }
 
   function handlePickoffOutClick(runnerId: string, base: 1 | 2 | 3) {
+    setPendingAdvance(null);
+    setAdvanceErrorBy(null);
+    setAdvancePendingReason(null);
     setPendingCSPickoff({ type: 'pickoff', runnerId, base });
     setCsPickoffFieldingSeq([]);
   }
@@ -1153,6 +1159,8 @@ export function ScoringBoard({
   }
 
   function handleAdvanceClick(runnerId: string, fromBase: 1 | 2 | 3, toBase: 2 | 3 | 4) {
+    setPendingCSPickoff(null);
+    setCsPickoffFieldingSeq([]);
     setPendingAdvance({ runnerId, fromBase, toBase });
     setAdvanceErrorBy(null);
     setAdvancePendingReason(null);
@@ -2086,8 +2094,7 @@ export function ScoringBoard({
                         <div className="flex items-center gap-3">
                           <button
                             onClick={pendingCSPickoff.type === 'cs' ? handleCaughtStealingConfirm : handlePickoffOutConfirm}
-                            disabled={csPickoffFieldingSeq.length === 0}
-                            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 transition-colors"
                           >
                             Confirm
                           </button>
