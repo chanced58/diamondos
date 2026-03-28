@@ -193,9 +193,62 @@ export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_s
             </tbody>
           );
         })}
+        <tfoot>
+          <tr className="bg-gray-50 border-t-2 border-gray-300 font-semibold text-gray-900">
+            {columns.map((col) => {
+              if (col.key === 'playerName') {
+                return <td key={col.key} className="px-3 py-3 whitespace-nowrap">Totals</td>;
+              }
+              return (
+                <td key={col.key} className="px-3 py-3 tabular-nums whitespace-nowrap">
+                  {computePitchingTotal(sorted, col)}
+                </td>
+              );
+            })}
+            <td className="px-3 py-3" />
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
+}
+
+function computePitchingTotal(rows: PitchingStats[], col: ColDef): string {
+  const t = rows.reduce((acc, s) => ({
+    ip: acc.ip + s.inningsPitchedOuts,
+    pc: acc.pc + s.totalPitches,
+    str: acc.str + s.strikes,
+    fps: acc.fps + s.firstPitchStrikes,
+    tpa: acc.tpa + s.totalPAs,
+    tb3: acc.tb3 + s.threeBallCountPAs,
+    t30: acc.t30 + s.threeZeroCountPAs,
+    h: acc.h + s.hitsAllowed,
+    r: acc.r + s.runsAllowed,
+    bb: acc.bb + s.walksAllowed,
+    k: acc.k + s.strikeouts,
+    hbp: acc.hbp + s.hitBatters,
+    wp: acc.wp + s.wildPitches,
+  }), { ip: 0, pc: 0, str: 0, fps: 0, tpa: 0, tb3: 0, t30: 0, h: 0, r: 0, bb: 0, k: 0, hbp: 0, wp: 0 });
+
+  const ipDec = t.ip / 3;
+  switch (col.key) {
+    case 'inningsPitchedOuts': return formatInningsPitched(t.ip);
+    case 'totalPitches': return String(t.pc);
+    case 'strikePercentage': return pct(t.pc > 0 ? t.str / t.pc : NaN);
+    case 'firstPitchStrikePercentage': return pct(t.tpa > 0 ? t.fps / t.tpa : NaN);
+    case 'threeBallCountPercentage': return pct(t.tpa > 0 ? t.tb3 / t.tpa : NaN);
+    case 'threeZeroCountPercentage': return pct(t.tpa > 0 ? t.t30 / t.tpa : NaN);
+    case 'era': return dec(ipDec > 0 ? (t.r * 7) / ipDec : NaN);
+    case 'whip': return dec(ipDec > 0 ? (t.bb + t.h) / ipDec : NaN);
+    case 'strikeoutsPerSeven': return dec(ipDec > 0 ? (t.k * 7) / ipDec : NaN);
+    case 'walksPerSeven': return dec(ipDec > 0 ? (t.bb * 7) / ipDec : NaN);
+    case 'hitsAllowed': return String(t.h);
+    case 'walksAllowed': return String(t.bb);
+    case 'strikeouts': return String(t.k);
+    case 'hitBatters': return String(t.hbp);
+    case 'wildPitches': return String(t.wp);
+    default: return '';
+  }
 }
 
 function ComplianceBadge({

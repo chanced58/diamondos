@@ -94,6 +94,42 @@ function OppBattingTable({ rows }: { rows: OppBattingRow[] }) {
             </tr>
           ))}
         </tbody>
+        {sorted.length > 0 && (
+          <tfoot>
+            <tr className="bg-gray-50 border-t-2 border-gray-300 font-semibold text-gray-900">
+              {(() => {
+                const t = sorted.reduce((acc, s) => ({
+                  pa: acc.pa + s.pa, ab: acc.ab + s.ab, h: acc.h + s.h,
+                  d: acc.d + s.doubles, tr: acc.tr + s.triples, hr: acc.hr + s.hr,
+                  rbi: acc.rbi + s.rbi, bb: acc.bb + s.bb, k: acc.k + s.k, sb: acc.sb + s.sb,
+                }), { pa: 0, ab: 0, h: 0, d: 0, tr: 0, hr: 0, rbi: 0, bb: 0, k: 0, sb: 0 });
+                const avg = t.ab > 0 ? t.h / t.ab : NaN;
+                const singles = t.h - t.d - t.tr - t.hr;
+                const tb = singles + 2 * t.d + 3 * t.tr + 4 * t.hr;
+                const obp = (t.ab + t.bb) > 0 ? (t.h + t.bb) / (t.ab + t.bb) : NaN;
+                const slg = t.ab > 0 ? tb / t.ab : NaN;
+                return (
+                  <>
+                    <td className="px-3 py-2 font-semibold">Totals</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.pa}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.ab}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.h}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.d}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.tr}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.hr}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.rbi}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.bb}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.k}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.sb}</td>
+                    <td className="px-3 py-2 text-center tabular-nums font-mono">{fmtRate(avg)}</td>
+                    <td className="px-3 py-2 text-center tabular-nums font-mono">{fmtRate(obp)}</td>
+                    <td className="px-3 py-2 text-center tabular-nums font-mono">{fmtRate(slg)}</td>
+                  </>
+                );
+              })()}
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   );
@@ -137,6 +173,37 @@ function OppPitchingTable({ rows }: { rows: PitchingStats[] }) {
             </tr>
           ))}
         </tbody>
+        {sorted.length > 0 && (
+          <tfoot>
+            <tr className="bg-gray-50 border-t-2 border-gray-300 font-semibold text-gray-900">
+              {(() => {
+                const t = sorted.reduce((acc, s) => ({
+                  ip: acc.ip + s.inningsPitchedOuts, h: acc.h + s.hitsAllowed,
+                  r: acc.r + s.runsAllowed, bb: acc.bb + s.walksAllowed,
+                  k: acc.k + s.strikeouts, hbp: acc.hbp + s.hitBatters,
+                  wp: acc.wp + s.wildPitches, pc: acc.pc + s.totalPitches,
+                  str: acc.str + s.strikes,
+                }), { ip: 0, h: 0, r: 0, bb: 0, k: 0, hbp: 0, wp: 0, pc: 0, str: 0 });
+                const ipDec = t.ip / 3;
+                return (
+                  <>
+                    <td className="px-3 py-2 font-semibold">Totals</td>
+                    <td className="px-3 py-2 text-center tabular-nums font-mono">{formatInningsPitched(t.ip)}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.h}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.r}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.bb}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.k}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.hbp}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.wp}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{t.pc}</td>
+                    <td className="px-3 py-2 text-center tabular-nums">{fmtPct(t.pc > 0 ? t.str / t.pc : NaN)}</td>
+                    <td className="px-3 py-2 text-center tabular-nums font-mono">{fmtDec(ipDec > 0 ? (t.r * 7) / ipDec : NaN)}</td>
+                  </>
+                );
+              })()}
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   );
