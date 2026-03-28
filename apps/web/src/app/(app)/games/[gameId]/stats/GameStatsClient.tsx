@@ -183,6 +183,37 @@ function BattingSummary({ rows, baserunning }: { rows: BattingStats[]; baserunni
             );
           })}
         </tbody>
+        <tfoot>
+          <tr className="bg-gray-50 border-t border-gray-300 font-semibold text-gray-900">
+            {(() => {
+              const t = sorted.reduce((acc, s) => {
+                const br = baserunning[s.playerId] ?? { sb: 0, cs: 0 };
+                return {
+                  ab: acc.ab + s.atBats, r: acc.r + s.runs, h: acc.h + s.hits,
+                  d: acc.d + s.doubles, tr: acc.tr + s.triples, hr: acc.hr + s.homeRuns,
+                  rbi: acc.rbi + s.rbi, bb: acc.bb + s.walks, k: acc.k + s.strikeouts, sb: acc.sb + br.sb,
+                };
+              }, { ab: 0, r: 0, h: 0, d: 0, tr: 0, hr: 0, rbi: 0, bb: 0, k: 0, sb: 0 });
+              const avg = t.ab > 0 ? t.h / t.ab : NaN;
+              return (
+                <>
+                  <td className="px-3 py-2">Totals</td>
+                  <td className="px-3 py-2 text-center">{t.ab}</td>
+                  <td className="px-3 py-2 text-center">{t.r}</td>
+                  <td className="px-3 py-2 text-center">{t.h}</td>
+                  <td className="px-3 py-2 text-center">{t.d}</td>
+                  <td className="px-3 py-2 text-center">{t.tr}</td>
+                  <td className="px-3 py-2 text-center">{t.hr}</td>
+                  <td className="px-3 py-2 text-center">{t.rbi}</td>
+                  <td className="px-3 py-2 text-center">{t.bb}</td>
+                  <td className="px-3 py-2 text-center">{t.k}</td>
+                  <td className="px-3 py-2 text-center">{t.sb}</td>
+                  <td className="px-3 py-2 text-center font-mono">{fmtRate(avg)}</td>
+                </>
+              );
+            })()}
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
@@ -218,6 +249,33 @@ function OppBattingSummary({ rows }: { rows: OppBattingRow[] }) {
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr className="bg-gray-50 border-t border-gray-300 font-semibold text-gray-900">
+            {(() => {
+              const t = sorted.reduce((acc, s) => ({
+                ab: acc.ab + s.ab, r: acc.r + s.r, h: acc.h + s.h,
+                d: acc.d + s.doubles, tr: acc.tr + s.triples, hr: acc.hr + s.hr,
+                rbi: acc.rbi + s.rbi, bb: acc.bb + s.bb, k: acc.k + s.k,
+              }), { ab: 0, r: 0, h: 0, d: 0, tr: 0, hr: 0, rbi: 0, bb: 0, k: 0 });
+              const avg = t.ab > 0 ? t.h / t.ab : NaN;
+              return (
+                <>
+                  <td className="px-3 py-2">Totals</td>
+                  <td className="px-3 py-2 text-center">{t.ab}</td>
+                  <td className="px-3 py-2 text-center">{t.r}</td>
+                  <td className="px-3 py-2 text-center">{t.h}</td>
+                  <td className="px-3 py-2 text-center">{t.d}</td>
+                  <td className="px-3 py-2 text-center">{t.tr}</td>
+                  <td className="px-3 py-2 text-center">{t.hr}</td>
+                  <td className="px-3 py-2 text-center">{t.rbi}</td>
+                  <td className="px-3 py-2 text-center">{t.bb}</td>
+                  <td className="px-3 py-2 text-center">{t.k}</td>
+                  <td className="px-3 py-2 text-center font-mono">{fmtRate(avg)}</td>
+                </>
+              );
+            })()}
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
@@ -256,6 +314,38 @@ function PitchingSummary({ rows }: { rows: PitchingStats[] }) {
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr className="bg-gray-50 border-t border-gray-300 font-semibold text-gray-900">
+            {(() => {
+              const t = sorted.reduce((acc, s) => ({
+                ip: acc.ip + s.inningsPitchedOuts, h: acc.h + s.hitsAllowed,
+                r: acc.r + s.runsAllowed, bb: acc.bb + s.walksAllowed,
+                k: acc.k + s.strikeouts, hbp: acc.hbp + s.hitBatters,
+                wp: acc.wp + s.wildPitches, pc: acc.pc + s.totalPitches,
+                str: acc.str + s.strikes, cnt30: acc.cnt30 + s.threeZeroCountPAs,
+              }), { ip: 0, h: 0, r: 0, bb: 0, k: 0, hbp: 0, wp: 0, pc: 0, str: 0, cnt30: 0 });
+              const ipDec = t.ip / 3;
+              const era = ipDec > 0 ? (t.r * 7) / ipDec : NaN;
+              const strPct = t.pc > 0 ? t.str / t.pc : NaN;
+              return (
+                <>
+                  <td className="px-3 py-2">Totals</td>
+                  <td className="px-3 py-2 text-center font-mono">{formatInningsPitched(t.ip)}</td>
+                  <td className="px-3 py-2 text-center">{t.h}</td>
+                  <td className="px-3 py-2 text-center">{t.r}</td>
+                  <td className="px-3 py-2 text-center">{t.bb}</td>
+                  <td className="px-3 py-2 text-center">{t.k}</td>
+                  <td className="px-3 py-2 text-center">{t.hbp}</td>
+                  <td className="px-3 py-2 text-center">{t.wp}</td>
+                  <td className="px-3 py-2 text-center">{t.pc}</td>
+                  <td className="px-3 py-2 text-center">{fmtPct(strPct)}</td>
+                  <td className="px-3 py-2 text-center">{t.cnt30}</td>
+                  <td className="px-3 py-2 text-center font-mono">{fmtEra(era)}</td>
+                </>
+              );
+            })()}
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
