@@ -56,7 +56,6 @@ function hitBases(hitType: string): number {
 function computeLineScore(events: Record<string, unknown>[]): LineScoreData {
   let isTopOfInning = true;
   let currentInning = 1;
-  let outs = 0;
 
   // Track base runners (true = occupied) so we can count runs from hits/walks/errors
   let first = false, second = false, third = false;
@@ -110,7 +109,6 @@ function computeLineScore(events: Record<string, unknown>[]): LineScoreData {
         if (awayRunsByInning.length < currentInning) awayRunsByInning.push(0);
         if (homeRunsByInning.length < currentInning) homeRunsByInning.push(0);
       }
-      outs = 0;
       clearBases();
     } else if (etype === 'hit') {
       if (isTopOfInning) awayHits++;
@@ -148,17 +146,7 @@ function computeLineScore(events: Record<string, unknown>[]): LineScoreData {
       // Explicit score events (stolen home, runner advance, balk)
       const rbis = (payload.rbis as number) ?? 1;
       scoreRun(rbis);
-    } else if (etype === 'out') {
-      outs++;
-      // Runner on base may have been out — don't try to track which one
-    } else if (etype === 'strikeout') {
-      outs++;
-    } else if (etype === 'double_play') {
-      outs += 2;
-    } else if (etype === 'triple_play') {
-      outs += 3;
     } else if (etype === 'sacrifice_fly' || etype === 'sacrifice_bunt') {
-      outs++;
       // Sac fly typically scores runner from 3rd
       if (etype === 'sacrifice_fly' && third) {
         scoreRun(1);
@@ -175,7 +163,6 @@ function computeLineScore(events: Record<string, unknown>[]): LineScoreData {
         second = true; first = false;
       }
     } else if (etype === 'caught_stealing') {
-      outs++;
       const fromBase = payload.fromBase as number | undefined;
       if (fromBase === 3) third = false;
       else if (fromBase === 2) second = false;
