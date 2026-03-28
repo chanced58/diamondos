@@ -119,9 +119,37 @@ export function deriveBattingStats(
       }
     }
 
+    // ── Base-runner tracking (player IDs) for run attribution ──────────────
+    let r1: string | null = null; // runner on 1st
+    let r2: string | null = null; // runner on 2nd
+    let r3: string | null = null; // runner on 3rd
+
+    function clearBases() { r1 = null; r2 = null; r3 = null; }
+
+    function scoreRunner(runnerId: string | null) {
+      if (runnerId && statsMap.has(runnerId)) {
+        getStats(runnerId).runs += 1;
+      }
+    }
+
+    /** Force-advance all runners (walk / HBP / error reach). Batter goes to 1st. */
+    function forceAdvance(batterId: string) {
+      if (r1 && r2 && r3) scoreRunner(r3); // bases loaded → runner on 3rd scores
+      if (r1 && r2) r3 = r2;
+      else if (!r3 && r2) { /* r2 stays */ }
+      if (r1) r2 = r1;
+      r1 = batterId;
+    }
+
     for (const event of gameEvents) {
       const etype: string = (event as any).event_type ?? event.eventType;
       const payload = event.payload as any;
+
+      // ── INNING_CHANGE ──────────────────────────────────────────────────────
+      if (etype === 'inning_change') {
+        clearBases();
+        continue;
+      }
 
       // ── HIT ────────────────────────────────────────────────────────────────
       if (etype === EventType.HIT) {
@@ -144,10 +172,48 @@ export function deriveBattingStats(
           case HitType.DOUBLE:    s.doubles += 1;   break;
           case HitType.TRIPLE:    s.triples += 1;   break;
           case HitType.HOME_RUN:  s.homeRuns += 1;  break;
-          // SINGLE and all contact hit types (ground_ball, fly_ball, line_drive, pop_up)
-          // that result in a HIT event are singles
-          default: break;  // single — no special sub-counter
+          default: break;  // single
         }
+
+        // ── Advance runners and attribute runs ──
+        const bases = hitType === 'home_run' ? 4
+          : hitType === 'triple' ? 3
+          : hitType === 'double' ? 2
+          : 1;
+
+        if (bases === 4) {
+          // Home run: all runners + batter score
+          scoreRunner(r3); scoreRunner(r2); scoreRunner(r1);
+          scoreRunner(batterId);
+          clearBases();
+        } else {
+          // Determine which runners score
+          if (r3) scoreRunner(r3);                      // 3rd always scores
+          if (r2 && 2 + bases >= 4) scoreRunner(r2);    // scores on double+
+          if (r1 && 1 + bases >= 4) scoreRunner(r1);    // scores on triple
+
+          // Place remaining runners
+          const new1 = bases === 1 ? batterId : null;
+          const new2 = bases === 2 ? batterId : (bases === 1 ? r1 : null);
+          const new3 = bases === 3 ? batterId
+            : (bases === 2 && (r1 || r2) ? (r1 ?? r2) : null)
+              || (bases === 1 ? r2 : null);
+          // Keep non-scoring runners that didn't advance past their base
+          if (bases === 1) {
+            r3 = r2 ?? r3; // r2 advances to 3rd, or r3 stays if didn't score
+            r2 = r1;       // r1 advances to 2nd
+            r1 = batterId;
+          } else if (bases === 2) {
+            r3 = r1 ?? null; // r1 advances to 3rd
+            r2 = batterId;
+            r1 = null;
+          } else if (bases === 3) {
+            r3 = batterId;
+            r2 = null;
+            r1 = null;
+          }
+        }
+        continue;
       }
 
       // ── OUT ────────────────────────────────────────────────────────────────
@@ -164,11 +230,11 @@ export function deriveBattingStats(
           s.strikeouts += 1;
           s.atBats += 1;
         } else {
-          // Regular batted-ball out (groundout, flyout, lineout, popout, other)
           s.atBats += 1;
           s.battedBalls += 1;
           if (isHardHit(undefined, trajectory, payload?.sprayY as number | undefined)) s.hardHitBalls += 1;
         }
+        continue;
       }
 
       // ── STRIKEOUT (explicit event) ─────────────────────────────────────────
@@ -180,6 +246,7 @@ export function deriveBattingStats(
         s.plateAppearances += 1;
         s.atBats += 1;
         s.strikeouts += 1;
+        continue;
       }
 
       // ── WALK ───────────────────────────────────────────────────────────────
@@ -190,7 +257,8 @@ export function deriveBattingStats(
         const s = getStats(batterId);
         s.plateAppearances += 1;
         s.walks += 1;
-        // Not an at-bat
+        forceAdvance(batterId);
+        continue;
       }
 
       // ── HIT_BY_PITCH ───────────────────────────────────────────────────────
@@ -201,7 +269,8 @@ export function deriveBattingStats(
         const s = getStats(batterId);
         s.plateAppearances += 1;
         s.hitByPitch += 1;
-        // Not an at-bat
+        forceAdvance(batterId);
+        continue;
       }
 
       // ── SACRIFICE_FLY ──────────────────────────────────────────────────────
@@ -212,9 +281,11 @@ export function deriveBattingStats(
         const s = getStats(batterId);
         s.plateAppearances += 1;
         s.sacrificeFlies += 1;
-        s.battedBalls += 1;  // SF is a batted ball (fly ball by definition, but not typically "hard hit")
+        s.battedBalls += 1;
         if (payload?.rbis) s.rbi += payload.rbis as number;
-        // Not an at-bat
+        // Runner on 3rd scores on sac fly
+        if (r3) { scoreRunner(r3); r3 = null; }
+        continue;
       }
 
       // ── SACRIFICE_BUNT ────────────────────────────────────────────────────
@@ -225,12 +296,11 @@ export function deriveBattingStats(
         const s = getStats(batterId);
         s.plateAppearances += 1;
         s.sacrificeHits += 1;
-        s.battedBalls += 1;  // bunt is a batted ball (ground ball by definition, never hard hit)
-        // Not an at-bat
+        s.battedBalls += 1;
+        continue;
       }
 
       // ── FIELD_ERROR ────────────────────────────────────────────────────────
-      // Batter reached on error — counts as AB but not a hit
       if (etype === EventType.FIELD_ERROR) {
         const batterId: string | undefined = payload?.batterId;
         if (!batterId) continue;
@@ -242,10 +312,11 @@ export function deriveBattingStats(
         const traj = payload?.trajectory as string | undefined;
         const sy = payload?.sprayY as number | undefined;
         if (isHardHit(undefined, traj, sy)) s.hardHitBalls += 1;
+        forceAdvance(batterId);
+        continue;
       }
 
       // ── DOUBLE_PLAY ────────────────────────────────────────────────────────
-      // Batter hit into double play — counts as AB, out
       if (etype === EventType.DOUBLE_PLAY) {
         const batterId: string | undefined = payload?.batterId;
         if (!batterId) continue;
@@ -253,17 +324,72 @@ export function deriveBattingStats(
         const s = getStats(batterId);
         s.plateAppearances += 1;
         s.atBats += 1;
+        continue;
       }
 
-      // ── SCORE ──────────────────────────────────────────────────────────────
-      // A run scored — attribute to the scoring player
+      // ── SCORE (explicit — stolen home, balk, runner advance) ──────────────
       if (etype === EventType.SCORE) {
         const scoringPlayerId: string | undefined = payload?.scoringPlayerId;
         if (!scoringPlayerId) continue;
-        // Don't mark as appeared just from scoring — they appeared when they batted
-        if (statsMap.has(scoringPlayerId)) {
-          getStats(scoringPlayerId).runs += 1;
+        scoreRunner(scoringPlayerId);
+        // Remove from bases
+        if (r3 === scoringPlayerId) r3 = null;
+        else if (r2 === scoringPlayerId) r2 = null;
+        else if (r1 === scoringPlayerId) r1 = null;
+        continue;
+      }
+
+      // ── STOLEN_BASE ────────────────────────────────────────────────────────
+      if (etype === 'stolen_base') {
+        const runnerId: string | undefined = payload?.runnerId;
+        const toBase: number | undefined = payload?.toBase;
+        if (!runnerId || !toBase) continue;
+        // Remove from current base
+        if (r1 === runnerId) r1 = null;
+        else if (r2 === runnerId) r2 = null;
+        else if (r3 === runnerId) r3 = null;
+        // Place on new base (or score)
+        if (toBase === 4) scoreRunner(runnerId);
+        else if (toBase === 3) r3 = runnerId;
+        else if (toBase === 2) r2 = runnerId;
+        continue;
+      }
+
+      // ── CAUGHT_STEALING ────────────────────────────────────────────────────
+      if (etype === 'caught_stealing') {
+        const runnerId: string | undefined = payload?.runnerId;
+        if (r1 === runnerId) r1 = null;
+        else if (r2 === runnerId) r2 = null;
+        else if (r3 === runnerId) r3 = null;
+        continue;
+      }
+
+      // ── BASERUNNER_ADVANCE ─────────────────────────────────────────────────
+      if (etype === 'baserunner_advance') {
+        const runnerId: string | undefined = payload?.runnerId;
+        const toBase: number | undefined = payload?.toBase;
+        if (!runnerId || !toBase) continue;
+        if (r1 === runnerId) r1 = null;
+        else if (r2 === runnerId) r2 = null;
+        else if (r3 === runnerId) r3 = null;
+        if (toBase === 4) scoreRunner(runnerId);
+        else if (toBase === 3) r3 = runnerId;
+        else if (toBase === 2) r2 = runnerId;
+        else if (toBase === 1) r1 = runnerId;
+        continue;
+      }
+
+      // ── SUBSTITUTION ───────────────────────────────────────────────────────
+      if (etype === 'substitution') {
+        const inId: string | undefined = payload?.inPlayerId;
+        const outId: string | undefined = payload?.outPlayerId;
+        if (inId && outId) {
+          // If the substituted player is on base, replace them
+          if (r1 === outId) r1 = inId;
+          if (r2 === outId) r2 = inId;
+          if (r3 === outId) r3 = inId;
         }
+        continue;
       }
     }
   }
