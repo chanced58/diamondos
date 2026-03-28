@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, weAreHome } from '@baseball/shared';
-import type { PitchingStats, BattingStats, StatTier, OppBattingRow } from '@baseball/shared';
+import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
 import { PitchingStatsTable } from './PitchingStatsTable';
 import { BattingStatsTable } from './BattingStatsTable';
 import { OpponentsStatsTable } from './OpponentsStatsTable';
