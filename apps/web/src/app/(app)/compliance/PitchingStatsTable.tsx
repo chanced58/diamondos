@@ -194,17 +194,17 @@ export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_s
           );
         })}
         <tfoot>
-          <tr className="bg-gray-50 border-t-2 border-gray-300 font-semibold text-gray-900">
-            {columns.map((col) => {
-              if (col.key === 'playerName') {
-                return <td key={col.key} className="px-3 py-3 whitespace-nowrap">Totals</td>;
-              }
-              return (
-                <td key={col.key} className="px-3 py-3 tabular-nums whitespace-nowrap">
-                  {computePitchingTotal(sorted, col)}
-                </td>
-              );
-            })}
+          <tr className="bg-white border-t-2 border-gray-300 font-semibold text-gray-900">
+            {columns.map((col) => (
+              <td
+                key={col.key}
+                className={`px-3 py-3 tabular-nums whitespace-nowrap ${
+                  col.key === 'playerName' ? 'font-bold' : ''
+                }`}
+              >
+                {col.key === 'playerName' ? 'Totals' : computePitchingTotal(sorted, col)}
+              </td>
+            ))}
             <td className="px-3 py-3" />
           </tr>
         </tfoot>

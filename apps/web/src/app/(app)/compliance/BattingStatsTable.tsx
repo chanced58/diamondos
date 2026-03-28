@@ -189,19 +189,23 @@ export function BattingStatsTable({ stats, tier = 'high_school' }: { stats: Batt
           ))}
         </tbody>
         <tfoot>
-          <tr className="bg-gray-50 border-t-2 border-gray-300 font-semibold text-gray-900">
-            {columns.map((col) => {
-              if (col.key === 'playerName') {
-                return <td key={col.key} className="px-3 py-3 whitespace-nowrap">Totals</td>;
-              }
-              const totals = computeTotals(sorted);
-              return (
-                <td key={col.key} className="px-3 py-3 tabular-nums whitespace-nowrap">
-                  {displayStat(totals, col.key)}
-                </td>
-              );
-            })}
-          </tr>
+          {(() => {
+            const totals = computeTotals(sorted);
+            return (
+              <tr className="bg-white border-t-2 border-gray-300 font-semibold text-gray-900">
+                {columns.map((col) => (
+                  <td
+                    key={col.key}
+                    className={`px-3 py-3 tabular-nums whitespace-nowrap ${
+                      col.key === 'playerName' ? 'font-bold' : ''
+                    }`}
+                  >
+                    {col.key === 'playerName' ? 'Totals' : displayStat(totals, col.key)}
+                  </td>
+                ))}
+              </tr>
+            );
+          })()}
         </tfoot>
       </table>
     </div>
