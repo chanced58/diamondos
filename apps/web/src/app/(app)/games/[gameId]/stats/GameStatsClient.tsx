@@ -231,8 +231,10 @@ function PitchingSummary({ rows }: { rows: PitchingStats[] }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-200">
-            {['Pitcher', 'IP', 'H', 'R', 'BB', 'K', 'HBP', 'WP', 'PC', 'Strike%', 'ERA'].map((h) => (
-              <th key={h} className={`px-3 py-2 font-semibold text-gray-600 ${h === 'Pitcher' ? 'text-left' : 'text-center'}`}>{h}</th>
+            {['Pitcher', 'IP', 'H', 'R', 'BB', 'K', 'HBP', 'WP', 'PC', 'Strike%', '30CNT', 'ERA'].map((h) => (
+              <th key={h} className={`px-3 py-2 font-semibold text-gray-600 ${h === 'Pitcher' ? 'text-left' : 'text-center'}`}
+                title={h === '30CNT' ? 'At-bats starting with 3 straight balls' : undefined}
+              >{h}</th>
             ))}
           </tr>
         </thead>
@@ -249,6 +251,7 @@ function PitchingSummary({ rows }: { rows: PitchingStats[] }) {
               <td className="px-3 py-2 text-center">{s.wildPitches}</td>
               <td className="px-3 py-2 text-center">{s.totalPitches}</td>
               <td className="px-3 py-2 text-center">{fmtPct(s.strikePercentage)}</td>
+              <td className="px-3 py-2 text-center">{s.threeZeroCountPAs}</td>
               <td className="px-3 py-2 text-center font-mono">{fmtEra(s.era)}</td>
             </tr>
           ))}

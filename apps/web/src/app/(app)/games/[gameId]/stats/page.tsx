@@ -43,15 +43,59 @@ function applyPitchReverted(events: Record<string, unknown>[]): Record<string, u
   return result;
 }
 
+function hitBases(hitType: string): number {
+  switch (hitType) {
+    case 'single': return 1;
+    case 'double': return 2;
+    case 'triple': return 3;
+    case 'home_run': return 4;
+    default: return 1;
+  }
+}
+
 function computeLineScore(events: Record<string, unknown>[]): LineScoreData {
   let isTopOfInning = true;
   let currentInning = 1;
+  let outs = 0;
+
+  // Track base runners (true = occupied) so we can count runs from hits/walks/errors
+  let first = false, second = false, third = false;
 
   const awayRunsByInning: number[] = [0];
   const homeRunsByInning: number[] = [0];
   let awayRuns = 0, homeRuns = 0;
   let awayHits = 0, homeHits = 0;
   let awayErrors = 0, homeErrors = 0;
+
+  function scoreRun(count: number) {
+    if (count <= 0) return;
+    if (isTopOfInning) {
+      awayRunsByInning[currentInning - 1] = (awayRunsByInning[currentInning - 1] ?? 0) + count;
+      awayRuns += count;
+    } else {
+      homeRunsByInning[currentInning - 1] = (homeRunsByInning[currentInning - 1] ?? 0) + count;
+      homeRuns += count;
+    }
+  }
+
+  function forceAdvance() {
+    // Bases-loaded force: runner on 3rd scores
+    if (first && second && third) {
+      scoreRun(1);
+      // third scores, everyone shifts up, batter to first
+      third = second; second = first; first = true;
+    } else if (first && second) {
+      third = true; second = true; first = true;
+    } else if (first) {
+      second = true; first = true;
+    } else {
+      first = true;
+    }
+  }
+
+  function clearBases() {
+    first = false; second = false; third = false;
+  }
 
   for (const event of events) {
     const etype = event.event_type as string;
@@ -66,22 +110,88 @@ function computeLineScore(events: Record<string, unknown>[]): LineScoreData {
         if (awayRunsByInning.length < currentInning) awayRunsByInning.push(0);
         if (homeRunsByInning.length < currentInning) homeRunsByInning.push(0);
       }
-    } else if (etype === 'score') {
-      const rbis = (payload.rbis as number) ?? 1;
-      if (isTopOfInning) {
-        awayRunsByInning[currentInning - 1] = (awayRunsByInning[currentInning - 1] ?? 0) + rbis;
-        awayRuns += rbis;
-      } else {
-        homeRunsByInning[currentInning - 1] = (homeRunsByInning[currentInning - 1] ?? 0) + rbis;
-        homeRuns += rbis;
-      }
+      outs = 0;
+      clearBases();
     } else if (etype === 'hit') {
       if (isTopOfInning) awayHits++;
       else homeHits++;
+
+      const bases = hitBases(payload.hitType as string);
+      if (bases === 4) {
+        // Home run: everyone scores
+        let runners = 0;
+        if (first) runners++;
+        if (second) runners++;
+        if (third) runners++;
+        scoreRun(runners + 1);
+        clearBases();
+      } else {
+        // Count runners who score: runner scores if their base + hit bases >= 4
+        let runs = 0;
+        if (third) runs++;                           // 3 + any hit >= 4
+        if (second && 2 + bases >= 4) runs++;        // double or triple
+        if (first && 1 + bases >= 4) runs++;         // triple only
+        scoreRun(runs);
+        // Simplified base advancement
+        const newFirst = bases === 1;
+        const newSecond = bases === 2 || (bases === 1 && first);
+        const newThird = bases === 3 || (bases === 2 && (first || second)) || (bases === 1 && second);
+        first = newFirst; second = newSecond; third = newThird;
+      }
+    } else if (etype === 'walk' || etype === 'hit_by_pitch') {
+      forceAdvance();
     } else if (etype === 'field_error') {
-      // Error is charged to the FIELDING team (defense), not the batting team
       if (isTopOfInning) homeErrors++;
       else awayErrors++;
+      forceAdvance();
+    } else if (etype === 'score') {
+      // Explicit score events (stolen home, runner advance, balk)
+      const rbis = (payload.rbis as number) ?? 1;
+      scoreRun(rbis);
+    } else if (etype === 'out') {
+      outs++;
+      // Runner on base may have been out — don't try to track which one
+    } else if (etype === 'strikeout') {
+      outs++;
+    } else if (etype === 'double_play') {
+      outs += 2;
+    } else if (etype === 'triple_play') {
+      outs += 3;
+    } else if (etype === 'sacrifice_fly' || etype === 'sacrifice_bunt') {
+      outs++;
+      // Sac fly typically scores runner from 3rd
+      if (etype === 'sacrifice_fly' && third) {
+        scoreRun(1);
+        third = false;
+      }
+    } else if (etype === 'stolen_base') {
+      const toBase = payload.toBase as number | undefined;
+      if (toBase === 4 && third) {
+        // Stolen home — already counted via separate 'score' event
+        third = false;
+      } else if (toBase === 3 && second) {
+        third = true; second = false;
+      } else if (toBase === 2 && first) {
+        second = true; first = false;
+      }
+    } else if (etype === 'caught_stealing') {
+      outs++;
+      const fromBase = payload.fromBase as number | undefined;
+      if (fromBase === 3) third = false;
+      else if (fromBase === 2) second = false;
+      else if (fromBase === 1) first = false;
+    } else if (etype === 'baserunner_advance') {
+      const toBase = payload.toBase as number | undefined;
+      const fromBase = payload.fromBase as number | undefined;
+      if (toBase === 4) {
+        // Runner scored — already counted via separate 'score' event
+        if (fromBase === 3) third = false;
+        else if (fromBase === 2) second = false;
+        else if (fromBase === 1) first = false;
+      } else {
+        if (fromBase === 1) { first = false; if (toBase === 2) second = true; else if (toBase === 3) third = true; }
+        if (fromBase === 2) { second = false; if (toBase === 3) third = true; }
+      }
     }
   }
 
