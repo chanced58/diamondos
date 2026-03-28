@@ -11,7 +11,7 @@ create type public.game_status as enum (
 create type public.game_location_type as enum ('home', 'away', 'neutral');
 
 create table public.games (
-  id                uuid primary key default uuid_generate_v4(),
+  id                uuid primary key default gen_random_uuid(),
   season_id         uuid not null references public.seasons(id) on delete cascade,
   team_id           uuid not null references public.teams(id),
   opponent_name     text not null,
@@ -36,7 +36,7 @@ comment on table public.games is 'A single scheduled or completed game for a sea
 
 -- The batting order for a game (pre-set before game start, updated via substitutions)
 create table public.game_lineups (
-  id                uuid primary key default uuid_generate_v4(),
+  id                uuid primary key default gen_random_uuid(),
   game_id           uuid not null references public.games(id) on delete cascade,
   player_id         uuid not null references public.players(id),
   batting_order     smallint not null check (batting_order between 1 and 9),

@@ -11,7 +11,7 @@ CREATE TYPE public.team_event_type AS ENUM (
 
 -- Team events (non-game calendar items: team meetings, travel days, etc.)
 CREATE TABLE public.team_events (
-  id          uuid        PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   team_id     uuid        NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
   title       text        NOT NULL,
   event_type  public.team_event_type NOT NULL DEFAULT 'other',

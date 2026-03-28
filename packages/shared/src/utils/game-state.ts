@@ -1,4 +1,4 @@
-import { EventType, type GameEvent, type PitchThrownPayload, type HitPayload, type SubstitutionPayload, type PitchingChangePayload, type ScorePayload, type BaserunnerMovePayload, type RundownPayload } from '../types/game-event';
+import { EventType, type GameEvent, type PitchThrownPayload, type HitPayload, type SubstitutionPayload, type PitchingChangePayload, type ScorePayload, type BaserunnerMovePayload, type PickoffPayload, type RundownPayload } from '../types/game-event';
 import type { LiveGameState } from '../types/game';
 import { BALLS_FOR_WALK, STRIKES_FOR_STRIKEOUT, OUTS_PER_INNING } from '../constants/baseball';
 
@@ -252,6 +252,20 @@ export function deriveGameState(
         state.outs++;
         state.balls = 0;
         state.strikes = 0;
+        break;
+      }
+
+      case EventType.PICKOFF_ATTEMPT: {
+        const p = event.payload as unknown as PickoffPayload;
+        if (p.outcome === 'out') {
+          const runners = { ...state.runnersOnBase };
+          if (p.base === 1) runners.first  = null;
+          else if (p.base === 2) runners.second = null;
+          else if (p.base === 3) runners.third  = null;
+          state.runnersOnBase = runners;
+          state.outs++;
+        }
+        // outcome === 'safe' — no state change
         break;
       }
 

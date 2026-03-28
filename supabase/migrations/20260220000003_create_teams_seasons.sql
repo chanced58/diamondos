@@ -9,7 +9,7 @@ create type public.team_role as enum (
 );
 
 create table public.teams (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   name          text not null,
   organization  text,
   logo_url      text,
@@ -23,7 +23,7 @@ comment on table public.teams is 'A baseball team. One user may belong to multip
 comment on column public.teams.state_code is 'Two-letter US state code for pitch compliance rule lookup.';
 
 create table public.seasons (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   team_id     uuid not null references public.teams(id) on delete cascade,
   name        text not null,
   start_date  date not null,
@@ -40,7 +40,7 @@ create unique index seasons_one_active_per_team
   where is_active = true;
 
 create table public.team_members (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   team_id     uuid not null references public.teams(id) on delete cascade,
   user_id     uuid not null references auth.users(id) on delete cascade,
   role        public.team_role not null,
