@@ -26,6 +26,7 @@ type SortKey =
   | 'strikePercentage'
   | 'firstPitchStrikePercentage'
   | 'threeBallCountPercentage'
+  | 'threeZeroCountPercentage'
   | 'era'
   | 'whip'
   | 'strikeoutsPerSeven'
@@ -55,6 +56,7 @@ const ALL_COLUMNS: ColDef[] = [
   { key: 'strikePercentage',         label: 'STR%',     title: 'Strike percentage',                    fmt: (s) => pct(s.strikePercentage) },
   { key: 'firstPitchStrikePercentage', label: 'FPS%',   title: 'First-pitch strike percentage',        fmt: (s) => pct(s.firstPitchStrikePercentage) },
   { key: 'threeBallCountPercentage', label: '3B%',      title: '% of PAs with a 3-ball count',         fmt: (s) => pct(s.threeBallCountPercentage) },
+  { key: 'threeZeroCountPercentage', label: '30CNT',  title: '% of PAs starting with 3 straight balls (3-0 count)', fmt: (s) => pct(s.threeZeroCountPercentage) },
   { key: 'era',                      label: 'ERA',      title: 'Earned run average (per 7 innings)',    fmt: (s) => dec(s.era) },
   { key: 'whip',                     label: 'WHIP',     title: 'Walks + hits per inning pitched',       fmt: (s) => dec(s.whip) },
   { key: 'strikeoutsPerSeven',       label: 'K/7',      title: 'Strikeouts per 7 innings',             fmt: (s) => dec(s.strikeoutsPerSeven) },
@@ -74,7 +76,7 @@ const TIER_KEYS: Record<StatTier, Set<SortKey>> = {
   ]),
   high_school: new Set<SortKey>([
     'playerName', 'inningsPitchedOuts', 'totalPitches',
-    'strikePercentage', 'firstPitchStrikePercentage', 'threeBallCountPercentage',
+    'strikePercentage', 'firstPitchStrikePercentage', 'threeBallCountPercentage', 'threeZeroCountPercentage',
     'era', 'whip', 'strikeoutsPerSeven', 'walksPerSeven',
     'hitsAllowed', 'walksAllowed', 'strikeouts', 'hitBatters', 'wildPitches',
   ]),

@@ -38,8 +38,10 @@ function makeEmptyStats(playerId: string, playerName: string): PitchingStats {
     firstPitchStrikes: 0,
     firstPitchStrikePercentage: 0,
     threeBallCountPAs: 0,
+    threeZeroCountPAs: 0,
     totalPAs: 0,
     threeBallCountPercentage: 0,
+    threeZeroCountPercentage: 0,
     hitsAllowed: 0,
     runsAllowed: 0,
     walksAllowed: 0,
@@ -142,8 +144,10 @@ export function derivePitchingStats(
       {
         balls: number;
         strikes: number;
+        pitchNumber: number; // total pitches seen in this at-bat
         isFirstPitch: boolean;
         reachedThreeBalls: boolean;
+        reachedThreeZero: boolean; // first 3 pitches were all balls (3-0 count)
         contactCount: string | null; // count when ball was put in play
       }
     >();
@@ -159,8 +163,10 @@ export function derivePitchingStats(
       atBatState.set(batterId, {
         balls: 0,
         strikes: 0,
+        pitchNumber: 0,
         isFirstPitch: true,
         reachedThreeBalls: false,
+        reachedThreeZero: false,
         contactCount: null,
       });
     }
@@ -236,6 +242,8 @@ export function derivePitchingStats(
 
         if (p.isWildPitch) s.wildPitches += 1;
 
+        ab.pitchNumber += 1;
+
         const countKey = `${ab.balls}-${ab.strikes}`;
 
         // ── Advance the count ───────────────────────────────────────────
@@ -246,21 +254,28 @@ export function derivePitchingStats(
           // Foul with 2 strikes doesn't advance
         } else if (outcome === PitchOutcome.BALL || outcome === PitchOutcome.INTENTIONAL_BALL) {
           ab.balls += 1;
-          if (ab.balls === 3) ab.reachedThreeBalls = true;
+          if (ab.balls === 3) {
+            ab.reachedThreeBalls = true;
+            // 3-0 count: first 3 pitches were all balls (no strikes thrown)
+            if (ab.pitchNumber === 3 && ab.strikes === 0) ab.reachedThreeZero = true;
+          }
           if (ab.balls >= 4) {
             // Walk — terminal
             s.walksAllowed += 1;
             if (ab.reachedThreeBalls) s.threeBallCountPAs += 1;
+            if (ab.reachedThreeZero) s.threeZeroCountPAs += 1;
             resetAtBat(batterId);
           }
         } else if (outcome === PitchOutcome.HIT_BY_PITCH) {
           s.hitBatters += 1;
           if (ab.reachedThreeBalls) s.threeBallCountPAs += 1;
+          if (ab.reachedThreeZero) s.threeZeroCountPAs += 1;
           resetAtBat(batterId);
         } else if (outcome === PitchOutcome.IN_PLAY) {
           // Ball in play — record pending contact for correlation with HIT/OUT
           pendingContact.set(batterId, { pitcherId, count: countKey });
           if (ab.reachedThreeBalls) s.threeBallCountPAs += 1;
+          if (ab.reachedThreeZero) s.threeZeroCountPAs += 1;
           // Don't reset yet — wait for HIT/OUT event
         }
 
@@ -275,6 +290,7 @@ export function derivePitchingStats(
             countStat.average = countStat.atBats > 0 ? countStat.hits / countStat.atBats : NaN;
           }
           if (ab.reachedThreeBalls) s.threeBallCountPAs += 1;
+          if (ab.reachedThreeZero) s.threeZeroCountPAs += 1;
           resetAtBat(batterId);
         }
       }
@@ -381,6 +397,7 @@ export function derivePitchingStats(
     s.strikePercentage = s.totalPitches > 0 ? s.strikes / s.totalPitches : 0;
     s.firstPitchStrikePercentage = s.totalPAs > 0 ? s.firstPitchStrikes / s.totalPAs : 0;
     s.threeBallCountPercentage = s.totalPAs > 0 ? s.threeBallCountPAs / s.totalPAs : 0;
+    s.threeZeroCountPercentage = s.totalPAs > 0 ? s.threeZeroCountPAs / s.totalPAs : 0;
 
     if (ip > 0) {
       s.era = (s.runsAllowed * 7) / ip;

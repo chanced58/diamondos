@@ -27,9 +27,13 @@ export interface PitchingStats {
 
   /** Plate appearances where the ball count reached 3 at any point */
   threeBallCountPAs: number;
+  /** Plate appearances that began with 3 straight balls (3-0 count) */
+  threeZeroCountPAs: number;
   totalPAs: number;
   /** threeBallCountPAs / totalPAs */
   threeBallCountPercentage: number;
+  /** threeZeroCountPAs / totalPAs */
+  threeZeroCountPercentage: number;
 
   hitsAllowed: number;
   runsAllowed: number;
