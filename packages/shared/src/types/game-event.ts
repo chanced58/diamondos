@@ -191,7 +191,23 @@ export interface BaserunnerMovePayload {
   errorBy?: number;
   /** ID of the associated pitch/hit/play event (used when reason is on_play). */
   relatedEventId?: string;
+  /** Defensive play sequence as position numbers, e.g. [2, 6] for C-to-SS on a caught stealing. */
+  fieldingSequence?: number[];
 }
+
+/** Payload for PICKOFF_ATTEMPT events */
+export type PickoffPayload = {
+  runnerId: string;
+  /** Set when the runner is an opponent_player. */
+  isOpponentRunner?: boolean;
+  base: 1 | 2 | 3;
+  pitcherId: string;
+  /** Defensive play sequence as position numbers, e.g. [1, 3] for P-to-1B. */
+  fieldingSequence?: number[];
+} & (
+  | { outcome: 'safe' }
+  | { outcome: 'out' }
+);
 
 /** Payload for RUNDOWN events — discriminated union enforces safeAtBase when outcome is 'safe' */
 export type RundownPayload = {
@@ -214,6 +230,7 @@ export type GameEventPayload =
   | PitchingChangePayload
   | ScorePayload
   | BaserunnerMovePayload
+  | PickoffPayload
   | RundownPayload
   | Record<string, unknown>;
 

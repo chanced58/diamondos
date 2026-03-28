@@ -572,6 +572,13 @@ export function ScoringBoard({
   } | null>(null);
   const [advanceErrorBy, setAdvanceErrorBy] = useState<number | null>(null);
   const [advancePendingReason, setAdvancePendingReason] = useState<string | null>(null);
+  // Caught-stealing / pickoff fielding sequence state
+  const [pendingCSPickoff, setPendingCSPickoff] = useState<{
+    type: 'cs' | 'pickoff';
+    runnerId: string;
+    base: 1 | 2 | 3;
+  } | null>(null);
+  const [csPickoffFieldingSeq, setCsPickoffFieldingSeq] = useState<number[]>([]);
   // Rundown panel state
   const [showRundown, setShowRundown] = useState(false);
   const [rundownRunnerId, setRundownRunnerId] = useState('');
@@ -1100,15 +1107,47 @@ export function ScoringBoard({
     }
   }
 
-  async function handleCaughtStealing(runnerId: string, fromBase: 1 | 2 | 3) {
-    const toBase = (fromBase + 1) as 2 | 3 | 4;
-    await recordEvent('caught_stealing', { runnerId, fromBase, toBase });
+  function handleCaughtStealingClick(runnerId: string, fromBase: 1 | 2 | 3) {
+    setPendingCSPickoff({ type: 'cs', runnerId, base: fromBase });
+    setCsPickoffFieldingSeq([]);
   }
 
-  async function handlePickoffAttempt(runnerId: string, base: 1 | 2 | 3) {
+  async function handleCaughtStealingConfirm() {
+    if (!pendingCSPickoff || pendingCSPickoff.type !== 'cs') return;
+    const { runnerId, base: fromBase } = pendingCSPickoff;
+    const toBase = (fromBase + 1) as 2 | 3 | 4;
+    const payload: Record<string, unknown> = { runnerId, fromBase, toBase };
+    if (csPickoffFieldingSeq.length > 0) payload.fieldingSequence = csPickoffFieldingSeq;
+    await recordEvent('caught_stealing', payload);
+    setPendingCSPickoff(null);
+    setCsPickoffFieldingSeq([]);
+  }
+
+  function handlePickoffOutClick(runnerId: string, base: 1 | 2 | 3) {
+    setPendingCSPickoff({ type: 'pickoff', runnerId, base });
+    setCsPickoffFieldingSeq([]);
+  }
+
+  async function handlePickoffOutConfirm() {
+    if (!pendingCSPickoff || pendingCSPickoff.type !== 'pickoff') return;
+    const { runnerId, base } = pendingCSPickoff;
+    const payload: Record<string, unknown> = {
+      runnerId,
+      base,
+      outcome: 'out',
+      pitcherId: activePitcherId ?? 'unknown-pitcher',
+    };
+    if (csPickoffFieldingSeq.length > 0) payload.fieldingSequence = csPickoffFieldingSeq;
+    await recordEvent('pickoff_attempt', payload);
+    setPendingCSPickoff(null);
+    setCsPickoffFieldingSeq([]);
+  }
+
+  async function handlePickoffSafe(runnerId: string, base: 1 | 2 | 3) {
     await recordEvent('pickoff_attempt', {
       runnerId,
       base,
+      outcome: 'safe',
       pitcherId: activePitcherId ?? 'unknown-pitcher',
     });
   }
@@ -1987,17 +2026,24 @@ export function ScoringBoard({
                         {stealLabel}
                       </button>
                       <button
-                        onClick={() => handleCaughtStealing(runnerId!, base)}
-                        className="px-2 py-1 text-xs font-medium rounded border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+                        onClick={() => handleCaughtStealingClick(runnerId!, base)}
+                        className={`px-2 py-1 text-xs font-medium rounded border transition-colors ${pendingCSPickoff?.type === 'cs' && pendingCSPickoff?.runnerId === runnerId ? 'border-red-400 bg-red-100 text-red-800' : 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'}`}
                       >
                         CS
                       </button>
                       <button
-                        onClick={() => handlePickoffAttempt(runnerId!, base)}
-                        className="px-2 py-1 text-xs font-medium rounded border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 transition-colors"
-                        title="Pickoff attempt (runner safe)"
+                        onClick={() => handlePickoffOutClick(runnerId!, base)}
+                        className={`px-2 py-1 text-xs font-medium rounded border transition-colors ${pendingCSPickoff?.type === 'pickoff' && pendingCSPickoff?.runnerId === runnerId ? 'border-orange-400 bg-orange-100 text-orange-800' : 'border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100'}`}
+                        title="Pickoff — runner out"
                       >
-                        PO
+                        PO Out
+                      </button>
+                      <button
+                        onClick={() => handlePickoffSafe(runnerId!, base)}
+                        className="px-2 py-1 text-xs font-medium rounded border border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100 transition-colors"
+                        title="Pickoff attempt — runner safe"
+                      >
+                        PO Safe
                       </button>
                       {base < 3 && (
                         <button
@@ -2014,6 +2060,54 @@ export function ScoringBoard({
                         Score
                       </button>
                     </div>
+
+                    {/* CS / Pickoff fielding sequence picker — shown inline for this runner */}
+                    {pendingCSPickoff?.runnerId === runnerId && (
+                      <div className="mt-2 ml-7 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <p className="text-xs font-semibold text-gray-500 mb-2">
+                          {pendingCSPickoff.type === 'cs' ? 'Caught Stealing' : 'Pickoff Out'} — Fielding Sequence
+                        </p>
+                        {csPickoffFieldingSeq.length > 0 && (
+                          <p className="text-sm font-bold text-gray-700 mb-2">
+                            {formatFieldingSequence(csPickoffFieldingSeq)}
+                          </p>
+                        )}
+                        <div className="grid grid-cols-3 gap-1.5 mb-3">
+                          {FIELDING_POSITION_NUMBERS.map(({ number, abbr }) => (
+                            <button
+                              key={number}
+                              onClick={() => setCsPickoffFieldingSeq((prev) => prev.length < 8 ? [...prev, number] : prev)}
+                              className="px-2 py-1.5 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:border-brand-400 hover:text-brand-700 transition-colors"
+                            >
+                              {number} — {abbr}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={pendingCSPickoff.type === 'cs' ? handleCaughtStealingConfirm : handlePickoffOutConfirm}
+                            disabled={csPickoffFieldingSeq.length === 0}
+                            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                          >
+                            Confirm
+                          </button>
+                          {csPickoffFieldingSeq.length > 0 && (
+                            <button
+                              onClick={() => setCsPickoffFieldingSeq((prev) => prev.slice(0, -1))}
+                              className="text-xs text-gray-400 hover:text-gray-600"
+                            >
+                              Undo
+                            </button>
+                          )}
+                          <button
+                            onClick={() => { setPendingCSPickoff(null); setCsPickoffFieldingSeq([]); }}
+                            className="text-xs text-gray-400 hover:text-gray-600"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Advance reason picker — shown inline when this runner has a pending advance */}
                     {isPendingThis && pendingAdvance && (
