@@ -1,10 +1,13 @@
 /**
  * Compute opponent batting statistics from game events.
  *
- * Processes events that carry an `opponentBatterId` in their payload and
- * aggregates plate-appearance outcomes into per-player rows.  Works for
- * both single-game and multi-game (season) aggregation — just pass all
- * relevant events in sequence-number order.
+ * Resolves the opponent batter from each event by checking both
+ * `opponentBatterId` (canonical) and `batterId` (the ScoringBoard stores
+ * all batter IDs under `batterId` regardless of team). A batter ID is
+ * considered an opponent if it exists in the provided `oppPlayerNameMap`.
+ *
+ * Works for both single-game and multi-game (season) aggregation — just
+ * pass all relevant events in sequence-number order.
  */
 
 export type OppBattingRow = {
@@ -43,7 +46,11 @@ export function computeOpponentBatting(
   for (const event of events) {
     const etype = event.event_type as string;
     const payload = (event.payload ?? {}) as Record<string, unknown>;
-    const batterId = payload.opponentBatterId as string | undefined;
+    // The ScoringBoard always writes `batterId` regardless of which team is
+    // at bat, so also check `batterId` against the opponent name map.
+    const batterId =
+      (payload.opponentBatterId as string | undefined) ??
+      (oppPlayerNameMap.has(payload.batterId as string) ? (payload.batterId as string) : undefined);
 
     if (!batterId) {
       if (etype === 'score') {
