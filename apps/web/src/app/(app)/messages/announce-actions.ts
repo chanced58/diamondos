@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { isCoachRole } from '@baseball/shared';
+import { isCoachRole, sendMessageSchema } from '@baseball/shared';
 
 export async function postAnnouncementAction(
   _prevState: string | null | undefined,
@@ -13,11 +13,16 @@ export async function postAnnouncementAction(
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated — please log in again.';
 
-  const teamId  = formData.get('teamId') as string;
-  const body    = (formData.get('body') as string)?.trim();
+  const teamId    = formData.get('teamId') as string;
   const channelId = formData.get('channelId') as string;
 
-  if (!teamId || !body) return 'Message body is required.';
+  if (!teamId) return 'Missing team ID.';
+
+  const parsed = sendMessageSchema.safeParse({
+    body: (formData.get('body') as string)?.trim(),
+  });
+  if (!parsed.success) return parsed.error.issues[0].message;
+  const { body } = parsed.data;
 
   const db = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
