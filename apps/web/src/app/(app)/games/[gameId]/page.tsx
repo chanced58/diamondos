@@ -161,20 +161,16 @@ export default async function GameDetailPage({
           </p>
           <div className="flex items-center justify-center gap-8">
             <div>
-              <p className="text-sm text-gray-500 mb-1">
-                {isHome ? 'Us' : game.opponent_name}
-              </p>
+              <p className="text-sm text-gray-500 mb-1">Us</p>
               <p className="text-5xl font-bold text-gray-900">
-                {game.home_score}
+                {isHome ? game.home_score : game.away_score}
               </p>
             </div>
             <div className="text-2xl text-gray-300 font-light">—</div>
             <div>
-              <p className="text-sm text-gray-500 mb-1">
-                {isHome ? game.opponent_name : 'Us'}
-              </p>
+              <p className="text-sm text-gray-500 mb-1">{game.opponent_name}</p>
               <p className="text-5xl font-bold text-gray-900">
-                {game.away_score}
+                {isHome ? game.away_score : game.home_score}
               </p>
             </div>
           </div>
