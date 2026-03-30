@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { isCoachRole } from '@baseball/shared';
 
 export type UserAccess = {
   isCoach: boolean;
@@ -40,11 +41,7 @@ export async function getUserAccess(
 
   const isPlatformAdmin = profileResult.data?.is_platform_admin === true;
   const role = membershipResult.data?.role ?? null;
-  const isCoach =
-    isPlatformAdmin ||
-    role === 'head_coach' ||
-    role === 'assistant_coach' ||
-    role === 'athletic_director';
+  const isCoach = isPlatformAdmin || isCoachRole(role ?? '');
 
   return { isCoach, isPlatformAdmin, role };
 }

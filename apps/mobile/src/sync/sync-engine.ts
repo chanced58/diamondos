@@ -22,6 +22,12 @@ export async function syncWithSupabase(): Promise<void> {
         ? new Date(lastPulledAt).toISOString()
         : new Date(0).toISOString();
 
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) {
+        throw new Error('Cannot sync: user is not authenticated');
+      }
+      const userId = user.id;
+
       const [gamesResult, eventsResult, playersResult, channelsResult, messagesResult] =
         await Promise.all([
           supabase.from('games').select('*').gte('updated_at', since),
@@ -30,6 +36,7 @@ export async function syncWithSupabase(): Promise<void> {
           supabase
             .from('channels')
             .select('*, channel_members!inner(user_id, can_post)')
+            .eq('channel_members.user_id', userId)
             .gte('updated_at', since),
           supabase.from('messages').select('*, user_profiles!sender_id(first_name, last_name)').gte('created_at', since),
         ]);
@@ -175,6 +182,7 @@ function mapPlayer(r: Record<string, unknown>) {
 }
 
 function mapChannel(r: Record<string, unknown>) {
+  // channel_members is filtered to the current user in the pull query
   const members = (r.channel_members as Array<{ can_post: boolean }>) ?? [];
   return {
     id: r.id,

@@ -3,8 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-
-const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
+import { isCoachRole, sendMessageSchema } from '@baseball/shared';
 
 export async function postAnnouncementAction(
   _prevState: string | null | undefined,
@@ -14,11 +13,18 @@ export async function postAnnouncementAction(
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated — please log in again.';
 
-  const teamId  = formData.get('teamId') as string;
-  const body    = (formData.get('body') as string)?.trim();
-  const channelId = formData.get('channelId') as string;
+  const rawTeamId    = formData.get('teamId');
+  const rawChannelId = formData.get('channelId');
+  const rawBody      = formData.get('body');
 
-  if (!teamId || !body) return 'Message body is required.';
+  if (!rawTeamId || typeof rawTeamId !== 'string') return 'Missing team ID.';
+  const teamId = rawTeamId;
+  const channelId = typeof rawChannelId === 'string' ? rawChannelId : '';
+
+  if (typeof rawBody !== 'string') return 'Message body is required.';
+  const parsed = sendMessageSchema.safeParse({ body: rawBody.trim() });
+  if (!parsed.success) return parsed.error.issues[0].message;
+  const { body } = parsed.data;
 
   const db = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -34,13 +40,25 @@ export async function postAnnouncementAction(
     .eq('is_active', true)
     .maybeSingle();
 
-  if (!membership || !COACH_ROLES.includes(membership.role)) {
+  if (!membership || !isCoachRole(membership.role)) {
     return 'Only coaches can post announcements.';
   }
 
-  // Resolve target channel — use provided channelId or fall back to first announcement channel
+  // Resolve and validate target channel
   let targetChannelId = channelId;
-  if (!targetChannelId) {
+  if (targetChannelId) {
+    // Verify supplied channelId belongs to this team and is an announcement channel
+    const { data: channel } = await db
+      .from('channels')
+      .select('id')
+      .eq('id', targetChannelId)
+      .eq('team_id', teamId)
+      .eq('channel_type', 'announcement')
+      .maybeSingle();
+
+    if (!channel) return 'Invalid announcement channel for this team.';
+  } else {
+    // Fall back to first announcement channel for the team
     const { data: channel } = await db
       .from('channels')
       .select('id')

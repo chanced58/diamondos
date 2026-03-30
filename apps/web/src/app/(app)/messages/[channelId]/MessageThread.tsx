@@ -16,7 +16,7 @@ type MessageRow = {
   user_profiles: { first_name: string; last_name: string } | null;
 };
 
-type MemberProfile = { firstName: string; lastName: string };
+type MemberProfile = { first_name: string; last_name: string };
 
 type Props = {
   channelId: string;
@@ -28,18 +28,14 @@ type Props = {
   isCoach: boolean;
 };
 
-function getInitials(profile: { first_name: string; last_name: string } | MemberProfile | null) {
+function getInitials(profile: MemberProfile | null) {
   if (!profile) return '?';
-  const first = 'first_name' in profile ? profile.first_name : profile.firstName;
-  const last  = 'last_name'  in profile ? profile.last_name  : profile.lastName;
-  return `${first?.[0] ?? ''}${last?.[0] ?? ''}`.toUpperCase();
+  return `${profile.first_name?.[0] ?? ''}${profile.last_name?.[0] ?? ''}`.toUpperCase();
 }
 
-function getFullName(profile: { first_name: string; last_name: string } | MemberProfile | null) {
+function getFullName(profile: MemberProfile | null) {
   if (!profile) return 'Unknown';
-  const first = 'first_name' in profile ? profile.first_name : profile.firstName;
-  const last  = 'last_name'  in profile ? profile.last_name  : profile.lastName;
-  return `${first} ${last}`;
+  return `${profile.first_name} ${profile.last_name}`;
 }
 
 export function MessageThread({
@@ -76,12 +72,7 @@ export function MessageThread({
           const profile = memberProfiles[newMsg.sender_id];
           setMessages((prev) => [
             ...prev,
-            {
-              ...newMsg,
-              user_profiles: profile
-                ? { first_name: profile.firstName, last_name: profile.lastName }
-                : null,
-            },
+            { ...newMsg, user_profiles: profile ?? null },
           ]);
         },
       )

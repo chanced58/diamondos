@@ -45,7 +45,7 @@ export default async function ChannelPage({
     .select('can_post')
     .eq('channel_id', params.channelId)
     .eq('user_id', user.id)
-    .single();
+    .maybeSingle();
 
   if (!myMembership) redirect('/messages');
 
@@ -83,14 +83,11 @@ export default async function ChannelPage({
     .eq('user_id', user.id);
 
   // Build member profiles map for Realtime incoming messages
-  const memberProfiles: Record<string, { firstName: string; lastName: string }> = {};
+  const memberProfiles: Record<string, { first_name: string; last_name: string }> = {};
   for (const m of channel.channel_members) {
     const profile = m.user_profiles as unknown as { first_name: string; last_name: string } | null;
     if (profile) {
-      memberProfiles[m.user_id] = {
-        firstName: profile.first_name,
-        lastName:  profile.last_name,
-      };
+      memberProfiles[m.user_id] = profile;
     }
   }
 
