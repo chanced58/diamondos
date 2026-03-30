@@ -5,3 +5,4 @@ export * from './pitching-stats';
 export * from './batting-stats';
 export * from './opponent-batting-stats';
 export * from './event-filters';
+export * from './game-history';
