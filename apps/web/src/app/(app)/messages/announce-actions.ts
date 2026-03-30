@@ -13,14 +13,16 @@ export async function postAnnouncementAction(
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated — please log in again.';
 
-  const teamId    = formData.get('teamId') as string;
-  const channelId = formData.get('channelId') as string;
+  const rawTeamId    = formData.get('teamId');
+  const rawChannelId = formData.get('channelId');
+  const rawBody      = formData.get('body');
 
-  if (!teamId) return 'Missing team ID.';
+  if (!rawTeamId || typeof rawTeamId !== 'string') return 'Missing team ID.';
+  const teamId = rawTeamId;
+  const channelId = typeof rawChannelId === 'string' ? rawChannelId : '';
 
-  const parsed = sendMessageSchema.safeParse({
-    body: (formData.get('body') as string)?.trim(),
-  });
+  if (typeof rawBody !== 'string') return 'Message body is required.';
+  const parsed = sendMessageSchema.safeParse({ body: rawBody.trim() });
   if (!parsed.success) return parsed.error.issues[0].message;
   const { body } = parsed.data;
 

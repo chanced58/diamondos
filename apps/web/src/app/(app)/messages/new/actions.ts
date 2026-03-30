@@ -55,15 +55,17 @@ export async function createChannelAction(_prevState: string | null | undefined,
 
   if (error) return `Failed to create channel: ${error.message}`;
 
-  // Add all team members with appropriate can_post
-  const { data: teamMembers } = await db
+  // Add all active team members with appropriate can_post
+  const { data: teamMembers, error: membersError } = await db
     .from('team_members')
     .select('user_id, role')
     .eq('team_id', teamId)
     .eq('is_active', true);
 
+  if (membersError) return `Failed to load team members: ${membersError.message}`;
+
   if (teamMembers && teamMembers.length > 0) {
-    await db.from('channel_members').insert(
+    const { error: insertError } = await db.from('channel_members').insert(
       teamMembers.map((m) => ({
         channel_id: channel.id,
         user_id:    m.user_id,
@@ -72,6 +74,7 @@ export async function createChannelAction(_prevState: string | null | undefined,
           : true,
       })),
     );
+    if (insertError) return `Failed to add members to channel: ${insertError.message}`;
   }
 
   revalidatePath('/messages', 'layout');

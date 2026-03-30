@@ -1,6 +1,6 @@
 import { View, Text, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { map } from 'rxjs';
 import { Q } from '@nozbe/watermelondb';
 import { withObservables } from '@nozbe/with-observables';
@@ -20,12 +20,14 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
   const { user } = useAuth();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
 
   const canPost = channel?.canPost ?? false;
 
   async function handleSend() {
     const body = text.trim();
-    if (!body || !channel || !user) return;
+    if (!body || !channel || !user || sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
 
     try {
@@ -41,6 +43,7 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
       console.warn('Failed to send message', err);
       Alert.alert('Send failed', 'Your message could not be sent. Please try again.');
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }
