@@ -45,7 +45,7 @@ export default async function ChannelPage({
     .select('can_post')
     .eq('channel_id', params.channelId)
     .eq('user_id', user.id)
-    .single();
+    .maybeSingle();
 
   if (!myMembership) redirect('/messages');
 

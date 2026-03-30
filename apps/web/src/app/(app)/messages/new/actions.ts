@@ -30,7 +30,7 @@ export async function createChannelAction(_prevState: string | null | undefined,
     .select('role')
     .eq('team_id', teamId)
     .eq('user_id', user.id)
-    .single();
+    .maybeSingle();
 
   const isCoach = isCoachRole(membership?.role ?? '');
   if (!isCoach) return 'Only coaches can create channels.';

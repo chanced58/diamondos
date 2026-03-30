@@ -16,7 +16,7 @@ export async function postEventAlert(
     .select('id')
     .eq('team_id', teamId)
     .eq('channel_type', 'announcement')
-    .single();
+    .maybeSingle();
 
   if (!channel) return;
 
