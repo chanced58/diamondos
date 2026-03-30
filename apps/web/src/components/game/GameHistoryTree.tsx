@@ -95,7 +95,6 @@ function AtBatSection({
   onToggle: (key: string) => void;
 }) {
   // Interleave pitches and mid-at-bat events by sequence number
-  const allItems: { type: 'pitch'; data: PitchNode }[] | { type: 'mid'; data: HistoryEventNode }[] = [];
   const pitchItems = atBat.pitches.map((p) => ({ type: 'pitch' as const, data: p, seq: p.event.sequenceNumber }));
   const midItems = atBat.midAtBatEvents.map((m) => ({ type: 'mid' as const, data: m, seq: m.event.sequenceNumber }));
   const merged = [...pitchItems, ...midItems].sort((a, b) => a.seq - b.seq);
