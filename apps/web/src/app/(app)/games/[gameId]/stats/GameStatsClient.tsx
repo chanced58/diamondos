@@ -289,7 +289,7 @@ function PitchingSummary({ rows }: { rows: PitchingStats[] }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-200">
-            {['Pitcher', 'IP', 'H', 'R', 'BB', 'K', 'HBP', 'WP', 'PC', 'Strike%', '30CNT', 'ERA'].map((h) => (
+            {['Pitcher', 'IP', 'H', 'R', 'ER', 'BB', 'K', 'HBP', 'WP', 'PC', 'Strike%', '30CNT', 'ERA'].map((h) => (
               <th key={h} className={`px-3 py-2 font-semibold text-gray-600 ${h === 'Pitcher' ? 'text-left' : 'text-center'}`}
                 title={h === '30CNT' ? 'At-bats starting with 3 straight balls' : undefined}
               >{h}</th>
@@ -303,6 +303,7 @@ function PitchingSummary({ rows }: { rows: PitchingStats[] }) {
               <td className="px-3 py-2 text-center font-mono">{formatInningsPitched(s.inningsPitchedOuts)}</td>
               <td className="px-3 py-2 text-center">{s.hitsAllowed}</td>
               <td className="px-3 py-2 text-center">{s.runsAllowed}</td>
+              <td className="px-3 py-2 text-center">{s.earnedRunsAllowed}</td>
               <td className="px-3 py-2 text-center">{s.walksAllowed}</td>
               <td className="px-3 py-2 text-center">{s.strikeouts}</td>
               <td className="px-3 py-2 text-center">{s.hitBatters}</td>
@@ -319,13 +320,13 @@ function PitchingSummary({ rows }: { rows: PitchingStats[] }) {
             {(() => {
               const t = sorted.reduce((acc, s) => ({
                 ip: acc.ip + s.inningsPitchedOuts, h: acc.h + s.hitsAllowed,
-                r: acc.r + s.runsAllowed, bb: acc.bb + s.walksAllowed,
+                r: acc.r + s.runsAllowed, er: acc.er + s.earnedRunsAllowed, bb: acc.bb + s.walksAllowed,
                 k: acc.k + s.strikeouts, hbp: acc.hbp + s.hitBatters,
                 wp: acc.wp + s.wildPitches, pc: acc.pc + s.totalPitches,
                 str: acc.str + s.strikes, cnt30: acc.cnt30 + s.threeZeroCountPAs,
-              }), { ip: 0, h: 0, r: 0, bb: 0, k: 0, hbp: 0, wp: 0, pc: 0, str: 0, cnt30: 0 });
+              }), { ip: 0, h: 0, r: 0, er: 0, bb: 0, k: 0, hbp: 0, wp: 0, pc: 0, str: 0, cnt30: 0 });
               const ipDec = t.ip / 3;
-              const era = ipDec > 0 ? (t.r * 7) / ipDec : NaN;
+              const era = ipDec > 0 ? (t.er * 7) / ipDec : NaN;
               const strPct = t.pc > 0 ? t.str / t.pc : NaN;
               return (
                 <>
@@ -333,6 +334,7 @@ function PitchingSummary({ rows }: { rows: PitchingStats[] }) {
                   <td className="px-3 py-2 text-center font-mono">{formatInningsPitched(t.ip)}</td>
                   <td className="px-3 py-2 text-center">{t.h}</td>
                   <td className="px-3 py-2 text-center">{t.r}</td>
+                  <td className="px-3 py-2 text-center">{t.er}</td>
                   <td className="px-3 py-2 text-center">{t.bb}</td>
                   <td className="px-3 py-2 text-center">{t.k}</td>
                   <td className="px-3 py-2 text-center">{t.hbp}</td>

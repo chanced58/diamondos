@@ -37,12 +37,13 @@ export interface PitchingStats {
 
   hitsAllowed: number;
   runsAllowed: number;
+  earnedRunsAllowed: number;
   walksAllowed: number;
   strikeouts: number;
   hitBatters: number;
   wildPitches: number;
 
-  /** (runsAllowed * 7) / inningsPitched; Infinity when inningsPitched === 0 */
+  /** (earnedRunsAllowed * 7) / inningsPitched; Infinity when inningsPitched === 0 */
   era: number;
   /** (walksAllowed + hitsAllowed) / inningsPitched */
   whip: number;

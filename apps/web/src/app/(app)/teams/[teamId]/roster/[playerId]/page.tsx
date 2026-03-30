@@ -256,6 +256,8 @@ export default async function PlayerPage({
               { label: 'BB',    value: pitchingStats.walksAllowed.toString() },
               { label: 'H',     value: pitchingStats.hitsAllowed.toString() },
               { label: 'HBP',   value: pitchingStats.hitBatters.toString() },
+              { label: 'R',     value: pitchingStats.runsAllowed.toString() },
+              { label: 'ER',    value: pitchingStats.earnedRunsAllowed.toString() },
               { label: 'WP',    value: pitchingStats.wildPitches.toString() },
               { label: 'STR%',  value: `${(pitchingStats.strikePercentage * 100).toFixed(1)}%` },
               { label: 'FPS%',  value: `${(pitchingStats.firstPitchStrikePercentage * 100).toFixed(1)}%` },
