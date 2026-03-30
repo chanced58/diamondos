@@ -127,7 +127,7 @@ export function deriveBattingStats(
     function clearBases() { r1 = null; r2 = null; r3 = null; }
 
     function scoreRunner(runnerId: string | null) {
-      if (runnerId && statsMap.has(runnerId)) {
+      if (runnerId) {
         getStats(runnerId).runs += 1;
       }
     }
@@ -200,7 +200,7 @@ export function deriveBattingStats(
               || (bases === 1 ? r2 : null);
           // Keep non-scoring runners that didn't advance past their base
           if (bases === 1) {
-            r3 = r2 ?? r3; // r2 advances to 3rd, or r3 stays if didn't score
+            r3 = r2 ?? null; // r2 advances to 3rd; r3 already scored so clear it
             r2 = r1;       // r1 advances to 2nd
             r1 = batterId;
           } else if (bases === 2) {

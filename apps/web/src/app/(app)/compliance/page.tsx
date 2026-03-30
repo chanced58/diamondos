@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
-import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, weAreHome } from '@baseball/shared';
+import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, weAreHome, filterResetAndReverted } from '@baseball/shared';
 import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
 import { PitchingStatsTable } from './PitchingStatsTable';
 import { BattingStatsTable } from './BattingStatsTable';
@@ -33,6 +33,10 @@ const RELEVANT_EVENT_TYPES = [
   'field_error',
   'stolen_base',
   'caught_stealing',
+  'baserunner_advance',
+  'substitution',
+  'game_reset',
+  'pitch_reverted',
 ] as const;
 
 export default async function CompliancePage({
@@ -122,6 +126,10 @@ export default async function CompliancePage({
     for (const e of events ?? []) rawEvents.push(e);
   }
 
+  // Filter out reverted/reset events per game
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const filteredEvents: any[] = filterResetAndReverted(rawEvents) as any[];
+
   // Fetch ALL players (not just active) so deactivated players who
   // participated in past games still resolve their names in stats.
   const { data: players } = await db
@@ -141,13 +149,13 @@ export default async function CompliancePage({
   const teamPlayerIds = new Set(playerList.map((p) => p.id));
 
   // Compute pitching stats
-  const pitchingStatsMap = derivePitchingStats(rawEvents, playerList);
+  const pitchingStatsMap = derivePitchingStats(filteredEvents, playerList);
   const allPitchingStats: PitchingStats[] = Array.from(pitchingStatsMap.values())
     .filter((s) => teamPlayerIds.has(s.playerId))
     .sort((a, b) => b.inningsPitchedOuts - a.inningsPitchedOuts);
 
   // Compute batting stats
-  const battingStatsMap = deriveBattingStats(rawEvents, playerList);
+  const battingStatsMap = deriveBattingStats(filteredEvents, playerList);
   const allBattingStats: BattingStats[] = Array.from(battingStatsMap.values())
     .filter((s) => teamPlayerIds.has(s.playerId))
     .sort((a, b) => b.plateAppearances - a.plateAppearances);
@@ -216,7 +224,7 @@ export default async function CompliancePage({
       );
 
       // Compute opponent batting across all games
-      const oppBattingRows = computeOpponentBatting(rawEvents, oppPlayerNameMap);
+      const oppBattingRows = computeOpponentBatting(filteredEvents, oppPlayerNameMap);
 
       // Compute opponent pitching across all games
       const oppPlayerList = oppPlayers.map((p) => ({
@@ -224,7 +232,7 @@ export default async function CompliancePage({
         firstName: p.first_name,
         lastName: p.last_name,
       }));
-      const oppPitchingMap = derivePitchingStats(rawEvents, oppPlayerList);
+      const oppPitchingMap = derivePitchingStats(filteredEvents, oppPlayerList);
       const oppPlayerIds = new Set(oppPlayers.map((p) => p.id));
       const oppPitchingRows: PitchingStats[] = Array.from(oppPitchingMap.values())
         .filter((s) => oppPlayerIds.has(s.playerId) && s.totalPitches > 0);

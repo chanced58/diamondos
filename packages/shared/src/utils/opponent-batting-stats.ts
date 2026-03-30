@@ -43,153 +43,169 @@ export function computeOpponentBatting(
     return stats.get(id)!;
   }
 
-  // ── Base-runner tracking (opponent player IDs) for run attribution ──────
-  let r1: string | null = null;
-  let r2: string | null = null;
-  let r3: string | null = null;
-
-  function clearBases() { r1 = null; r2 = null; r3 = null; }
-
-  function scoreRunner(runnerId: string | null) {
-    if (runnerId && oppPlayerNameMap.has(runnerId)) {
-      get(runnerId).r++;
-    }
-  }
-
-  function forceAdvance(batterId: string) {
-    if (r1 && r2 && r3) scoreRunner(r3);
-    if (r1 && r2) r3 = r2;
-    if (r1) r2 = r1;
-    r1 = batterId;
-  }
-
+  // Group events by game_id to prevent base-runner state bleeding across games
+  const gameMap = new Map<string, Record<string, unknown>[]>();
   for (const event of events) {
-    const etype = event.event_type as string;
-    const payload = (event.payload ?? {}) as Record<string, unknown>;
+    const gameId = event.game_id as string;
+    if (!gameMap.has(gameId)) gameMap.set(gameId, []);
+    gameMap.get(gameId)!.push(event);
+  }
 
-    if (etype === 'inning_change') {
-      clearBases();
-      continue;
+  for (const gameEvents of gameMap.values()) {
+    gameEvents.sort((a, b) => {
+      const aSeq = a.sequence_number as number;
+      const bSeq = b.sequence_number as number;
+      return aSeq - bSeq;
+    });
+
+    // ── Base-runner tracking (opponent player IDs) — reset per game ────────
+    let r1: string | null = null;
+    let r2: string | null = null;
+    let r3: string | null = null;
+
+    function clearBases() { r1 = null; r2 = null; r3 = null; }
+
+    function scoreRunner(runnerId: string | null) {
+      if (runnerId && oppPlayerNameMap.has(runnerId)) {
+        get(runnerId).r++;
+      }
     }
 
-    // Resolve opponent batter: check opponentBatterId first, then batterId if in map
-    const batterId =
-      (payload.opponentBatterId as string | undefined) ??
-      (oppPlayerNameMap.has(payload.batterId as string) ? (payload.batterId as string) : undefined);
-
-    // Handle events without an opponent batter
-    if (!batterId) {
-      if (etype === 'score') {
-        const scoringId = payload.scoringPlayerId as string | undefined;
-        if (scoringId && oppPlayerNameMap.has(scoringId)) {
-          scoreRunner(scoringId);
-          if (r3 === scoringId) r3 = null;
-          else if (r2 === scoringId) r2 = null;
-          else if (r1 === scoringId) r1 = null;
-        }
-      }
-      if (etype === 'stolen_base') {
-        const runnerId = payload.runnerId as string | undefined;
-        const toBase = payload.toBase as number | undefined;
-        if (runnerId && oppPlayerNameMap.has(runnerId)) {
-          get(runnerId).sb++;
-          if (r1 === runnerId) r1 = null;
-          else if (r2 === runnerId) r2 = null;
-          else if (r3 === runnerId) r3 = null;
-          if (toBase === 4) scoreRunner(runnerId);
-          else if (toBase === 3) r3 = runnerId;
-          else if (toBase === 2) r2 = runnerId;
-        }
-      }
-      if (etype === 'caught_stealing') {
-        const runnerId = payload.runnerId as string | undefined;
-        if (runnerId && oppPlayerNameMap.has(runnerId)) {
-          get(runnerId).cs++;
-          if (r1 === runnerId) r1 = null;
-          else if (r2 === runnerId) r2 = null;
-          else if (r3 === runnerId) r3 = null;
-        }
-      }
-      if (etype === 'baserunner_advance') {
-        const runnerId = payload.runnerId as string | undefined;
-        const toBase = payload.toBase as number | undefined;
-        if (runnerId && oppPlayerNameMap.has(runnerId) && toBase) {
-          if (r1 === runnerId) r1 = null;
-          else if (r2 === runnerId) r2 = null;
-          else if (r3 === runnerId) r3 = null;
-          if (toBase === 4) scoreRunner(runnerId);
-          else if (toBase === 3) r3 = runnerId;
-          else if (toBase === 2) r2 = runnerId;
-          else if (toBase === 1) r1 = runnerId;
-        }
-      }
-      if (etype === 'substitution') {
-        const inId = payload.inPlayerId as string | undefined;
-        const outId = payload.outPlayerId as string | undefined;
-        if (inId && outId) {
-          if (r1 === outId) r1 = inId;
-          if (r2 === outId) r2 = inId;
-          if (r3 === outId) r3 = inId;
-        }
-      }
-      continue;
+    function forceAdvance(batterId: string) {
+      if (r1 && r2 && r3) scoreRunner(r3);
+      if (r1 && r2) r3 = r2;
+      if (r1) r2 = r1;
+      r1 = batterId;
     }
 
-    if (etype === 'hit') {
-      const s = get(batterId);
-      s.pa++; s.ab++; s.h++;
-      s.rbi += (payload.rbis as number) ?? 0;
-      const hitType = payload.hitType as string;
-      if (hitType === 'double') s.doubles++;
-      else if (hitType === 'triple') s.triples++;
-      else if (hitType === 'home_run') s.hr++;
+    for (const event of gameEvents) {
+      const etype = event.event_type as string;
+      const payload = (event.payload ?? {}) as Record<string, unknown>;
 
-      const bases = hitType === 'home_run' ? 4
-        : hitType === 'triple' ? 3
-        : hitType === 'double' ? 2
-        : 1;
-
-      if (bases === 4) {
-        scoreRunner(r3); scoreRunner(r2); scoreRunner(r1);
-        scoreRunner(batterId);
+      if (etype === 'inning_change') {
         clearBases();
-      } else {
-        if (r3) scoreRunner(r3);
-        if (r2 && 2 + bases >= 4) scoreRunner(r2);
-        if (r1 && 1 + bases >= 4) scoreRunner(r1);
-        if (bases === 1) {
-          r3 = r2 ?? r3; r2 = r1; r1 = batterId;
-        } else if (bases === 2) {
-          r3 = r1 ?? null; r2 = batterId; r1 = null;
-        } else if (bases === 3) {
-          r3 = batterId; r2 = null; r1 = null;
-        }
+        continue;
       }
-    } else if (etype === 'out' || etype === 'double_play' || etype === 'triple_play') {
-      const s = get(batterId);
-      s.pa++; s.ab++;
-    } else if (etype === 'strikeout') {
-      const s = get(batterId);
-      s.pa++; s.ab++; s.k++;
-    } else if (etype === 'walk') {
-      const s = get(batterId);
-      s.pa++; s.bb++;
-      forceAdvance(batterId);
-    } else if (etype === 'hit_by_pitch') {
-      const s = get(batterId);
-      s.pa++; s.hbp++;
-      forceAdvance(batterId);
-    } else if (etype === 'sacrifice_fly') {
-      const s = get(batterId);
-      s.pa++; s.sf++;
-      if (r3) { scoreRunner(r3); r3 = null; }
-    } else if (etype === 'sacrifice_bunt') {
-      const s = get(batterId);
-      s.pa++; s.sh++;
-    } else if (etype === 'field_error') {
-      const s = get(batterId);
-      s.pa++; s.ab++;
-      forceAdvance(batterId);
+
+      // Resolve opponent batter: check opponentBatterId first, then batterId if in map
+      const batterId =
+        (payload.opponentBatterId as string | undefined) ??
+        (oppPlayerNameMap.has(payload.batterId as string) ? (payload.batterId as string) : undefined);
+
+      // Handle events without an opponent batter
+      if (!batterId) {
+        if (etype === 'score') {
+          const scoringId = payload.scoringPlayerId as string | undefined;
+          if (scoringId && oppPlayerNameMap.has(scoringId)) {
+            scoreRunner(scoringId);
+            if (r3 === scoringId) r3 = null;
+            else if (r2 === scoringId) r2 = null;
+            else if (r1 === scoringId) r1 = null;
+          }
+        }
+        if (etype === 'stolen_base') {
+          const runnerId = payload.runnerId as string | undefined;
+          const toBase = payload.toBase as number | undefined;
+          if (runnerId && oppPlayerNameMap.has(runnerId)) {
+            get(runnerId).sb++;
+            if (r1 === runnerId) r1 = null;
+            else if (r2 === runnerId) r2 = null;
+            else if (r3 === runnerId) r3 = null;
+            if (toBase === 4) scoreRunner(runnerId);
+            else if (toBase === 3) r3 = runnerId;
+            else if (toBase === 2) r2 = runnerId;
+          }
+        }
+        if (etype === 'caught_stealing') {
+          const runnerId = payload.runnerId as string | undefined;
+          if (runnerId && oppPlayerNameMap.has(runnerId)) {
+            get(runnerId).cs++;
+            if (r1 === runnerId) r1 = null;
+            else if (r2 === runnerId) r2 = null;
+            else if (r3 === runnerId) r3 = null;
+          }
+        }
+        if (etype === 'baserunner_advance') {
+          const runnerId = payload.runnerId as string | undefined;
+          const toBase = payload.toBase as number | undefined;
+          if (runnerId && oppPlayerNameMap.has(runnerId) && toBase) {
+            if (r1 === runnerId) r1 = null;
+            else if (r2 === runnerId) r2 = null;
+            else if (r3 === runnerId) r3 = null;
+            if (toBase === 4) scoreRunner(runnerId);
+            else if (toBase === 3) r3 = runnerId;
+            else if (toBase === 2) r2 = runnerId;
+            else if (toBase === 1) r1 = runnerId;
+          }
+        }
+        if (etype === 'substitution') {
+          const inId = payload.inPlayerId as string | undefined;
+          const outId = payload.outPlayerId as string | undefined;
+          if (inId && outId) {
+            if (r1 === outId) r1 = inId;
+            if (r2 === outId) r2 = inId;
+            if (r3 === outId) r3 = inId;
+          }
+        }
+        continue;
+      }
+
+      if (etype === 'hit') {
+        const s = get(batterId);
+        s.pa++; s.ab++; s.h++;
+        s.rbi += (payload.rbis as number) ?? 0;
+        const hitType = payload.hitType as string;
+        if (hitType === 'double') s.doubles++;
+        else if (hitType === 'triple') s.triples++;
+        else if (hitType === 'home_run') s.hr++;
+
+        const bases = hitType === 'home_run' ? 4
+          : hitType === 'triple' ? 3
+          : hitType === 'double' ? 2
+          : 1;
+
+        if (bases === 4) {
+          scoreRunner(r3); scoreRunner(r2); scoreRunner(r1);
+          scoreRunner(batterId);
+          clearBases();
+        } else {
+          if (r3) scoreRunner(r3);
+          if (r2 && 2 + bases >= 4) scoreRunner(r2);
+          if (r1 && 1 + bases >= 4) scoreRunner(r1);
+          if (bases === 1) {
+            r3 = r2 ?? null; r2 = r1; r1 = batterId;
+          } else if (bases === 2) {
+            r3 = r1 ?? null; r2 = batterId; r1 = null;
+          } else if (bases === 3) {
+            r3 = batterId; r2 = null; r1 = null;
+          }
+        }
+      } else if (etype === 'out' || etype === 'double_play' || etype === 'triple_play') {
+        const s = get(batterId);
+        s.pa++; s.ab++;
+      } else if (etype === 'strikeout') {
+        const s = get(batterId);
+        s.pa++; s.ab++; s.k++;
+      } else if (etype === 'walk') {
+        const s = get(batterId);
+        s.pa++; s.bb++;
+        forceAdvance(batterId);
+      } else if (etype === 'hit_by_pitch') {
+        const s = get(batterId);
+        s.pa++; s.hbp++;
+        forceAdvance(batterId);
+      } else if (etype === 'sacrifice_fly') {
+        const s = get(batterId);
+        s.pa++; s.sf++;
+        if (r3) { scoreRunner(r3); r3 = null; }
+      } else if (etype === 'sacrifice_bunt') {
+        const s = get(batterId);
+        s.pa++; s.sh++;
+      } else if (etype === 'field_error') {
+        const s = get(batterId);
+        s.pa++; s.ab++;
+        forceAdvance(batterId);
+      }
     }
   }
 
