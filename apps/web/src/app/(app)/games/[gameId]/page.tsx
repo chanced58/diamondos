@@ -157,7 +157,7 @@ export default async function GameDetailPage({
                 {isHome ? 'Us' : game.opponent_name}
               </p>
               <p className="text-5xl font-bold text-gray-900">
-                {isHome ? game.home_score : game.away_score}
+                {game.home_score}
               </p>
             </div>
             <div className="text-2xl text-gray-300 font-light">—</div>
@@ -166,7 +166,7 @@ export default async function GameDetailPage({
                 {isHome ? game.opponent_name : 'Us'}
               </p>
               <p className="text-5xl font-bold text-gray-900">
-                {isHome ? game.away_score : game.home_score}
+                {game.away_score}
               </p>
             </div>
           </div>
