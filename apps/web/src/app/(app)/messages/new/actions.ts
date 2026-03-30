@@ -4,8 +4,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-
-const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
+import { isCoachRole } from '@baseball/shared';
 
 export async function createChannelAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
@@ -33,7 +32,7 @@ export async function createChannelAction(_prevState: string | null | undefined,
     .eq('user_id', user.id)
     .single();
 
-  const isCoach = COACH_ROLES.includes(membership?.role ?? '');
+  const isCoach = isCoachRole(membership?.role ?? '');
   if (!isCoach) return 'Only coaches can create channels.';
 
   // Create channel
@@ -63,7 +62,7 @@ export async function createChannelAction(_prevState: string | null | undefined,
         channel_id: channel.id,
         user_id:    m.user_id,
         can_post:   channelType === 'announcement'
-          ? COACH_ROLES.includes(m.role)
+          ? isCoachRole(m.role)
           : true,
       })),
     );

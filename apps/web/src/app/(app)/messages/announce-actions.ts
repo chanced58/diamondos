@@ -3,8 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-
-const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
+import { isCoachRole } from '@baseball/shared';
 
 export async function postAnnouncementAction(
   _prevState: string | null | undefined,
@@ -34,7 +33,7 @@ export async function postAnnouncementAction(
     .eq('is_active', true)
     .maybeSingle();
 
-  if (!membership || !COACH_ROLES.includes(membership.role)) {
+  if (!membership || !isCoachRole(membership.role)) {
     return 'Only coaches can post announcements.';
   }
 
