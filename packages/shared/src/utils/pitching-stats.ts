@@ -145,7 +145,7 @@ export function derivePitchingStats(
     }
     function forceAdvanceRunners(placeBatter: boolean) {
       if (r1 && r2 && r3) addRunToPitcher(1); // bases loaded → runner on 3rd scores
-      if (r1 && r2) r3 = r2 || r3;
+      if (r1 && r2) r3 = true;
       if (r1) r2 = true;
       if (placeBatter) r1 = true;
     }
@@ -345,7 +345,7 @@ export function derivePitchingStats(
           if (r2 && 2 + bases >= 4) runs++;
           if (r1 && 1 + bases >= 4) runs++;
           addRunToPitcher(runs);
-          if (bases === 1) { r3 = r2 || r3; r2 = r1; r1 = true; }
+          if (bases === 1) { r3 = r2; r2 = r1; r1 = true; }
           else if (bases === 2) { r3 = r1; r2 = true; r1 = false; }
           else if (bases === 3) { r3 = true; r2 = false; r1 = false; }
         }
