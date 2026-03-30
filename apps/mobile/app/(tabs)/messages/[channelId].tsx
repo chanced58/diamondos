@@ -37,7 +37,8 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
       });
       if (error) throw error;
       setText('');
-    } catch {
+    } catch (err) {
+      console.warn('Failed to send message', err);
       Alert.alert('Send failed', 'Your message could not be sent. Please try again.');
     } finally {
       setSending(false);

@@ -42,9 +42,21 @@ export async function postAnnouncementAction(
     return 'Only coaches can post announcements.';
   }
 
-  // Resolve target channel — use provided channelId or fall back to first announcement channel
+  // Resolve and validate target channel
   let targetChannelId = channelId;
-  if (!targetChannelId) {
+  if (targetChannelId) {
+    // Verify supplied channelId belongs to this team and is an announcement channel
+    const { data: channel } = await db
+      .from('channels')
+      .select('id')
+      .eq('id', targetChannelId)
+      .eq('team_id', teamId)
+      .eq('channel_type', 'announcement')
+      .maybeSingle();
+
+    if (!channel) return 'Invalid announcement channel for this team.';
+  } else {
+    // Fall back to first announcement channel for the team
     const { data: channel } = await db
       .from('channels')
       .select('id')

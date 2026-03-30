@@ -34,6 +34,7 @@ export async function createChannelAction(_prevState: string | null | undefined,
     .select('role')
     .eq('team_id', teamId)
     .eq('user_id', user.id)
+    .eq('is_active', true)
     .maybeSingle();
 
   const isCoach = isCoachRole(membership?.role ?? '');
@@ -58,7 +59,8 @@ export async function createChannelAction(_prevState: string | null | undefined,
   const { data: teamMembers } = await db
     .from('team_members')
     .select('user_id, role')
-    .eq('team_id', teamId);
+    .eq('team_id', teamId)
+    .eq('is_active', true);
 
   if (teamMembers && teamMembers.length > 0) {
     await db.from('channel_members').insert(
