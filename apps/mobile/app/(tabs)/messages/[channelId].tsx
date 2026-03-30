@@ -1,6 +1,7 @@
-import { View, Text, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { map } from 'rxjs';
 import { Q } from '@nozbe/watermelondb';
 import { withObservables } from '@nozbe/with-observables';
 import { database } from '../../../src/db';
@@ -23,18 +24,24 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
   const canPost = channel?.canPost ?? false;
 
   async function handleSend() {
-    if (!text.trim() || !channel || !user) return;
+    const body = text.trim();
+    if (!body || !channel || !user) return;
     setSending(true);
-    setText('');
 
-    const supabase = getSupabaseClient();
-    await supabase.from('messages').insert({
-      channel_id: channel.remoteId,
-      sender_id: user.id,
-      body: text.trim(),
-    });
-
-    setSending(false);
+    try {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.from('messages').insert({
+        channel_id: channel.remoteId,
+        sender_id: user.id,
+        body,
+      });
+      if (error) throw error;
+      setText('');
+    } catch {
+      Alert.alert('Send failed', 'Your message could not be sent. Please try again.');
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -45,7 +52,7 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
       <Stack.Screen options={{ title: channel?.name ?? 'Channel', headerShown: true }} />
 
       <FlatList
-        data={[...messages].reverse()}
+        data={messages}
         keyExtractor={(m) => m.id}
         inverted
         contentContainerStyle={{ padding: 16 }}
@@ -88,6 +95,7 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
             }`}
             onPress={handleSend}
             disabled={!text.trim() || sending}
+            accessibilityLabel="Send message"
           >
             <Text className="text-white font-bold">→</Text>
           </TouchableOpacity>
@@ -101,8 +109,9 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
   );
 }
 
-function ChannelThread({ channelRemoteId }: { channelRemoteId: string }) {
-  const Enhanced = withObservables(['channelRemoteId'], ({ channelRemoteId }: { channelRemoteId: string }) => ({
+const EnhancedMessageThread = withObservables(
+  ['channelRemoteId'],
+  ({ channelRemoteId }: { channelRemoteId: string }) => ({
     messages: database
       .get<Message>('messages')
       .query(
@@ -115,15 +124,13 @@ function ChannelThread({ channelRemoteId }: { channelRemoteId: string }) {
       .get<Channel>('channels')
       .query(Q.where('remote_id', channelRemoteId))
       .observe()
-      .pipe(require('rxjs').map((channels: Channel[]) => channels[0])),
-  }))((props: { messages: Message[]; channel: Channel | undefined }) => (
-    <MessageThread messages={props.messages} channel={props.channel} />
-  ));
-
-  return <Enhanced channelRemoteId={channelRemoteId} />;
-}
+      .pipe(map((channels: Channel[]) => channels[0])),
+  }),
+)((props: { messages: Message[]; channel: Channel | undefined }) => (
+  <MessageThread messages={props.messages} channel={props.channel} />
+));
 
 export default function ChannelScreen() {
   const { channelId } = useLocalSearchParams<{ channelId: string }>();
-  return <ChannelThread channelRemoteId={channelId} />;
+  return <EnhancedMessageThread channelRemoteId={channelId} />;
 }
