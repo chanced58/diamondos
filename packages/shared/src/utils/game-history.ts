@@ -320,7 +320,7 @@ export function formatEventLabel(event: GameEvent, nameMap: Map<string, string>)
 
 // ── Pitch Reverted Filter ───────────────────────────────────────────────────
 
-export function applyPitchReverted(events: GameEvent[]): GameEvent[] {
+export function applyPitchRevertedTyped(events: GameEvent[]): GameEvent[] {
   const result: GameEvent[] = [];
   for (const event of events) {
     if (event.eventType === EventType.PITCH_REVERTED) {

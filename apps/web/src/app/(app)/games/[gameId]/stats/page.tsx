@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
-import { deriveBattingStats, derivePitchingStats, weAreHome, computeOpponentBatting } from '@baseball/shared';
+import { deriveBattingStats, derivePitchingStats, weAreHome, computeOpponentBatting, applyPitchReverted } from '@baseball/shared';
 import type { BattingStats, PitchingStats } from '@baseball/shared';
 import { GameStatsClient } from './GameStatsClient';
 import type { FieldingStatRow, LineScoreData } from './GameStatsClient';
@@ -25,23 +25,6 @@ const ABBR_TO_NUM: Record<string, number> = {
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function applyPitchReverted(events: Record<string, unknown>[]): Record<string, unknown>[] {
-  // Mirrors the effectiveEventRows logic in ScoringBoard: each pitch_reverted event
-  // trims the list back to sequence numbers <= revertToSequenceNumber.
-  const result: Record<string, unknown>[] = [];
-  for (const event of events) {
-    if ((event.event_type as string) === 'pitch_reverted') {
-      const payload = (event.payload ?? {}) as Record<string, unknown>;
-      const keepUntilSeq = payload.revertToSequenceNumber as number;
-      result.splice(0, result.length, ...result.filter((e) => (e.sequence_number as number) <= keepUntilSeq));
-      // pitch_reverted marker itself is not added
-    } else {
-      result.push(event);
-    }
-  }
-  return result;
-}
 
 function hitBases(hitType: string): number {
   switch (hitType) {

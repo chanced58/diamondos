@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
-import { weAreHome, buildGameHistoryTree, applyPitchReverted } from '@baseball/shared';
+import { weAreHome, buildGameHistoryTree, applyPitchRevertedTyped } from '@baseball/shared';
 import type { GameEvent, EventType } from '@baseball/shared';
 import { GameHistoryTree } from '@/components/game/GameHistoryTree';
 
@@ -143,7 +143,7 @@ export default async function GameHistoryPage({
     syncedAt: e.synced_at as string | undefined,
   }));
 
-  const effectiveEvents = applyPitchReverted(gameEvents);
+  const effectiveEvents = applyPitchRevertedTyped(gameEvents);
   const tree = buildGameHistoryTree(effectiveEvents, playerNameMap);
   const isHome = weAreHome(game.location_type, game.neutral_home_team);
 
