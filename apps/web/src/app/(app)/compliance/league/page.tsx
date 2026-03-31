@@ -53,8 +53,17 @@ export default async function LeagueStatsPage({
 
   // Get all teams in the league
   const teamIds = await getLeagueTeamIds(db, league.id);
+  if (teamIds.length === 0) {
+    return (
+      <div className="p-8">
+        <h1 className="text-2xl font-bold text-gray-900">{league.name} Stats</h1>
+        <p className="text-gray-500 mt-2">No teams in this league yet.</p>
+      </div>
+    );
+  }
 
-  // Get all completed/in-progress games across all league teams
+  // Include in_progress so live player stats update during games;
+  // this page shows individual player stats, not W-L-T standings
   const { data: gamesData } = await db
     .from('games')
     .select('id, team_id')

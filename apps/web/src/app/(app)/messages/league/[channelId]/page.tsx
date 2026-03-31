@@ -63,7 +63,7 @@ export default async function LeagueChannelPage({
     .eq('league_channel_id', params.channelId);
 
   // Fetch most recent 50 messages (descending) then reverse for oldest→newest display
-  const { data: messagesDesc } = await db
+  const { data: messagesDesc, error: messagesError } = await db
     .from('league_messages')
     .select(`
       id, body, sender_id, created_at, edited_at, is_pinned,
@@ -73,6 +73,11 @@ export default async function LeagueChannelPage({
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .limit(50);
+
+  if (messagesError) {
+    console.error(`Failed to fetch messages for league channel ${params.channelId}:`, messagesError);
+    redirect('/messages');
+  }
   const messages = (messagesDesc ?? []).reverse();
 
   // Mark channel as read

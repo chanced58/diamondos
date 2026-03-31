@@ -49,18 +49,19 @@ export default async function LeaguePage(): Promise<JSX.Element | null> {
 
   // Build standings from completed games
   const teamIds = teams.map((t) => t.team_id);
-  const { data: completedGames } = await db
+  const { data: completedGames, error: gamesError } = await db
     .from('games')
     .select('team_id, home_score, away_score, location_type, neutral_home_team, status')
     .in('team_id', teamIds)
     .eq('status', 'completed');
+  if (gamesError) throw new Error(`Failed to fetch league games: ${gamesError.message}`);
 
   type TeamRecord = { wins: number; losses: number; ties: number };
   const records = new Map<string, TeamRecord>();
   for (const tid of teamIds) {
     records.set(tid, { wins: 0, losses: 0, ties: 0 });
   }
-  for (const g of completedGames ?? []) {
+  for (const g of completedGames) {
     const rec = records.get(g.team_id);
     if (!rec) continue;
     const isHome = weAreHome(g.location_type, g.neutral_home_team);
@@ -90,7 +91,7 @@ export default async function LeaguePage(): Promise<JSX.Element | null> {
             <p className="text-gray-500 mt-1">{league.description}</p>
           )}
         </div>
-        {access.isLeagueStaff && (
+        {access.isLeagueAdmin && (
           <Link
             href="/league/admin"
             className="text-sm font-medium bg-brand-700 text-white px-4 py-2 rounded-lg hover:bg-brand-800 transition-colors"

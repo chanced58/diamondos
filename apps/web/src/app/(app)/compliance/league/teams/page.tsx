@@ -51,6 +51,15 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
   const leagueTeams = await getLeagueTeams(db, league.id);
   const teamIds = leagueTeams.map((t) => t.team_id);
 
+  if (teamIds.length === 0) {
+    return (
+      <div className="p-8">
+        <h1 className="text-2xl font-bold text-gray-900">Team Comparison</h1>
+        <p className="text-gray-500 mt-2">No teams in this league yet.</p>
+      </div>
+    );
+  }
+
   // Get all completed games for all league teams (exclude in_progress to avoid corrupting W-L-T)
   const { data: allGames } = await db
     .from('games')

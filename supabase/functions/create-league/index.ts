@@ -52,6 +52,13 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  if (body === null || typeof body !== 'object') {
+    return new Response(JSON.stringify({ error: 'Request body must be a JSON object' }), {
+      status: 400,
+      headers: corsHeaders,
+    });
+  }
+
   const { name, description, stateCode } = body as Record<string, unknown>;
 
   if (typeof name !== 'string' || !name.trim()) {

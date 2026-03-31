@@ -105,18 +105,23 @@ export function LeagueMessageThread({
     setSending(true);
     setSendError(null);
 
-    const { error } = await supabase.from('league_messages').insert({
-      league_channel_id: channelId,
-      sender_id:  currentUserId,
-      body,
-    });
+    try {
+      const { error } = await supabase.from('league_messages').insert({
+        league_channel_id: channelId,
+        sender_id:  currentUserId,
+        body,
+      });
 
-    if (error) {
-      setSendError(error.message);
-    } else {
-      setDraft('');
+      if (error) {
+        setSendError(error.message);
+      } else {
+        setDraft('');
+      }
+    } catch (e: any) {
+      setSendError(e.message || String(e));
+    } finally {
+      setSending(false);
     }
-    setSending(false);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
