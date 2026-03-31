@@ -248,6 +248,7 @@ export default async function PlayerPage({
           {/* Top-line stats grid */}
           <div className="grid grid-cols-4 gap-2 mb-4">
             {[
+              { label: 'BF',    value: pitchingStats.totalPAs.toString() },
               { label: 'IP',    value: formatInningsPitched(pitchingStats.inningsPitchedOuts) },
               { label: 'ERA',   value: isFinite(pitchingStats.era) ? pitchingStats.era.toFixed(2) : '---' },
               { label: 'WHIP',  value: isFinite(pitchingStats.whip) ? pitchingStats.whip.toFixed(2) : '---' },
