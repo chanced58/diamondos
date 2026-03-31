@@ -430,8 +430,17 @@ export function derivePitchingStats(
         const batterId: string | undefined = payload?.batterId;
         const outsRecorded: number = payload?.outsRecorded ?? 1;
         if (pitcherId) {
-          getStats(pitcherId).inningsPitchedOuts += outsRecorded;
+          const s = getStats(pitcherId);
+          s.inningsPitchedOuts += outsRecorded;
           if (batterId) {
+            // Double plays ARE at-bats; sacrifices are NOT
+            if (etype === EventType.DOUBLE_PLAY) {
+              const contact = pendingContact.get(batterId);
+              if (contact && contact.pitcherId === pitcherId) {
+                const cs = s.baByCount[contact.count];
+                if (cs) { cs.atBats += 1; cs.average = cs.atBats > 0 ? cs.hits / cs.atBats : NaN; }
+              }
+            }
             pendingContact.delete(batterId);
             resetAtBat(batterId);
           }
@@ -445,7 +454,18 @@ export function derivePitchingStats(
 
       // ── FIELD_ERROR → batter reaches on error (unearned), force advance ─
       if (etype === EventType.FIELD_ERROR) {
+        const pitcherId: string | undefined = payload?.pitcherId ?? payload?.opponentPitcherId;
         const batterId: string | undefined = payload?.batterId ?? payload?.opponentBatterId;
+        // Field errors ARE at-bats (no hit) — record to BA by count
+        if (pitcherId && batterId) {
+          const contact = pendingContact.get(batterId);
+          if (contact && contact.pitcherId === pitcherId) {
+            const cs = getStats(pitcherId).baByCount[contact.count];
+            if (cs) { cs.atBats += 1; cs.average = cs.atBats > 0 ? cs.hits / cs.atBats : NaN; }
+          }
+          pendingContact.delete(batterId);
+          resetAtBat(batterId);
+        }
         forceAdvanceRunners({ id: batterId ?? 'unknown', reachedOnError: true });
       }
 
