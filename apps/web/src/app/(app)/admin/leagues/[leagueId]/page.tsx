@@ -35,12 +35,13 @@ export default async function PlatformAdminLeagueDetailPage({
   if (!profile?.is_platform_admin) redirect('/admin');
 
   // Fetch the league itself
-  const { data: league } = await (db as any)
+  const { data: league, error: leagueError } = await (db as any)
     .from('leagues')
     .select('id, name, description, state_code')
     .eq('id', leagueId)
     .single();
 
+  if (leagueError) throw new Error(`Failed to fetch league: ${leagueError.message}`);
   if (!league) notFound();
 
   const [teams, divisions, staff] = await Promise.all([
@@ -72,6 +73,9 @@ export default async function PlatformAdminLeagueDetailPage({
         }))}
         divisions={divisions}
         staff={staff.map((s) => {
+          // Supabase may return joined relations as an object or array depending
+          // on the relationship cardinality; normalize to a single profile to
+          // prevent runtime errors when accessing first_name/last_name.
           const profile = Array.isArray(s.user_profiles) ? s.user_profiles[0] : s.user_profiles;
           return {
             id: s.id,

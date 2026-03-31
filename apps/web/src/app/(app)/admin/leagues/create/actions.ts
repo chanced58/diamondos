@@ -13,9 +13,9 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
   if (!user) return 'Not authenticated — please log in again.';
 
   const raw = {
-    name: formData.get('name') as string,
-    description: (formData.get('description') as string) || undefined,
-    stateCode: (formData.get('stateCode') as string) || undefined,
+    name: (formData.get('name') ?? '') as string,
+    description: (formData.get('description') ?? undefined) as string | undefined,
+    stateCode: (formData.get('stateCode') ?? undefined) as string | undefined,
   };
 
   const parsed = createLeagueSchema.safeParse(raw);
@@ -58,7 +58,10 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
     user_id: user.id,
     role: 'league_admin',
   });
-  if (staffError) return `Staff insert failed: ${staffError.message}`;
+  if (staffError) {
+    await db.from('leagues').delete().eq('id', league.id);
+    return `Staff insert failed: ${staffError.message}`;
+  }
 
   // 3. Create default Announcements channel
   const { data: channel, error: channelError } = await db
@@ -72,7 +75,11 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
     })
     .select()
     .single();
-  if (channelError) return `Channel insert failed: ${channelError.message}`;
+  if (channelError) {
+    await db.from('league_staff').delete().eq('league_id', league.id);
+    await db.from('leagues').delete().eq('id', league.id);
+    return `Channel insert failed: ${channelError.message}`;
+  }
 
   // 4. Add creator to the channel with post permission
   const { error: cmError } = await db.from('league_channel_members').insert({
@@ -80,7 +87,12 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
     user_id: user.id,
     can_post: true,
   });
-  if (cmError) return `Channel member insert failed: ${cmError.message}`;
+  if (cmError) {
+    await db.from('league_channels').delete().eq('id', channel.id);
+    await db.from('league_staff').delete().eq('league_id', league.id);
+    await db.from('leagues').delete().eq('id', league.id);
+    return `Channel member insert failed: ${cmError.message}`;
+  }
 
   redirect(`/admin/leagues/${league.id}`);
 }

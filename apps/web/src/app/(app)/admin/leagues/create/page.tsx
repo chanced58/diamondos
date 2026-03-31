@@ -1,11 +1,31 @@
 import type { JSX } from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { createClient } from '@supabase/supabase-js';
+import { createServerClient } from '@/lib/supabase/server';
 import { CreateLeagueForm } from '@/components/admin/CreateLeagueForm';
 
 export const metadata: Metadata = { title: 'Create League — Platform Admin' };
 
-export default function CreateLeaguePage(): JSX.Element {
+export default async function CreateLeaguePage(): Promise<JSX.Element> {
+  const auth = createServerClient();
+  const { data: { user } } = await auth.auth.getUser();
+  if (!user) redirect('/login');
+
+  const db = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const { data: profile } = await db
+    .from('user_profiles')
+    .select('is_platform_admin')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile?.is_platform_admin) redirect('/admin');
+
   return (
     <div className="p-8 max-w-lg">
       <div className="flex items-center gap-3 mb-1">

@@ -5,9 +5,22 @@
 
 -- ─── leagues ────────────────────────────────────────────────────────────────
 
+create policy "league_staff_or_admin_insert_league"
+  on public.leagues for insert
+  with check (
+    public.is_platform_admin()
+  );
+
 drop policy if exists "league_staff_update_league" on public.leagues;
 create policy "league_staff_or_admin_update_league"
   on public.leagues for update
+  using (
+    public.is_league_staff(id, auth.uid())
+    or public.is_platform_admin()
+  );
+
+create policy "league_staff_or_admin_delete_league"
+  on public.leagues for delete
   using (
     public.is_league_staff(id, auth.uid())
     or public.is_platform_admin()
