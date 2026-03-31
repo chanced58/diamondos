@@ -7,6 +7,8 @@ import { getActiveTeam } from '@/lib/active-team';
 import { getUserAccess } from '@/lib/user-access';
 import { weAreHome } from '@baseball/shared';
 import { CalendarView, CalendarEvent } from './CalendarView';
+import { getActiveLeague } from '@/lib/active-league';
+import { getLeagueTeamIds } from '@baseball/database';
 
 export const metadata: Metadata = { title: 'Schedule' };
 
@@ -34,7 +36,7 @@ function toDateKey(iso: string) {
 export default async function SchedulePage({
   searchParams,
 }: {
-  searchParams: { month?: string };
+  searchParams: { month?: string; view?: string };
 }): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
@@ -49,18 +51,39 @@ export default async function SchedulePage({
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
+  // Check league membership and resolve view mode
+  const league = activeTeam ? await getActiveLeague(activeTeam.id) : null;
+  const isLeagueView = searchParams.view === 'league' && league !== null;
+
   let isCoach = false;
   const events: CalendarEvent[] = [];
 
   if (activeTeam) {
+    // For league view, scope to all league teams; otherwise just active team
+    let scopeTeamIds: string[] = [activeTeam.id];
+    const teamNameMap: Record<string, string> = {};
+    if (isLeagueView && league) {
+      const leagueTeamIds = await getLeagueTeamIds(db, league.id);
+      if (leagueTeamIds.length > 0) {
+        scopeTeamIds = leagueTeamIds;
+        const { data: teamsData } = await db
+          .from('teams')
+          .select('id, name')
+          .in('id', scopeTeamIds);
+        for (const t of teamsData ?? []) {
+          teamNameMap[t.id] = t.name;
+        }
+      }
+    }
+
     const rangeStart = new Date(year, month - 1, 1).toISOString();
     const rangeEnd   = new Date(year, month, 1).toISOString();
 
     const [gamesResult, practicesResult, teamEventsResult] = await Promise.all([
       db
         .from('games')
-        .select('id, opponent_name, scheduled_at, location_type, neutral_home_team, status')
-        .eq('team_id', activeTeam.id)
+        .select('id, team_id, opponent_name, scheduled_at, location_type, neutral_home_team, status')
+        .in('team_id', scopeTeamIds)
         .neq('status', 'cancelled')
         .gte('scheduled_at', rangeStart)
         .lt('scheduled_at', rangeEnd)
@@ -87,10 +110,11 @@ export default async function SchedulePage({
 
     for (const g of gamesResult.data ?? []) {
       const loc = weAreHome(g.location_type, g.neutral_home_team) ? 'vs' : '@';
+      const teamLabel = isLeagueView && g.team_id !== activeTeam.id ? teamNameMap[g.team_id] : null;
       events.push({
         id:      g.id,
         type:    'game',
-        title:   `${loc} ${g.opponent_name}`,
+        title:   teamLabel ? `${teamLabel}: ${loc} ${g.opponent_name}` : `${loc} ${g.opponent_name}`,
         dateKey: toDateKey(g.scheduled_at),
         time:    toTimeLabel(g.scheduled_at),
         url:     `/games/${g.id}`,
@@ -128,9 +152,31 @@ export default async function SchedulePage({
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
+            {league && activeTeam && (
+              <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                <Link
+                  href={`/games?month=${year}-${String(month).padStart(2, '0')}`}
+                  className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+                    !isLeagueView ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  My Team
+                </Link>
+                <Link
+                  href={`/games?month=${year}-${String(month).padStart(2, '0')}&view=league`}
+                  className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+                    isLeagueView ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {league.name}
+                </Link>
+              </div>
+            )}
+          </div>
           {activeTeam && (
-            <p className="text-gray-500 text-sm">{activeTeam.name}</p>
+            <p className="text-gray-500 text-sm">{isLeagueView ? league!.name : activeTeam.name}</p>
           )}
         </div>
         {isCoach && activeTeam && (

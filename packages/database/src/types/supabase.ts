@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       channel_members: {
@@ -70,6 +45,13 @@ export type Database = {
             columns: ["channel_id"]
             isOneToOne: false
             referencedRelation: "channels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_members_user_profile_fk"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -492,19 +474,369 @@ export type Database = {
       }
       leads: {
         Row: {
+          coaching_staff: string | null
+          contact_name: string | null
           created_at: string
           email: string
+          enriched: boolean | null
+          enriched_at: string | null
+          estimated_roster_size: string | null
           id: string
+          key_talking_points: string | null
+          lead_score: number | null
+          league_district: string | null
+          organization: string | null
+          outreach_email: string | null
+          outreach_subject: string | null
+          pitch_count_notes: string | null
+          pitch_count_regulated: boolean | null
+          program_history: string | null
+          program_summary: string | null
+          program_type: string | null
+          program_type_input: string | null
+          school_enrollment: string | null
+          score_reasoning: string | null
+          state: string | null
+          tech_adoption_signals: string | null
+        }
+        Insert: {
+          coaching_staff?: string | null
+          contact_name?: string | null
+          created_at?: string
+          email: string
+          enriched?: boolean | null
+          enriched_at?: string | null
+          estimated_roster_size?: string | null
+          id?: string
+          key_talking_points?: string | null
+          lead_score?: number | null
+          league_district?: string | null
+          organization?: string | null
+          outreach_email?: string | null
+          outreach_subject?: string | null
+          pitch_count_notes?: string | null
+          pitch_count_regulated?: boolean | null
+          program_history?: string | null
+          program_summary?: string | null
+          program_type?: string | null
+          program_type_input?: string | null
+          school_enrollment?: string | null
+          score_reasoning?: string | null
+          state?: string | null
+          tech_adoption_signals?: string | null
+        }
+        Update: {
+          coaching_staff?: string | null
+          contact_name?: string | null
+          created_at?: string
+          email?: string
+          enriched?: boolean | null
+          enriched_at?: string | null
+          estimated_roster_size?: string | null
+          id?: string
+          key_talking_points?: string | null
+          lead_score?: number | null
+          league_district?: string | null
+          organization?: string | null
+          outreach_email?: string | null
+          outreach_subject?: string | null
+          pitch_count_notes?: string | null
+          pitch_count_regulated?: boolean | null
+          program_history?: string | null
+          program_summary?: string | null
+          program_type?: string | null
+          program_type_input?: string | null
+          school_enrollment?: string | null
+          score_reasoning?: string | null
+          state?: string | null
+          tech_adoption_signals?: string | null
+        }
+        Relationships: []
+      }
+      league_channel_members: {
+        Row: {
+          can_post: boolean
+          id: string
+          joined_at: string
+          last_read_at: string | null
+          league_channel_id: string
+          user_id: string
+        }
+        Insert: {
+          can_post?: boolean
+          id?: string
+          joined_at?: string
+          last_read_at?: string | null
+          league_channel_id: string
+          user_id: string
+        }
+        Update: {
+          can_post?: boolean
+          id?: string
+          joined_at?: string
+          last_read_at?: string | null
+          league_channel_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_channel_members_league_channel_id_fkey"
+            columns: ["league_channel_id"]
+            isOneToOne: false
+            referencedRelation: "league_channels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_channel_members_user_profiles_fk"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      league_channels: {
+        Row: {
+          channel_type: Database["public"]["Enums"]["channel_type"]
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          league_id: string
+          name: string | null
+          updated_at: string
+        }
+        Insert: {
+          channel_type: Database["public"]["Enums"]["channel_type"]
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          league_id: string
+          name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          channel_type?: Database["public"]["Enums"]["channel_type"]
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          league_id?: string
+          name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_channels_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      league_divisions: {
+        Row: {
+          created_at: string
+          id: string
+          league_id: string
+          name: string
         }
         Insert: {
           created_at?: string
-          email: string
           id?: string
+          league_id: string
+          name: string
         }
         Update: {
           created_at?: string
-          email?: string
           id?: string
+          league_id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_divisions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      league_members: {
+        Row: {
+          division_id: string | null
+          id: string
+          is_active: boolean
+          joined_at: string
+          league_id: string
+          team_id: string
+        }
+        Insert: {
+          division_id?: string | null
+          id?: string
+          is_active?: boolean
+          joined_at?: string
+          league_id: string
+          team_id: string
+        }
+        Update: {
+          division_id?: string | null
+          id?: string
+          is_active?: boolean
+          joined_at?: string
+          league_id?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_members_division_id_fkey"
+            columns: ["division_id"]
+            isOneToOne: false
+            referencedRelation: "league_divisions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_members_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_members_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      league_messages: {
+        Row: {
+          body: string
+          created_at: string
+          deleted_at: string | null
+          edited_at: string | null
+          id: string
+          is_pinned: boolean
+          league_channel_id: string
+          parent_id: string | null
+          sender_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          deleted_at?: string | null
+          edited_at?: string | null
+          id?: string
+          is_pinned?: boolean
+          league_channel_id: string
+          parent_id?: string | null
+          sender_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          deleted_at?: string | null
+          edited_at?: string | null
+          id?: string
+          is_pinned?: boolean
+          league_channel_id?: string
+          parent_id?: string | null
+          sender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_messages_league_channel_id_fkey"
+            columns: ["league_channel_id"]
+            isOneToOne: false
+            referencedRelation: "league_channels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_messages_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "league_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_messages_user_profiles_fk"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      league_staff: {
+        Row: {
+          id: string
+          is_active: boolean
+          joined_at: string
+          league_id: string
+          role: Database["public"]["Enums"]["league_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          is_active?: boolean
+          joined_at?: string
+          league_id: string
+          role: Database["public"]["Enums"]["league_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          is_active?: boolean
+          joined_at?: string
+          league_id?: string
+          role?: Database["public"]["Enums"]["league_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_staff_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leagues: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          logo_url: string | null
+          name: string
+          state_code: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          logo_url?: string | null
+          name: string
+          state_code?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          logo_url?: string | null
+          name?: string
+          state_code?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -555,6 +887,13 @@ export type Database = {
             columns: ["parent_id"]
             isOneToOne: false
             referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_user_profile_fk"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1662,15 +2001,36 @@ export type Database = {
     }
     Functions: {
       find_auth_user_id_by_email: { Args: { p_email: string }; Returns: string }
+      get_league_role: {
+        Args: { p_league_id: string; p_user_id: string }
+        Returns: Database["public"]["Enums"]["league_role"]
+      }
+      get_leagues_for_team: { Args: { p_team_id: string }; Returns: string[] }
       get_team_role: {
         Args: { p_team_id: string; p_user_id: string }
         Returns: Database["public"]["Enums"]["team_role"]
+      }
+      is_channel_member: {
+        Args: { p_channel_id: string; p_user_id: string }
+        Returns: boolean
       }
       is_coach: {
         Args: { p_team_id: string; p_user_id: string }
         Returns: boolean
       }
+      is_league_member: {
+        Args: { p_league_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      is_league_staff: {
+        Args: { p_league_id: string; p_user_id: string }
+        Returns: boolean
+      }
       is_platform_admin: { Args: never; Returns: boolean }
+      is_player_owner: {
+        Args: { p_player_id: string; p_user_id: string }
+        Returns: boolean
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
     }
@@ -1684,6 +2044,7 @@ export type Database = {
         | "completed"
         | "cancelled"
         | "postponed"
+      league_role: "league_admin" | "league_manager"
       player_position:
         | "pitcher"
         | "catcher"
@@ -1833,9 +2194,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       bats_throws: ["right", "left", "switch"],
@@ -1848,6 +2206,7 @@ export const Constants = {
         "cancelled",
         "postponed",
       ],
+      league_role: ["league_admin", "league_manager"],
       player_position: [
         "pitcher",
         "catcher",

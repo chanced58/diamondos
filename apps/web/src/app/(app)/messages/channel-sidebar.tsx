@@ -9,6 +9,8 @@ export function ChannelSidebar({
   announcements,
   topics,
   dms,
+  leagueChannels,
+  leagueName,
   isCoach,
   teamName,
   userId,
@@ -25,6 +27,10 @@ export function ChannelSidebar({
     return pathname === `/messages/${channelId}`;
   }
 
+  function isLeagueActive(channelId: string) {
+    return pathname === `/messages/league/${channelId}`;
+  }
+
   return (
     <div className="w-72 shrink-0 bg-gray-50 border-r border-gray-200 flex flex-col h-full">
       {/* Header */}
@@ -35,6 +41,21 @@ export function ChannelSidebar({
 
       {/* Scrollable channel list */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+        {/* League Channels */}
+        {leagueChannels.length > 0 && (
+          <Section label={leagueName ?? 'League'}>
+            {leagueChannels.map((ch) => (
+              <ChannelLink
+                key={ch.id}
+                href={`/messages/league/${ch.id}`}
+                icon="🏆"
+                label={ch.name ?? 'League Channel'}
+                active={isLeagueActive(ch.id)}
+              />
+            ))}
+          </Section>
+        )}
+
         {/* Announcements */}
         {announcements.length > 0 && (
           <Section label="Announcements">

@@ -6,6 +6,7 @@ import { getActiveTeam, type ActiveTeam } from '@/lib/active-team';
 import { getUserAccess } from '@/lib/user-access';
 import { addToTeamChannels } from '@/lib/team-channels';
 import { seedDefaultChannels } from './seed';
+import { getLeagueForTeam, getLeagueChannelsForUser } from '@baseball/database';
 
 export type SidebarChannel = {
   id: string;
@@ -15,10 +16,20 @@ export type SidebarChannel = {
   channel_members: { user_id: string; user_profiles: { first_name: string; last_name: string } | null }[];
 };
 
+export type LeagueSidebarChannel = {
+  id: string;
+  name: string | null;
+  channel_type: string;
+  description: string | null;
+  can_post: boolean;
+};
+
 export type ChannelSidebarData = {
   announcements: SidebarChannel[];
   topics: SidebarChannel[];
   dms: SidebarChannel[];
+  leagueChannels: LeagueSidebarChannel[];
+  leagueName: string | null;
   isCoach: boolean;
   teamId: string;
   teamName: string;
@@ -326,10 +337,32 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
     }
   }
 
+  // Fetch league channels if team belongs to a league
+  let leagueChannels: LeagueSidebarChannel[] = [];
+  let leagueName: string | null = null;
+  try {
+    const league = await getLeagueForTeam(queryClient, activeTeam.id);
+    if (league) {
+      leagueName = league.name;
+      const lChannels = await getLeagueChannelsForUser(queryClient, league.id, user.id);
+      leagueChannels = lChannels.map((ch) => ({
+        id: ch.id,
+        name: ch.name,
+        channel_type: ch.channel_type,
+        description: ch.description,
+        can_post: ch.can_post,
+      }));
+    }
+  } catch (e) {
+    console.error('[messages] league channels fetch error:', e);
+  }
+
   return {
     announcements: channels.filter((c) => c.channel_type === 'announcement'),
     topics: channels.filter((c) => c.channel_type === 'topic'),
     dms: channels.filter((c) => c.channel_type === 'direct'),
+    leagueChannels,
+    leagueName,
     isCoach,
     teamId: activeTeam.id,
     teamName: activeTeam.name,

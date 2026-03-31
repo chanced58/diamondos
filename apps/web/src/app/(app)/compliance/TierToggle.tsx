@@ -13,8 +13,10 @@ const TIERS: { value: StatTier; label: string }[] = [
 
 export function TierToggle({
   currentTier,
+  baseUrl = '/compliance',
 }: {
   currentTier: StatTier;
+  baseUrl?: string;
 }): JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -22,7 +24,7 @@ export function TierToggle({
   function handleClick(tier: StatTier) {
     const params = new URLSearchParams(searchParams.toString());
     params.set('tier', tier);
-    router.push(`/compliance?${params.toString()}`);
+    router.push(`${baseUrl}?${params.toString()}`);
   }
 
   return (
