@@ -61,7 +61,7 @@ export default async function SchedulePage({
   if (activeTeam) {
     // For league view, scope to all league teams; otherwise just active team
     let scopeTeamIds: string[] = [activeTeam.id];
-    let teamNameMap: Record<string, string> = {};
+    const teamNameMap: Record<string, string> = {};
     if (isLeagueView && league) {
       scopeTeamIds = await getLeagueTeamIds(db, league.id);
       const { data: teamsData } = await db

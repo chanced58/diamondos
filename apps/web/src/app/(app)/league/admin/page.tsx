@@ -46,8 +46,8 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
         teams={teams.map((t) => ({
           id: t.id,
           teamId: t.team_id,
-          teamName: t.teams.name,
-          organization: t.teams.organization,
+          teamName: t.teams?.name ?? 'Unknown',
+          organization: t.teams?.organization ?? null,
           divisionId: t.division_id,
         }))}
         divisions={divisions}

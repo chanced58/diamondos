@@ -340,23 +340,21 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
   // Fetch league channels if team belongs to a league
   let leagueChannels: LeagueSidebarChannel[] = [];
   let leagueName: string | null = null;
-  if (queryClient) {
-    try {
-      const league = await getLeagueForTeam(queryClient, activeTeam.id);
-      if (league) {
-        leagueName = league.name;
-        const lChannels = await getLeagueChannelsForUser(queryClient, league.id, user.id);
-        leagueChannels = lChannels.map((ch) => ({
-          id: ch.id,
-          name: ch.name,
-          channel_type: ch.channel_type,
-          description: ch.description,
-          can_post: ch.can_post,
-        }));
-      }
-    } catch (e) {
-      console.error('[messages] league channels fetch error:', e);
+  try {
+    const league = await getLeagueForTeam(queryClient, activeTeam.id);
+    if (league) {
+      leagueName = league.name;
+      const lChannels = await getLeagueChannelsForUser(queryClient, league.id, user.id);
+      leagueChannels = lChannels.map((ch) => ({
+        id: ch.id,
+        name: ch.name,
+        channel_type: ch.channel_type,
+        description: ch.description,
+        can_post: ch.can_post,
+      }));
     }
+  } catch (e) {
+    console.error('[messages] league channels fetch error:', e);
   }
 
   return {

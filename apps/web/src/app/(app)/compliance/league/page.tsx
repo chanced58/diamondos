@@ -63,15 +63,16 @@ export default async function LeagueStatsPage({
 
   const gameIds = (gamesData ?? []).map((g) => g.id);
 
-  // Get all relevant events
+  // Get all relevant events — fetch in batches to avoid OOM/timeout for large leagues
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rawEvents: any[] = [];
-  if (gameIds.length > 0) {
-    // Fetch in batches if needed
+  const BATCH_SIZE = 200;
+  for (let i = 0; i < gameIds.length; i += BATCH_SIZE) {
+    const batchGameIds = gameIds.slice(i, i + BATCH_SIZE);
     const { data: events } = await db
       .from('game_events')
       .select('*')
-      .in('game_id', gameIds)
+      .in('game_id', batchGameIds)
       .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
       .order('game_id')
       .order('sequence_number');
@@ -169,6 +170,8 @@ export default async function LeagueStatsPage({
         ) : (
           <PitchingStatsTable
             stats={allPitchingStats}
+            // Empty complianceMap is intentional — compliance rules are team-specific
+            // and cannot be meaningfully aggregated across teams with different tiers/rules
             complianceMap={{}}
             today={new Date().toISOString().slice(0, 10)}
             tier={tier}

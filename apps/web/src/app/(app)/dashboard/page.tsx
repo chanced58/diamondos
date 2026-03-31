@@ -88,16 +88,17 @@ export default async function DashboardPage({
 
   // For league view, get all team IDs in the league; for team view, just the active team
   let scopeTeamIds: string[] = [activeTeam.id];
-  let teamNameMap: Record<string, string> = {};
+  const teamNameMap: Record<string, string> = {};
   if (isLeagueView && league) {
     scopeTeamIds = await getLeagueTeamIds(db, league.id);
-    // Build a team name map for league view
-    const { data: teamsData } = await db
-      .from('teams')
-      .select('id, name')
-      .in('id', scopeTeamIds);
-    for (const t of teamsData ?? []) {
-      teamNameMap[t.id] = t.name;
+    if (scopeTeamIds.length > 0) {
+      const { data: teamsData } = await db
+        .from('teams')
+        .select('id, name')
+        .in('id', scopeTeamIds);
+      for (const t of teamsData ?? []) {
+        teamNameMap[t.id] = t.name;
+      }
     }
   }
 

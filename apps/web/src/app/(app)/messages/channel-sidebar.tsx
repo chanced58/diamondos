@@ -3,7 +3,7 @@
 import type { JSX } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { ChannelSidebarData, SidebarChannel, LeagueSidebarChannel } from './get-channels';
+import type { ChannelSidebarData, SidebarChannel } from './get-channels';
 
 export function ChannelSidebar({
   announcements,

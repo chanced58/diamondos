@@ -49,13 +49,20 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  if (stateCode != null && !/^[A-Za-z]{2}$/.test(stateCode.trim())) {
+    return new Response(JSON.stringify({ error: 'stateCode must be exactly 2 letters' }), {
+      status: 400,
+      headers: corsHeaders,
+    });
+  }
+
   // Create the league
   const { data: league, error: leagueError } = await serviceClient
     .from('leagues')
     .insert({
       name: name.trim(),
       description: description?.trim() ?? null,
-      state_code: stateCode?.toUpperCase() ?? null,
+      state_code: stateCode?.trim().toUpperCase() ?? null,
       created_by: user.id,
     })
     .select()
@@ -70,11 +77,20 @@ Deno.serve(async (req: Request) => {
   }
 
   // Add creator as league_admin
-  await serviceClient.from('league_staff').insert({
+  const { error: staffError } = await serviceClient.from('league_staff').insert({
     league_id: league.id,
     user_id: user.id,
     role: 'league_admin',
   });
+
+  if (staffError) {
+    console.error('Error adding league staff, rolling back league:', staffError);
+    await serviceClient.from('leagues').delete().eq('id', league.id);
+    return new Response(JSON.stringify({ error: staffError.message ?? 'Failed to add league admin' }), {
+      status: 500,
+      headers: corsHeaders,
+    });
+  }
 
   // Create default league announcements channel
   const { data: channel } = await serviceClient
@@ -91,11 +107,14 @@ Deno.serve(async (req: Request) => {
 
   // Add creator as channel member with post permission
   if (channel) {
-    await serviceClient.from('league_channel_members').insert({
+    const { error: memberError } = await serviceClient.from('league_channel_members').insert({
       league_channel_id: channel.id,
       user_id: user.id,
       can_post: true,
     });
+    if (memberError) {
+      console.error(`Error adding channel member (channel=${channel.id}, user=${user.id}):`, memberError);
+    }
   }
 
   return new Response(JSON.stringify({ league, channel }), {

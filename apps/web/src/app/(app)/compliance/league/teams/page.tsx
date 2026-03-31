@@ -79,9 +79,6 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
     .select('id, team_id, first_name, last_name')
     .in('team_id', teamIds);
 
-  // Build game-to-team mapping
-  const gameToTeam = new Map((allGames ?? []).map((g) => [g.id, g.team_id]));
-
   // Build comparison rows per team
   const rows: TeamComparisonRow[] = leagueTeams.map((lt) => {
     const tid = lt.team_id;

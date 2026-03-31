@@ -8,6 +8,7 @@ import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueAccess } from '@/lib/league-access';
 import { getLeagueTeams, getLeagueDivisions, getLeagueStaff } from '@baseball/database';
+import { weAreHome } from '@baseball/shared';
 
 export const metadata: Metadata = { title: 'League' };
 
@@ -62,7 +63,7 @@ export default async function LeaguePage(): Promise<JSX.Element | null> {
   for (const g of completedGames ?? []) {
     const rec = records.get(g.team_id);
     if (!rec) continue;
-    const isHome = g.location_type === 'home' || (g.location_type === 'neutral' && g.neutral_home_team === null);
+    const isHome = weAreHome(g.location_type, g.neutral_home_team);
     const our = isHome ? g.home_score : g.away_score;
     const their = isHome ? g.away_score : g.home_score;
     if (our > their) rec.wins++;

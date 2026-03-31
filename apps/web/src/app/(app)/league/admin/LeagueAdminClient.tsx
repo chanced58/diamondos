@@ -5,6 +5,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 type TeamEntry = {
   id: string;
   teamId: string;
@@ -46,6 +48,7 @@ export function LeagueAdminClient({
   const [addTeamId, setAddTeamId] = useState('');
   const [addTeamDivision, setAddTeamDivision] = useState('');
   const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Cast to any — league tables are not in generated types until `gen-types` runs
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,61 +58,104 @@ export function LeagueAdminClient({
     e.preventDefault();
     if (!newDivisionName.trim()) return;
     setSaving(true);
-    await supabase.from('league_divisions').insert({
-      league_id: leagueId,
-      name: newDivisionName.trim(),
-    });
-    setNewDivisionName('');
-    setSaving(false);
-    router.refresh();
+    setErrorMsg(null);
+    try {
+      const { error } = await supabase.from('league_divisions').insert({
+        league_id: leagueId,
+        name: newDivisionName.trim(),
+      });
+      if (error) { setErrorMsg(error.message); return; }
+      setNewDivisionName('');
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleRemoveDivision(divisionId: string) {
     setSaving(true);
-    await supabase.from('league_divisions').delete().eq('id', divisionId);
-    setSaving(false);
-    router.refresh();
+    setErrorMsg(null);
+    try {
+      const { error } = await supabase.from('league_divisions').delete().eq('id', divisionId);
+      if (error) { setErrorMsg(error.message); return; }
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleAddTeam(e: React.FormEvent) {
     e.preventDefault();
-    if (!addTeamId.trim()) return;
+    const trimmed = addTeamId.trim();
+    if (!trimmed) return;
+    if (!UUID_RE.test(trimmed)) {
+      setErrorMsg('Team ID must be a valid UUID');
+      return;
+    }
     setSaving(true);
-    await supabase.from('league_members').insert({
-      league_id: leagueId,
-      team_id: addTeamId.trim(),
-      division_id: addTeamDivision || null,
-    });
-    setAddTeamId('');
-    setAddTeamDivision('');
-    setSaving(false);
-    router.refresh();
+    setErrorMsg(null);
+    try {
+      const { error } = await supabase.from('league_members').insert({
+        league_id: leagueId,
+        team_id: trimmed,
+        division_id: addTeamDivision || null,
+      });
+      if (error) { setErrorMsg(error.message); return; }
+      setAddTeamId('');
+      setAddTeamDivision('');
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleRemoveTeam(membershipId: string) {
     setSaving(true);
-    await supabase.from('league_members').delete().eq('id', membershipId);
-    setSaving(false);
-    router.refresh();
+    setErrorMsg(null);
+    try {
+      const { error } = await supabase.from('league_members').delete().eq('id', membershipId);
+      if (error) { setErrorMsg(error.message); return; }
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleUpdateTeamDivision(membershipId: string, divisionId: string | null) {
-    await supabase
-      .from('league_members')
-      .update({ division_id: divisionId })
-      .eq('id', membershipId);
-    router.refresh();
+    setSaving(true);
+    setErrorMsg(null);
+    try {
+      const { error } = await supabase
+        .from('league_members')
+        .update({ division_id: divisionId })
+        .eq('id', membershipId);
+      if (error) { setErrorMsg(error.message); return; }
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleRemoveStaff(staffId: string) {
     setSaving(true);
-    await supabase.from('league_staff').delete().eq('id', staffId);
-    setSaving(false);
-    router.refresh();
+    setErrorMsg(null);
+    try {
+      const { error } = await supabase.from('league_staff').delete().eq('id', staffId);
+      if (error) { setErrorMsg(error.message); return; }
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <div className="space-y-8">
+      {errorMsg && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+          {errorMsg}
+        </div>
+      )}
+
       {/* Divisions */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100">
@@ -210,7 +256,7 @@ export function LeagueAdminClient({
             <input
               type="text"
               value={addTeamId}
-              onChange={(e) => setAddTeamId(e.target.value)}
+              onChange={(e) => { setAddTeamId(e.target.value); setErrorMsg(null); }}
               placeholder="Team ID"
               className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
             />

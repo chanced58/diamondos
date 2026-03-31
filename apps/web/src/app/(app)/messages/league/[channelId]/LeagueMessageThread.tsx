@@ -73,15 +73,18 @@ export function LeagueMessageThread({
         (payload: any) => {
           const newMsg = payload.new as MessageRow;
           const profile = memberProfiles[newMsg.sender_id];
-          setMessages((prev) => [
-            ...prev,
-            {
-              ...newMsg,
-              user_profiles: profile
-                ? { first_name: profile.firstName, last_name: profile.lastName }
-                : null,
-            },
-          ]);
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === newMsg.id)) return prev;
+            return [
+              ...prev,
+              {
+                ...newMsg,
+                user_profiles: profile
+                  ? { first_name: profile.firstName, last_name: profile.lastName }
+                  : null,
+              },
+            ];
+          });
         },
       )
       .subscribe();

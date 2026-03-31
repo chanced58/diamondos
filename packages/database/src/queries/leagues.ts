@@ -133,25 +133,20 @@ export async function getLeagueChannelsForUser(
 ) {
   const { data, error } = await client
     .from('league_channel_members')
-    .select('league_channel_id, can_post, league_channels(id, league_id, channel_type, name, description)')
-    .eq('user_id', userId);
+    .select('league_channel_id, can_post, league_channels!inner(id, league_id, channel_type, name, description)')
+    .eq('user_id', userId)
+    .eq('league_channels.league_id', leagueId);
   if (error) throw error;
 
-  // Filter to channels belonging to this league
-  return (data ?? [])
-    .filter((row: any) => {
-      const ch = Array.isArray(row.league_channels) ? row.league_channels[0] : row.league_channels;
-      return ch?.league_id === leagueId;
-    })
-    .map((row: any) => {
-      const ch = Array.isArray(row.league_channels) ? row.league_channels[0] : row.league_channels;
-      return {
-        id: ch!.id,
-        league_id: ch!.league_id,
-        channel_type: ch!.channel_type as 'announcement' | 'topic' | 'direct',
-        name: ch!.name,
-        description: ch!.description,
-        can_post: row.can_post,
-      };
-    });
+  return (data ?? []).map((row: any) => {
+    const ch = Array.isArray(row.league_channels) ? row.league_channels[0] : row.league_channels;
+    return {
+      id: ch!.id,
+      league_id: ch!.league_id,
+      channel_type: ch!.channel_type as 'announcement' | 'topic' | 'direct',
+      name: ch!.name,
+      description: ch!.description,
+      can_post: row.can_post,
+    };
+  });
 }

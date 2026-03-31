@@ -62,8 +62,8 @@ export default async function LeagueChannelPage({
     .select('user_id, user_profiles(first_name, last_name)')
     .eq('league_channel_id', params.channelId);
 
-  // Fetch initial 50 messages with sender profiles
-  const { data: messages } = await db
+  // Fetch most recent 50 messages (descending) then reverse for oldest→newest display
+  const { data: messagesDesc } = await db
     .from('league_messages')
     .select(`
       id, body, sender_id, created_at, edited_at, is_pinned,
@@ -71,8 +71,9 @@ export default async function LeagueChannelPage({
     `)
     .eq('league_channel_id', params.channelId)
     .is('deleted_at', null)
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(50);
+  const messages = (messagesDesc ?? []).reverse();
 
   // Mark channel as read
   await db
@@ -116,7 +117,7 @@ export default async function LeagueChannelPage({
       <LeagueMessageThread
         channelId={params.channelId}
         channelType={channel.channel_type}
-        initialMessages={(messages ?? []).map((m): MessageRow => ({
+        initialMessages={messages.map((m): MessageRow => ({
           id: m.id,
           body: m.body,
           sender_id: m.sender_id,
