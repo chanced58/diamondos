@@ -7,6 +7,36 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = SupabaseClient<any>;
 
+export type LeagueListItem = {
+  id: string;
+  name: string;
+  description: string | null;
+  state_code: string | null;
+  created_at: string;
+  team_count: number;
+  staff_count: number;
+};
+
+/**
+ * Get all leagues with team and staff counts.
+ */
+export async function getAllLeagues(client: AnyClient): Promise<LeagueListItem[]> {
+  const { data, error } = await client
+    .from('leagues')
+    .select('id, name, description, state_code, created_at, league_members(count), league_staff(count)')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((l: any) => ({
+    id: l.id,
+    name: l.name,
+    description: l.description,
+    state_code: l.state_code,
+    created_at: l.created_at,
+    team_count: l.league_members?.[0]?.count ?? 0,
+    staff_count: l.league_staff?.[0]?.count ?? 0,
+  }));
+}
+
 export type LeagueSummary = {
   id: string;
   name: string;

@@ -148,6 +148,17 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
             </Link>
 
             <Link
+              href="/admin/leagues"
+              className="bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-400 hover:shadow-sm transition-all group"
+            >
+              <div className="text-2xl mb-2">🏆</div>
+              <h3 className="font-semibold text-gray-900 group-hover:text-gray-700 transition-colors">
+                All Leagues
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">View and manage leagues.</p>
+            </Link>
+
+            <Link
               href="/admin/create-team"
               className="bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-400 hover:shadow-sm transition-all group"
             >
