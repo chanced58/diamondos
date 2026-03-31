@@ -51,25 +51,28 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
   const leagueTeams = await getLeagueTeams(db, league.id);
   const teamIds = leagueTeams.map((t) => t.team_id);
 
-  // Get all completed games for all league teams
+  // Get all completed games for all league teams (exclude in_progress to avoid corrupting W-L-T)
   const { data: allGames } = await db
     .from('games')
     .select('id, team_id, home_score, away_score, location_type, neutral_home_team, status')
     .in('team_id', teamIds)
-    .in('status', ['completed', 'in_progress']);
+    .eq('status', 'completed');
 
-  // Get all game events
+  // Get all game events — fetch in batches to avoid OOM/timeout for large leagues
   const gameIds = (allGames ?? []).map((g) => g.id);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rawEvents: any[] = [];
-  if (gameIds.length > 0) {
-    const { data: events } = await db
+  const BATCH_SIZE = 200;
+  for (let i = 0; i < gameIds.length; i += BATCH_SIZE) {
+    const batchGameIds = gameIds.slice(i, i + BATCH_SIZE);
+    const { data: events, error: eventsError } = await db
       .from('game_events')
       .select('*')
-      .in('game_id', gameIds)
+      .in('game_id', batchGameIds)
       .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
       .order('game_id')
       .order('sequence_number');
+    if (eventsError) throw eventsError;
     for (const e of events ?? []) rawEvents.push(e);
   }
 

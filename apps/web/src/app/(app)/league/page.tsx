@@ -166,7 +166,7 @@ export default async function LeaguePage(): Promise<JSX.Element | null> {
             {staff.map((s) => {
               const profile = Array.isArray(s.user_profiles) ? s.user_profiles[0] : s.user_profiles;
               const name = profile
-                ? `${profile.first_name ?? ''} ${profile.last_name ?? ''}`.trim() || profile.email
+                ? `${profile.first_name ?? ''} ${profile.last_name ?? ''}`.trim() || 'Staff'
                 : 'Unknown';
               return (
                 <li key={s.id} className="px-6 py-3 flex items-center justify-between">

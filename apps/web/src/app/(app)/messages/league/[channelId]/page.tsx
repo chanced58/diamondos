@@ -82,10 +82,11 @@ export default async function LeagueChannelPage({
     .eq('league_channel_id', params.channelId)
     .eq('user_id', user.id);
 
-  // Build member profiles map
+  // Build member profiles map (normalize array vs object shape from PostgREST)
   const memberProfiles: Record<string, { firstName: string; lastName: string }> = {};
   for (const m of channelMembers ?? []) {
-    const profile = m.user_profiles as unknown as { first_name: string; last_name: string } | null;
+    const raw = m.user_profiles;
+    const profile = (Array.isArray(raw) ? raw[0] : raw) as { first_name: string; last_name: string } | null;
     if (profile) {
       memberProfiles[m.user_id] = {
         firstName: profile.first_name,
@@ -115,6 +116,7 @@ export default async function LeagueChannelPage({
 
       {/* Message thread */}
       <LeagueMessageThread
+        key={params.channelId}
         channelId={params.channelId}
         channelType={channel.channel_type}
         initialMessages={messages.map((m): MessageRow => ({

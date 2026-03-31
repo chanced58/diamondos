@@ -98,6 +98,7 @@ export function LeagueMessageThread({
   }, [messages]);
 
   async function handleSend() {
+    if (sending) return;
     const body = draft.trim();
     if (!body) return;
 
@@ -119,7 +120,7 @@ export function LeagueMessageThread({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !sending) {
       e.preventDefault();
       handleSend();
     }

@@ -41,28 +41,53 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  const { name, description, stateCode } = await req.json();
-  if (!name?.trim()) {
+  // Parse and validate request body
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+      status: 400,
+      headers: corsHeaders,
+    });
+  }
+
+  const { name, description, stateCode } = body as Record<string, unknown>;
+
+  if (typeof name !== 'string' || !name.trim()) {
     return new Response(JSON.stringify({ error: 'League name is required' }), {
       status: 400,
       headers: corsHeaders,
     });
   }
 
-  if (stateCode != null && !/^[A-Za-z]{2}$/.test(stateCode.trim())) {
-    return new Response(JSON.stringify({ error: 'stateCode must be exactly 2 letters' }), {
+  if (description != null && typeof description !== 'string') {
+    return new Response(JSON.stringify({ error: 'description must be a string' }), {
       status: 400,
       headers: corsHeaders,
     });
   }
 
+  if (stateCode != null) {
+    if (typeof stateCode !== 'string' || !/^[A-Za-z]{2}$/.test(stateCode.trim())) {
+      return new Response(JSON.stringify({ error: 'stateCode must be exactly 2 letters' }), {
+        status: 400,
+        headers: corsHeaders,
+      });
+    }
+  }
+
+  const trimmedName = name.trim();
+  const trimmedDesc = typeof description === 'string' ? description.trim() : null;
+  const trimmedState = typeof stateCode === 'string' ? stateCode.trim().toUpperCase() : null;
+
   // Create the league
   const { data: league, error: leagueError } = await serviceClient
     .from('leagues')
     .insert({
-      name: name.trim(),
-      description: description?.trim() ?? null,
-      state_code: stateCode?.trim().toUpperCase() ?? null,
+      name: trimmedName,
+      description: trimmedDesc,
+      state_code: trimmedState,
       created_by: user.id,
     })
     .select()
@@ -93,7 +118,7 @@ Deno.serve(async (req: Request) => {
   }
 
   // Create default league announcements channel
-  const { data: channel } = await serviceClient
+  const { data: channel, error: channelError } = await serviceClient
     .from('league_channels')
     .insert({
       league_id: league.id,
@@ -105,16 +130,29 @@ Deno.serve(async (req: Request) => {
     .select()
     .single();
 
-  // Add creator as channel member with post permission
-  if (channel) {
-    const { error: memberError } = await serviceClient.from('league_channel_members').insert({
-      league_channel_id: channel.id,
-      user_id: user.id,
-      can_post: true,
+  if (channelError || !channel) {
+    console.error('Error creating league channel, rolling back:', channelError);
+    await serviceClient.from('leagues').delete().eq('id', league.id);
+    return new Response(JSON.stringify({ error: channelError?.message ?? 'Failed to create league channel' }), {
+      status: 500,
+      headers: corsHeaders,
     });
-    if (memberError) {
-      console.error(`Error adding channel member (channel=${channel.id}, user=${user.id}):`, memberError);
-    }
+  }
+
+  // Add creator as channel member with post permission
+  const { error: memberError } = await serviceClient.from('league_channel_members').insert({
+    league_channel_id: channel.id,
+    user_id: user.id,
+    can_post: true,
+  });
+
+  if (memberError) {
+    console.error(`Error adding channel member (channel=${channel.id}, user=${user.id}), rolling back:`, memberError);
+    await serviceClient.from('leagues').delete().eq('id', league.id);
+    return new Response(JSON.stringify({ error: memberError.message ?? 'Failed to add channel member' }), {
+      status: 500,
+      headers: corsHeaders,
+    });
   }
 
   return new Response(JSON.stringify({ league, channel }), {

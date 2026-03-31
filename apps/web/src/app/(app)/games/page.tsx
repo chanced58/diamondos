@@ -63,13 +63,16 @@ export default async function SchedulePage({
     let scopeTeamIds: string[] = [activeTeam.id];
     const teamNameMap: Record<string, string> = {};
     if (isLeagueView && league) {
-      scopeTeamIds = await getLeagueTeamIds(db, league.id);
-      const { data: teamsData } = await db
-        .from('teams')
-        .select('id, name')
-        .in('id', scopeTeamIds);
-      for (const t of teamsData ?? []) {
-        teamNameMap[t.id] = t.name;
+      const leagueTeamIds = await getLeagueTeamIds(db, league.id);
+      if (leagueTeamIds.length > 0) {
+        scopeTeamIds = leagueTeamIds;
+        const { data: teamsData } = await db
+          .from('teams')
+          .select('id, name')
+          .in('id', scopeTeamIds);
+        for (const t of teamsData ?? []) {
+          teamNameMap[t.id] = t.name;
+        }
       }
     }
 

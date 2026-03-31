@@ -69,13 +69,14 @@ export default async function LeagueStatsPage({
   const BATCH_SIZE = 200;
   for (let i = 0; i < gameIds.length; i += BATCH_SIZE) {
     const batchGameIds = gameIds.slice(i, i + BATCH_SIZE);
-    const { data: events } = await db
+    const { data: events, error: eventsError } = await db
       .from('game_events')
       .select('*')
       .in('game_id', batchGameIds)
       .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
       .order('game_id')
       .order('sequence_number');
+    if (eventsError) throw eventsError;
     for (const e of events ?? []) rawEvents.push(e);
   }
 
