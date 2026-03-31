@@ -1,4 +1,5 @@
 import { type SupabaseClient } from '@supabase/supabase-js';
+import { isCoachRole } from '@baseball/shared';
 
 /**
  * Adds a user to all non-DM channels for a team.
@@ -10,7 +11,7 @@ export async function addToTeamChannels(
   userId: string,
   role: string,
 ): Promise<void> {
-  const isCoach = ['head_coach', 'assistant_coach', 'athletic_director'].includes(role);
+  const isCoach = isCoachRole(role);
 
   const { data: channels } = await supabase
     .from('channels')

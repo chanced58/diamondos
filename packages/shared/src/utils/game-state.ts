@@ -1,4 +1,4 @@
-import { EventType, type GameEvent, type PitchThrownPayload, type HitPayload, type SubstitutionPayload, type PitchingChangePayload, type ScorePayload, type BaserunnerMovePayload, type PickoffPayload, type RundownPayload } from '../types/game-event';
+import { EventType, type GameEvent, type PitchThrownPayload, type HitPayload, type SubstitutionPayload, type PitchingChangePayload, type BaserunnerMovePayload, type PickoffPayload, type RundownPayload } from '../types/game-event';
 import type { LiveGameState } from '../types/game';
 import { BALLS_FOR_WALK, STRIKES_FOR_STRIKEOUT, OUTS_PER_INNING } from '../constants/baseball';
 
@@ -121,8 +121,9 @@ export function deriveGameState(
       }
 
       case EventType.SCORE: {
-        const p = event.payload as ScorePayload;
-        addRuns(state, p.rbis, state.isTopOfInning);
+        // Each SCORE event represents exactly 1 run scored (rbis tracks RBI credit,
+        // which may be 0 for balks/wild pitches, but the run still counts)
+        addRuns(state, 1, state.isTopOfInning);
         break;
       }
 
@@ -290,8 +291,9 @@ export function deriveGameState(
       }
 
       case EventType.BALK: {
-        // All runners advance one base; runner on third scores (cleared by subsequent SCORE event)
+        // All runners advance one base; runner on third scores
         const runners = { ...state.runnersOnBase };
+        if (runners.third) addRuns(state, 1, state.isTopOfInning);
         runners.third  = runners.second;
         runners.second = runners.first;
         runners.first  = null;

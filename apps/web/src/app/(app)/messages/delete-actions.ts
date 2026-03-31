@@ -3,8 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-
-const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
+import { isCoachRole } from '@baseball/shared';
 
 /**
  * Delete a channel. Coaches/staff only. CASCADE removes channel_members and messages.
@@ -41,7 +40,7 @@ export async function deleteChannelAction(channelId: string): Promise<string | n
 
   const isPlatformAdmin = await checkPlatformAdmin(db, user.id);
 
-  if (!isPlatformAdmin && (!membership || !COACH_ROLES.includes(membership.role))) {
+  if (!isPlatformAdmin && (!membership || !isCoachRole(membership.role))) {
     return 'Only coaches can delete channels.';
   }
 
@@ -97,7 +96,7 @@ export async function deleteMessageAction(messageId: string): Promise<string | n
 
     const isPlatformAdmin = await checkPlatformAdmin(db, user.id);
 
-    if (!isPlatformAdmin && (!membership || !COACH_ROLES.includes(membership.role))) {
+    if (!isPlatformAdmin && (!membership || !isCoachRole(membership.role))) {
       return 'You can only delete your own messages.';
     }
   }

@@ -41,7 +41,7 @@ export async function startDmAction(formData: FormData) {
       .eq('user_id', targetUserId)
       .in('channel_id', candidateChannelIds)
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (match) {
       revalidatePath('/messages', 'layout');

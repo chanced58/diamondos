@@ -1,6 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-
-const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
+import { isCoachRole } from '@baseball/shared';
 
 /**
  * Seeds the two default channels for a team on first visit to /messages.
@@ -61,7 +60,7 @@ export async function seedDefaultChannels(
         teamMembers.map((m) => ({
           channel_id: announcementChannel.id,
           user_id: m.user_id,
-          can_post: COACH_ROLES.includes(m.role),
+          can_post: isCoachRole(m.role),
         })),
       );
     }
