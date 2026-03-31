@@ -4,7 +4,7 @@ import type { JSX } from 'react';
 import { useState } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { EditGameForm } from './EditGameForm';
-import { resetGameAction } from './actions';
+import { resetGameAction, recalculateScoresAction } from './actions';
 
 type GameEditProps = {
   gameId: string;
@@ -87,6 +87,43 @@ export function ResetGameForm({
       <form action={formAction}>
         <input type="hidden" name="gameId" value={gameId} />
         <ResetConfirmButton />
+      </form>
+    </div>
+  );
+}
+
+function RecalculateButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="shrink-0 text-sm font-medium text-amber-700 border border-amber-300 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 px-4 py-2 rounded-lg transition-colors"
+    >
+      {pending ? 'Recalculating...' : 'Recalculate'}
+    </button>
+  );
+}
+
+export function RecalculateScoresForm({
+  gameId,
+}: {
+  gameId: string;
+}): JSX.Element {
+  const [error, formAction] = useFormState(recalculateScoresAction, null);
+
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-center justify-between">
+      <div>
+        <p className="text-sm font-medium text-amber-900">Recalculate scores</p>
+        <p className="text-xs text-amber-700 mt-0.5">
+          Re-derives scores from the event log to fix any discrepancies.
+        </p>
+        {error && <p className="text-xs text-red-700 mt-1 font-medium">{error}</p>}
+      </div>
+      <form action={formAction}>
+        <input type="hidden" name="gameId" value={gameId} />
+        <RecalculateButton />
       </form>
     </div>
   );

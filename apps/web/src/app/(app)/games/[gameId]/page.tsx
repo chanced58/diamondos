@@ -9,7 +9,7 @@ import { formatDate, formatTime, weAreHome } from '@baseball/shared';
 import { CancelGameForm } from './CancelGameForm';
 import { StartGameForm } from './StartGameForm';
 import { LocationMap } from '@/components/maps/LocationMap';
-import { EditGameButton, ResetGameForm } from './GameDetailClient';
+import { EditGameButton, ResetGameForm, RecalculateScoresForm } from './GameDetailClient';
 
 export const metadata: Metadata = { title: 'Game' };
 
@@ -271,6 +271,9 @@ export default async function GameDetailPage({
             Danger Zone
           </p>
           <div className="space-y-3">
+            {(game.status === 'completed' || game.status === 'in_progress') && (
+              <RecalculateScoresForm gameId={game.id} />
+            )}
             {game.status !== 'scheduled' && (
               <ResetGameForm gameId={game.id} />
             )}

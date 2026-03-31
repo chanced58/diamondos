@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { formatDate, weAreHome } from '@baseball/shared';
+import { formatDate, weAreHome, computeLineScore, applyPitchReverted } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
@@ -524,6 +524,30 @@ export async function savePlayerGameNotesAction(
   return 'saved';
 }
 
+/**
+ * Fetch game events and derive scores by replaying the event stream.
+ * This is the single source of truth for final scores — ensures consistency
+ * between the box score, game summary, and dashboard.
+ */
+async function deriveScoresFromEvents(
+  supabase: SupabaseClient,
+  gameId: string,
+): Promise<{ homeScore: number; awayScore: number }> {
+  const { data: allEvents } = await supabase
+    .from('game_events')
+    .select('*')
+    .eq('game_id', gameId)
+    .order('sequence_number');
+
+  const rows = (allEvents ?? []) as Record<string, unknown>[];
+  const lastResetIdx = rows.map((e) => e.event_type).lastIndexOf('game_reset');
+  const activeEvents = lastResetIdx === -1 ? rows : rows.slice(lastResetIdx + 1);
+  const effectiveEvents = applyPitchReverted(activeEvents);
+  const lineScore = computeLineScore(effectiveEvents);
+
+  return { homeScore: lineScore.homeRuns, awayScore: lineScore.awayRuns };
+}
+
 export async function endGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
@@ -540,9 +564,6 @@ export async function endGameAction(_prevState: string | null | undefined, formD
   const result = await getAuthorizedCoach(supabase, user.id, gameId);
   if ('error' in result) return result.error ?? null;
 
-  const homeScore = parseInt(formData.get('homeScore') as string, 10) || 0;
-  const awayScore = parseInt(formData.get('awayScore') as string, 10) || 0;
-
   // Get current max sequence number
   const { data: lastEvent } = await supabase
     .from('game_events')
@@ -555,6 +576,11 @@ export async function endGameAction(_prevState: string | null | undefined, formD
   const nextSeq = (lastEvent?.sequence_number ?? 0) + 1;
   const now = new Date().toISOString();
 
+  // Use client-sent scores for the game_end event payload (preserves what the
+  // coach saw at the moment they ended the game)
+  const clientHomeScore = parseInt(formData.get('homeScore') as string, 10) || 0;
+  const clientAwayScore = parseInt(formData.get('awayScore') as string, 10) || 0;
+
   await supabase.from('game_events').insert({
     id: crypto.randomUUID(),
     game_id: gameId,
@@ -562,11 +588,15 @@ export async function endGameAction(_prevState: string | null | undefined, formD
     event_type: 'game_end',
     inning: parseInt(formData.get('inning') as string, 10) || 1,
     is_top_of_inning: formData.get('isTopOfInning') === 'true',
-    payload: { homeScore, awayScore },
+    payload: { homeScore: clientHomeScore, awayScore: clientAwayScore },
     occurred_at: now,
     created_by: user.id,
     device_id: 'web',
   });
+
+  // Re-derive scores server-side from the event stream to ensure consistency
+  // with the box score (computeLineScore is the single source of truth)
+  const { homeScore, awayScore } = await deriveScoresFromEvents(supabase, gameId);
 
   await supabase
     .from('games')
@@ -578,6 +608,41 @@ export async function endGameAction(_prevState: string | null | undefined, formD
       away_score: awayScore,
     })
     .eq('id', gameId);
+
+  redirect(`/games/${gameId}`);
+}
+
+export async function recalculateScoresAction(
+  _prevState: string | null | undefined,
+  formData: FormData,
+): Promise<string | null> {
+  const authClient = createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return 'Not authenticated.';
+
+  const gameId = formData.get('gameId') as string;
+  if (!gameId) return 'Missing game ID.';
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const result = await getAuthorizedCoach(supabase, user.id, gameId);
+  if ('error' in result) return result.error ?? null;
+
+  const { homeScore, awayScore } = await deriveScoresFromEvents(supabase, gameId);
+
+  const { error } = await supabase
+    .from('games')
+    .update({
+      home_score: homeScore,
+      away_score: awayScore,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', gameId);
+
+  if (error) return `Failed to update scores: ${error.message}`;
 
   redirect(`/games/${gameId}`);
 }
