@@ -586,6 +586,13 @@ export type Database = {
             referencedRelation: "league_channels"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "league_channel_members_user_profiles_fk"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
         ]
       }
       league_channels: {
@@ -754,6 +761,13 @@ export type Database = {
             columns: ["parent_id"]
             isOneToOne: false
             referencedRelation: "league_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_messages_user_profiles_fk"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
             referencedColumns: ["id"]
           },
         ]

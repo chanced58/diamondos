@@ -12,14 +12,9 @@ import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
 import { PitchingStatsTable } from '../PitchingStatsTable';
 import { BattingStatsTable } from '../BattingStatsTable';
 import { TierToggle } from '../TierToggle';
+import { RELEVANT_EVENT_TYPES } from '../constants';
 
 export const metadata: Metadata = { title: 'League Stats' };
-
-const RELEVANT_EVENT_TYPES = [
-  'pitch_thrown', 'hit', 'out', 'strikeout', 'walk', 'hit_by_pitch', 'score',
-  'pitching_change', 'inning_change', 'game_start', 'double_play', 'sacrifice_bunt',
-  'sacrifice_fly', 'field_error', 'stolen_base', 'caught_stealing',
-] as const;
 
 export default async function LeagueStatsPage({
   searchParams,
@@ -64,11 +59,12 @@ export default async function LeagueStatsPage({
 
   // Include in_progress so live player stats update during games;
   // this page shows individual player stats, not W-L-T standings
-  const { data: gamesData } = await db
+  const { data: gamesData, error: gamesError } = await db
     .from('games')
     .select('id, team_id')
     .in('team_id', teamIds)
     .in('status', ['completed', 'in_progress']);
+  if (gamesError) throw new Error(`Failed to fetch league games: ${gamesError.message}`);
 
   const gameIds = (gamesData ?? []).map((g) => g.id);
 
@@ -90,16 +86,18 @@ export default async function LeagueStatsPage({
   }
 
   // Get all players across all league teams
-  const { data: allPlayers } = await db
+  const { data: allPlayers, error: playersError } = await db
     .from('players')
     .select('id, team_id, first_name, last_name')
     .in('team_id', teamIds);
+  if (playersError) throw new Error(`Failed to fetch players: ${playersError.message}`);
 
   // Get team names for display
-  const { data: teamsData } = await db
+  const { data: teamsData, error: teamsError } = await db
     .from('teams')
     .select('id, name')
     .in('id', teamIds);
+  if (teamsError) throw new Error(`Failed to fetch teams: ${teamsError.message}`);
   const teamNameMap = new Map((teamsData ?? []).map((t) => [t.id, t.name]));
 
   // Build player list with team name included in the display name

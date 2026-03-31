@@ -8,14 +8,9 @@ import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueTeams } from '@baseball/database';
 import { derivePitchingStats, deriveBattingStats, weAreHome } from '@baseball/shared';
+import { RELEVANT_EVENT_TYPES } from '../../constants';
 
 export const metadata: Metadata = { title: 'Team Comparison' };
-
-const RELEVANT_EVENT_TYPES = [
-  'pitch_thrown', 'hit', 'out', 'strikeout', 'walk', 'hit_by_pitch', 'score',
-  'pitching_change', 'inning_change', 'game_start', 'double_play', 'sacrifice_bunt',
-  'sacrifice_fly', 'field_error', 'stolen_base', 'caught_stealing',
-] as const;
 
 type TeamComparisonRow = {
   teamId: string;
@@ -61,11 +56,12 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
   }
 
   // Get all completed games for all league teams (exclude in_progress to avoid corrupting W-L-T)
-  const { data: allGames } = await db
+  const { data: allGames, error: gamesError } = await db
     .from('games')
     .select('id, team_id, home_score, away_score, location_type, neutral_home_team, status')
     .in('team_id', teamIds)
     .eq('status', 'completed');
+  if (gamesError) throw new Error(`Failed to fetch league games: ${gamesError.message}`);
 
   // Get all game events — fetch in batches to avoid OOM/timeout for large leagues
   const gameIds = (allGames ?? []).map((g) => g.id);
@@ -86,10 +82,11 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
   }
 
   // Get all players grouped by team
-  const { data: allPlayers } = await db
+  const { data: allPlayers, error: playersError } = await db
     .from('players')
     .select('id, team_id, first_name, last_name')
     .in('team_id', teamIds);
+  if (playersError) throw new Error(`Failed to fetch players: ${playersError.message}`);
 
   // Build comparison rows per team
   const rows: TeamComparisonRow[] = leagueTeams.map((lt) => {
