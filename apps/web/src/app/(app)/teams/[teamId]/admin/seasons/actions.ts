@@ -76,7 +76,7 @@ export async function createSeasonAction(
 
   if (existing) return `${name} already exists.`;
 
-  const { error } = await supabase
+  const { data: season, error } = await supabase
     .from('seasons')
     .insert({
       team_id: teamId,
@@ -84,9 +84,21 @@ export async function createSeasonAction(
       start_date: startDate,
       end_date: endDate,
       is_active: false,
-    });
+    })
+    .select('id')
+    .single();
 
   if (error) return `Failed to create season: ${error.message}`;
+
+  // Auto-attach existing games that fall within this season's date range
+  // and don't already belong to a season.
+  await supabase
+    .from('games')
+    .update({ season_id: season.id })
+    .eq('team_id', teamId)
+    .is('season_id', null)
+    .gte('scheduled_at', `${startDate}T00:00:00`)
+    .lte('scheduled_at', `${endDate}T23:59:59`);
 
   revalidatePath(`/teams/${teamId}/admin/seasons`);
   return null;

@@ -28,12 +28,19 @@ type StaffEntry = {
   name: string;
 };
 
+type AvailableTeam = {
+  id: string;
+  name: string;
+  organization: string | null;
+};
+
 interface LeagueAdminClientProps {
   leagueId: string;
   teams: TeamEntry[];
   divisions: Division[];
   staff: StaffEntry[];
   isAdmin: boolean;
+  availableTeams?: AvailableTeam[];
 }
 
 export function LeagueAdminClient({
@@ -42,6 +49,7 @@ export function LeagueAdminClient({
   divisions,
   staff,
   isAdmin,
+  availableTeams,
 }: LeagueAdminClientProps): JSX.Element {
   const router = useRouter();
   const [newDivisionName, setNewDivisionName] = useState('');
@@ -84,11 +92,16 @@ export function LeagueAdminClient({
     }
   }
 
+  // Filter out teams already in the league for the dropdown
+  const teamsNotInLeague = (availableTeams ?? []).filter(
+    (at) => !teams.some((t) => t.teamId === at.id),
+  );
+
   async function handleAddTeam(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = addTeamId.trim();
     if (!trimmed) return;
-    if (!UUID_RE.test(trimmed)) {
+    if (!availableTeams && !UUID_RE.test(trimmed)) {
       setErrorMsg('Team ID must be a valid UUID');
       return;
     }
@@ -253,13 +266,28 @@ export function LeagueAdminClient({
           )}
 
           <form onSubmit={handleAddTeam} className="flex gap-2">
-            <input
-              type="text"
-              value={addTeamId}
-              onChange={(e) => { setAddTeamId(e.target.value); setErrorMsg(null); }}
-              placeholder="Team ID"
-              className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
-            />
+            {availableTeams ? (
+              <select
+                value={addTeamId}
+                onChange={(e) => { setAddTeamId(e.target.value); setErrorMsg(null); }}
+                className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                <option value="">Select a team…</option>
+                {teamsNotInLeague.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}{t.organization ? ` — ${t.organization}` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={addTeamId}
+                onChange={(e) => { setAddTeamId(e.target.value); setErrorMsg(null); }}
+                placeholder="Team ID"
+                className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            )}
             {divisions.length > 0 && (
               <select
                 value={addTeamDivision}
