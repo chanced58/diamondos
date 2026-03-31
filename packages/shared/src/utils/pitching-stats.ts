@@ -280,7 +280,7 @@ export function derivePitchingStats(
 
         // ── Advance the count ───────────────────────────────────────────
         if (outcome === PitchOutcome.CALLED_STRIKE || outcome === PitchOutcome.SWINGING_STRIKE || outcome === PitchOutcome.FOUL_TIP) {
-          if (ab.strikes < 2) ab.strikes += 1;
+          ab.strikes += 1;
         } else if (outcome === PitchOutcome.FOUL) {
           if (ab.strikes < 2) ab.strikes += 1;
           // Foul with 2 strikes doesn't advance
