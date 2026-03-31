@@ -138,6 +138,10 @@ export function derivePitchingStats(
     // Current pitcher on the mound for the active half-inning
     let currentPitcherId: string | null = null;
 
+    // Set by pitch progression when a strikeout is detected via ab.strikes >= 3,
+    // so the subsequent explicit STRIKEOUT event can skip redundant stat updates.
+    let strikeoutHandledByPitch = false;
+
     // ── Base-runner tracking for run attribution to pitchers ────────────────
     // Track runner ID + whether they reached on error for earned run distinction
     type RunnerState = { id: string; reachedOnError: boolean } | null;
@@ -280,7 +284,7 @@ export function derivePitchingStats(
 
         // ── Advance the count ───────────────────────────────────────────
         if (outcome === PitchOutcome.CALLED_STRIKE || outcome === PitchOutcome.SWINGING_STRIKE || outcome === PitchOutcome.FOUL_TIP) {
-          if (ab.strikes < 2) ab.strikes += 1;
+          ab.strikes += 1;
         } else if (outcome === PitchOutcome.FOUL) {
           if (ab.strikes < 2) ab.strikes += 1;
           // Foul with 2 strikes doesn't advance
@@ -311,9 +315,12 @@ export function derivePitchingStats(
           // Don't reset yet — wait for HIT/OUT event
         }
 
-        // Check for strikeout via pitch count (3rd strike)
+        // Check for strikeout via pitch count (3rd strike).
+        // When detected here, we record strikeouts + baByCount and set a flag
+        // so the subsequent explicit STRIKEOUT event only adds inningsPitchedOuts.
         if (ab.strikes >= 3) {
           s.strikeouts += 1;
+          strikeoutHandledByPitch = true;
           // BA by count: strikeout is an out at the count before the final strike
           const prev = `${ab.balls}-${Math.min(ab.strikes - 1, 2)}`;
           const countStat = s.baByCount[prev] ?? s.baByCount['0-0'];
@@ -392,16 +399,26 @@ export function derivePitchingStats(
         }
       }
 
-      // ── STRIKEOUT (explicit event for backwards compat) ──────────────────
+      // ── STRIKEOUT (explicit event) ──────────────────────────────────────
+      // Pitch progression (ab.strikes >= 3) handles strikeouts, baByCount,
+      // and threeBallCount stats. This handler only adds the out recording.
+      // If pitch progression already ran, skip redundant stat updates.
       if (etype === EventType.STRIKEOUT) {
         const pitcherId: string | undefined = payload?.pitcherId;
         const batterId: string | undefined = payload?.batterId;
         if (pitcherId) {
           const s = getStats(pitcherId);
-          // Only count if not already counted via pitch progression
-          s.inningsPitchedOuts += 1;
+          if (strikeoutHandledByPitch) {
+            // Pitch progression already counted the strikeout; just record the out
+            s.inningsPitchedOuts += 1;
+          } else {
+            // No prior pitch data — count both the strikeout and the out
+            s.strikeouts += 1;
+            s.inningsPitchedOuts += 1;
+          }
           if (batterId) resetAtBat(batterId);
         }
+        strikeoutHandledByPitch = false;
       }
 
       // ── WALK (explicit event) ────────────────────────────────────────────
