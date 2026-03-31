@@ -8,6 +8,7 @@ import type { TeamSummary } from '@baseball/database';
 import type { ReactNode } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { addToTeamChannels } from '@/lib/team-channels';
+import { getActiveLeague } from '@/lib/active-league';
 
 export default async function AppLayout({ children }: { children: ReactNode }): Promise<JSX.Element> {
   const supabase = createServerClient();
@@ -191,6 +192,9 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
     }
   }
 
+  // Resolve league context for the active team
+  const league = activeTeam ? await getActiveLeague(activeTeam.id) : null;
+
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar
@@ -201,6 +205,8 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         primaryColor={activeTeam?.primary_color ?? undefined}
         secondaryColor={activeTeam?.secondary_color ?? undefined}
         isPlatformAdmin={isPlatformAdmin}
+        leagueId={league?.id}
+        leagueName={league?.name}
       />
       <main className="flex-1 overflow-auto">
         {children}

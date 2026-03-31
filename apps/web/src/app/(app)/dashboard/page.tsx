@@ -7,6 +7,8 @@ import { getActiveTeam } from '@/lib/active-team';
 import { getUserAccess } from '@/lib/user-access';
 import { formatTime, weAreHome } from '@baseball/shared';
 import { NewAnnouncementForm } from '../messages/NewAnnouncementForm';
+import { getActiveLeague } from '@/lib/active-league';
+import { getLeagueTeamIds } from '@baseball/database';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -43,7 +45,11 @@ type Announcement = {
   channelName: string | null;
 };
 
-export default async function DashboardPage(): Promise<JSX.Element | null> {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: { view?: string };
+}): Promise<JSX.Element | null> {
   const supabase = createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -76,6 +82,25 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
+  // Check for league membership and resolve view mode
+  const league = await getActiveLeague(activeTeam.id);
+  const isLeagueView = searchParams.view === 'league' && league !== null;
+
+  // For league view, get all team IDs in the league; for team view, just the active team
+  let scopeTeamIds: string[] = [activeTeam.id];
+  let teamNameMap: Record<string, string> = {};
+  if (isLeagueView && league) {
+    scopeTeamIds = await getLeagueTeamIds(db, league.id);
+    // Build a team name map for league view
+    const { data: teamsData } = await db
+      .from('teams')
+      .select('id, name')
+      .in('id', scopeTeamIds);
+    for (const t of teamsData ?? []) {
+      teamNameMap[t.id] = t.name;
+    }
+  }
+
   const now = new Date().toISOString();
   const fourWeeksOut = new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -87,28 +112,28 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
     announcementChannelsResult,
   ] = await Promise.all([
     db.from('games')
-      .select('id, opponent_name, scheduled_at, location_type, neutral_home_team, venue_name')
-      .eq('team_id', activeTeam.id)
+      .select('id, team_id, opponent_name, scheduled_at, location_type, neutral_home_team, venue_name')
+      .in('team_id', scopeTeamIds)
       .in('status', ['scheduled', 'in_progress'])
       .gte('scheduled_at', now)
       .lte('scheduled_at', fourWeeksOut)
       .order('scheduled_at'),
     db.from('practices')
-      .select('id, scheduled_at, location, duration_minutes')
+      .select('id, team_id, scheduled_at, location, duration_minutes')
       .eq('team_id', activeTeam.id)
       .not('status', 'eq', 'cancelled')
       .gte('scheduled_at', now)
       .lte('scheduled_at', fourWeeksOut)
       .order('scheduled_at'),
     db.from('team_events')
-      .select('id, title, event_type, starts_at, location')
+      .select('id, team_id, title, event_type, starts_at, location')
       .eq('team_id', activeTeam.id)
       .gte('starts_at', now)
       .lte('starts_at', fourWeeksOut)
       .order('starts_at'),
     db.from('games')
-      .select('id, opponent_name, scheduled_at, location_type, neutral_home_team, home_score, away_score, completed_at')
-      .eq('team_id', activeTeam.id)
+      .select('id, team_id, opponent_name, scheduled_at, location_type, neutral_home_team, home_score, away_score, completed_at')
+      .in('team_id', scopeTeamIds)
       .eq('status', 'completed')
       .order('completed_at', { ascending: false })
       .limit(8),
@@ -123,10 +148,11 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
 
   // Build upcoming items list
   const upcomingItems: UpcomingItem[] = [
-    ...(upcomingGamesResult.data ?? []).map((g) => {
+    ...(upcomingGamesResult.data ?? []).map((g: any) => {
       const isHome = weAreHome(g.location_type, g.neutral_home_team);
       const locTag = g.location_type === 'home' ? 'Home' : g.location_type === 'away' ? 'Away' : 'Neutral';
-      const parts = [locTag, g.venue_name].filter(Boolean);
+      const teamLabel = isLeagueView && g.team_id !== activeTeam.id ? teamNameMap[g.team_id] : null;
+      const parts = [teamLabel, locTag, g.venue_name].filter(Boolean);
       return {
         kind: 'game' as const,
         id: g.id,
@@ -155,14 +181,15 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
   ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   // Build recent games list
-  const recentGames: RecentGame[] = (recentGamesResult.data ?? []).map((g) => {
+  const recentGames: RecentGame[] = (recentGamesResult.data ?? []).map((g: any) => {
     const isHome = weAreHome(g.location_type, g.neutral_home_team);
     const ourScore   = isHome ? g.home_score : g.away_score;
     const theirScore = isHome ? g.away_score : g.home_score;
+    const teamLabel = isLeagueView && g.team_id !== activeTeam.id ? teamNameMap[g.team_id] : null;
     return {
       id: g.id,
       date: g.completed_at ?? g.scheduled_at,
-      opponent: g.opponent_name,
+      opponent: teamLabel ? `${teamLabel}: ${g.opponent_name}` : g.opponent_name,
       ourScore,
       theirScore,
       locationLabel: isHome ? 'vs' : '@',
@@ -217,8 +244,30 @@ export default async function DashboardPage(): Promise<JSX.Element | null> {
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">{activeTeam.name}</h1>
-      <p className="text-gray-500 mb-6">Dashboard</p>
+      <div className="flex items-center justify-between mb-1">
+        <h1 className="text-2xl font-bold text-gray-900">{activeTeam.name}</h1>
+        {league && (
+          <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+            <Link
+              href="/dashboard"
+              className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+                !isLeagueView ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              My Team
+            </Link>
+            <Link
+              href="/dashboard?view=league"
+              className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+                isLeagueView ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {league.name}
+            </Link>
+          </div>
+        )}
+      </div>
+      <p className="text-gray-500 mb-6">{isLeagueView ? `${league!.name} Dashboard` : 'Dashboard'}</p>
 
       <div className="space-y-6">
 

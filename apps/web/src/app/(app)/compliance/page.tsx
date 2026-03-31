@@ -13,6 +13,7 @@ import { OpponentsStatsTable } from './OpponentsStatsTable';
 import type { OpponentTeamStats } from './OpponentsStatsTable';
 import { SeasonPicker } from './SeasonPicker';
 import { TierToggle } from './TierToggle';
+import { getActiveLeague } from '@/lib/active-league';
 
 export const metadata: Metadata = { title: 'Stats' };
 
@@ -56,6 +57,8 @@ export default async function CompliancePage({
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  const league = await getActiveLeague(activeTeam.id);
 
   // Get team level for tier-aware stat display
   const { data: teamData } = await db
@@ -280,6 +283,14 @@ export default async function CompliancePage({
             seasons={(allSeasons ?? []).map((s) => ({ id: s.id, name: s.name }))}
             currentSeasonId={season?.id ?? null}
           />
+          {league && (
+            <Link
+              href="/compliance/league"
+              className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-100 transition-colors"
+            >
+              League Stats
+            </Link>
+          )}
         </div>
         <div className="flex items-center gap-3 mt-2">
           <p className="text-gray-500 text-sm">
