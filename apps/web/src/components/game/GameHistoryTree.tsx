@@ -240,8 +240,8 @@ function ReplaceEventPanel({
         </div>
         <div className="flex items-center gap-3">
           {(() => {
-            const resolvedOutType = pendingResult === 'double_play' || pendingResult === 'triple_play' ? 'groundout' : (pendingResult ?? 'groundout');
-            const buttonLabel = pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : 'Out';
+            const resolvedOutType = pendingResult === 'double_play' || pendingResult === 'triple_play' || pendingResult === 'field_choice' ? 'groundout' : (pendingResult ?? 'groundout');
+            const buttonLabel = pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : pendingResult === 'field_choice' ? 'FC' : 'Out';
             return (
               <>
                 <button
@@ -281,7 +281,7 @@ function ReplaceEventPanel({
                 setTrajectory(value);
                 if (pendingResult === 'error') {
                   setStep('error-fielder');
-                } else if (['out', 'double_play', 'triple_play'].includes(pendingResult)) {
+                } else if (['out', 'double_play', 'triple_play', 'field_choice'].includes(pendingResult)) {
                   setStep('fielding');
                 } else {
                   handleHitResult(pendingResult, value);
@@ -321,33 +321,41 @@ function ReplaceEventPanel({
           </button>
         ))}
       </div>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-4 gap-2">
         {([
           { label: 'Out', value: 'out' },
           { label: 'DP', value: 'double_play' },
-          { label: 'Error', value: 'error' },
+          { label: 'TP', value: 'triple_play' },
+          { label: 'FC', value: 'field_choice' },
         ] as const).map(({ label, value }) => (
           <button
             key={value}
             type="button"
             disabled={isPending}
             onClick={() => { setPendingResult(value); setStep('trajectory'); }}
-            className={`py-2 text-sm font-medium rounded-lg border disabled:opacity-40 transition-colors ${
-              value === 'error'
-                ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
-                : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
-            }`}
+            className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
           >
             {label}
           </button>
         ))}
       </div>
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-1 gap-2">
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={() => { setPendingResult('error'); setStep('trajectory'); }}
+          className="py-2 text-sm font-medium rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors"
+        >
+          Error
+        </button>
+      </div>
+      <div className="grid grid-cols-5 gap-2">
         {([
           { label: 'Walk', eventType: 'walk' },
           { label: 'HBP', eventType: 'hit_by_pitch' },
           { label: 'Strikeout', eventType: 'strikeout' },
           { label: 'Sac Fly', eventType: 'sacrifice_fly' },
+          { label: 'Sac Bunt', eventType: 'sacrifice_bunt' },
         ] as const).map(({ label, eventType }) => (
           <button
             key={eventType}
@@ -418,6 +426,7 @@ function AddEventPanel({
   isTopOfInning,
   teamPlayers,
   opponentPlayers,
+  insertAfterSequence,
   onDone,
 }: {
   gameId: string;
@@ -425,6 +434,7 @@ function AddEventPanel({
   isTopOfInning: boolean;
   teamPlayers: PlayerEntry[];
   opponentPlayers: PlayerEntry[];
+  insertAfterSequence?: number;
   onDone: () => void;
 }) {
   const [step, setStep] = useState<'players' | 'type' | 'trajectory' | 'fielding' | 'error-fielder'>('players');
@@ -465,12 +475,15 @@ function AddEventPanel({
     setIsPending(true);
     setError(null);
     try {
+      const finalPayload = insertAfterSequence != null
+        ? { ...payload, insertAfterSequence }
+        : payload;
       const formData = new FormData();
       formData.set('gameId', gameId);
       formData.set('eventType', eventType);
       formData.set('inning', String(inning));
       formData.set('isTopOfInning', String(isTopOfInning));
-      formData.set('payload', JSON.stringify(payload));
+      formData.set('payload', JSON.stringify(finalPayload));
       const err = await insertCorrectionEventAction(null, formData);
       if (err) { setError(err); return; }
       onDone();
@@ -595,8 +608,8 @@ function AddEventPanel({
   }
 
   if (step === 'fielding') {
-    const resolvedOutType = pendingResult === 'double_play' || pendingResult === 'triple_play' ? 'groundout' : (pendingResult ?? 'groundout');
-    const buttonLabel = pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : 'Out';
+    const resolvedOutType = pendingResult === 'double_play' || pendingResult === 'triple_play' || pendingResult === 'field_choice' ? 'groundout' : (pendingResult ?? 'groundout');
+    const buttonLabel = pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : pendingResult === 'field_choice' ? 'FC' : 'Out';
     return (
       <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Fielding play order</p>
@@ -641,7 +654,7 @@ function AddEventPanel({
               onClick={() => {
                 setTrajectory(value);
                 if (pendingResult === 'error') setStep('error-fielder');
-                else if (['out', 'double_play', 'triple_play'].includes(pendingResult)) setStep('fielding');
+                else if (['out', 'double_play', 'triple_play', 'field_choice'].includes(pendingResult)) setStep('fielding');
                 else handleHitResult(pendingResult, value);
               }}
               className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
@@ -670,25 +683,30 @@ function AddEventPanel({
           >{label}</button>
         ))}
       </div>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-4 gap-2">
         {([
           { label: 'Out', value: 'out' },
           { label: 'DP', value: 'double_play' },
-          { label: 'Error', value: 'error' },
+          { label: 'TP', value: 'triple_play' },
+          { label: 'FC', value: 'field_choice' },
         ] as const).map(({ label, value }) => (
           <button key={value} type="button" disabled={isPending} onClick={() => { setPendingResult(value); setStep('trajectory'); }}
-            className={`py-2 text-sm font-medium rounded-lg border disabled:opacity-40 transition-colors ${
-              value === 'error' ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
-            }`}
+            className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
           >{label}</button>
         ))}
       </div>
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-1 gap-2">
+        <button type="button" disabled={isPending} onClick={() => { setPendingResult('error'); setStep('trajectory'); }}
+          className="py-2 text-sm font-medium rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors"
+        >Error</button>
+      </div>
+      <div className="grid grid-cols-5 gap-2">
         {([
           { label: 'Walk', eventType: 'walk' },
           { label: 'HBP', eventType: 'hit_by_pitch' },
           { label: 'Strikeout', eventType: 'strikeout' },
           { label: 'Sac Fly', eventType: 'sacrifice_fly' },
+          { label: 'Sac Bunt', eventType: 'sacrifice_bunt' },
         ] as const).map(({ label, eventType }) => (
           <button key={eventType} type="button" disabled={isPending} onClick={() => handleDirectResult(eventType)}
             className="py-2 text-sm font-medium rounded-lg border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-40 transition-colors"
@@ -709,12 +727,16 @@ function AddPlayButton({
   isTopOfInning,
   teamPlayers,
   opponentPlayers,
+  insertAfterSequence,
+  label,
 }: {
   gameId: string;
   inning: number;
   isTopOfInning: boolean;
   teamPlayers: PlayerEntry[];
   opponentPlayers: PlayerEntry[];
+  insertAfterSequence?: number;
+  label?: string;
 }) {
   const [adding, setAdding] = useState(false);
 
@@ -726,6 +748,7 @@ function AddPlayButton({
         isTopOfInning={isTopOfInning}
         teamPlayers={teamPlayers}
         opponentPlayers={opponentPlayers}
+        insertAfterSequence={insertAfterSequence}
         onDone={() => setAdding(false)}
       />
     );
@@ -735,14 +758,31 @@ function AddPlayButton({
     <button
       type="button"
       onClick={() => setAdding(true)}
-      className="mt-2 flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-800 font-medium transition-colors"
+      className="mt-1 mb-1 flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-800 font-medium transition-colors"
     >
       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
       </svg>
-      Add Play
+      {label ?? 'Add Play'}
     </button>
   );
+}
+
+/** Get the last sequence number from a half-inning item (at-bat or interstitial). */
+function getItemLastSequence(item: AtBatNode | InterstitialNode): number {
+  if (item.type === 'interstitial') return item.event.sequenceNumber;
+  // For at-bats, find the highest sequence among pitches, mid-at-bat events, and result
+  let max = 0;
+  for (const p of item.pitches) {
+    if (p.event.sequenceNumber > max) max = p.event.sequenceNumber;
+  }
+  for (const m of item.midAtBatEvents) {
+    if (m.event.sequenceNumber > max) max = m.event.sequenceNumber;
+  }
+  if (item.result && item.result.event.sequenceNumber > max) {
+    max = item.result.event.sequenceNumber;
+  }
+  return max;
 }
 
 // ── Interstitial Event Row ──────────────────────────────────────────────────
@@ -929,22 +969,43 @@ function HalfInningSection({
       {expanded && (
         <div className="ml-4 mt-1">
           {half.items.map((item, i) => {
+            const canInsert = isCoach && gameId && teamPlayers && opponentPlayers;
+            const insertButton = canInsert ? (
+              <AddPlayButton
+                key={`insert-${i}`}
+                gameId={gameId}
+                inning={inningNumber}
+                isTopOfInning={half.isTop}
+                teamPlayers={teamPlayers}
+                opponentPlayers={opponentPlayers}
+                insertAfterSequence={i > 0 ? getItemLastSequence(half.items[i - 1]) : 0}
+                label="Insert Play Here"
+              />
+            ) : null;
+
             if (item.type === 'at-bat') {
               const abKey = `${nodeKey}-ab-${item.number}`;
               return (
-                <AtBatSection
-                  key={i}
-                  atBat={item}
-                  nodeKey={abKey}
-                  expanded={expandedNodes.has(abKey)}
-                  onToggle={onToggle}
-                  isHome={isHome}
-                  isCoach={isCoach}
-                  gameId={gameId}
-                />
+                <React.Fragment key={i}>
+                  {insertButton}
+                  <AtBatSection
+                    atBat={item}
+                    nodeKey={abKey}
+                    expanded={expandedNodes.has(abKey)}
+                    onToggle={onToggle}
+                    isHome={isHome}
+                    isCoach={isCoach}
+                    gameId={gameId}
+                  />
+                </React.Fragment>
               );
             }
-            return <InterstitialRow key={i} node={item} isCoach={isCoach} gameId={gameId} />;
+            return (
+              <React.Fragment key={i}>
+                {insertButton}
+                <InterstitialRow node={item} isCoach={isCoach} gameId={gameId} />
+              </React.Fragment>
+            );
           })}
           {isCoach && gameId && teamPlayers && opponentPlayers && (
             <AddPlayButton
@@ -953,6 +1014,8 @@ function HalfInningSection({
               isTopOfInning={half.isTop}
               teamPlayers={teamPlayers}
               opponentPlayers={opponentPlayers}
+              insertAfterSequence={half.items.length > 0 ? getItemLastSequence(half.items[half.items.length - 1]) : 0}
+              label="Add Play"
             />
           )}
         </div>

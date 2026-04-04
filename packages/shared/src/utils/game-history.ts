@@ -369,10 +369,56 @@ function isBallOutcome(outcome: PitchOutcome | string): boolean {
     || outcome === PitchOutcome.INTENTIONAL_BALL;
 }
 
+/**
+ * Reorder events so that any event with `insertAfterSequence` in its payload
+ * is positioned immediately after the event with that sequence number,
+ * preserving relative order among events targeting the same position.
+ */
+function applyInsertionOrder(events: GameEvent[]): GameEvent[] {
+  // Separate normal events from insertion-targeted events
+  const normal: GameEvent[] = [];
+  const insertions: GameEvent[] = [];
+  for (const e of events) {
+    const p = e.payload as Record<string, unknown>;
+    if (typeof p.insertAfterSequence === 'number') {
+      insertions.push(e);
+    } else {
+      normal.push(e);
+    }
+  }
+  if (insertions.length === 0) return events;
+
+  // Build result by inserting after their targets
+  const result = [...normal];
+  // Sort insertions by their own sequence number so multiple inserts at the
+  // same position maintain a stable order
+  insertions.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+  for (const ins of insertions) {
+    const targetSeq = (ins.payload as Record<string, unknown>).insertAfterSequence as number;
+    // Find the last index where sequenceNumber <= targetSeq or is another
+    // insertion targeting the same or earlier position
+    let insertIdx = result.length; // default: append
+    for (let i = result.length - 1; i >= 0; i--) {
+      const r = result[i];
+      const rPayload = r.payload as Record<string, unknown>;
+      const rTarget = typeof rPayload.insertAfterSequence === 'number' ? rPayload.insertAfterSequence : r.sequenceNumber;
+      if (rTarget <= targetSeq) {
+        insertIdx = i + 1;
+        break;
+      }
+    }
+    result.splice(insertIdx, 0, ins);
+  }
+  return result;
+}
+
 export function buildGameHistoryTree(
   events: GameEvent[],
   playerNameMap: Map<string, string>,
 ): GameHistoryTree {
+  // Reorder so correction events with insertAfterSequence are positioned correctly
+  const orderedEvents = applyInsertionOrder(events);
+
   const tree: GameHistoryTree = {
     innings: [],
     gameStartEvent: null,
@@ -491,7 +537,7 @@ export function buildGameHistoryTree(
     return { batterId, pitcherId };
   }
 
-  for (const event of events) {
+  for (const event of orderedEvents) {
     switch (event.eventType) {
       case EventType.GAME_START: {
         tree.gameStartEvent = {
