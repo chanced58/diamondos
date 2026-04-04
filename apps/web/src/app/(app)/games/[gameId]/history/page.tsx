@@ -7,7 +7,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
 import { weAreHome, buildGameHistoryTree, applyPitchRevertedTyped } from '@baseball/shared';
 import type { GameEvent, EventType } from '@baseball/shared';
-import { GameHistoryTree } from '@/components/game/GameHistoryTree';
+import { GameHistoryTree, type PlayerEntry } from '@/components/game/GameHistoryTree';
 import { RecalculateScoresForm } from '../GameDetailClient';
 
 export const metadata: Metadata = { title: 'Game History' };
@@ -124,6 +124,16 @@ export default async function GameHistoryPage({
     }
   }
 
+  // Build player lists for the add-play panel
+  const teamPlayers: PlayerEntry[] = (rosterResult.data ?? []).map((p) => ({
+    id: p.id,
+    name: `${p.first_name} ${p.last_name}`,
+  }));
+  const opponentPlayersList: PlayerEntry[] = (opponentPlayersResult.data ?? []).map((p) => ({
+    id: p.id,
+    name: `${p.first_name} ${p.last_name}`,
+  }));
+
   // Filter out reverted events and handle game_reset boundary
   const allEvents = (eventsResult.data ?? []) as Record<string, unknown>[];
   const lastResetIndex = allEvents.map((e) => e.event_type).lastIndexOf('game_reset');
@@ -193,6 +203,8 @@ export default async function GameHistoryPage({
           isHome={isHome}
           isCoach={isCoach}
           gameId={game.id}
+          teamPlayers={teamPlayers}
+          opponentPlayers={opponentPlayersList}
         />
       </div>
     </div>
