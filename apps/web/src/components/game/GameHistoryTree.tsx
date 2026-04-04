@@ -426,6 +426,7 @@ function AddEventPanel({
   isTopOfInning,
   teamPlayers,
   opponentPlayers,
+  insertAfterSequence,
   onDone,
 }: {
   gameId: string;
@@ -433,6 +434,7 @@ function AddEventPanel({
   isTopOfInning: boolean;
   teamPlayers: PlayerEntry[];
   opponentPlayers: PlayerEntry[];
+  insertAfterSequence?: number;
   onDone: () => void;
 }) {
   const [step, setStep] = useState<'players' | 'type' | 'trajectory' | 'fielding' | 'error-fielder'>('players');
@@ -473,12 +475,15 @@ function AddEventPanel({
     setIsPending(true);
     setError(null);
     try {
+      const finalPayload = insertAfterSequence != null
+        ? { ...payload, insertAfterSequence }
+        : payload;
       const formData = new FormData();
       formData.set('gameId', gameId);
       formData.set('eventType', eventType);
       formData.set('inning', String(inning));
       formData.set('isTopOfInning', String(isTopOfInning));
-      formData.set('payload', JSON.stringify(payload));
+      formData.set('payload', JSON.stringify(finalPayload));
       const err = await insertCorrectionEventAction(null, formData);
       if (err) { setError(err); return; }
       onDone();
@@ -722,12 +727,16 @@ function AddPlayButton({
   isTopOfInning,
   teamPlayers,
   opponentPlayers,
+  insertAfterSequence,
+  label,
 }: {
   gameId: string;
   inning: number;
   isTopOfInning: boolean;
   teamPlayers: PlayerEntry[];
   opponentPlayers: PlayerEntry[];
+  insertAfterSequence?: number;
+  label?: string;
 }) {
   const [adding, setAdding] = useState(false);
 
@@ -739,6 +748,7 @@ function AddPlayButton({
         isTopOfInning={isTopOfInning}
         teamPlayers={teamPlayers}
         opponentPlayers={opponentPlayers}
+        insertAfterSequence={insertAfterSequence}
         onDone={() => setAdding(false)}
       />
     );
@@ -748,14 +758,31 @@ function AddPlayButton({
     <button
       type="button"
       onClick={() => setAdding(true)}
-      className="mt-2 flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-800 font-medium transition-colors"
+      className="mt-1 mb-1 flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-800 font-medium transition-colors"
     >
       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
       </svg>
-      Add Play
+      {label ?? 'Add Play'}
     </button>
   );
+}
+
+/** Get the last sequence number from a half-inning item (at-bat or interstitial). */
+function getItemLastSequence(item: AtBatNode | InterstitialNode): number {
+  if (item.type === 'interstitial') return item.event.sequenceNumber;
+  // For at-bats, find the highest sequence among pitches, mid-at-bat events, and result
+  let max = 0;
+  for (const p of item.pitches) {
+    if (p.event.sequenceNumber > max) max = p.event.sequenceNumber;
+  }
+  for (const m of item.midAtBatEvents) {
+    if (m.event.sequenceNumber > max) max = m.event.sequenceNumber;
+  }
+  if (item.result && item.result.event.sequenceNumber > max) {
+    max = item.result.event.sequenceNumber;
+  }
+  return max;
 }
 
 // ── Interstitial Event Row ──────────────────────────────────────────────────
@@ -942,22 +969,43 @@ function HalfInningSection({
       {expanded && (
         <div className="ml-4 mt-1">
           {half.items.map((item, i) => {
+            const canInsert = isCoach && gameId && teamPlayers && opponentPlayers;
+            const insertButton = canInsert ? (
+              <AddPlayButton
+                key={`insert-${i}`}
+                gameId={gameId}
+                inning={inningNumber}
+                isTopOfInning={half.isTop}
+                teamPlayers={teamPlayers}
+                opponentPlayers={opponentPlayers}
+                insertAfterSequence={i > 0 ? getItemLastSequence(half.items[i - 1]) : 0}
+                label="Insert Play Here"
+              />
+            ) : null;
+
             if (item.type === 'at-bat') {
               const abKey = `${nodeKey}-ab-${item.number}`;
               return (
-                <AtBatSection
-                  key={i}
-                  atBat={item}
-                  nodeKey={abKey}
-                  expanded={expandedNodes.has(abKey)}
-                  onToggle={onToggle}
-                  isHome={isHome}
-                  isCoach={isCoach}
-                  gameId={gameId}
-                />
+                <React.Fragment key={i}>
+                  {insertButton}
+                  <AtBatSection
+                    atBat={item}
+                    nodeKey={abKey}
+                    expanded={expandedNodes.has(abKey)}
+                    onToggle={onToggle}
+                    isHome={isHome}
+                    isCoach={isCoach}
+                    gameId={gameId}
+                  />
+                </React.Fragment>
               );
             }
-            return <InterstitialRow key={i} node={item} isCoach={isCoach} gameId={gameId} />;
+            return (
+              <React.Fragment key={i}>
+                {insertButton}
+                <InterstitialRow node={item} isCoach={isCoach} gameId={gameId} />
+              </React.Fragment>
+            );
           })}
           {isCoach && gameId && teamPlayers && opponentPlayers && (
             <AddPlayButton
@@ -966,6 +1014,8 @@ function HalfInningSection({
               isTopOfInning={half.isTop}
               teamPlayers={teamPlayers}
               opponentPlayers={opponentPlayers}
+              insertAfterSequence={half.items.length > 0 ? getItemLastSequence(half.items[half.items.length - 1]) : 0}
+              label="Add Play"
             />
           )}
         </div>
