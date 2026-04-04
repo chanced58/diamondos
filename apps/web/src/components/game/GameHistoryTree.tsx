@@ -88,11 +88,13 @@ function AtBatSection({
   nodeKey,
   expanded,
   onToggle,
+  isHome,
 }: {
   atBat: AtBatNode;
   nodeKey: string;
   expanded: boolean;
   onToggle: (key: string) => void;
+  isHome: boolean;
 }) {
   // Interleave pitches and mid-at-bat events by sequence number
   const pitchItems = atBat.pitches.map((p) => ({ type: 'pitch' as const, data: p, seq: p.event.sequenceNumber }));
@@ -118,9 +120,12 @@ function AtBatSection({
         )}
         <span className="ml-auto" />
         {atBat.result && (
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_PILL[atBat.result.category]}`}>
-            {atBat.result.label}
-          </span>
+          <>
+            <ScoreBadge homeScore={atBat.homeScore} awayScore={atBat.awayScore} isHome={isHome} />
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_PILL[atBat.result.category]}`}>
+              {atBat.result.label}
+            </span>
+          </>
         )}
         {!atBat.result && (
           <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
@@ -161,6 +166,7 @@ function HalfInningSection({
   expanded,
   expandedNodes,
   onToggle,
+  isHome,
 }: {
   half: HalfInningNode;
   teamLabel: string;
@@ -168,6 +174,7 @@ function HalfInningSection({
   expanded: boolean;
   expandedNodes: Set<string>;
   onToggle: (key: string) => void;
+  isHome: boolean;
 }) {
   return (
     <div className="py-1">
@@ -180,6 +187,8 @@ function HalfInningSection({
           {half.label}
         </span>
         <span className="text-xs text-gray-400">— {teamLabel}</span>
+        <span className="ml-auto" />
+        <ScoreBadge homeScore={half.homeScore} awayScore={half.awayScore} isHome={isHome} />
       </button>
 
       {expanded && (
@@ -194,6 +203,7 @@ function HalfInningSection({
                   nodeKey={abKey}
                   expanded={expandedNodes.has(abKey)}
                   onToggle={onToggle}
+                  isHome={isHome}
                 />
               );
             }
@@ -215,6 +225,7 @@ function InningSection({
   onToggle,
   homeTeamName,
   awayTeamName,
+  isHome,
 }: {
   inning: InningNode;
   nodeKey: string;
@@ -223,6 +234,7 @@ function InningSection({
   onToggle: (key: string) => void;
   homeTeamName: string;
   awayTeamName: string;
+  isHome: boolean;
 }) {
   return (
     <div className="border border-gray-200 rounded-xl overflow-hidden">
@@ -234,6 +246,8 @@ function InningSection({
         <span className="text-sm font-bold text-gray-800">
           Inning {inning.number}
         </span>
+        <span className="ml-auto" />
+        <ScoreBadge homeScore={inning.homeScore} awayScore={inning.awayScore} isHome={isHome} />
       </button>
 
       {expanded && (
@@ -246,6 +260,7 @@ function InningSection({
               expanded={expandedNodes.has(`${nodeKey}-top`)}
               expandedNodes={expandedNodes}
               onToggle={onToggle}
+              isHome={isHome}
             />
           )}
           {inning.bottom && (
@@ -256,6 +271,7 @@ function InningSection({
               expanded={expandedNodes.has(`${nodeKey}-bot`)}
               expandedNodes={expandedNodes}
               onToggle={onToggle}
+              isHome={isHome}
             />
           )}
         </div>
@@ -265,6 +281,16 @@ function InningSection({
 }
 
 // ── Main Component ──────────────────────────────────────────────────────────
+
+function ScoreBadge({ homeScore, awayScore, isHome }: { homeScore: number; awayScore: number; isHome: boolean }) {
+  const usScore = isHome ? homeScore : awayScore;
+  const themScore = isHome ? awayScore : homeScore;
+  return (
+    <span className="text-xs font-semibold text-gray-500 tabular-nums">
+      {usScore}–{themScore}
+    </span>
+  );
+}
 
 interface GameHistoryTreeProps {
   tree: GameHistoryTreeType;
@@ -366,6 +392,7 @@ export function GameHistoryTree({ tree, teamName, opponentName, isHome }: GameHi
             onToggle={onToggle}
             homeTeamName={homeTeamName}
             awayTeamName={awayTeamName}
+            isHome={isHome}
           />
         );
       })}

@@ -42,6 +42,9 @@ export interface AtBatNode {
   midAtBatEvents: HistoryEventNode[];
   /** Terminal outcome (hit, out, walk, etc.), null if AB still in progress */
   result: HistoryEventNode | null;
+  /** Running score after this at-bat completes */
+  homeScore: number;
+  awayScore: number;
 }
 
 export interface InterstitialNode {
@@ -55,12 +58,18 @@ export interface HalfInningNode {
   isTop: boolean;
   label: string;
   items: (AtBatNode | InterstitialNode)[];
+  /** Running score at the end of this half-inning */
+  homeScore: number;
+  awayScore: number;
 }
 
 export interface InningNode {
   number: number;
   top: HalfInningNode | null;
   bottom: HalfInningNode | null;
+  /** Running score at the end of this full inning */
+  homeScore: number;
+  awayScore: number;
 }
 
 export interface GameHistoryTree {
@@ -359,16 +368,65 @@ export function buildGameHistoryTree(
 
   let currentInningNumber = 1;
   let currentIsTop = true;
-  let currentHalfInning: HalfInningNode = { isTop: true, label: 'Top', items: [] };
-  let currentInning: InningNode = { number: 1, top: null, bottom: null };
+  let currentHalfInning: HalfInningNode = { isTop: true, label: 'Top', items: [], homeScore: 0, awayScore: 0 };
+  let currentInning: InningNode = { number: 1, top: null, bottom: null, homeScore: 0, awayScore: 0 };
   let openAtBat: AtBatNode | null = null;
   let atBatCount = 0;
   let balls = 0;
   let strikes = 0;
   let pitchCount = 0;
 
+  // Running score tracking
+  let homeScore = 0;
+  let awayScore = 0;
+
+  // Base runners for score tracking (true = occupied)
+  let runnerFirst = false;
+  let runnerSecond = false;
+  let runnerThird = false;
+
+  function addRuns(runs: number) {
+    if (runs <= 0) return;
+    if (currentIsTop) {
+      awayScore += runs;
+    } else {
+      homeScore += runs;
+    }
+  }
+
+  function clearBases() {
+    runnerFirst = false;
+    runnerSecond = false;
+    runnerThird = false;
+  }
+
+  function forceAdvance() {
+    if (runnerFirst && runnerSecond && runnerThird) {
+      addRuns(1);
+      runnerThird = runnerSecond; runnerSecond = runnerFirst; runnerFirst = true;
+    } else if (runnerFirst && runnerSecond) {
+      runnerThird = true; runnerSecond = true; runnerFirst = true;
+    } else if (runnerFirst) {
+      runnerSecond = true; runnerFirst = true;
+    } else {
+      runnerFirst = true;
+    }
+  }
+
+  function hitBases(hitType: string): number {
+    switch (hitType) {
+      case 'single': return 1;
+      case 'double': return 2;
+      case 'triple': return 3;
+      case 'home_run': return 4;
+      default: return 1;
+    }
+  }
+
   function closeAtBat() {
     if (openAtBat) {
+      openAtBat.homeScore = homeScore;
+      openAtBat.awayScore = awayScore;
       currentHalfInning.items.push(openAtBat);
       openAtBat = null;
     }
@@ -379,6 +437,8 @@ export function buildGameHistoryTree(
 
   function closeHalfInning() {
     closeAtBat();
+    currentHalfInning.homeScore = homeScore;
+    currentHalfInning.awayScore = awayScore;
     if (currentHalfInning.items.length > 0) {
       if (currentIsTop) {
         currentInning.top = currentHalfInning;
@@ -390,6 +450,8 @@ export function buildGameHistoryTree(
 
   function closeInning() {
     closeHalfInning();
+    currentInning.homeScore = homeScore;
+    currentInning.awayScore = awayScore;
     if (currentInning.top || currentInning.bottom) {
       tree.innings.push(currentInning);
     }
@@ -399,10 +461,13 @@ export function buildGameHistoryTree(
     currentIsTop = isTop;
     currentInningNumber = inningNumber;
     atBatCount = 0;
+    clearBases();
     currentHalfInning = {
       isTop,
       label: isTop ? 'Top' : 'Bottom',
       items: [],
+      homeScore,
+      awayScore,
     };
   }
 
@@ -435,20 +500,19 @@ export function buildGameHistoryTree(
       }
 
       case EventType.INNING_CHANGE: {
-        const newInning = event.inning;
-        const newIsTop = event.isTopOfInning;
-
-        if (newInning !== currentInningNumber || newIsTop !== currentIsTop) {
-          // If switching from top to bottom of same inning, just close half-inning
-          if (newInning === currentInningNumber && !newIsTop && currentIsTop) {
-            closeHalfInning();
-            startNewHalfInning(false, currentInningNumber);
-          } else {
-            // New inning entirely
-            closeInning();
-            currentInning = { number: newInning, top: null, bottom: null };
-            startNewHalfInning(newIsTop, newInning);
-          }
+        // The event's isTopOfInning/inning fields reflect the state BEFORE the
+        // change (ScoringBoard records them from gameState at call time). Compute
+        // the next half-inning from the builder's own tracking instead.
+        if (currentIsTop) {
+          // Top → Bottom of the same inning
+          closeHalfInning();
+          startNewHalfInning(false, currentInningNumber);
+        } else {
+          // Bottom → Top of the next inning
+          closeInning();
+          const nextInning = currentInningNumber + 1;
+          currentInning = { number: nextInning, top: null, bottom: null, homeScore, awayScore };
+          startNewHalfInning(true, nextInning);
         }
         break;
       }
@@ -470,6 +534,8 @@ export function buildGameHistoryTree(
             pitches: [],
             midAtBatEvents: [],
             result: null,
+            homeScore,
+            awayScore,
           };
           balls = 0;
           strikes = 0;
@@ -528,7 +594,42 @@ export function buildGameHistoryTree(
             pitches: [],
             midAtBatEvents: [],
             result: null,
+            homeScore,
+            awayScore,
           };
+        }
+
+        // Update running score based on the terminal event
+        if (event.eventType === EventType.HIT) {
+          const hp = event.payload as HitPayload;
+          const bases = hitBases(hp.hitType);
+          if (bases === 4) {
+            let runners = 0;
+            if (runnerFirst) runners++;
+            if (runnerSecond) runners++;
+            if (runnerThird) runners++;
+            addRuns(runners + 1);
+            clearBases();
+          } else {
+            let runs = 0;
+            if (runnerThird) runs++;
+            if (runnerSecond && 2 + bases >= 4) runs++;
+            if (runnerFirst && 1 + bases >= 4) runs++;
+            addRuns(runs);
+            const newFirst = bases === 1;
+            const newSecond = bases === 2 || (bases === 1 && runnerFirst);
+            const newThird = bases === 3 || (bases === 2 && (runnerFirst || runnerSecond)) || (bases === 1 && runnerSecond);
+            runnerFirst = newFirst; runnerSecond = newSecond; runnerThird = newThird;
+          }
+        } else if (event.eventType === EventType.WALK || event.eventType === EventType.HIT_BY_PITCH) {
+          forceAdvance();
+        } else if (event.eventType === EventType.FIELD_ERROR) {
+          forceAdvance();
+        } else if (event.eventType === EventType.SACRIFICE_FLY) {
+          if (runnerThird) {
+            addRuns(1);
+            runnerThird = false;
+          }
         }
 
         openAtBat.result = {
@@ -550,6 +651,59 @@ export function buildGameHistoryTree(
       case EventType.SCORE:
       case EventType.PICKOFF_ATTEMPT:
       case EventType.BALK: {
+        // Update base state for score tracking
+        if (event.eventType === EventType.SCORE) {
+          const sp = event.payload as ScorePayload;
+          addRuns(sp.rbis ?? 1);
+        } else if (event.eventType === EventType.STOLEN_BASE) {
+          const bp = event.payload as BaserunnerMovePayload;
+          if (bp.fromBase === 1) runnerFirst = false;
+          else if (bp.fromBase === 2) runnerSecond = false;
+          else if (bp.fromBase === 3) runnerThird = false;
+          if (bp.toBase === 2) runnerSecond = true;
+          else if (bp.toBase === 3) runnerThird = true;
+          // toBase 4 = scored, handled by SCORE event
+        } else if (event.eventType === EventType.CAUGHT_STEALING) {
+          const bp = event.payload as BaserunnerMovePayload;
+          if (bp.fromBase === 1) runnerFirst = false;
+          else if (bp.fromBase === 2) runnerSecond = false;
+          else if (bp.fromBase === 3) runnerThird = false;
+        } else if (event.eventType === EventType.BASERUNNER_ADVANCE) {
+          const bp = event.payload as BaserunnerMovePayload;
+          if (bp.fromBase === 1) runnerFirst = false;
+          else if (bp.fromBase === 2) runnerSecond = false;
+          else if (bp.fromBase === 3) runnerThird = false;
+          if (bp.toBase === 2) runnerSecond = true;
+          else if (bp.toBase === 3) runnerThird = true;
+          // toBase 4 = scored, handled by SCORE event
+        } else if (event.eventType === EventType.BASERUNNER_OUT) {
+          const bp = event.payload as BaserunnerMovePayload;
+          if (bp.fromBase === 1) runnerFirst = false;
+          else if (bp.fromBase === 2) runnerSecond = false;
+          else if (bp.fromBase === 3) runnerThird = false;
+        } else if (event.eventType === EventType.PICKOFF_ATTEMPT) {
+          const pp = event.payload as PickoffPayload;
+          if (pp.outcome === 'out') {
+            if (pp.base === 1) runnerFirst = false;
+            else if (pp.base === 2) runnerSecond = false;
+            else if (pp.base === 3) runnerThird = false;
+          }
+        } else if (event.eventType === EventType.RUNDOWN) {
+          const rp = event.payload as RundownPayload;
+          if (rp.startBase === 1) runnerFirst = false;
+          else if (rp.startBase === 2) runnerSecond = false;
+          else if (rp.startBase === 3) runnerThird = false;
+          if (rp.outcome === 'safe') {
+            if (rp.safeAtBase === 1) runnerFirst = true;
+            else if (rp.safeAtBase === 2) runnerSecond = true;
+            else if (rp.safeAtBase === 3) runnerThird = true;
+          }
+        } else if (event.eventType === EventType.BALK) {
+          runnerThird = runnerSecond;
+          runnerSecond = runnerFirst;
+          runnerFirst = false;
+        }
+
         const node: HistoryEventNode = {
           event,
           label: formatEventLabel(event, playerNameMap),
