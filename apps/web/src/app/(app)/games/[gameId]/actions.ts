@@ -802,3 +802,96 @@ export async function insertCorrectionEventAction(
   revalidatePath(`/games/${gameId}/history`);
   return null;
 }
+
+// ── Replace Event (atomic void + insert) ────────────────────────────────────
+
+export async function replaceEventAction(
+  _prevState: string | null | undefined,
+  formData: FormData,
+): Promise<string | null> {
+  const authClient = createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return 'Not authenticated.';
+
+  const gameId = formData.get('gameId') as string;
+  const eventId = formData.get('eventId') as string;
+  const eventType = formData.get('eventType') as string;
+  const payloadJson = formData.get('payload') as string;
+
+  if (!gameId || !eventId || !eventType) return 'Missing required fields.';
+
+  const validEventTypes = new Set(Object.values(EventType) as string[]);
+  if (!validEventTypes.has(eventType)) return `Unknown event type: ${eventType}`;
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(payloadJson || '{}');
+  } catch {
+    return 'Invalid payload JSON.';
+  }
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const result = await getAuthorizedCoach(supabase, user.id, gameId);
+  if ('error' in result) return result.error ?? null;
+
+  // Fetch original event for context
+  const { data: targetEvent } = await supabase
+    .from('game_events')
+    .select('sequence_number, inning, is_top_of_inning')
+    .eq('id', eventId)
+    .eq('game_id', gameId)
+    .single();
+
+  if (!targetEvent) return 'Event not found.';
+
+  // Insert both void marker and replacement in a single batch with retry
+  const maxRetries = 3;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const { data: maxRow } = await supabase
+      .from('game_events')
+      .select('sequence_number')
+      .eq('game_id', gameId)
+      .order('sequence_number', { ascending: false })
+      .limit(1)
+      .single();
+
+    const baseSeq = (maxRow?.sequence_number ?? 0);
+
+    const { error } = await supabase.from('game_events').insert([
+      {
+        game_id: gameId,
+        sequence_number: baseSeq + 1,
+        event_type: 'event_voided',
+        inning: targetEvent.inning,
+        is_top_of_inning: targetEvent.is_top_of_inning,
+        payload: { voidedEventId: eventId, voidedSequenceNumber: targetEvent.sequence_number },
+        occurred_at: new Date().toISOString(),
+        created_by: user.id,
+        device_id: 'web',
+      },
+      {
+        game_id: gameId,
+        sequence_number: baseSeq + 2,
+        event_type: eventType,
+        inning: targetEvent.inning,
+        is_top_of_inning: targetEvent.is_top_of_inning,
+        payload,
+        occurred_at: new Date().toISOString(),
+        created_by: user.id,
+        device_id: 'web',
+      },
+    ]);
+
+    if (!error) break;
+    if (error.code !== '23505' || attempt === maxRetries - 1) {
+      return `Failed to replace event: ${error.message}`;
+    }
+  }
+
+  revalidatePath(`/games/${gameId}/history`);
+  return null;
+}
