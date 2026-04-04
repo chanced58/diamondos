@@ -12,9 +12,9 @@ export const metadata: Metadata = { title: 'Manage League — Platform Admin' };
 export default async function PlatformAdminLeagueDetailPage({
   params,
 }: {
-  params: Promise<{ leagueId: string }>;
+  params: { leagueId: string };
 }): Promise<JSX.Element | null> {
-  const { leagueId } = await params;
+  const { leagueId } = params;
 
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
