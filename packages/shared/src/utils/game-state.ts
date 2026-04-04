@@ -122,8 +122,11 @@ export function deriveGameState(
 
       case EventType.SCORE: {
         // Each SCORE event represents exactly 1 run scored (rbis tracks RBI credit,
-        // which may be 0 for balks/wild pitches, but the run still counts)
-        addRuns(state, 1, state.isTopOfInning);
+        // which may be 0 for balks/wild pitches, but the run still counts).
+        // No run can score after the 3rd out of a half-inning.
+        if (state.outs < OUTS_PER_INNING) {
+          addRuns(state, 1, state.isTopOfInning);
+        }
         break;
       }
 

@@ -30,6 +30,7 @@ function hitBases(hitType: string): number {
 export function computeLineScore(events: Record<string, unknown>[]): LineScoreData {
   let isTopOfInning = true;
   let currentInning = 1;
+  let outs = 0;
 
   // Track base runners (true = occupied) so we can count runs from hits/walks/errors
   let first: string | null = null;
@@ -99,6 +100,7 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
         if (awayRunsByInning.length < currentInning) awayRunsByInning.push(0);
         if (homeRunsByInning.length < currentInning) homeRunsByInning.push(0);
       }
+      outs = 0;
       clearBases();
     } else if (etype === 'hit') {
       if (isTopOfInning) awayHits++;
@@ -139,11 +141,24 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
       else awayErrors++;
       const batterId = (payload.batterId ?? payload.opponentBatterId ?? 'unknown') as string;
       forceAdvance(batterId);
+    } else if (etype === 'out' || etype === 'strikeout' || etype === 'dropped_third_strike') {
+      // Track outs — dropped_third_strike only counts as out when thrown_out
+      if (etype === 'dropped_third_strike') {
+        if (payload.outcome === 'thrown_out') outs++;
+      } else {
+        outs++;
+      }
+    } else if (etype === 'double_play') {
+      outs += 2;
+    } else if (etype === 'triple_play') {
+      outs += 3;
     } else if (etype === 'score') {
-      // Explicit score events (stolen home, runner advance, balk) — always 1 run per event
-      scoreRun(1);
+      // Explicit score events (stolen home, runner advance, balk).
+      // No run can score after the 3rd out of a half-inning.
+      if (outs < 3) scoreRun(1);
     } else if (etype === 'sacrifice_fly' || etype === 'sacrifice_bunt') {
-      if (etype === 'sacrifice_fly' && third) {
+      outs++;
+      if (etype === 'sacrifice_fly' && third && outs < 3) {
         scoreRun(1);
         third = null;
       }
@@ -166,6 +181,7 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
         else if (fromBase === 3 && third === runnerId) third = null;
       }
     } else if (etype === 'caught_stealing') {
+      outs++;
       const fromBase = payload.fromBase as number | undefined;
       if (fromBase === 3) third = null;
       else if (fromBase === 2) second = null;
@@ -184,12 +200,13 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
         if (fromBase === 2) { second = null; if (toBase === 3) third = runnerId ?? 'unknown'; }
       }
     } else if (etype === 'baserunner_out') {
-      // Fielder's choice — runner called out while batter reaches
+      outs++;
       const runnerId = payload.runnerId as string | undefined;
       if (runnerId) removeRunner(runnerId);
     } else if (etype === 'pickoff_attempt') {
       const outcome = payload.outcome as string | undefined;
       if (outcome === 'out') {
+        outs++;
         const base = payload.base as number | undefined;
         if (base) clearBase(base);
       }
@@ -198,6 +215,7 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
       const outcome = payload.outcome as string | undefined;
       const runnerId = payload.runnerId as string | undefined;
       if (startBase) clearBase(startBase);
+      if (outcome === 'out') outs++;
       if (outcome === 'safe') {
         const safeAtBase = payload.safeAtBase as number | undefined;
         if (safeAtBase === 1) first = runnerId ?? 'unknown';
