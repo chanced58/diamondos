@@ -15,6 +15,7 @@ export enum EventType {
   WALK = 'walk',
   HIT_BY_PITCH = 'hit_by_pitch',
   STRIKEOUT = 'strikeout',
+  DROPPED_THIRD_STRIKE = 'dropped_third_strike',
   SACRIFICE_BUNT = 'sacrifice_bunt',
   SACRIFICE_FLY = 'sacrifice_fly',
   FIELD_ERROR = 'field_error',
@@ -222,6 +223,24 @@ export type RundownPayload = {
   | { outcome: 'safe'; safeAtBase: 1 | 2 | 3 }
 );
 
+export type DroppedThirdStrikeOutcome = 'thrown_out' | 'reached_on_error' | 'reached_wild_pitch';
+
+export interface DroppedThirdStrikePayload {
+  batterId?: string;
+  pitcherId?: string;
+  /** Set when an opponent_player is batting. */
+  opponentBatterId?: string;
+  /** Set when an opponent_player is pitching. */
+  opponentPitcherId?: string;
+  outcome: DroppedThirdStrikeOutcome;
+  /** Defensive play sequence when batter is thrown out, e.g. [2, 3] for C-to-1B. */
+  fieldingSequence?: number[];
+  /** Position number of fielder who committed the error (1-9), when outcome is 'reached_on_error'. */
+  errorBy?: number;
+  /** True when the drop was a wild pitch (vs passed ball). */
+  isWildPitch?: boolean;
+}
+
 export type GameEventPayload =
   | PitchThrownPayload
   | HitPayload
@@ -232,6 +251,7 @@ export type GameEventPayload =
   | BaserunnerMovePayload
   | PickoffPayload
   | RundownPayload
+  | DroppedThirdStrikePayload
   | Record<string, unknown>;
 
 export interface GameEvent {

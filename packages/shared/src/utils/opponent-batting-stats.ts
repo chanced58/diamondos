@@ -201,12 +201,17 @@ export function computeOpponentBatting(
       } else if (etype === 'sacrifice_bunt') {
         const s = get(batterId);
         s.pa++; s.sh++;
+      } else if (etype === 'dropped_third_strike') {
+        const s = get(batterId);
+        s.pa++; s.ab++; s.k++;
+        if (payload.outcome !== 'thrown_out') {
+          forceAdvance(batterId);
+        }
       } else if (etype === 'field_error') {
         const s = get(batterId);
         s.pa++; s.ab++;
         forceAdvance(batterId);
       }
-    }
   }
 
   for (const s of stats.values()) {

@@ -421,6 +421,34 @@ export function derivePitchingStats(
         strikeoutHandledByPitch = false;
       }
 
+      // ── DROPPED_THIRD_STRIKE ──────────────────────────────────────────────
+      if (etype === EventType.DROPPED_THIRD_STRIKE) {
+        const pitcherId: string | undefined = payload?.pitcherId;
+        const batterId: string | undefined = payload?.batterId;
+        if (pitcherId) {
+          const s = getStats(pitcherId);
+          // K already counted via pitch progression (ab.strikes >= 3) — do NOT double-count
+          if (strikeoutHandledByPitch) {
+            if (payload?.outcome === 'thrown_out') {
+              s.inningsPitchedOuts += 1;
+            }
+          } else {
+            s.strikeouts += 1;
+            if (payload?.outcome === 'thrown_out') {
+              s.inningsPitchedOuts += 1;
+            }
+          }
+          if (payload?.isWildPitch) {
+            s.wildPitches += 1;
+          }
+          if (batterId) resetAtBat(batterId);
+        }
+        strikeoutHandledByPitch = false;
+        if (payload?.outcome !== 'thrown_out' && batterId) {
+          forceAdvanceRunners({ id: batterId, reachedOnError: false });
+        }
+      }
+
       // ── WALK (explicit event) ────────────────────────────────────────────
       if (etype === EventType.WALK) {
         const pitcherId: string | undefined = payload?.pitcherId;
