@@ -336,6 +336,11 @@ export function applyPitchRevertedTyped(events: GameEvent[]): GameEvent[] {
       const payload = event.payload as Record<string, unknown>;
       const keepUntilSeq = payload.revertToSequenceNumber as number;
       result.splice(0, result.length, ...result.filter((e) => e.sequenceNumber <= keepUntilSeq));
+    } else if (event.eventType === EventType.EVENT_VOIDED) {
+      const payload = event.payload as Record<string, unknown>;
+      const voidedId = payload.voidedEventId as string;
+      const idx = result.findIndex((e) => e.id === voidedId);
+      if (idx !== -1) result.splice(idx, 1);
     } else {
       result.push(event);
     }

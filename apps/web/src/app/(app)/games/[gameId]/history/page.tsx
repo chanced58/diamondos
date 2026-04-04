@@ -8,6 +8,7 @@ import { getUserAccess } from '@/lib/user-access';
 import { weAreHome, buildGameHistoryTree, applyPitchRevertedTyped } from '@baseball/shared';
 import type { GameEvent, EventType } from '@baseball/shared';
 import { GameHistoryTree } from '@/components/game/GameHistoryTree';
+import { RecalculateScoresForm } from '../GameDetailClient';
 
 export const metadata: Metadata = { title: 'Game History' };
 
@@ -176,6 +177,13 @@ export default async function GameHistoryPage({
         <p className="text-sm text-gray-500 mt-1">Play-by-Play History</p>
       </div>
 
+      {/* Recalculate (coaches only) */}
+      {isCoach && (
+        <div className="px-4 pt-3">
+          <RecalculateScoresForm gameId={game.id} />
+        </div>
+      )}
+
       {/* Tree */}
       <div className="flex-1 overflow-auto p-4">
         <GameHistoryTree
@@ -183,6 +191,8 @@ export default async function GameHistoryPage({
           teamName={teamName}
           opponentName={game.opponent_name}
           isHome={isHome}
+          isCoach={isCoach}
+          gameId={game.id}
         />
       </div>
     </div>

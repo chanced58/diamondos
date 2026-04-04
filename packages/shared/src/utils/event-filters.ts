@@ -10,10 +10,16 @@
 export function applyPitchReverted(events: Record<string, unknown>[]): Record<string, unknown>[] {
   const result: Record<string, unknown>[] = [];
   for (const event of events) {
-    if ((event.event_type as string) === 'pitch_reverted') {
+    const etype = event.event_type as string;
+    if (etype === 'pitch_reverted') {
       const payload = (event.payload ?? {}) as Record<string, unknown>;
       const keepUntilSeq = payload.revertToSequenceNumber as number;
       result.splice(0, result.length, ...result.filter((e) => (e.sequence_number as number) <= keepUntilSeq));
+    } else if (etype === 'event_voided') {
+      const payload = (event.payload ?? {}) as Record<string, unknown>;
+      const voidedId = payload.voidedEventId as string;
+      const idx = result.findIndex((e) => (e.id as string) === voidedId);
+      if (idx !== -1) result.splice(idx, 1);
     } else {
       result.push(event);
     }

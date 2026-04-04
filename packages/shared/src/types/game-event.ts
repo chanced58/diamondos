@@ -36,6 +36,7 @@ export enum EventType {
 
   // Corrections
   PITCH_REVERTED = 'pitch_reverted',
+  EVENT_VOIDED = 'event_voided',
 }
 
 /** Why a baserunner advanced beyond their initial base */
@@ -241,6 +242,11 @@ export interface DroppedThirdStrikePayload {
   isWildPitch?: boolean;
 }
 
+export interface EventVoidedPayload {
+  voidedEventId: string;
+  voidedSequenceNumber: number;
+}
+
 export type GameEventPayload =
   | PitchThrownPayload
   | HitPayload
@@ -252,6 +258,7 @@ export type GameEventPayload =
   | PickoffPayload
   | RundownPayload
   | DroppedThirdStrikePayload
+  | EventVoidedPayload
   | Record<string, unknown>;
 
 export interface GameEvent {
