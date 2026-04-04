@@ -11,7 +11,7 @@ import type {
   HistoryEventNode,
   EventCategory,
 } from '@baseball/shared';
-import { replaceEventAction, insertCorrectionEventAction } from '@/app/(app)/games/[gameId]/actions';
+import { replaceEventAction, insertCorrectionEventAction, voidEventAction } from '@/app/(app)/games/[gameId]/actions';
 import type { GameEvent } from '@baseball/shared';
 
 export type PlayerEntry = { id: string; name: string };
@@ -88,7 +88,7 @@ function ReplaceEventPanel({
   const isOpponentPitcher = !!origPayload.opponentPitcherId;
 
   async function submitReplacement(eventType: string, payload: Record<string, unknown>) {
-    if (isPending) return; // re-entry guard
+    if (isPending) return;
     setIsPending(true);
     setError(null);
     try {
@@ -107,6 +107,50 @@ function ReplaceEventPanel({
     }
   }
 
+  /** Insert a new event AFTER the original (without voiding it). Used for "In Play" results. */
+  async function insertAfterOriginal(eventType: string, payload: Record<string, unknown>) {
+    if (isPending) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.set('gameId', gameId);
+      formData.set('eventType', eventType);
+      formData.set('inning', String(originalEvent.inning));
+      formData.set('isTopOfInning', String(originalEvent.isTopOfInning));
+      formData.set('payload', JSON.stringify({
+        ...payload,
+        insertAfterSequence: originalEvent.sequenceNumber,
+      }));
+      const err = await insertCorrectionEventAction(null, formData);
+      if (err) { setError(err); return; }
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to add result.');
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (isPending) return;
+    if (!confirm('Delete this event?')) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.set('gameId', gameId);
+      formData.set('eventId', originalEvent.id);
+      const err = await voidEventAction(null, formData);
+      if (err) { setError(err); return; }
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete event.');
+    } finally {
+      setIsPending(false);
+    }
+  }
+
   function buildBatterPitcher(): Record<string, unknown> {
     const batterPitcherIds: Record<string, unknown> = {};
     if (isOpponentBatter) batterPitcherIds.opponentBatterId = batterId;
@@ -116,17 +160,22 @@ function ReplaceEventPanel({
     return batterPitcherIds;
   }
 
+  // Determine whether to replace the original event or insert after it
+  const isPitchEvent = originalEvent.eventType === 'pitch_thrown';
+  const isInPlayFlow = isPitchEvent && (step === 'in-play-result' || (step !== 'type' && pendingResult !== null));
+  const submit = isInPlayFlow ? insertAfterOriginal : submitReplacement;
+
   function handleDirectResult(eventType: string, extra: Record<string, unknown> = {}) {
-    submitReplacement(eventType, { ...buildBatterPitcher(), ...extra });
+    submit(eventType, { ...buildBatterPitcher(), ...extra });
   }
 
   function handleHitResult(hitType: string, selectedTrajectory?: string) {
-    submitReplacement('hit', { ...buildBatterPitcher(), hitType, trajectory: selectedTrajectory ?? trajectory ?? undefined });
+    submit('hit', { ...buildBatterPitcher(), hitType, trajectory: selectedTrajectory ?? trajectory ?? undefined });
   }
 
   function handleOutResult(eventType: string) {
     const outType = TRAJECTORY_TO_OUT_TYPE[trajectory ?? ''] ?? 'groundout';
-    submitReplacement(eventType, {
+    submit(eventType, {
       ...buildBatterPitcher(),
       outType,
       trajectory: trajectory ?? undefined,
@@ -135,7 +184,7 @@ function ReplaceEventPanel({
   }
 
   function handleErrorWithFielder(errorBy: number) {
-    submitReplacement('field_error', {
+    submit('field_error', {
       ...buildBatterPitcher(),
       errorBy,
       trajectory: trajectory ?? undefined,
@@ -143,7 +192,6 @@ function ReplaceEventPanel({
   }
 
   // Pitch replacement
-  const isPitchEvent = originalEvent.eventType === 'pitch_thrown';
   if (isPitchEvent && step === 'type') {
     // Show pitch outcome picker first; "In Play" transitions to the result flow
     return (
@@ -201,7 +249,10 @@ function ReplaceEventPanel({
           </button>
         </div>
         {error && <p className="text-xs text-red-600">{error}</p>}
-        <button type="button" onClick={onDone} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={onDone} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+          <button type="button" disabled={isPending} onClick={handleDelete} className="text-xs text-red-500 hover:text-red-700">Delete</button>
+        </div>
       </div>
     );
   }
@@ -429,7 +480,10 @@ function ReplaceEventPanel({
         ))}
       </div>
       {error && <p className="text-xs text-red-600">{error}</p>}
-      <button type="button" onClick={onDone} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={onDone} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+        <button type="button" disabled={isPending} onClick={handleDelete} className="text-xs text-red-500 hover:text-red-700">Delete</button>
+      </div>
     </div>
   );
 }

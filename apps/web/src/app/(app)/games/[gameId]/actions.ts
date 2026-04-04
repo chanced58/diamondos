@@ -879,7 +879,7 @@ export async function replaceEventAction(
         event_type: eventType,
         inning: targetEvent.inning,
         is_top_of_inning: targetEvent.is_top_of_inning,
-        payload,
+        payload: { ...payload, insertAfterSequence: targetEvent.sequence_number - 1 },
         occurred_at: new Date().toISOString(),
         created_by: user.id,
         device_id: 'web',
