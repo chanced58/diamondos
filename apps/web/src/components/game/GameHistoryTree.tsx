@@ -11,7 +11,7 @@ import type {
   HistoryEventNode,
   EventCategory,
 } from '@baseball/shared';
-import { voidEventAction, insertCorrectionEventAction } from '@/app/(app)/games/[gameId]/actions';
+import { replaceEventAction } from '@/app/(app)/games/[gameId]/actions';
 import type { GameEvent } from '@baseball/shared';
 
 // ── Category Colors ─────────────────────────────────────────────────────────
@@ -49,9 +49,9 @@ function Chevron({ expanded }: { expanded: boolean }) {
 // ── Fielding position constants ─────────────────────────────────────────────
 
 const POSITIONS = [
-  { n: 1, label: 'P' }, { n: 2, label: 'C' }, { n: 3, label: '1B' },
-  { n: 4, label: '2B' }, { n: 5, label: '3B' }, { n: 6, label: 'SS' },
-  { n: 7, label: 'LF' }, { n: 8, label: 'CF' }, { n: 9, label: 'RF' },
+  { positionNumber: 1, label: 'P' }, { positionNumber: 2, label: 'C' }, { positionNumber: 3, label: '1B' },
+  { positionNumber: 4, label: '2B' }, { positionNumber: 5, label: '3B' }, { positionNumber: 6, label: 'SS' },
+  { positionNumber: 7, label: 'LF' }, { positionNumber: 8, label: 'CF' }, { positionNumber: 9, label: 'RF' },
 ];
 
 // ── Replace Event Panel ────────────────────────────────────────────────────
@@ -80,26 +80,17 @@ function ReplaceEventPanel({
   const isOpponentPitcher = !!origPayload.opponentPitcherId;
 
   async function submitReplacement(eventType: string, payload: Record<string, unknown>) {
+    if (isPending) return; // re-entry guard
     setIsPending(true);
     setError(null);
     try {
-      // Void the original event
-      const voidForm = new FormData();
-      voidForm.set('gameId', gameId);
-      voidForm.set('eventId', originalEvent.id);
-      const voidErr = await voidEventAction(null, voidForm);
-      if (voidErr) { setError(voidErr); return; }
-
-      // Insert the replacement
-      const insertForm = new FormData();
-      insertForm.set('gameId', gameId);
-      insertForm.set('eventType', eventType);
-      insertForm.set('inning', String(originalEvent.inning));
-      insertForm.set('isTopOfInning', String(originalEvent.isTopOfInning));
-      insertForm.set('payload', JSON.stringify(payload));
-      const insertErr = await insertCorrectionEventAction(null, insertForm);
-      if (insertErr) { setError(insertErr); return; }
-
+      const formData = new FormData();
+      formData.set('gameId', gameId);
+      formData.set('eventId', originalEvent.id);
+      formData.set('eventType', eventType);
+      formData.set('payload', JSON.stringify(payload));
+      const err = await replaceEventAction(null, formData);
+      if (err) { setError(err); return; }
       onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to replace event.');
@@ -109,20 +100,20 @@ function ReplaceEventPanel({
   }
 
   function buildBatterPitcher(): Record<string, unknown> {
-    const bp: Record<string, unknown> = {};
-    if (isOpponentBatter) bp.opponentBatterId = batterId;
-    else if (batterId) bp.batterId = batterId;
-    if (isOpponentPitcher) bp.opponentPitcherId = pitcherId;
-    else if (pitcherId) bp.pitcherId = pitcherId;
-    return bp;
+    const batterPitcherIds: Record<string, unknown> = {};
+    if (isOpponentBatter) batterPitcherIds.opponentBatterId = batterId;
+    else if (batterId) batterPitcherIds.batterId = batterId;
+    if (isOpponentPitcher) batterPitcherIds.opponentPitcherId = pitcherId;
+    else if (pitcherId) batterPitcherIds.pitcherId = pitcherId;
+    return batterPitcherIds;
   }
 
   function handleDirectResult(eventType: string, extra: Record<string, unknown> = {}) {
     submitReplacement(eventType, { ...buildBatterPitcher(), ...extra });
   }
 
-  function handleHitResult(hitType: string) {
-    submitReplacement('hit', { ...buildBatterPitcher(), hitType, trajectory: trajectory ?? undefined });
+  function handleHitResult(hitType: string, selectedTrajectory?: string) {
+    submitReplacement('hit', { ...buildBatterPitcher(), hitType, trajectory: selectedTrajectory ?? trajectory ?? undefined });
   }
 
   function handleOutWithFielding(outType: string) {
@@ -151,8 +142,8 @@ function ReplaceEventPanel({
         <div className="grid grid-cols-3 gap-2">
           {[
             { label: 'Ball', outcome: 'ball' },
-            { label: 'Called K', outcome: 'called_strike' },
-            { label: 'Swing K', outcome: 'swinging_strike' },
+            { label: 'Called Strike', outcome: 'called_strike' },
+            { label: 'Swinging Strike', outcome: 'swinging_strike' },
           ].map(({ label, outcome }) => (
             <button
               key={outcome}
@@ -202,12 +193,12 @@ function ReplaceEventPanel({
       <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Who made the error?</p>
         <div className="grid grid-cols-3 gap-2">
-          {POSITIONS.map(({ n, label }) => (
+          {POSITIONS.map(({ positionNumber, label }) => (
             <button
-              key={n}
+              key={positionNumber}
               type="button"
               disabled={isPending}
-              onClick={() => handleErrorWithFielder(n)}
+              onClick={() => handleErrorWithFielder(positionNumber)}
               className="py-2 text-sm font-medium rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors"
             >
               {label}
@@ -227,34 +218,42 @@ function ReplaceEventPanel({
         {fieldingSeq.length > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-lg font-bold text-gray-900 tracking-wider">
-              {fieldingSeq.map((n) => POSITIONS.find((p) => p.n === n)?.label ?? String(n)).join('-')}
+              {fieldingSeq.map((num) => POSITIONS.find((p) => p.positionNumber === num)?.label ?? String(num)).join('-')}
             </span>
             <button type="button" onClick={() => setFieldingSeq((s) => s.slice(0, -1))} className="text-xs text-gray-400 hover:text-gray-600 underline">Undo</button>
           </div>
         )}
         <div className="grid grid-cols-3 gap-2">
-          {POSITIONS.map(({ n, label }) => (
+          {POSITIONS.map(({ positionNumber, label }) => (
             <button
-              key={n}
+              key={positionNumber}
               type="button"
               disabled={fieldingSeq.length >= 8}
-              onClick={() => setFieldingSeq((s) => [...s, n])}
+              onClick={() => setFieldingSeq((s) => [...s, positionNumber])}
               className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
             >
-              {n} — {label}
+              {positionNumber} — {label}
             </button>
           ))}
         </div>
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={() => handleOutWithFielding(pendingResult === 'double_play' ? 'groundout' : pendingResult === 'triple_play' ? 'groundout' : pendingResult ?? 'groundout')}
-            className="flex-1 py-2 text-sm font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-40 transition-colors"
-          >
-            Record {pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : 'Out'}
-          </button>
-          <button type="button" onClick={() => handleOutWithFielding(pendingResult ?? 'groundout')} className="text-xs text-gray-400 hover:text-gray-600 underline">Skip</button>
+          {(() => {
+            const resolvedOutType = pendingResult === 'double_play' || pendingResult === 'triple_play' ? 'groundout' : (pendingResult ?? 'groundout');
+            const buttonLabel = pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : 'Out';
+            return (
+              <>
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => handleOutWithFielding(resolvedOutType)}
+                  className="flex-1 py-2 text-sm font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-40 transition-colors"
+                >
+                  Record {buttonLabel}
+                </button>
+                <button type="button" onClick={() => handleOutWithFielding(resolvedOutType)} className="text-xs text-gray-400 hover:text-gray-600 underline">Skip</button>
+              </>
+            );
+          })()}
         </div>
         {error && <p className="text-xs text-red-600">{error}</p>}
         <button type="button" onClick={() => { setStep('trajectory'); setFieldingSeq([]); }} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
@@ -283,7 +282,7 @@ function ReplaceEventPanel({
                 } else if (['out', 'double_play', 'triple_play'].includes(pendingResult)) {
                   setStep('fielding');
                 } else {
-                  handleHitResult(pendingResult);
+                  handleHitResult(pendingResult, value);
                 }
               }}
               className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
@@ -367,7 +366,16 @@ function ReplaceEventPanel({
 
 // ── Edit Event Button ──────────────────────────────────────────────────────
 
+const EDITABLE_EVENT_TYPES = new Set([
+  'pitch_thrown',
+  'hit', 'out', 'walk', 'hit_by_pitch', 'strikeout',
+  'sacrifice_bunt', 'sacrifice_fly', 'field_error',
+  'double_play', 'triple_play',
+]);
+
 function EditEventButton({ event, gameId, children }: { event: GameEvent; gameId: string; children?: React.ReactNode }) {
+  if (!EDITABLE_EVENT_TYPES.has(event.eventType)) return <>{children}</>;
+
   const [editing, setEditing] = useState(false);
 
   if (editing) {
