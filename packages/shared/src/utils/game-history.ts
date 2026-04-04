@@ -466,8 +466,8 @@ export function buildGameHistoryTree(
       isTop,
       label: isTop ? 'Top' : 'Bottom',
       items: [],
-      homeScore,
-      awayScore,
+      homeScore: 0,
+      awayScore: 0,
     };
   }
 
@@ -625,7 +625,7 @@ export function buildGameHistoryTree(
           forceAdvance();
         } else if (event.eventType === EventType.FIELD_ERROR) {
           forceAdvance();
-        } else if (event.eventType === EventType.SACRIFICE_FLY) {
+        } else if (event.eventType === EventType.SACRIFICE_FLY || event.eventType === EventType.SACRIFICE_BUNT) {
           if (runnerThird) {
             addRuns(1);
             runnerThird = false;
@@ -699,6 +699,9 @@ export function buildGameHistoryTree(
             else if (rp.safeAtBase === 3) runnerThird = true;
           }
         } else if (event.eventType === EventType.BALK) {
+          // Runner on third scores; the run is credited by a subsequent SCORE
+          // event, so we only clear the base here to keep runner state accurate.
+          if (runnerThird) runnerThird = false;
           runnerThird = runnerSecond;
           runnerSecond = runnerFirst;
           runnerFirst = false;
