@@ -1,5 +1,14 @@
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
 import { PitchOutcome, PitchType } from '@baseball/shared';
+import type { DroppedThirdStrikeOutcome } from '@baseball/shared';
+
+interface DroppedThirdStrikeDetails {
+  outcome: DroppedThirdStrikeOutcome;
+  fieldingSequence?: number[];
+  errorBy?: number;
+  isWildPitch?: boolean;
+}
 
 interface PitchInputProps {
   onRecordPitch: (outcome: PitchOutcome, pitchType?: PitchType) => void;
@@ -7,6 +16,8 @@ interface PitchInputProps {
   onRecordOut: () => void;
   onRecordWalk: () => void;
   onRecordStrikeout: () => void;
+  onRecordDroppedThirdStrike?: (details: DroppedThirdStrikeDetails) => void;
+  droppedThirdStrikeEligible?: boolean;
 }
 
 const PITCH_OUTCOMES: Array<{ label: string; outcome: PitchOutcome; color: string }> = [
@@ -29,7 +40,16 @@ export function PitchInput({
   onRecordOut,
   onRecordWalk,
   onRecordStrikeout,
+  onRecordDroppedThirdStrike,
+  droppedThirdStrikeEligible = false,
 }: PitchInputProps) {
+  const [showD3KModal, setShowD3KModal] = useState(false);
+
+  function handleD3KOutcome(details: DroppedThirdStrikeDetails) {
+    setShowD3KModal(false);
+    onRecordDroppedThirdStrike?.(details);
+  }
+
   return (
     <ScrollView className="flex-1 bg-gray-50">
       {/* Pitch-by-pitch section */}
@@ -60,8 +80,96 @@ export function PitchInput({
           <OutcomeButton label="Out" emoji="✋" onPress={onRecordOut} color="bg-gray-600" />
           <OutcomeButton label="Walk (BB)" emoji="🚶" onPress={onRecordWalk} color="bg-green-600" />
           <OutcomeButton label="Strikeout" emoji="K" onPress={onRecordStrikeout} color="bg-red-600" />
+          {droppedThirdStrikeEligible && onRecordDroppedThirdStrike && (
+            <OutcomeButton
+              label="Dropped 3rd K"
+              emoji="K!"
+              onPress={() => setShowD3KModal(true)}
+              color="bg-amber-600"
+            />
+          )}
         </View>
       </View>
+
+      {/* Dropped third strike outcome modal */}
+      <Modal
+        visible={showD3KModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowD3KModal(false)}
+      >
+        <View className="flex-1 justify-end bg-black/50">
+          <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
+            <Text className="text-lg font-bold text-gray-900 mb-1">
+              Dropped Third Strike
+            </Text>
+            <Text className="text-sm text-gray-500 mb-4">
+              What happened after the dropped third strike?
+            </Text>
+
+            <View className="gap-3">
+              <TouchableOpacity
+                className="bg-gray-600 rounded-xl px-5 py-4"
+                onPress={() => handleD3KOutcome({
+                  outcome: 'thrown_out',
+                  fieldingSequence: [2, 3],
+                })}
+              >
+                <Text className="text-white font-semibold">Batter Out (K 2-3)</Text>
+                <Text className="text-white/70 text-xs mt-0.5">
+                  Catcher threw batter out at first
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                className="bg-orange-600 rounded-xl px-5 py-4"
+                onPress={() => handleD3KOutcome({
+                  outcome: 'reached_on_error',
+                  errorBy: 2,
+                })}
+              >
+                <Text className="text-white font-semibold">Safe - Error</Text>
+                <Text className="text-white/70 text-xs mt-0.5">
+                  Batter reached on fielding error
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                className="bg-amber-600 rounded-xl px-5 py-4"
+                onPress={() => handleD3KOutcome({
+                  outcome: 'reached_wild_pitch',
+                  isWildPitch: true,
+                })}
+              >
+                <Text className="text-white font-semibold">Safe - Wild Pitch</Text>
+                <Text className="text-white/70 text-xs mt-0.5">
+                  Batter reached on wild pitch
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                className="bg-yellow-600 rounded-xl px-5 py-4"
+                onPress={() => handleD3KOutcome({
+                  outcome: 'reached_wild_pitch',
+                  isWildPitch: false,
+                })}
+              >
+                <Text className="text-white font-semibold">Safe - Passed Ball</Text>
+                <Text className="text-white/70 text-xs mt-0.5">
+                  Batter reached on passed ball
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              className="mt-4 py-3 items-center"
+              onPress={() => setShowD3KModal(false)}
+            >
+              <Text className="text-gray-500 font-semibold">Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }

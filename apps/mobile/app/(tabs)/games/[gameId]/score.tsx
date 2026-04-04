@@ -8,7 +8,7 @@ import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDi
 import { PitchInput } from '../../../../src/features/scoring/PitchInput';
 import { LoadingSpinner } from '@baseball/ui';
 import { EventType, PitchOutcome, HitType } from '@baseball/shared';
-import type { PitchThrownPayload, HitPayload, OutPayload } from '@baseball/shared';
+import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome } from '@baseball/shared';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
 
 /**
@@ -86,6 +86,29 @@ export default function ScoringScreen() {
     await recordEvent(EventType.STRIKEOUT, gameState.inning, gameState.isTopOfInning, payload);
   }
 
+  async function handleDroppedThirdStrike(details: {
+    outcome: DroppedThirdStrikeOutcome;
+    fieldingSequence?: number[];
+    errorBy?: number;
+    isWildPitch?: boolean;
+  }) {
+    if (!gameState) return;
+    const payload: DroppedThirdStrikePayload = {
+      batterId: currentBatterId,
+      pitcherId: currentPitcherId,
+      outcome: details.outcome,
+      fieldingSequence: details.fieldingSequence,
+      errorBy: details.errorBy,
+      isWildPitch: details.isWildPitch,
+    };
+    await recordEvent(EventType.DROPPED_THIRD_STRIKE, gameState.inning, gameState.isTopOfInning, payload);
+  }
+
+  // Dropped third strike is eligible when first base is unoccupied or there are 2 outs
+  const droppedThirdStrikeEligible = gameState
+    ? gameState.outs === 2 || !gameState.runnersOnBase.first
+    : false;
+
   if (loading || !gameState) {
     return <LoadingSpinner fullScreen />;
   }
@@ -123,6 +146,8 @@ export default function ScoringScreen() {
         onRecordOut={handleOut}
         onRecordWalk={handleWalk}
         onRecordStrikeout={handleStrikeout}
+        onRecordDroppedThirdStrike={handleDroppedThirdStrike}
+        droppedThirdStrikeEligible={droppedThirdStrikeEligible}
       />
     </View>
   );

@@ -1,4 +1,4 @@
-import { EventType, type GameEvent, type PitchThrownPayload, type HitPayload, type SubstitutionPayload, type PitchingChangePayload, type BaserunnerMovePayload, type PickoffPayload, type RundownPayload } from '../types/game-event';
+import { EventType, type GameEvent, type PitchThrownPayload, type HitPayload, type SubstitutionPayload, type PitchingChangePayload, type BaserunnerMovePayload, type PickoffPayload, type RundownPayload, type DroppedThirdStrikePayload } from '../types/game-event';
 import type { LiveGameState } from '../types/game';
 import { BALLS_FOR_WALK, STRIKES_FOR_STRIKEOUT, OUTS_PER_INNING } from '../constants/baseball';
 
@@ -147,6 +147,26 @@ export function deriveGameState(
       case EventType.OUT:
       case EventType.STRIKEOUT: {
         state.outs++;
+        state.balls = 0;
+        state.strikes = 0;
+        incrementPA(state);
+        break;
+      }
+
+      case EventType.DROPPED_THIRD_STRIKE: {
+        const p = event.payload as DroppedThirdStrikePayload;
+        if (p.outcome === 'thrown_out') {
+          state.outs++;
+        } else {
+          // Batter reaches first — force-advance runners
+          const basesLoaded = !!(
+            state.runnersOnBase.first &&
+            state.runnersOnBase.second &&
+            state.runnersOnBase.third
+          );
+          state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, state.currentBatterId);
+          if (basesLoaded) addRuns(state, 1, state.isTopOfInning);
+        }
         state.balls = 0;
         state.strikes = 0;
         incrementPA(state);

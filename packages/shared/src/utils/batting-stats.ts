@@ -249,6 +249,21 @@ export function deriveBattingStats(
         continue;
       }
 
+      // ── DROPPED_THIRD_STRIKE ──────────────────────────────────────────────
+      if (etype === EventType.DROPPED_THIRD_STRIKE) {
+        const batterId: string | undefined = payload?.batterId;
+        if (!batterId) continue;
+        markAppeared(batterId);
+        const s = getStats(batterId);
+        s.plateAppearances += 1;
+        s.atBats += 1;
+        s.strikeouts += 1;
+        if (payload?.outcome !== 'thrown_out') {
+          forceAdvance(batterId);
+        }
+        continue;
+      }
+
       // ── WALK ───────────────────────────────────────────────────────────────
       if (etype === EventType.WALK) {
         const batterId: string | undefined = payload?.batterId;
