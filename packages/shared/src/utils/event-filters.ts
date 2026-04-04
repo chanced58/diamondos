@@ -24,6 +24,10 @@ export function applyInsertionOrder(events: Record<string, unknown>[]): Record<s
   insertions.sort((a, b) => (a.sequence_number as number) - (b.sequence_number as number));
   for (const ins of insertions) {
     const targetSeq = ((ins.payload ?? {}) as Record<string, unknown>).insertAfterSequence as number;
+    if (targetSeq <= 0) {
+      result.splice(0, 0, ins);
+      continue;
+    }
     let insertIdx = result.length;
     for (let i = result.length - 1; i >= 0; i--) {
       const r = result[i];

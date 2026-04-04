@@ -395,6 +395,11 @@ function applyInsertionOrder(events: GameEvent[]): GameEvent[] {
   insertions.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
   for (const ins of insertions) {
     const targetSeq = (ins.payload as Record<string, unknown>).insertAfterSequence as number;
+    if (targetSeq <= 0) {
+      // Insert at the very beginning
+      result.splice(0, 0, ins);
+      continue;
+    }
     // Find the last index where sequenceNumber <= targetSeq or is another
     // insertion targeting the same or earlier position
     let insertIdx = result.length; // default: append
