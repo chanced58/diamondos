@@ -11,8 +11,10 @@ import type {
   HistoryEventNode,
   EventCategory,
 } from '@baseball/shared';
-import { replaceEventAction } from '@/app/(app)/games/[gameId]/actions';
+import { replaceEventAction, insertCorrectionEventAction } from '@/app/(app)/games/[gameId]/actions';
 import type { GameEvent } from '@baseball/shared';
+
+export type PlayerEntry = { id: string; name: string };
 
 // ── Category Colors ─────────────────────────────────────────────────────────
 
@@ -408,6 +410,341 @@ function EditEventButton({ event, gameId, children }: { event: GameEvent; gameId
   );
 }
 
+// ── Add Event Panel ────────────────────────────────────────────────────────
+
+function AddEventPanel({
+  gameId,
+  inning,
+  isTopOfInning,
+  teamPlayers,
+  opponentPlayers,
+  onDone,
+}: {
+  gameId: string;
+  inning: number;
+  isTopOfInning: boolean;
+  teamPlayers: PlayerEntry[];
+  opponentPlayers: PlayerEntry[];
+  onDone: () => void;
+}) {
+  const [step, setStep] = useState<'players' | 'type' | 'trajectory' | 'fielding' | 'error-fielder'>('players');
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [batterId, setBatterId] = useState('');
+  const [pitcherId, setPitcherId] = useState('');
+  const [isOpponentBatter, setIsOpponentBatter] = useState(false);
+  const [isOpponentPitcher, setIsOpponentPitcher] = useState(false);
+  const [pendingResult, setPendingResult] = useState<string | null>(null);
+  const [trajectory, setTrajectory] = useState<string | null>(null);
+  const [fieldingSeq, setFieldingSeq] = useState<number[]>([]);
+
+  // In top of inning: away team bats, home team pitches
+  // isTopOfInning=true means opponent bats if we're tracking from the home team perspective
+  // But we don't know for sure — let the coach pick from either roster
+
+  const allBatters = [
+    ...teamPlayers.map((p) => ({ ...p, isOpponent: false })),
+    ...opponentPlayers.map((p) => ({ ...p, isOpponent: true })),
+  ];
+  const allPitchers = [
+    ...teamPlayers.map((p) => ({ ...p, isOpponent: false })),
+    ...opponentPlayers.map((p) => ({ ...p, isOpponent: true })),
+  ];
+
+  function buildBatterPitcher(): Record<string, unknown> {
+    const ids: Record<string, unknown> = {};
+    if (isOpponentBatter) ids.opponentBatterId = batterId;
+    else if (batterId) ids.batterId = batterId;
+    if (isOpponentPitcher) ids.opponentPitcherId = pitcherId;
+    else if (pitcherId) ids.pitcherId = pitcherId;
+    return ids;
+  }
+
+  async function submitEvent(eventType: string, payload: Record<string, unknown>) {
+    if (isPending) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.set('gameId', gameId);
+      formData.set('eventType', eventType);
+      formData.set('inning', String(inning));
+      formData.set('isTopOfInning', String(isTopOfInning));
+      formData.set('payload', JSON.stringify(payload));
+      const err = await insertCorrectionEventAction(null, formData);
+      if (err) { setError(err); return; }
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to add event.');
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  function handleDirectResult(eventType: string, extra: Record<string, unknown> = {}) {
+    submitEvent(eventType, { ...buildBatterPitcher(), ...extra });
+  }
+
+  function handleHitResult(hitType: string, selectedTrajectory?: string) {
+    submitEvent('hit', { ...buildBatterPitcher(), hitType, trajectory: selectedTrajectory ?? trajectory ?? undefined });
+  }
+
+  function handleOutWithFielding(outType: string) {
+    submitEvent('out', {
+      ...buildBatterPitcher(),
+      outType,
+      trajectory: trajectory ?? undefined,
+      fieldingSequence: fieldingSeq.length > 0 ? fieldingSeq : undefined,
+    });
+  }
+
+  function handleErrorWithFielder(errorBy: number) {
+    submitEvent('field_error', {
+      ...buildBatterPitcher(),
+      errorBy,
+      trajectory: trajectory ?? undefined,
+    });
+  }
+
+  // Step 0: Pick batter and pitcher
+  if (step === 'players') {
+    return (
+      <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Add Play — Select Players</p>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Batter</label>
+          <select
+            value={batterId}
+            onChange={(e) => {
+              const id = e.target.value;
+              setBatterId(id);
+              const entry = allBatters.find((p) => p.id === id);
+              setIsOpponentBatter(entry?.isOpponent ?? false);
+            }}
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+          >
+            <option value="">Select batter...</option>
+            {teamPlayers.length > 0 && (
+              <optgroup label="Our Team">
+                {teamPlayers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </optgroup>
+            )}
+            {opponentPlayers.length > 0 && (
+              <optgroup label="Opponent">
+                {opponentPlayers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </optgroup>
+            )}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Pitcher</label>
+          <select
+            value={pitcherId}
+            onChange={(e) => {
+              const id = e.target.value;
+              setPitcherId(id);
+              const entry = allPitchers.find((p) => p.id === id);
+              setIsOpponentPitcher(entry?.isOpponent ?? false);
+            }}
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-400"
+          >
+            <option value="">Select pitcher...</option>
+            {teamPlayers.length > 0 && (
+              <optgroup label="Our Team">
+                {teamPlayers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </optgroup>
+            )}
+            {opponentPlayers.length > 0 && (
+              <optgroup label="Opponent">
+                {opponentPlayers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </optgroup>
+            )}
+          </select>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            disabled={!batterId || !pitcherId}
+            onClick={() => setStep('type')}
+            className="px-4 py-1.5 text-sm font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            Next
+          </button>
+          <button type="button" onClick={onDone} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+      </div>
+    );
+  }
+
+  if (step === 'error-fielder') {
+    return (
+      <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Who made the error?</p>
+        <div className="grid grid-cols-3 gap-2">
+          {POSITIONS.map(({ positionNumber, label }) => (
+            <button key={positionNumber} type="button" disabled={isPending} onClick={() => handleErrorWithFielder(positionNumber)}
+              className="py-2 text-sm font-medium rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors"
+            >{label}</button>
+          ))}
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="button" onClick={() => setStep('trajectory')} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+      </div>
+    );
+  }
+
+  if (step === 'fielding') {
+    const resolvedOutType = pendingResult === 'double_play' || pendingResult === 'triple_play' ? 'groundout' : (pendingResult ?? 'groundout');
+    const buttonLabel = pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : 'Out';
+    return (
+      <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Fielding play order</p>
+        {fieldingSeq.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-bold text-gray-900 tracking-wider">
+              {fieldingSeq.map((num) => POSITIONS.find((p) => p.positionNumber === num)?.label ?? String(num)).join('-')}
+            </span>
+            <button type="button" onClick={() => setFieldingSeq((s) => s.slice(0, -1))} className="text-xs text-gray-400 hover:text-gray-600 underline">Undo</button>
+          </div>
+        )}
+        <div className="grid grid-cols-3 gap-2">
+          {POSITIONS.map(({ positionNumber, label }) => (
+            <button key={positionNumber} type="button" disabled={fieldingSeq.length >= 8} onClick={() => setFieldingSeq((s) => [...s, positionNumber])}
+              className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >{positionNumber} — {label}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-3">
+          <button type="button" disabled={isPending} onClick={() => handleOutWithFielding(resolvedOutType)}
+            className="flex-1 py-2 text-sm font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-40 transition-colors"
+          >Record {buttonLabel}</button>
+          <button type="button" onClick={() => handleOutWithFielding(resolvedOutType)} className="text-xs text-gray-400 hover:text-gray-600 underline">Skip</button>
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="button" onClick={() => { setStep('trajectory'); setFieldingSeq([]); }} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+      </div>
+    );
+  }
+
+  if (step === 'trajectory' && pendingResult) {
+    return (
+      <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">How was it hit?</p>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: 'Ground Ball', value: 'ground_ball' },
+            { label: 'Line Drive', value: 'line_drive' },
+            { label: 'Fly Ball', value: 'fly_ball' },
+          ].map(({ label, value }) => (
+            <button key={value} type="button" disabled={isPending}
+              onClick={() => {
+                setTrajectory(value);
+                if (pendingResult === 'error') setStep('error-fielder');
+                else if (['out', 'double_play', 'triple_play'].includes(pendingResult)) setStep('fielding');
+                else handleHitResult(pendingResult, value);
+              }}
+              className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >{label}</button>
+          ))}
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="button" onClick={() => { setStep('type'); setPendingResult(null); }} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+      </div>
+    );
+  }
+
+  // Step 1: Result type picker (same as ReplaceEventPanel)
+  return (
+    <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">What happened?</p>
+      <div className="grid grid-cols-4 gap-2">
+        {([
+          { label: 'Single', value: 'single' },
+          { label: 'Double', value: 'double' },
+          { label: 'Triple', value: 'triple' },
+          { label: 'HR', value: 'home_run' },
+        ] as const).map(({ label, value }) => (
+          <button key={value} type="button" disabled={isPending} onClick={() => { setPendingResult(value); setStep('trajectory'); }}
+            className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+          >{label}</button>
+        ))}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {([
+          { label: 'Out', value: 'out' },
+          { label: 'DP', value: 'double_play' },
+          { label: 'Error', value: 'error' },
+        ] as const).map(({ label, value }) => (
+          <button key={value} type="button" disabled={isPending} onClick={() => { setPendingResult(value); setStep('trajectory'); }}
+            className={`py-2 text-sm font-medium rounded-lg border disabled:opacity-40 transition-colors ${
+              value === 'error' ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
+            }`}
+          >{label}</button>
+        ))}
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        {([
+          { label: 'Walk', eventType: 'walk' },
+          { label: 'HBP', eventType: 'hit_by_pitch' },
+          { label: 'Strikeout', eventType: 'strikeout' },
+          { label: 'Sac Fly', eventType: 'sacrifice_fly' },
+        ] as const).map(({ label, eventType }) => (
+          <button key={eventType} type="button" disabled={isPending} onClick={() => handleDirectResult(eventType)}
+            className="py-2 text-sm font-medium rounded-lg border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-40 transition-colors"
+          >{label}</button>
+        ))}
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <button type="button" onClick={() => setStep('players')} className="text-xs text-gray-400 hover:text-gray-600">← Back to players</button>
+    </div>
+  );
+}
+
+// ── Add Play Button ────────────────────────────────────────────────────────
+
+function AddPlayButton({
+  gameId,
+  inning,
+  isTopOfInning,
+  teamPlayers,
+  opponentPlayers,
+}: {
+  gameId: string;
+  inning: number;
+  isTopOfInning: boolean;
+  teamPlayers: PlayerEntry[];
+  opponentPlayers: PlayerEntry[];
+}) {
+  const [adding, setAdding] = useState(false);
+
+  if (adding) {
+    return (
+      <AddEventPanel
+        gameId={gameId}
+        inning={inning}
+        isTopOfInning={isTopOfInning}
+        teamPlayers={teamPlayers}
+        opponentPlayers={opponentPlayers}
+        onDone={() => setAdding(false)}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setAdding(true)}
+      className="mt-2 flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-800 font-medium transition-colors"
+    >
+      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+      </svg>
+      Add Play
+    </button>
+  );
+}
+
 // ── Interstitial Event Row ──────────────────────────────────────────────────
 
 function InterstitialRow({ node, isCoach, gameId }: { node: InterstitialNode; isCoach?: boolean; gameId?: string }) {
@@ -549,6 +886,7 @@ function AtBatSection({
 
 function HalfInningSection({
   half,
+  inningNumber,
   teamLabel,
   nodeKey,
   expanded,
@@ -557,8 +895,11 @@ function HalfInningSection({
   isHome,
   isCoach,
   gameId,
+  teamPlayers,
+  opponentPlayers,
 }: {
   half: HalfInningNode;
+  inningNumber: number;
   teamLabel: string;
   nodeKey: string;
   expanded: boolean;
@@ -567,6 +908,8 @@ function HalfInningSection({
   isHome: boolean;
   isCoach?: boolean;
   gameId?: string;
+  teamPlayers?: PlayerEntry[];
+  opponentPlayers?: PlayerEntry[];
 }) {
   return (
     <div className="py-1">
@@ -603,6 +946,15 @@ function HalfInningSection({
             }
             return <InterstitialRow key={i} node={item} isCoach={isCoach} gameId={gameId} />;
           })}
+          {isCoach && gameId && teamPlayers && opponentPlayers && (
+            <AddPlayButton
+              gameId={gameId}
+              inning={inningNumber}
+              isTopOfInning={half.isTop}
+              teamPlayers={teamPlayers}
+              opponentPlayers={opponentPlayers}
+            />
+          )}
         </div>
       )}
     </div>
@@ -622,6 +974,8 @@ function InningSection({
   isHome,
   isCoach,
   gameId,
+  teamPlayers,
+  opponentPlayers,
 }: {
   inning: InningNode;
   nodeKey: string;
@@ -633,6 +987,8 @@ function InningSection({
   isHome: boolean;
   isCoach?: boolean;
   gameId?: string;
+  teamPlayers?: PlayerEntry[];
+  opponentPlayers?: PlayerEntry[];
 }) {
   return (
     <div className="border border-gray-200 rounded-xl overflow-hidden">
@@ -653,6 +1009,7 @@ function InningSection({
           {inning.top && (
             <HalfInningSection
               half={inning.top}
+              inningNumber={inning.number}
               teamLabel={awayTeamName}
               nodeKey={`${nodeKey}-top`}
               expanded={expandedNodes.has(`${nodeKey}-top`)}
@@ -661,11 +1018,14 @@ function InningSection({
               isHome={isHome}
               isCoach={isCoach}
               gameId={gameId}
+              teamPlayers={teamPlayers}
+              opponentPlayers={opponentPlayers}
             />
           )}
           {inning.bottom && (
             <HalfInningSection
               half={inning.bottom}
+              inningNumber={inning.number}
               teamLabel={homeTeamName}
               nodeKey={`${nodeKey}-bot`}
               expanded={expandedNodes.has(`${nodeKey}-bot`)}
@@ -674,6 +1034,8 @@ function InningSection({
               isHome={isHome}
               isCoach={isCoach}
               gameId={gameId}
+              teamPlayers={teamPlayers}
+              opponentPlayers={opponentPlayers}
             />
           )}
         </div>
@@ -701,9 +1063,11 @@ interface GameHistoryTreeProps {
   isHome: boolean;
   isCoach?: boolean;
   gameId?: string;
+  teamPlayers?: PlayerEntry[];
+  opponentPlayers?: PlayerEntry[];
 }
 
-export function GameHistoryTree({ tree, teamName, opponentName, isHome, isCoach, gameId }: GameHistoryTreeProps): React.JSX.Element {
+export function GameHistoryTree({ tree, teamName, opponentName, isHome, isCoach, gameId, teamPlayers, opponentPlayers }: GameHistoryTreeProps): React.JSX.Element {
   const homeTeamName = isHome ? teamName : opponentName;
   const awayTeamName = isHome ? opponentName : teamName;
 
@@ -799,6 +1163,8 @@ export function GameHistoryTree({ tree, teamName, opponentName, isHome, isCoach,
             isHome={isHome}
             isCoach={isCoach}
             gameId={gameId}
+            teamPlayers={teamPlayers}
+            opponentPlayers={opponentPlayers}
           />
         );
       })}
