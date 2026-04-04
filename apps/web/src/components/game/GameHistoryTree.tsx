@@ -11,7 +11,8 @@ import type {
   HistoryEventNode,
   EventCategory,
 } from '@baseball/shared';
-import { voidEventAction } from '@/app/(app)/games/[gameId]/actions';
+import { voidEventAction, insertCorrectionEventAction } from '@/app/(app)/games/[gameId]/actions';
+import type { GameEvent } from '@baseball/shared';
 
 // ── Category Colors ─────────────────────────────────────────────────────────
 
@@ -45,43 +46,356 @@ function Chevron({ expanded }: { expanded: boolean }) {
   );
 }
 
-// ── Void Button ────────────────────────────────────────────────────────────
+// ── Fielding position constants ─────────────────────────────────────────────
 
-function VoidButton({ eventId, gameId }: { eventId: string; gameId: string }) {
+const POSITIONS = [
+  { n: 1, label: 'P' }, { n: 2, label: 'C' }, { n: 3, label: '1B' },
+  { n: 4, label: '2B' }, { n: 5, label: '3B' }, { n: 6, label: 'SS' },
+  { n: 7, label: 'LF' }, { n: 8, label: 'CF' }, { n: 9, label: 'RF' },
+];
+
+// ── Replace Event Panel ────────────────────────────────────────────────────
+
+function ReplaceEventPanel({
+  originalEvent,
+  gameId,
+  onDone,
+}: {
+  originalEvent: GameEvent;
+  gameId: string;
+  onDone: () => void;
+}) {
+  const [step, setStep] = useState<'type' | 'trajectory' | 'fielding' | 'error-fielder'>('type');
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingResult, setPendingResult] = useState<string | null>(null);
+  const [trajectory, setTrajectory] = useState<string | null>(null);
+  const [fieldingSeq, setFieldingSeq] = useState<number[]>([]);
 
-  async function handleVoid() {
-    if (!confirm('Void this event? You can recalculate scores after.')) return;
+  // Extract batter/pitcher from original event payload
+  const origPayload = originalEvent.payload as Record<string, unknown>;
+  const batterId = (origPayload.batterId ?? origPayload.opponentBatterId ?? '') as string;
+  const pitcherId = (origPayload.pitcherId ?? origPayload.opponentPitcherId ?? '') as string;
+  const isOpponentBatter = !!origPayload.opponentBatterId;
+  const isOpponentPitcher = !!origPayload.opponentPitcherId;
+
+  async function submitReplacement(eventType: string, payload: Record<string, unknown>) {
     setIsPending(true);
     setError(null);
     try {
-      const formData = new FormData();
-      formData.set('gameId', gameId);
-      formData.set('eventId', eventId);
-      const err = await voidEventAction(null, formData);
-      if (err) setError(err);
+      // Void the original event
+      const voidForm = new FormData();
+      voidForm.set('gameId', gameId);
+      voidForm.set('eventId', originalEvent.id);
+      const voidErr = await voidEventAction(null, voidForm);
+      if (voidErr) { setError(voidErr); return; }
+
+      // Insert the replacement
+      const insertForm = new FormData();
+      insertForm.set('gameId', gameId);
+      insertForm.set('eventType', eventType);
+      insertForm.set('inning', String(originalEvent.inning));
+      insertForm.set('isTopOfInning', String(originalEvent.isTopOfInning));
+      insertForm.set('payload', JSON.stringify(payload));
+      const insertErr = await insertCorrectionEventAction(null, insertForm);
+      if (insertErr) { setError(insertErr); return; }
+
+      onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to void event.');
+      setError(e instanceof Error ? e.message : 'Failed to replace event.');
     } finally {
       setIsPending(false);
     }
   }
 
+  function buildBatterPitcher(): Record<string, unknown> {
+    const bp: Record<string, unknown> = {};
+    if (isOpponentBatter) bp.opponentBatterId = batterId;
+    else if (batterId) bp.batterId = batterId;
+    if (isOpponentPitcher) bp.opponentPitcherId = pitcherId;
+    else if (pitcherId) bp.pitcherId = pitcherId;
+    return bp;
+  }
+
+  function handleDirectResult(eventType: string, extra: Record<string, unknown> = {}) {
+    submitReplacement(eventType, { ...buildBatterPitcher(), ...extra });
+  }
+
+  function handleHitResult(hitType: string) {
+    submitReplacement('hit', { ...buildBatterPitcher(), hitType, trajectory: trajectory ?? undefined });
+  }
+
+  function handleOutWithFielding(outType: string) {
+    submitReplacement('out', {
+      ...buildBatterPitcher(),
+      outType,
+      trajectory: trajectory ?? undefined,
+      fieldingSequence: fieldingSeq.length > 0 ? fieldingSeq : undefined,
+    });
+  }
+
+  function handleErrorWithFielder(errorBy: number) {
+    submitReplacement('field_error', {
+      ...buildBatterPitcher(),
+      errorBy,
+      trajectory: trajectory ?? undefined,
+    });
+  }
+
+  // Pitch replacement
+  const isPitchEvent = originalEvent.eventType === 'pitch_thrown';
+  if (isPitchEvent) {
+    return (
+      <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Replace pitch outcome</p>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: 'Ball', outcome: 'ball' },
+            { label: 'Called K', outcome: 'called_strike' },
+            { label: 'Swing K', outcome: 'swinging_strike' },
+          ].map(({ label, outcome }) => (
+            <button
+              key={outcome}
+              type="button"
+              disabled={isPending}
+              onClick={() => handleDirectResult('pitch_thrown', { outcome })}
+              className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 transition-colors"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: 'Foul', outcome: 'foul' },
+            { label: 'Foul Tip', outcome: 'foul_tip' },
+            { label: 'In Play', outcome: 'in_play' },
+          ].map(({ label, outcome }) => (
+            <button
+              key={outcome}
+              type="button"
+              disabled={isPending}
+              onClick={() => handleDirectResult('pitch_thrown', { outcome })}
+              className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 transition-colors"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={() => handleDirectResult('pitch_thrown', { outcome: 'hit_by_pitch' })}
+          className="w-full py-2 text-sm font-medium rounded-lg border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-40 transition-colors"
+        >
+          HBP
+        </button>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="button" onClick={onDone} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+      </div>
+    );
+  }
+
+  // Terminal event replacement — step-based flow
+  if (step === 'error-fielder') {
+    return (
+      <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Who made the error?</p>
+        <div className="grid grid-cols-3 gap-2">
+          {POSITIONS.map(({ n, label }) => (
+            <button
+              key={n}
+              type="button"
+              disabled={isPending}
+              onClick={() => handleErrorWithFielder(n)}
+              className="py-2 text-sm font-medium rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="button" onClick={() => setStep('trajectory')} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+      </div>
+    );
+  }
+
+  if (step === 'fielding') {
+    return (
+      <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Fielding play order</p>
+        {fieldingSeq.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-bold text-gray-900 tracking-wider">
+              {fieldingSeq.map((n) => POSITIONS.find((p) => p.n === n)?.label ?? String(n)).join('-')}
+            </span>
+            <button type="button" onClick={() => setFieldingSeq((s) => s.slice(0, -1))} className="text-xs text-gray-400 hover:text-gray-600 underline">Undo</button>
+          </div>
+        )}
+        <div className="grid grid-cols-3 gap-2">
+          {POSITIONS.map(({ n, label }) => (
+            <button
+              key={n}
+              type="button"
+              disabled={fieldingSeq.length >= 8}
+              onClick={() => setFieldingSeq((s) => [...s, n])}
+              className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >
+              {n} — {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => handleOutWithFielding(pendingResult === 'double_play' ? 'groundout' : pendingResult === 'triple_play' ? 'groundout' : pendingResult ?? 'groundout')}
+            className="flex-1 py-2 text-sm font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-40 transition-colors"
+          >
+            Record {pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : 'Out'}
+          </button>
+          <button type="button" onClick={() => handleOutWithFielding(pendingResult ?? 'groundout')} className="text-xs text-gray-400 hover:text-gray-600 underline">Skip</button>
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="button" onClick={() => { setStep('trajectory'); setFieldingSeq([]); }} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+      </div>
+    );
+  }
+
+  if (step === 'trajectory' && pendingResult) {
+    return (
+      <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">How was it hit?</p>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: 'Ground Ball', value: 'ground_ball' },
+            { label: 'Line Drive', value: 'line_drive' },
+            { label: 'Fly Ball', value: 'fly_ball' },
+          ].map(({ label, value }) => (
+            <button
+              key={value}
+              type="button"
+              disabled={isPending}
+              onClick={() => {
+                setTrajectory(value);
+                if (pendingResult === 'error') {
+                  setStep('error-fielder');
+                } else if (['out', 'double_play', 'triple_play'].includes(pendingResult)) {
+                  setStep('fielding');
+                } else {
+                  handleHitResult(pendingResult);
+                }
+              }}
+              className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="button" onClick={() => { setStep('type'); setPendingResult(null); }} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+      </div>
+    );
+  }
+
+  // Step 1: Result type picker
+  return (
+    <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Replace with&hellip;</p>
+      <div className="grid grid-cols-4 gap-2">
+        {([
+          { label: 'Single', value: 'single' },
+          { label: 'Double', value: 'double' },
+          { label: 'Triple', value: 'triple' },
+          { label: 'HR', value: 'home_run' },
+        ] as const).map(({ label, value }) => (
+          <button
+            key={value}
+            type="button"
+            disabled={isPending}
+            onClick={() => { setPendingResult(value); setStep('trajectory'); }}
+            className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {([
+          { label: 'Out', value: 'out' },
+          { label: 'DP', value: 'double_play' },
+          { label: 'Error', value: 'error' },
+        ] as const).map(({ label, value }) => (
+          <button
+            key={value}
+            type="button"
+            disabled={isPending}
+            onClick={() => { setPendingResult(value); setStep('trajectory'); }}
+            className={`py-2 text-sm font-medium rounded-lg border disabled:opacity-40 transition-colors ${
+              value === 'error'
+                ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
+                : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        {([
+          { label: 'Walk', eventType: 'walk' },
+          { label: 'HBP', eventType: 'hit_by_pitch' },
+          { label: 'Strikeout', eventType: 'strikeout' },
+          { label: 'Sac Fly', eventType: 'sacrifice_fly' },
+        ] as const).map(({ label, eventType }) => (
+          <button
+            key={eventType}
+            type="button"
+            disabled={isPending}
+            onClick={() => handleDirectResult(eventType)}
+            className="py-2 text-sm font-medium rounded-lg border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-40 transition-colors"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <button type="button" onClick={onDone} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+    </div>
+  );
+}
+
+// ── Edit Event Button ──────────────────────────────────────────────────────
+
+function EditEventButton({ event, gameId, children }: { event: GameEvent; gameId: string; children?: React.ReactNode }) {
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <>
+        {children}
+        <ReplaceEventPanel
+          originalEvent={event}
+          gameId={gameId}
+          onDone={() => setEditing(false)}
+        />
+      </>
+    );
+  }
+
   return (
     <>
+      {children}
       <button
         type="button"
-        onClick={handleVoid}
-        disabled={isPending}
-        className="shrink-0 p-0.5 text-gray-300 hover:text-red-500 disabled:opacity-50 transition-colors"
-        aria-label="Void event"
+        onClick={() => setEditing(true)}
+        className="shrink-0 p-0.5 text-gray-300 hover:text-brand-600 disabled:opacity-50 transition-colors"
+        aria-label="Edit event"
       >
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z" />
         </svg>
       </button>
-      {error && <span className="text-xs text-red-600">{error}</span>}
     </>
   );
 }
@@ -90,14 +404,16 @@ function VoidButton({ eventId, gameId }: { eventId: string; gameId: string }) {
 
 function InterstitialRow({ node, isCoach, gameId }: { node: InterstitialNode; isCoach?: boolean; gameId?: string }) {
   return (
-    <div className="flex items-center gap-2 py-1.5 px-3 text-sm italic">
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-        node.category === 'info' ? 'bg-blue-400' : node.category === 'positive' ? 'bg-green-400' : node.category === 'negative' ? 'bg-red-400' : 'bg-gray-400'
-      }`} />
-      <span className={CATEGORY_TEXT[node.category]}>{node.label}</span>
-      {isCoach && gameId && (
-        <VoidButton eventId={node.event.id} gameId={gameId} />
-      )}
+    <div className="py-1.5 px-3">
+      <div className="flex items-center gap-2 text-sm italic">
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+          node.category === 'info' ? 'bg-blue-400' : node.category === 'positive' ? 'bg-green-400' : node.category === 'negative' ? 'bg-red-400' : 'bg-gray-400'
+        }`} />
+        <span className={CATEGORY_TEXT[node.category]}>{node.label}</span>
+        {isCoach && gameId && (
+          <EditEventButton event={node.event} gameId={gameId} />
+        )}
+      </div>
     </div>
   );
 }
@@ -106,14 +422,16 @@ function InterstitialRow({ node, isCoach, gameId }: { node: InterstitialNode; is
 
 function MidAtBatRow({ node, isCoach, gameId }: { node: HistoryEventNode; isCoach?: boolean; gameId?: string }) {
   return (
-    <div className="flex items-center gap-2 py-1 text-xs italic">
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-        node.category === 'positive' ? 'bg-green-400' : node.category === 'negative' ? 'bg-red-400' : node.category === 'info' ? 'bg-blue-400' : 'bg-gray-400'
-      }`} />
-      <span className={CATEGORY_TEXT[node.category]}>{node.label}</span>
-      {isCoach && gameId && (
-        <VoidButton eventId={node.event.id} gameId={gameId} />
-      )}
+    <div className="py-1">
+      <div className="flex items-center gap-2 text-xs italic">
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+          node.category === 'positive' ? 'bg-green-400' : node.category === 'negative' ? 'bg-red-400' : node.category === 'info' ? 'bg-blue-400' : 'bg-gray-400'
+        }`} />
+        <span className={CATEGORY_TEXT[node.category]}>{node.label}</span>
+        {isCoach && gameId && (
+          <EditEventButton event={node.event} gameId={gameId} />
+        )}
+      </div>
     </div>
   );
 }
@@ -122,12 +440,14 @@ function MidAtBatRow({ node, isCoach, gameId }: { node: HistoryEventNode; isCoac
 
 function PitchRow({ pitch, isCoach, gameId }: { pitch: PitchNode; isCoach?: boolean; gameId?: string }) {
   return (
-    <div className="flex items-center gap-2 py-1 text-sm text-gray-700">
-      <span className="w-1.5 h-1.5 rounded-full bg-gray-300 shrink-0" />
-      <span>{pitch.label}</span>
-      {isCoach && gameId && (
-        <VoidButton eventId={pitch.event.id} gameId={gameId} />
-      )}
+    <div className="py-1">
+      <div className="flex items-center gap-2 text-sm text-gray-700">
+        <span className="w-1.5 h-1.5 rounded-full bg-gray-300 shrink-0" />
+        <span>{pitch.label}</span>
+        {isCoach && gameId && (
+          <EditEventButton event={pitch.event} gameId={gameId} />
+        )}
+      </div>
     </div>
   );
 }
@@ -197,16 +517,18 @@ function AtBatSection({
               : <MidAtBatRow key={i} node={item.data as HistoryEventNode} isCoach={isCoach} gameId={gameId} />
           )}
           {atBat.result && (
-            <div className="flex items-center gap-2 py-1.5 text-sm font-medium">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${
-                atBat.result.category === 'positive' ? 'bg-green-500' : atBat.result.category === 'negative' ? 'bg-red-500' : 'bg-gray-400'
-              }`} />
-              <span className={CATEGORY_TEXT[atBat.result.category]}>
-                Result: {atBat.result.label}
-              </span>
-              {isCoach && gameId && (
-                <VoidButton eventId={atBat.result.event.id} gameId={gameId} />
-              )}
+            <div className="py-1.5">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${
+                  atBat.result.category === 'positive' ? 'bg-green-500' : atBat.result.category === 'negative' ? 'bg-red-500' : 'bg-gray-400'
+                }`} />
+                <span className={CATEGORY_TEXT[atBat.result.category]}>
+                  Result: {atBat.result.label}
+                </span>
+                {isCoach && gameId && (
+                  <EditEventButton event={atBat.result.event} gameId={gameId} />
+                )}
+              </div>
             </div>
           )}
         </div>
