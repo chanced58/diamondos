@@ -11,7 +11,7 @@ import type {
   HistoryEventNode,
   EventCategory,
 } from '@baseball/shared';
-import { replaceEventAction, insertCorrectionEventAction, voidEventAction } from '@/app/(app)/games/[gameId]/actions';
+import { replaceEventAction, insertCorrectionEventAction, voidEventAction, replayAtBatAction } from '@/app/(app)/games/[gameId]/actions';
 import type { GameEvent } from '@baseball/shared';
 
 export type PlayerEntry = { id: string; name: string };
@@ -883,6 +883,104 @@ function AddPlayButton({
   );
 }
 
+// ── Add Pitch Button (within an at-bat) ───────────────────────────────────
+
+function AddPitchButton({
+  gameId,
+  inning,
+  isTopOfInning,
+  insertAfterSequence,
+  batterId,
+  pitcherId,
+  isOpponentBatter,
+  isOpponentPitcher,
+}: {
+  gameId: string;
+  inning: number;
+  isTopOfInning: boolean;
+  insertAfterSequence: number;
+  batterId: string;
+  pitcherId: string;
+  isOpponentBatter: boolean;
+  isOpponentPitcher: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSelect(outcome: string) {
+    if (isPending) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      const payload: Record<string, unknown> = { outcome, insertAfterSequence };
+      if (isOpponentBatter) payload.opponentBatterId = batterId;
+      else if (batterId) payload.batterId = batterId;
+      if (isOpponentPitcher) payload.opponentPitcherId = pitcherId;
+      else if (pitcherId) payload.pitcherId = pitcherId;
+
+      const formData = new FormData();
+      formData.set('gameId', gameId);
+      formData.set('eventType', 'pitch_thrown');
+      formData.set('inning', String(inning));
+      formData.set('isTopOfInning', String(isTopOfInning));
+      formData.set('payload', JSON.stringify(payload));
+      const err = await insertCorrectionEventAction(null, formData);
+      if (err) { setError(err); return; }
+      setOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to add pitch.');
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="group flex items-center gap-1 py-0.5 text-[11px] text-gray-300 hover:text-brand-600 transition-colors"
+        aria-label="Insert pitch"
+      >
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        <span className="opacity-0 group-hover:opacity-100 transition-opacity">pitch</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="my-1 p-2 bg-white rounded-lg border border-brand-200 shadow-sm space-y-2">
+      <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Add pitch</p>
+      <div className="grid grid-cols-3 gap-1.5">
+        {[
+          { label: 'Ball', outcome: 'ball' },
+          { label: 'Called K', outcome: 'called_strike' },
+          { label: 'Swing K', outcome: 'swinging_strike' },
+        ].map(({ label, outcome }) => (
+          <button key={outcome} type="button" disabled={isPending} onClick={() => handleSelect(outcome)}
+            className="py-1.5 text-xs font-medium rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 transition-colors"
+          >{label}</button>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        {[
+          { label: 'Foul', outcome: 'foul' },
+          { label: 'Foul Tip', outcome: 'foul_tip' },
+        ].map(({ label, outcome }) => (
+          <button key={outcome} type="button" disabled={isPending} onClick={() => handleSelect(outcome)}
+            className="py-1.5 text-xs font-medium rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 transition-colors"
+          >{label}</button>
+        ))}
+      </div>
+      {error && <p className="text-[11px] text-red-600">{error}</p>}
+      <button type="button" onClick={() => setOpen(false)} className="text-[11px] text-gray-400 hover:text-gray-600">Cancel</button>
+    </div>
+  );
+}
+
 /** Get the last sequence number from a half-inning item (at-bat or interstitial). */
 function getItemLastSequence(item: AtBatNode | InterstitialNode): number {
   if (item.type === 'interstitial') return item.event.sequenceNumber;
@@ -939,15 +1037,385 @@ function MidAtBatRow({ node, isCoach, gameId }: { node: HistoryEventNode; isCoac
 // ── Pitch Row ───────────────────────────────────────────────────────────────
 
 function PitchRow({ pitch, isCoach, gameId }: { pitch: PitchNode; isCoach?: boolean; gameId?: string }) {
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    if (deleting) return;
+    if (!confirm('Delete this pitch?')) return;
+    setDeleting(true);
+    try {
+      const formData = new FormData();
+      formData.set('gameId', gameId!);
+      formData.set('eventId', pitch.event.id);
+      await voidEventAction(null, formData);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="py-1">
       <div className="flex items-center gap-2 text-sm text-gray-700">
         <span className="w-1.5 h-1.5 rounded-full bg-gray-300 shrink-0" />
         <span>{pitch.label}</span>
         {isCoach && gameId && (
-          <EditEventButton event={pitch.event} gameId={gameId} />
+          <>
+            <EditEventButton event={pitch.event} gameId={gameId} />
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={handleDelete}
+              className="shrink-0 p-0.5 text-gray-300 hover:text-red-500 disabled:opacity-50 transition-colors"
+              aria-label="Delete pitch"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Replay At-Bat Panel ────────────────────────────────────────────────────
+
+function computeCount(pitches: Array<{ outcome: string }>): { balls: number; strikes: number } {
+  let balls = 0;
+  let strikes = 0;
+  for (const p of pitches) {
+    if (p.outcome === 'ball' || p.outcome === 'intentional_ball') {
+      balls++;
+    } else if (p.outcome === 'called_strike' || p.outcome === 'swinging_strike' || p.outcome === 'foul_tip') {
+      if (strikes < 2) strikes++;
+    } else if (p.outcome === 'foul') {
+      if (strikes < 2) strikes++;
+    }
+  }
+  return { balls, strikes };
+}
+
+const REPLAY_PITCH_OUTCOMES = [
+  { label: 'Ball', outcome: 'ball', style: 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100' },
+  { label: 'Called K', outcome: 'called_strike', style: 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100' },
+  { label: 'Swing K', outcome: 'swinging_strike', style: 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100' },
+  { label: 'Foul', outcome: 'foul', style: 'border-yellow-300 bg-yellow-50 text-yellow-700 hover:bg-yellow-100' },
+  { label: 'Foul Tip', outcome: 'foul_tip', style: 'border-yellow-300 bg-yellow-50 text-yellow-700 hover:bg-yellow-100' },
+  { label: 'HBP', outcome: 'hit_by_pitch', style: 'border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100' },
+  { label: 'In Play', outcome: 'in_play', style: 'border-brand-300 bg-brand-50 text-brand-700 hover:bg-brand-100' },
+];
+
+const PITCH_OUTCOME_LABELS: Record<string, string> = {
+  ball: 'Ball', called_strike: 'Called K', swinging_strike: 'Swing K',
+  foul: 'Foul', foul_tip: 'Foul Tip', hit_by_pitch: 'HBP', in_play: 'In Play',
+};
+
+function ReplayAtBatPanel({
+  gameId,
+  atBat,
+  inning,
+  isTopOfInning,
+  precedingSequence,
+  onDone,
+}: {
+  gameId: string;
+  atBat: AtBatNode;
+  inning: number;
+  isTopOfInning: boolean;
+  precedingSequence: number;
+  onDone: () => void;
+}) {
+  const [pitches, setPitches] = useState<Array<{ outcome: string }>>([]);
+  const [resultStep, setResultStep] = useState<'pitches' | 'type' | 'trajectory' | 'fielding' | 'error-fielder'>('pitches');
+  const [pendingResult, setPendingResult] = useState<string | null>(null);
+  const [trajectory, setTrajectory] = useState<string | null>(null);
+  const [fieldingSeq, setFieldingSeq] = useState<number[]>([]);
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Derive opponent flags from at-bat
+  const firstPayload = (atBat.pitches[0]?.event.payload ?? atBat.result?.event.payload) as Record<string, unknown> | undefined;
+  const isOpponentBatter = !!firstPayload?.opponentBatterId;
+  const isOpponentPitcher = !!firstPayload?.opponentPitcherId;
+
+  function buildBatterPitcher(): Record<string, unknown> {
+    const ids: Record<string, unknown> = {};
+    if (isOpponentBatter) ids.opponentBatterId = atBat.batterId;
+    else if (atBat.batterId) ids.batterId = atBat.batterId;
+    if (isOpponentPitcher) ids.opponentPitcherId = atBat.pitcherId;
+    else if (atBat.pitcherId) ids.pitcherId = atBat.pitcherId;
+    return ids;
+  }
+
+  // Collect all event IDs from the current at-bat
+  function getVoidEventIds(): string[] {
+    const ids: string[] = [];
+    for (const p of atBat.pitches) ids.push(p.event.id);
+    for (const m of atBat.midAtBatEvents) ids.push(m.event.id);
+    if (atBat.result) ids.push(atBat.result.event.id);
+    return ids;
+  }
+
+  async function submitReplay(resultEventType: string, resultPayload: Record<string, unknown>) {
+    if (isPending) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      const bp = buildBatterPitcher();
+      const newEvents = [
+        ...pitches.map((p) => ({
+          eventType: 'pitch_thrown',
+          payload: { ...bp, outcome: p.outcome },
+        })),
+        { eventType: resultEventType, payload: { ...bp, ...resultPayload } },
+      ];
+
+      const formData = new FormData();
+      formData.set('gameId', gameId);
+      formData.set('voidEventIds', JSON.stringify(getVoidEventIds()));
+      formData.set('newEvents', JSON.stringify(newEvents));
+      formData.set('inning', String(inning));
+      formData.set('isTopOfInning', String(isTopOfInning));
+      formData.set('insertAfterSequence', String(precedingSequence));
+      const err = await replayAtBatAction(null, formData);
+      if (err) { setError(err); return; }
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to replay at-bat.');
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  function handleDirectResult(eventType: string, extra: Record<string, unknown> = {}) {
+    submitReplay(eventType, extra);
+  }
+
+  function handleHitResult(hitType: string, selectedTrajectory?: string) {
+    submitReplay('hit', { hitType, trajectory: selectedTrajectory ?? trajectory ?? undefined });
+  }
+
+  function handleOutResult(eventType: string) {
+    const outType = TRAJECTORY_TO_OUT_TYPE[trajectory ?? ''] ?? 'groundout';
+    submitReplay(eventType, {
+      outType,
+      trajectory: trajectory ?? undefined,
+      fieldingSequence: fieldingSeq.length > 0 ? fieldingSeq : undefined,
+    });
+  }
+
+  function handleErrorWithFielder(errorBy: number) {
+    submitReplay('field_error', { errorBy, trajectory: trajectory ?? undefined });
+  }
+
+  const { balls, strikes } = computeCount(pitches);
+
+  // ── Sub-step: error fielder ──
+  if (resultStep === 'error-fielder') {
+    return (
+      <div className="mt-2 p-4 bg-white rounded-xl border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Who made the error?</p>
+        <div className="grid grid-cols-3 gap-2">
+          {POSITIONS.map(({ positionNumber, label }) => (
+            <button key={positionNumber} type="button" disabled={isPending} onClick={() => handleErrorWithFielder(positionNumber)}
+              className="py-2 text-sm font-medium rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors"
+            >{label}</button>
+          ))}
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="button" onClick={() => setResultStep('trajectory')} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+      </div>
+    );
+  }
+
+  // ── Sub-step: fielding order ──
+  if (resultStep === 'fielding') {
+    const eventType = pendingResult === 'double_play' ? 'double_play' : pendingResult === 'triple_play' ? 'triple_play' : 'out';
+    const buttonLabel = pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : pendingResult === 'field_choice' ? 'FC' : 'Out';
+    return (
+      <div className="mt-2 p-4 bg-white rounded-xl border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Fielding play order</p>
+        {fieldingSeq.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-bold text-gray-900 tracking-wider">
+              {fieldingSeq.map((num) => POSITIONS.find((p) => p.positionNumber === num)?.label ?? String(num)).join('-')}
+            </span>
+            <button type="button" onClick={() => setFieldingSeq((s) => s.slice(0, -1))} className="text-xs text-gray-400 hover:text-gray-600 underline">Undo</button>
+          </div>
+        )}
+        <div className="grid grid-cols-3 gap-2">
+          {POSITIONS.map(({ positionNumber, label }) => (
+            <button key={positionNumber} type="button" disabled={fieldingSeq.length >= 8} onClick={() => setFieldingSeq((s) => [...s, positionNumber])}
+              className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >{positionNumber} — {label}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-3">
+          <button type="button" disabled={isPending} onClick={() => handleOutResult(eventType)}
+            className="flex-1 py-2 text-sm font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-40 transition-colors"
+          >Save {buttonLabel}</button>
+          <button type="button" onClick={() => handleOutResult(eventType)} className="text-xs text-gray-400 hover:text-gray-600 underline">Skip</button>
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="button" onClick={() => { setResultStep('trajectory'); setFieldingSeq([]); }} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+      </div>
+    );
+  }
+
+  // ── Sub-step: trajectory ──
+  if (resultStep === 'trajectory' && pendingResult) {
+    return (
+      <div className="mt-2 p-4 bg-white rounded-xl border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">How was it hit?</p>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: 'Ground Ball', value: 'ground_ball' },
+            { label: 'Line Drive', value: 'line_drive' },
+            { label: 'Fly Ball', value: 'fly_ball' },
+          ].map(({ label, value }) => (
+            <button key={value} type="button" disabled={isPending}
+              onClick={() => {
+                setTrajectory(value);
+                if (pendingResult === 'error') setResultStep('error-fielder');
+                else if (['out', 'double_play', 'triple_play', 'field_choice'].includes(pendingResult)) setResultStep('fielding');
+                else handleHitResult(pendingResult, value);
+              }}
+              className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >{label}</button>
+          ))}
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="button" onClick={() => { setResultStep('type'); setPendingResult(null); }} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+      </div>
+    );
+  }
+
+  // ── Sub-step: result type picker ──
+  if (resultStep === 'type') {
+    return (
+      <div className="mt-2 p-4 bg-white rounded-xl border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Result — what happened?</p>
+        <div className="grid grid-cols-4 gap-2">
+          {([
+            { label: 'Single', value: 'single' },
+            { label: 'Double', value: 'double' },
+            { label: 'Triple', value: 'triple' },
+            { label: 'HR', value: 'home_run' },
+          ] as const).map(({ label, value }) => (
+            <button key={value} type="button" disabled={isPending}
+              onClick={() => { setPendingResult(value); setResultStep('trajectory'); }}
+              className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >{label}</button>
+          ))}
+        </div>
+        <div className="grid grid-cols-4 gap-2">
+          {([
+            { label: 'Out', value: 'out' },
+            { label: 'DP', value: 'double_play' },
+            { label: 'TP', value: 'triple_play' },
+            { label: 'FC', value: 'field_choice' },
+          ] as const).map(({ label, value }) => (
+            <button key={value} type="button" disabled={isPending}
+              onClick={() => { setPendingResult(value); setResultStep('trajectory'); }}
+              className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >{label}</button>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          <button type="button" disabled={isPending}
+            onClick={() => { setPendingResult('error'); setResultStep('trajectory'); }}
+            className="py-2 text-sm font-medium rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors"
+          >Error</button>
+        </div>
+        <div className="grid grid-cols-5 gap-2">
+          {([
+            { label: 'Walk', eventType: 'walk' },
+            { label: 'HBP', eventType: 'hit_by_pitch' },
+            { label: 'Strikeout', eventType: 'strikeout' },
+            { label: 'Sac Fly', eventType: 'sacrifice_fly' },
+            { label: 'Sac Bunt', eventType: 'sacrifice_bunt' },
+          ] as const).map(({ label, eventType }) => (
+            <button key={eventType} type="button" disabled={isPending}
+              onClick={() => handleDirectResult(eventType)}
+              className="py-2 text-sm font-medium rounded-lg border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-40 transition-colors"
+            >{label}</button>
+          ))}
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="button" onClick={() => setResultStep('pitches')} className="text-xs text-gray-400 hover:text-gray-600">← Back to pitches</button>
+      </div>
+    );
+  }
+
+  // ── Main view: pitch recording ──
+  return (
+    <div className="mt-2 p-4 bg-white rounded-xl border border-brand-200 shadow-sm space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          Replay At-Bat: {atBat.batterName} vs {atBat.pitcherName}
+        </p>
+        <button type="button" onClick={onDone} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+      </div>
+
+      {/* Count display */}
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-gray-500 w-4">B</span>
+          {[0, 1, 2, 3].map((i) => (
+            <span key={i} className={`w-3 h-3 rounded-full border-2 ${i < balls ? 'bg-green-500 border-green-500' : 'border-green-300'}`} />
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-gray-500 w-4">S</span>
+          {[0, 1, 2].map((i) => (
+            <span key={i} className={`w-3 h-3 rounded-full border-2 ${i < strikes ? 'bg-yellow-500 border-yellow-500' : 'border-yellow-300'}`} />
+          ))}
+        </div>
+        <span className="text-sm font-bold text-gray-700 tabular-nums">{balls}-{strikes}</span>
+      </div>
+
+      {/* Recorded pitches */}
+      {pitches.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {pitches.map((p, i) => (
+            <span key={i} className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-600 rounded-full px-2 py-0.5 border border-gray-200">
+              {i + 1}. {PITCH_OUTCOME_LABELS[p.outcome] ?? p.outcome}
+              <button type="button" onClick={() => setPitches((prev) => prev.filter((_, j) => j !== i))}
+                className="text-gray-400 hover:text-red-500 transition-colors"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Pitch buttons */}
+      <div>
+        <p className="text-[11px] text-gray-400 mb-1.5">Record pitch</p>
+        <div className="flex flex-wrap gap-1.5">
+          {REPLAY_PITCH_OUTCOMES.map(({ label, outcome, style }) => (
+            <button key={outcome} type="button"
+              onClick={() => setPitches((prev) => [...prev, { outcome }])}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg border ${style} transition-colors`}
+            >{label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Result section */}
+      <div>
+        <button type="button" onClick={() => setResultStep('type')}
+          className="px-4 py-2 text-sm font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 transition-colors"
+        >
+          Record Result →
+        </button>
+      </div>
+
+      {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );
 }
@@ -962,6 +1430,9 @@ function AtBatSection({
   isHome,
   isCoach,
   gameId,
+  inning,
+  isTopOfInning,
+  precedingSequence,
 }: {
   atBat: AtBatNode;
   nodeKey: string;
@@ -970,51 +1441,103 @@ function AtBatSection({
   isHome: boolean;
   isCoach?: boolean;
   gameId?: string;
+  inning?: number;
+  isTopOfInning?: boolean;
+  precedingSequence?: number;
 }) {
   // Interleave pitches and mid-at-bat events by sequence number
   const pitchItems = atBat.pitches.map((p) => ({ type: 'pitch' as const, data: p, seq: p.event.sequenceNumber }));
   const midItems = atBat.midAtBatEvents.map((m) => ({ type: 'mid' as const, data: m, seq: m.event.sequenceNumber }));
   const merged = [...pitchItems, ...midItems].sort((a, b) => a.seq - b.seq);
 
+  // Derive opponent flags from first pitch or result payload
+  const firstPayload = (atBat.pitches[0]?.event.payload ?? atBat.result?.event.payload) as Record<string, unknown> | undefined;
+  const isOpponentBatter = !!firstPayload?.opponentBatterId;
+  const isOpponentPitcher = !!firstPayload?.opponentPitcherId;
+  const canAddPitch = isCoach && gameId && inning != null && isTopOfInning != null;
+  const [replaying, setReplaying] = useState(false);
+
   return (
     <div className="py-1">
-      <button
-        onClick={() => onToggle(nodeKey)}
-        className="w-full flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-gray-50 transition-colors text-left"
-      >
-        <Chevron expanded={expanded} />
-        <span className="text-sm font-medium text-gray-800">
-          #{atBat.number}: {atBat.batterName}
-          <span className="font-normal text-gray-500"> vs </span>
-          {atBat.pitcherName}
-        </span>
-        {atBat.pitches.length > 0 && (
-          <span className="text-xs text-gray-400 ml-1">
-            ({atBat.pitches.length} {atBat.pitches.length === 1 ? 'pitch' : 'pitches'})
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onToggle(nodeKey)}
+          className="flex-1 flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-gray-50 transition-colors text-left"
+        >
+          <Chevron expanded={expanded} />
+          <span className="text-sm font-medium text-gray-800">
+            #{atBat.number}: {atBat.batterName}
+            <span className="font-normal text-gray-500"> vs </span>
+            {atBat.pitcherName}
           </span>
-        )}
-        <span className="ml-auto" />
-        {atBat.result && (
-          <>
-            <ScoreBadge homeScore={atBat.homeScore} awayScore={atBat.awayScore} isHome={isHome} />
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_PILL[atBat.result.category]}`}>
-              {atBat.result.label}
+          {atBat.pitches.length > 0 && (
+            <span className="text-xs text-gray-400 ml-1">
+              ({atBat.pitches.length} {atBat.pitches.length === 1 ? 'pitch' : 'pitches'})
             </span>
-          </>
+          )}
+          <span className="ml-auto" />
+          {atBat.result && (
+            <>
+              <ScoreBadge homeScore={atBat.homeScore} awayScore={atBat.awayScore} isHome={isHome} />
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_PILL[atBat.result.category]}`}>
+                {atBat.result.label}
+              </span>
+            </>
+          )}
+          {!atBat.result && (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+              In Progress
+            </span>
+          )}
+        </button>
+        {canAddPitch && !replaying && (
+          <button
+            type="button"
+            onClick={() => setReplaying(true)}
+            className="shrink-0 p-1 text-gray-300 hover:text-brand-600 transition-colors"
+            aria-label="Replay at-bat"
+            title="Replay at-bat"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+            </svg>
+          </button>
         )}
-        {!atBat.result && (
-          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-            In Progress
-          </span>
-        )}
-      </button>
+      </div>
 
       {expanded && (
         <div className="ml-6 pl-4 border-l-2 border-gray-200 mt-1 mb-2">
-          {merged.map((item, i) =>
-            item.type === 'pitch'
-              ? <PitchRow key={i} pitch={item.data as PitchNode} isCoach={isCoach} gameId={gameId} />
-              : <MidAtBatRow key={i} node={item.data as HistoryEventNode} isCoach={isCoach} gameId={gameId} />
+          {merged.map((item, i) => (
+            <React.Fragment key={i}>
+              {canAddPitch && (
+                <AddPitchButton
+                  gameId={gameId}
+                  inning={inning}
+                  isTopOfInning={isTopOfInning}
+                  insertAfterSequence={i === 0 ? (precedingSequence ?? 0) : merged[i - 1].seq}
+                  batterId={atBat.batterId}
+                  pitcherId={atBat.pitcherId}
+                  isOpponentBatter={isOpponentBatter}
+                  isOpponentPitcher={isOpponentPitcher}
+                />
+              )}
+              {item.type === 'pitch'
+                ? <PitchRow pitch={item.data as PitchNode} isCoach={isCoach} gameId={gameId} />
+                : <MidAtBatRow node={item.data as HistoryEventNode} isCoach={isCoach} gameId={gameId} />
+              }
+            </React.Fragment>
+          ))}
+          {canAddPitch && merged.length > 0 && (
+            <AddPitchButton
+              gameId={gameId}
+              inning={inning}
+              isTopOfInning={isTopOfInning}
+              insertAfterSequence={merged[merged.length - 1].seq}
+              batterId={atBat.batterId}
+              pitcherId={atBat.pitcherId}
+              isOpponentBatter={isOpponentBatter}
+              isOpponentPitcher={isOpponentPitcher}
+            />
           )}
           {atBat.result && (
             <div className="py-1.5">
@@ -1032,6 +1555,17 @@ function AtBatSection({
             </div>
           )}
         </div>
+      )}
+
+      {replaying && canAddPitch && (
+        <ReplayAtBatPanel
+          gameId={gameId}
+          atBat={atBat}
+          inning={inning}
+          isTopOfInning={isTopOfInning}
+          precedingSequence={precedingSequence ?? 0}
+          onDone={() => setReplaying(false)}
+        />
       )}
     </div>
   );
@@ -1111,6 +1645,9 @@ function HalfInningSection({
                     isHome={isHome}
                     isCoach={isCoach}
                     gameId={gameId}
+                    inning={inningNumber}
+                    isTopOfInning={half.isTop}
+                    precedingSequence={i > 0 ? getItemLastSequence(half.items[i - 1]) : 0}
                   />
                 </React.Fragment>
               );
