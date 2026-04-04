@@ -240,8 +240,8 @@ function ReplaceEventPanel({
         </div>
         <div className="flex items-center gap-3">
           {(() => {
-            const resolvedOutType = pendingResult === 'double_play' || pendingResult === 'triple_play' ? 'groundout' : (pendingResult ?? 'groundout');
-            const buttonLabel = pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : 'Out';
+            const resolvedOutType = pendingResult === 'double_play' || pendingResult === 'triple_play' || pendingResult === 'field_choice' ? 'groundout' : (pendingResult ?? 'groundout');
+            const buttonLabel = pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : pendingResult === 'field_choice' ? 'FC' : 'Out';
             return (
               <>
                 <button
@@ -281,7 +281,7 @@ function ReplaceEventPanel({
                 setTrajectory(value);
                 if (pendingResult === 'error') {
                   setStep('error-fielder');
-                } else if (['out', 'double_play', 'triple_play'].includes(pendingResult)) {
+                } else if (['out', 'double_play', 'triple_play', 'field_choice'].includes(pendingResult)) {
                   setStep('fielding');
                 } else {
                   handleHitResult(pendingResult, value);
@@ -321,33 +321,41 @@ function ReplaceEventPanel({
           </button>
         ))}
       </div>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-4 gap-2">
         {([
           { label: 'Out', value: 'out' },
           { label: 'DP', value: 'double_play' },
-          { label: 'Error', value: 'error' },
+          { label: 'TP', value: 'triple_play' },
+          { label: 'FC', value: 'field_choice' },
         ] as const).map(({ label, value }) => (
           <button
             key={value}
             type="button"
             disabled={isPending}
             onClick={() => { setPendingResult(value); setStep('trajectory'); }}
-            className={`py-2 text-sm font-medium rounded-lg border disabled:opacity-40 transition-colors ${
-              value === 'error'
-                ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
-                : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
-            }`}
+            className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
           >
             {label}
           </button>
         ))}
       </div>
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-1 gap-2">
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={() => { setPendingResult('error'); setStep('trajectory'); }}
+          className="py-2 text-sm font-medium rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors"
+        >
+          Error
+        </button>
+      </div>
+      <div className="grid grid-cols-5 gap-2">
         {([
           { label: 'Walk', eventType: 'walk' },
           { label: 'HBP', eventType: 'hit_by_pitch' },
           { label: 'Strikeout', eventType: 'strikeout' },
           { label: 'Sac Fly', eventType: 'sacrifice_fly' },
+          { label: 'Sac Bunt', eventType: 'sacrifice_bunt' },
         ] as const).map(({ label, eventType }) => (
           <button
             key={eventType}
@@ -595,8 +603,8 @@ function AddEventPanel({
   }
 
   if (step === 'fielding') {
-    const resolvedOutType = pendingResult === 'double_play' || pendingResult === 'triple_play' ? 'groundout' : (pendingResult ?? 'groundout');
-    const buttonLabel = pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : 'Out';
+    const resolvedOutType = pendingResult === 'double_play' || pendingResult === 'triple_play' || pendingResult === 'field_choice' ? 'groundout' : (pendingResult ?? 'groundout');
+    const buttonLabel = pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : pendingResult === 'field_choice' ? 'FC' : 'Out';
     return (
       <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Fielding play order</p>
@@ -641,7 +649,7 @@ function AddEventPanel({
               onClick={() => {
                 setTrajectory(value);
                 if (pendingResult === 'error') setStep('error-fielder');
-                else if (['out', 'double_play', 'triple_play'].includes(pendingResult)) setStep('fielding');
+                else if (['out', 'double_play', 'triple_play', 'field_choice'].includes(pendingResult)) setStep('fielding');
                 else handleHitResult(pendingResult, value);
               }}
               className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
@@ -670,25 +678,30 @@ function AddEventPanel({
           >{label}</button>
         ))}
       </div>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-4 gap-2">
         {([
           { label: 'Out', value: 'out' },
           { label: 'DP', value: 'double_play' },
-          { label: 'Error', value: 'error' },
+          { label: 'TP', value: 'triple_play' },
+          { label: 'FC', value: 'field_choice' },
         ] as const).map(({ label, value }) => (
           <button key={value} type="button" disabled={isPending} onClick={() => { setPendingResult(value); setStep('trajectory'); }}
-            className={`py-2 text-sm font-medium rounded-lg border disabled:opacity-40 transition-colors ${
-              value === 'error' ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
-            }`}
+            className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
           >{label}</button>
         ))}
       </div>
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-1 gap-2">
+        <button type="button" disabled={isPending} onClick={() => { setPendingResult('error'); setStep('trajectory'); }}
+          className="py-2 text-sm font-medium rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors"
+        >Error</button>
+      </div>
+      <div className="grid grid-cols-5 gap-2">
         {([
           { label: 'Walk', eventType: 'walk' },
           { label: 'HBP', eventType: 'hit_by_pitch' },
           { label: 'Strikeout', eventType: 'strikeout' },
           { label: 'Sac Fly', eventType: 'sacrifice_fly' },
+          { label: 'Sac Bunt', eventType: 'sacrifice_bunt' },
         ] as const).map(({ label, eventType }) => (
           <button key={eventType} type="button" disabled={isPending} onClick={() => handleDirectResult(eventType)}
             className="py-2 text-sm font-medium rounded-lg border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-40 transition-colors"
