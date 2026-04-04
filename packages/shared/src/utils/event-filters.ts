@@ -9,12 +9,20 @@
  */
 export function applyPitchReverted(events: Record<string, unknown>[]): Record<string, unknown>[] {
   const result: Record<string, unknown>[] = [];
-  for (const event of events) {
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
     const etype = event.event_type as string;
     if (etype === 'pitch_reverted') {
       const payload = (event.payload ?? {}) as Record<string, unknown>;
       const keepUntilSeq = payload.revertToSequenceNumber as number;
-      result.splice(0, result.length, ...result.filter((e) => (e.sequence_number as number) <= keepUntilSeq));
+      // Rebuild from original events up to keepUntilSeq, then re-process
+      // remaining events so voided markers after the revert point are re-applied
+      const kept = events.slice(0, i).filter(
+        (e) => (e.event_type as string) !== 'pitch_reverted'
+          && (e.event_type as string) !== 'event_voided'
+          && (e.sequence_number as number) <= keepUntilSeq,
+      );
+      result.splice(0, result.length, ...kept);
     } else if (etype === 'event_voided') {
       const payload = (event.payload ?? {}) as Record<string, unknown>;
       const voidedId = payload.voidedEventId as string;

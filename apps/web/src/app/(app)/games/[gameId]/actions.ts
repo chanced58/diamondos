@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { formatDate, weAreHome, computeLineScore, applyPitchReverted } from '@baseball/shared';
+import { formatDate, weAreHome, computeLineScore, applyPitchReverted, EventType } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
@@ -693,34 +693,39 @@ export async function voidEventAction(
 
   if (!targetEvent) return 'Event not found.';
 
-  // Get max sequence number across ALL events (including reset/reverted) to
-  // ensure the voiding marker has a higher sequence number than everything.
-  const { data: maxRow } = await supabase
-    .from('game_events')
-    .select('sequence_number')
-    .eq('game_id', gameId)
-    .order('sequence_number', { ascending: false })
-    .limit(1)
-    .single();
+  // Insert with retry to handle race conditions on the unique(game_id, sequence_number) constraint
+  const maxRetries = 3;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const { data: maxRow } = await supabase
+      .from('game_events')
+      .select('sequence_number')
+      .eq('game_id', gameId)
+      .order('sequence_number', { ascending: false })
+      .limit(1)
+      .single();
 
-  const nextSeq = (maxRow?.sequence_number ?? 0) + 1;
+    const nextSeq = (maxRow?.sequence_number ?? 0) + 1;
 
-  const { error } = await supabase.from('game_events').insert({
-    game_id: gameId,
-    sequence_number: nextSeq,
-    event_type: 'event_voided',
-    inning: targetEvent.inning,
-    is_top_of_inning: targetEvent.is_top_of_inning,
-    payload: {
-      voidedEventId: eventId,
-      voidedSequenceNumber: targetEvent.sequence_number,
-    },
-    occurred_at: new Date().toISOString(),
-    created_by: user.id,
-    device_id: 'web',
-  });
+    const { error } = await supabase.from('game_events').insert({
+      game_id: gameId,
+      sequence_number: nextSeq,
+      event_type: 'event_voided',
+      inning: targetEvent.inning,
+      is_top_of_inning: targetEvent.is_top_of_inning,
+      payload: {
+        voidedEventId: eventId,
+        voidedSequenceNumber: targetEvent.sequence_number,
+      },
+      occurred_at: new Date().toISOString(),
+      created_by: user.id,
+      device_id: 'web',
+    });
 
-  if (error) return `Failed to void event: ${error.message}`;
+    if (!error) break;
+    if (error.code !== '23505' || attempt === maxRetries - 1) {
+      return `Failed to void event: ${error.message}`;
+    }
+  }
 
   revalidatePath(`/games/${gameId}/history`);
   return null;
@@ -745,6 +750,9 @@ export async function insertCorrectionEventAction(
   if (!gameId || !eventType) return 'Missing required fields.';
   if (isNaN(inning) || inning < 1) return 'Invalid inning.';
 
+  const validEventTypes = new Set(Object.values(EventType) as string[]);
+  if (!validEventTypes.has(eventType)) return `Unknown event type: ${eventType}`;
+
   let payload: Record<string, unknown>;
   try {
     payload = JSON.parse(payloadJson || '{}');
@@ -760,29 +768,36 @@ export async function insertCorrectionEventAction(
   const result = await getAuthorizedCoach(supabase, user.id, gameId);
   if ('error' in result) return result.error ?? null;
 
-  const { data: maxRow } = await supabase
-    .from('game_events')
-    .select('sequence_number')
-    .eq('game_id', gameId)
-    .order('sequence_number', { ascending: false })
-    .limit(1)
-    .single();
+  // Insert with retry to handle race conditions on the unique(game_id, sequence_number) constraint
+  const maxRetries = 3;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const { data: maxRow } = await supabase
+      .from('game_events')
+      .select('sequence_number')
+      .eq('game_id', gameId)
+      .order('sequence_number', { ascending: false })
+      .limit(1)
+      .single();
 
-  const nextSeq = (maxRow?.sequence_number ?? 0) + 1;
+    const nextSeq = (maxRow?.sequence_number ?? 0) + 1;
 
-  const { error } = await supabase.from('game_events').insert({
-    game_id: gameId,
-    sequence_number: nextSeq,
-    event_type: eventType,
-    inning,
-    is_top_of_inning: isTopOfInning,
-    payload,
-    occurred_at: new Date().toISOString(),
-    created_by: user.id,
-    device_id: 'web',
-  });
+    const { error } = await supabase.from('game_events').insert({
+      game_id: gameId,
+      sequence_number: nextSeq,
+      event_type: eventType,
+      inning,
+      is_top_of_inning: isTopOfInning,
+      payload,
+      occurred_at: new Date().toISOString(),
+      created_by: user.id,
+      device_id: 'web',
+    });
 
-  if (error) return `Failed to insert event: ${error.message}`;
+    if (!error) break;
+    if (error.code !== '23505' || attempt === maxRetries - 1) {
+      return `Failed to insert event: ${error.message}`;
+    }
+  }
 
   revalidatePath(`/games/${gameId}/history`);
   return null;

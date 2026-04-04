@@ -54,21 +54,28 @@ function VoidButton({ eventId, gameId }: { eventId: string; gameId: string }) {
   async function handleVoid() {
     if (!confirm('Void this event? You can recalculate scores after.')) return;
     setIsPending(true);
-    const formData = new FormData();
-    formData.set('gameId', gameId);
-    formData.set('eventId', eventId);
-    const err = await voidEventAction(null, formData);
-    if (err) setError(err);
-    setIsPending(false);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.set('gameId', gameId);
+      formData.set('eventId', eventId);
+      const err = await voidEventAction(null, formData);
+      if (err) setError(err);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to void event.');
+    } finally {
+      setIsPending(false);
+    }
   }
 
   return (
     <>
       <button
+        type="button"
         onClick={handleVoid}
         disabled={isPending}
         className="shrink-0 p-0.5 text-gray-300 hover:text-red-500 disabled:opacity-50 transition-colors"
-        title="Void this event"
+        aria-label="Void event"
       >
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />

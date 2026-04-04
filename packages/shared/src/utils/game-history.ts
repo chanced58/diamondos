@@ -331,11 +331,19 @@ export function formatEventLabel(event: GameEvent, nameMap: Map<string, string>)
 
 export function applyPitchRevertedTyped(events: GameEvent[]): GameEvent[] {
   const result: GameEvent[] = [];
-  for (const event of events) {
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
     if (event.eventType === EventType.PITCH_REVERTED) {
       const payload = event.payload as Record<string, unknown>;
       const keepUntilSeq = payload.revertToSequenceNumber as number;
-      result.splice(0, result.length, ...result.filter((e) => e.sequenceNumber <= keepUntilSeq));
+      // Rebuild from original events up to keepUntilSeq, then re-process
+      // remaining events so voided markers after the revert point are re-applied
+      const kept = events.slice(0, i).filter(
+        (e) => e.eventType !== EventType.PITCH_REVERTED
+          && e.eventType !== EventType.EVENT_VOIDED
+          && e.sequenceNumber <= keepUntilSeq,
+      );
+      result.splice(0, result.length, ...kept);
     } else if (event.eventType === EventType.EVENT_VOIDED) {
       const payload = event.payload as Record<string, unknown>;
       const voidedId = payload.voidedEventId as string;
