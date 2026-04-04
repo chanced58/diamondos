@@ -73,7 +73,7 @@ function ReplaceEventPanel({
   gameId: string;
   onDone: () => void;
 }) {
-  const [step, setStep] = useState<'type' | 'trajectory' | 'fielding' | 'error-fielder'>('type');
+  const [step, setStep] = useState<'type' | 'in-play-result' | 'trajectory' | 'fielding' | 'error-fielder'>('type');
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingResult, setPendingResult] = useState<string | null>(null);
@@ -144,7 +144,8 @@ function ReplaceEventPanel({
 
   // Pitch replacement
   const isPitchEvent = originalEvent.eventType === 'pitch_thrown';
-  if (isPitchEvent) {
+  if (isPitchEvent && step === 'type') {
+    // Show pitch outcome picker first; "In Play" transitions to the result flow
     return (
       <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Replace pitch outcome</p>
@@ -165,11 +166,10 @@ function ReplaceEventPanel({
             </button>
           ))}
         </div>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {[
             { label: 'Foul', outcome: 'foul' },
             { label: 'Foul Tip', outcome: 'foul_tip' },
-            { label: 'In Play', outcome: 'in_play' },
           ].map(({ label, outcome }) => (
             <button
               key={outcome}
@@ -182,16 +182,69 @@ function ReplaceEventPanel({
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={() => handleDirectResult('pitch_thrown', { outcome: 'hit_by_pitch' })}
-          className="w-full py-2 text-sm font-medium rounded-lg border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-40 transition-colors"
-        >
-          HBP
-        </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => handleDirectResult('pitch_thrown', { outcome: 'hit_by_pitch' })}
+            className="py-2 text-sm font-medium rounded-lg border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-40 transition-colors"
+          >
+            HBP
+          </button>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => setStep('in-play-result')}
+            className="py-2 text-sm font-medium rounded-lg border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-40 transition-colors"
+          >
+            In Play →
+          </button>
+        </div>
         {error && <p className="text-xs text-red-600">{error}</p>}
         <button type="button" onClick={onDone} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+      </div>
+    );
+  }
+
+  // "In Play" result picker — shown after selecting In Play on a pitch
+  if (step === 'in-play-result') {
+    return (
+      <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">In play — what happened?</p>
+        <div className="grid grid-cols-4 gap-2">
+          {([
+            { label: 'Single', value: 'single' },
+            { label: 'Double', value: 'double' },
+            { label: 'Triple', value: 'triple' },
+            { label: 'HR', value: 'home_run' },
+          ] as const).map(({ label, value }) => (
+            <button key={value} type="button" disabled={isPending}
+              onClick={() => { setPendingResult(value); setStep('trajectory'); }}
+              className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >{label}</button>
+          ))}
+        </div>
+        <div className="grid grid-cols-4 gap-2">
+          {([
+            { label: 'Out', value: 'out' },
+            { label: 'DP', value: 'double_play' },
+            { label: 'TP', value: 'triple_play' },
+            { label: 'FC', value: 'field_choice' },
+          ] as const).map(({ label, value }) => (
+            <button key={value} type="button" disabled={isPending}
+              onClick={() => { setPendingResult(value); setStep('trajectory'); }}
+              className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >{label}</button>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          <button type="button" disabled={isPending}
+            onClick={() => { setPendingResult('error'); setStep('trajectory'); }}
+            className="py-2 text-sm font-medium rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors"
+          >Error</button>
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="button" onClick={() => setStep('type')} className="text-xs text-gray-400 hover:text-gray-600">← Back to pitch outcome</button>
       </div>
     );
   }
@@ -301,12 +354,12 @@ function ReplaceEventPanel({
           ))}
         </div>
         {error && <p className="text-xs text-red-600">{error}</p>}
-        <button type="button" onClick={() => { setStep('type'); setPendingResult(null); }} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+        <button type="button" onClick={() => { setStep(isPitchEvent ? 'in-play-result' : 'type'); setPendingResult(null); }} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
       </div>
     );
   }
 
-  // Step 1: Result type picker
+  // Step 1: Result type picker (for non-pitch terminal events)
   return (
     <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Replace with&hellip;</p>
