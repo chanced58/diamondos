@@ -212,6 +212,7 @@ export function computeOpponentBatting(
         s.pa++; s.ab++;
         forceAdvance(batterId);
       }
+    }
   }
 
   for (const s of stats.values()) {
