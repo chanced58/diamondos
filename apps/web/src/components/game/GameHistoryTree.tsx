@@ -11,6 +11,7 @@ import type {
   HistoryEventNode,
   EventCategory,
 } from '@baseball/shared';
+import { voidEventAction } from '@/app/(app)/games/[gameId]/actions';
 
 // ── Category Colors ─────────────────────────────────────────────────────────
 
@@ -44,39 +45,89 @@ function Chevron({ expanded }: { expanded: boolean }) {
   );
 }
 
+// ── Void Button ────────────────────────────────────────────────────────────
+
+function VoidButton({ eventId, gameId }: { eventId: string; gameId: string }) {
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleVoid() {
+    if (!confirm('Void this event? You can recalculate scores after.')) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.set('gameId', gameId);
+      formData.set('eventId', eventId);
+      const err = await voidEventAction(null, formData);
+      if (err) setError(err);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to void event.');
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={handleVoid}
+        disabled={isPending}
+        className="shrink-0 p-0.5 text-gray-300 hover:text-red-500 disabled:opacity-50 transition-colors"
+        aria-label="Void event"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+        </svg>
+      </button>
+      {error && <span className="text-xs text-red-600">{error}</span>}
+    </>
+  );
+}
+
 // ── Interstitial Event Row ──────────────────────────────────────────────────
 
-function InterstitialRow({ node }: { node: InterstitialNode }) {
+function InterstitialRow({ node, isCoach, gameId }: { node: InterstitialNode; isCoach?: boolean; gameId?: string }) {
   return (
     <div className="flex items-center gap-2 py-1.5 px-3 text-sm italic">
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
         node.category === 'info' ? 'bg-blue-400' : node.category === 'positive' ? 'bg-green-400' : node.category === 'negative' ? 'bg-red-400' : 'bg-gray-400'
       }`} />
       <span className={CATEGORY_TEXT[node.category]}>{node.label}</span>
+      {isCoach && gameId && (
+        <VoidButton eventId={node.event.id} gameId={gameId} />
+      )}
     </div>
   );
 }
 
 // ── Mid-At-Bat Event Row ────────────────────────────────────────────────────
 
-function MidAtBatRow({ node }: { node: HistoryEventNode }) {
+function MidAtBatRow({ node, isCoach, gameId }: { node: HistoryEventNode; isCoach?: boolean; gameId?: string }) {
   return (
     <div className="flex items-center gap-2 py-1 text-xs italic">
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
         node.category === 'positive' ? 'bg-green-400' : node.category === 'negative' ? 'bg-red-400' : node.category === 'info' ? 'bg-blue-400' : 'bg-gray-400'
       }`} />
       <span className={CATEGORY_TEXT[node.category]}>{node.label}</span>
+      {isCoach && gameId && (
+        <VoidButton eventId={node.event.id} gameId={gameId} />
+      )}
     </div>
   );
 }
 
 // ── Pitch Row ───────────────────────────────────────────────────────────────
 
-function PitchRow({ pitch }: { pitch: PitchNode }) {
+function PitchRow({ pitch, isCoach, gameId }: { pitch: PitchNode; isCoach?: boolean; gameId?: string }) {
   return (
     <div className="flex items-center gap-2 py-1 text-sm text-gray-700">
       <span className="w-1.5 h-1.5 rounded-full bg-gray-300 shrink-0" />
       <span>{pitch.label}</span>
+      {isCoach && gameId && (
+        <VoidButton eventId={pitch.event.id} gameId={gameId} />
+      )}
     </div>
   );
 }
@@ -89,12 +140,16 @@ function AtBatSection({
   expanded,
   onToggle,
   isHome,
+  isCoach,
+  gameId,
 }: {
   atBat: AtBatNode;
   nodeKey: string;
   expanded: boolean;
   onToggle: (key: string) => void;
   isHome: boolean;
+  isCoach?: boolean;
+  gameId?: string;
 }) {
   // Interleave pitches and mid-at-bat events by sequence number
   const pitchItems = atBat.pitches.map((p) => ({ type: 'pitch' as const, data: p, seq: p.event.sequenceNumber }));
@@ -138,8 +193,8 @@ function AtBatSection({
         <div className="ml-6 pl-4 border-l-2 border-gray-200 mt-1 mb-2">
           {merged.map((item, i) =>
             item.type === 'pitch'
-              ? <PitchRow key={i} pitch={item.data as PitchNode} />
-              : <MidAtBatRow key={i} node={item.data as HistoryEventNode} />
+              ? <PitchRow key={i} pitch={item.data as PitchNode} isCoach={isCoach} gameId={gameId} />
+              : <MidAtBatRow key={i} node={item.data as HistoryEventNode} isCoach={isCoach} gameId={gameId} />
           )}
           {atBat.result && (
             <div className="flex items-center gap-2 py-1.5 text-sm font-medium">
@@ -149,6 +204,9 @@ function AtBatSection({
               <span className={CATEGORY_TEXT[atBat.result.category]}>
                 Result: {atBat.result.label}
               </span>
+              {isCoach && gameId && (
+                <VoidButton eventId={atBat.result.event.id} gameId={gameId} />
+              )}
             </div>
           )}
         </div>
@@ -167,6 +225,8 @@ function HalfInningSection({
   expandedNodes,
   onToggle,
   isHome,
+  isCoach,
+  gameId,
 }: {
   half: HalfInningNode;
   teamLabel: string;
@@ -175,6 +235,8 @@ function HalfInningSection({
   expandedNodes: Set<string>;
   onToggle: (key: string) => void;
   isHome: boolean;
+  isCoach?: boolean;
+  gameId?: string;
 }) {
   return (
     <div className="py-1">
@@ -204,10 +266,12 @@ function HalfInningSection({
                   expanded={expandedNodes.has(abKey)}
                   onToggle={onToggle}
                   isHome={isHome}
+                  isCoach={isCoach}
+                  gameId={gameId}
                 />
               );
             }
-            return <InterstitialRow key={i} node={item} />;
+            return <InterstitialRow key={i} node={item} isCoach={isCoach} gameId={gameId} />;
           })}
         </div>
       )}
@@ -226,6 +290,8 @@ function InningSection({
   homeTeamName,
   awayTeamName,
   isHome,
+  isCoach,
+  gameId,
 }: {
   inning: InningNode;
   nodeKey: string;
@@ -235,6 +301,8 @@ function InningSection({
   homeTeamName: string;
   awayTeamName: string;
   isHome: boolean;
+  isCoach?: boolean;
+  gameId?: string;
 }) {
   return (
     <div className="border border-gray-200 rounded-xl overflow-hidden">
@@ -261,6 +329,8 @@ function InningSection({
               expandedNodes={expandedNodes}
               onToggle={onToggle}
               isHome={isHome}
+              isCoach={isCoach}
+              gameId={gameId}
             />
           )}
           {inning.bottom && (
@@ -272,6 +342,8 @@ function InningSection({
               expandedNodes={expandedNodes}
               onToggle={onToggle}
               isHome={isHome}
+              isCoach={isCoach}
+              gameId={gameId}
             />
           )}
         </div>
@@ -297,9 +369,11 @@ interface GameHistoryTreeProps {
   teamName: string;
   opponentName: string;
   isHome: boolean;
+  isCoach?: boolean;
+  gameId?: string;
 }
 
-export function GameHistoryTree({ tree, teamName, opponentName, isHome }: GameHistoryTreeProps): React.JSX.Element {
+export function GameHistoryTree({ tree, teamName, opponentName, isHome, isCoach, gameId }: GameHistoryTreeProps): React.JSX.Element {
   const homeTeamName = isHome ? teamName : opponentName;
   const awayTeamName = isHome ? opponentName : teamName;
 
@@ -393,6 +467,8 @@ export function GameHistoryTree({ tree, teamName, opponentName, isHome }: GameHi
             homeTeamName={homeTeamName}
             awayTeamName={awayTeamName}
             isHome={isHome}
+            isCoach={isCoach}
+            gameId={gameId}
           />
         );
       })}

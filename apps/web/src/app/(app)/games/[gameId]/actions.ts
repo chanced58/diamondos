@@ -1,9 +1,10 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { formatDate, weAreHome, computeLineScore, applyPitchReverted } from '@baseball/shared';
+import { formatDate, weAreHome, computeLineScore, applyPitchReverted, EventType } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
@@ -16,11 +17,21 @@ async function getAuthorizedCoach(supabase: SupabaseClient, userId: string, game
     .single();
   if (!game) return { error: 'Game not found.' };
 
+  // Check platform admin first (they have full access to every team)
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('is_platform_admin')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profile?.is_platform_admin) return { game };
+
   const { data: membership } = await supabase
     .from('team_members')
     .select('role')
     .eq('team_id', game.team_id)
     .eq('user_id', userId)
+    .eq('is_active', true)
     .single();
 
   if (!membership || !COACH_ROLES.includes(membership.role)) {
@@ -644,5 +655,150 @@ export async function recalculateScoresAction(
 
   if (error) return `Failed to update scores: ${error.message}`;
 
+  revalidatePath(`/games/${gameId}`);
+  revalidatePath(`/games/${gameId}/stats`);
+  revalidatePath(`/games/${gameId}/history`);
   redirect(`/games/${gameId}`);
+}
+
+// ── Void Event ──────────────────────────────────────────────────────────────
+
+export async function voidEventAction(
+  _prevState: string | null | undefined,
+  formData: FormData,
+): Promise<string | null> {
+  const authClient = createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return 'Not authenticated.';
+
+  const gameId = formData.get('gameId') as string;
+  const eventId = formData.get('eventId') as string;
+  if (!gameId || !eventId) return 'Missing game ID or event ID.';
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const result = await getAuthorizedCoach(supabase, user.id, gameId);
+  if ('error' in result) return result.error ?? null;
+
+  // Fetch the target event to record its sequence number
+  const { data: targetEvent } = await supabase
+    .from('game_events')
+    .select('sequence_number, inning, is_top_of_inning')
+    .eq('id', eventId)
+    .eq('game_id', gameId)
+    .single();
+
+  if (!targetEvent) return 'Event not found.';
+
+  // Insert with retry to handle race conditions on the unique(game_id, sequence_number) constraint
+  const maxRetries = 3;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const { data: maxRow } = await supabase
+      .from('game_events')
+      .select('sequence_number')
+      .eq('game_id', gameId)
+      .order('sequence_number', { ascending: false })
+      .limit(1)
+      .single();
+
+    const nextSeq = (maxRow?.sequence_number ?? 0) + 1;
+
+    const { error } = await supabase.from('game_events').insert({
+      game_id: gameId,
+      sequence_number: nextSeq,
+      event_type: 'event_voided',
+      inning: targetEvent.inning,
+      is_top_of_inning: targetEvent.is_top_of_inning,
+      payload: {
+        voidedEventId: eventId,
+        voidedSequenceNumber: targetEvent.sequence_number,
+      },
+      occurred_at: new Date().toISOString(),
+      created_by: user.id,
+      device_id: 'web',
+    });
+
+    if (!error) break;
+    if (error.code !== '23505' || attempt === maxRetries - 1) {
+      return `Failed to void event: ${error.message}`;
+    }
+  }
+
+  revalidatePath(`/games/${gameId}/history`);
+  return null;
+}
+
+// ── Insert Correction Event ─────────────────────────────────────────────────
+
+export async function insertCorrectionEventAction(
+  _prevState: string | null | undefined,
+  formData: FormData,
+): Promise<string | null> {
+  const authClient = createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return 'Not authenticated.';
+
+  const gameId = formData.get('gameId') as string;
+  const eventType = formData.get('eventType') as string;
+  const inning = Number(formData.get('inning'));
+  const isTopOfInning = formData.get('isTopOfInning') === 'true';
+  const payloadJson = formData.get('payload') as string;
+
+  if (!gameId || !eventType) return 'Missing required fields.';
+  if (isNaN(inning) || inning < 1) return 'Invalid inning.';
+
+  const validEventTypes = new Set(Object.values(EventType) as string[]);
+  if (!validEventTypes.has(eventType)) return `Unknown event type: ${eventType}`;
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(payloadJson || '{}');
+  } catch {
+    return 'Invalid payload JSON.';
+  }
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const result = await getAuthorizedCoach(supabase, user.id, gameId);
+  if ('error' in result) return result.error ?? null;
+
+  // Insert with retry to handle race conditions on the unique(game_id, sequence_number) constraint
+  const maxRetries = 3;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const { data: maxRow } = await supabase
+      .from('game_events')
+      .select('sequence_number')
+      .eq('game_id', gameId)
+      .order('sequence_number', { ascending: false })
+      .limit(1)
+      .single();
+
+    const nextSeq = (maxRow?.sequence_number ?? 0) + 1;
+
+    const { error } = await supabase.from('game_events').insert({
+      game_id: gameId,
+      sequence_number: nextSeq,
+      event_type: eventType,
+      inning,
+      is_top_of_inning: isTopOfInning,
+      payload,
+      occurred_at: new Date().toISOString(),
+      created_by: user.id,
+      device_id: 'web',
+    });
+
+    if (!error) break;
+    if (error.code !== '23505' || attempt === maxRetries - 1) {
+      return `Failed to insert event: ${error.message}`;
+    }
+  }
+
+  revalidatePath(`/games/${gameId}/history`);
+  return null;
 }
