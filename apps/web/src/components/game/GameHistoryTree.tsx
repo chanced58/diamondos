@@ -56,6 +56,12 @@ const POSITIONS = [
   { positionNumber: 7, label: 'LF' }, { positionNumber: 8, label: 'CF' }, { positionNumber: 9, label: 'RF' },
 ];
 
+const TRAJECTORY_TO_OUT_TYPE: Record<string, string> = {
+  ground_ball: 'groundout',
+  line_drive: 'lineout',
+  fly_ball: 'flyout',
+};
+
 // ── Replace Event Panel ────────────────────────────────────────────────────
 
 function ReplaceEventPanel({
@@ -118,8 +124,9 @@ function ReplaceEventPanel({
     submitReplacement('hit', { ...buildBatterPitcher(), hitType, trajectory: selectedTrajectory ?? trajectory ?? undefined });
   }
 
-  function handleOutWithFielding(outType: string) {
-    submitReplacement('out', {
+  function handleOutResult(eventType: string) {
+    const outType = TRAJECTORY_TO_OUT_TYPE[trajectory ?? ''] ?? 'groundout';
+    submitReplacement(eventType, {
       ...buildBatterPitcher(),
       outType,
       trajectory: trajectory ?? undefined,
@@ -240,19 +247,19 @@ function ReplaceEventPanel({
         </div>
         <div className="flex items-center gap-3">
           {(() => {
-            const resolvedOutType = pendingResult === 'double_play' || pendingResult === 'triple_play' || pendingResult === 'field_choice' ? 'groundout' : (pendingResult ?? 'groundout');
+            const eventType = pendingResult === 'double_play' ? 'double_play' : pendingResult === 'triple_play' ? 'triple_play' : 'out';
             const buttonLabel = pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : pendingResult === 'field_choice' ? 'FC' : 'Out';
             return (
               <>
                 <button
                   type="button"
                   disabled={isPending}
-                  onClick={() => handleOutWithFielding(resolvedOutType)}
+                  onClick={() => handleOutResult(eventType)}
                   className="flex-1 py-2 text-sm font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-40 transition-colors"
                 >
                   Record {buttonLabel}
                 </button>
-                <button type="button" onClick={() => handleOutWithFielding(resolvedOutType)} className="text-xs text-gray-400 hover:text-gray-600 underline">Skip</button>
+                <button type="button" onClick={() => handleOutResult(eventType)} className="text-xs text-gray-400 hover:text-gray-600 underline">Skip</button>
               </>
             );
           })()}
@@ -502,8 +509,9 @@ function AddEventPanel({
     submitEvent('hit', { ...buildBatterPitcher(), hitType, trajectory: selectedTrajectory ?? trajectory ?? undefined });
   }
 
-  function handleOutWithFielding(outType: string) {
-    submitEvent('out', {
+  function handleOutResult(eventType: string) {
+    const outType = TRAJECTORY_TO_OUT_TYPE[trajectory ?? ''] ?? 'groundout';
+    submitEvent(eventType, {
       ...buildBatterPitcher(),
       outType,
       trajectory: trajectory ?? undefined,
@@ -608,7 +616,7 @@ function AddEventPanel({
   }
 
   if (step === 'fielding') {
-    const resolvedOutType = pendingResult === 'double_play' || pendingResult === 'triple_play' || pendingResult === 'field_choice' ? 'groundout' : (pendingResult ?? 'groundout');
+    const eventType = pendingResult === 'double_play' ? 'double_play' : pendingResult === 'triple_play' ? 'triple_play' : 'out';
     const buttonLabel = pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : pendingResult === 'field_choice' ? 'FC' : 'Out';
     return (
       <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
@@ -629,10 +637,10 @@ function AddEventPanel({
           ))}
         </div>
         <div className="flex items-center gap-3">
-          <button type="button" disabled={isPending} onClick={() => handleOutWithFielding(resolvedOutType)}
+          <button type="button" disabled={isPending} onClick={() => handleOutResult(eventType)}
             className="flex-1 py-2 text-sm font-semibold rounded-lg bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-40 transition-colors"
           >Record {buttonLabel}</button>
-          <button type="button" onClick={() => handleOutWithFielding(resolvedOutType)} className="text-xs text-gray-400 hover:text-gray-600 underline">Skip</button>
+          <button type="button" onClick={() => handleOutResult(eventType)} className="text-xs text-gray-400 hover:text-gray-600 underline">Skip</button>
         </div>
         {error && <p className="text-xs text-red-600">{error}</p>}
         <button type="button" onClick={() => { setStep('trajectory'); setFieldingSeq([]); }} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
