@@ -43,6 +43,8 @@ type AvailableOpponentTeam = {
 
 interface LeagueAdminClientProps {
   leagueId: string;
+  leagueName?: string;
+  leagueDescription?: string | null;
   teams: TeamEntry[];
   divisions: Division[];
   staff: StaffEntry[];
@@ -53,6 +55,8 @@ interface LeagueAdminClientProps {
 
 export function LeagueAdminClient({
   leagueId,
+  leagueName: initialName,
+  leagueDescription: initialDescription,
   teams,
   divisions,
   staff,
@@ -68,6 +72,8 @@ export function LeagueAdminClient({
   const [addOpponentDivision, setAddOpponentDivision] = useState('');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [editName, setEditName] = useState(initialName ?? '');
+  const [editDescription, setEditDescription] = useState(initialDescription ?? '');
 
   // Cast to any — league tables are not in generated types until `gen-types` runs
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -197,11 +203,70 @@ export function LeagueAdminClient({
     }
   }
 
+  async function handleUpdateLeague(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editName.trim()) return;
+    setSaving(true);
+    setErrorMsg(null);
+    try {
+      const { error } = await supabase
+        .from('leagues')
+        .update({
+          name: editName.trim(),
+          description: editDescription.trim() || null,
+        })
+        .eq('id', leagueId);
+      if (error) { setErrorMsg(error.message); return; }
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-8">
       {errorMsg && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
           {errorMsg}
+        </div>
+      )}
+
+      {/* League Details (editable by admins) */}
+      {isAdmin && initialName !== undefined && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900">League Details</h2>
+          </div>
+          <form onSubmit={handleUpdateLeague} className="p-6 space-y-4">
+            <div>
+              <label htmlFor="league-name" className="block text-xs font-medium text-gray-500 mb-1">League Name</label>
+              <input
+                id="league-name"
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+            <div>
+              <label htmlFor="league-desc" className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+              <input
+                id="league-desc"
+                type="text"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder="Optional description"
+                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={saving || !editName.trim()}
+              className="text-sm font-medium bg-brand-700 text-white px-4 py-2 rounded-lg hover:bg-brand-800 disabled:opacity-50 transition-colors"
+            >
+              Save Changes
+            </button>
+          </form>
         </div>
       )}
 
