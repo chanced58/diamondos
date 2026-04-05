@@ -895,3 +895,128 @@ export async function replaceEventAction(
   revalidatePath(`/games/${gameId}/history`);
   return null;
 }
+
+// ── Replay At-Bat (batch void + insert) ────────────────────────────────────
+
+export async function replayAtBatAction(
+  _prevState: string | null | undefined,
+  formData: FormData,
+): Promise<string | null> {
+  const authClient = createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return 'Not authenticated.';
+
+  const gameId = formData.get('gameId') as string;
+  const voidEventIdsJson = formData.get('voidEventIds') as string;
+  const newEventsJson = formData.get('newEvents') as string;
+  const inning = Number(formData.get('inning'));
+  const isTopOfInning = formData.get('isTopOfInning') === 'true';
+  const insertAfterSequence = Number(formData.get('insertAfterSequence'));
+
+  if (!gameId) return 'Missing game ID.';
+  if (isNaN(inning) || inning < 1) return 'Invalid inning.';
+
+  let voidEventIds: string[];
+  let newEvents: Array<{ eventType: string; payload: Record<string, unknown> }>;
+  try {
+    voidEventIds = JSON.parse(voidEventIdsJson || '[]');
+    newEvents = JSON.parse(newEventsJson || '[]');
+  } catch {
+    return 'Invalid JSON.';
+  }
+
+  if (voidEventIds.length === 0 && newEvents.length === 0) return 'Nothing to do.';
+
+  const validEventTypes = new Set(Object.values(EventType) as string[]);
+  for (const e of newEvents) {
+    if (!validEventTypes.has(e.eventType)) return `Unknown event type: ${e.eventType}`;
+  }
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const result = await getAuthorizedCoach(supabase, user.id, gameId);
+  if ('error' in result) return result.error ?? null;
+
+  // Fetch sequence numbers for events to void
+  const voidMarkers: Array<{
+    game_id: string;
+    sequence_number: number;
+    event_type: string;
+    inning: number;
+    is_top_of_inning: boolean;
+    payload: Record<string, unknown>;
+    occurred_at: string;
+    created_by: string;
+    device_id: string;
+  }> = [];
+
+  if (voidEventIds.length > 0) {
+    const { data: targetEvents } = await supabase
+      .from('game_events')
+      .select('id, sequence_number')
+      .eq('game_id', gameId)
+      .in('id', voidEventIds);
+
+    if (!targetEvents) return 'Failed to fetch events to void.';
+
+    for (const te of targetEvents) {
+      voidMarkers.push({
+        game_id: gameId,
+        sequence_number: 0, // placeholder, assigned below
+        event_type: 'event_voided',
+        inning,
+        is_top_of_inning: isTopOfInning,
+        payload: { voidedEventId: te.id, voidedSequenceNumber: te.sequence_number },
+        occurred_at: new Date().toISOString(),
+        created_by: user.id,
+        device_id: 'web',
+      });
+    }
+  }
+
+  // Build new event rows
+  const newRows = newEvents.map((e) => ({
+    game_id: gameId,
+    sequence_number: 0, // placeholder
+    event_type: e.eventType,
+    inning,
+    is_top_of_inning: isTopOfInning,
+    payload: { ...e.payload, insertAfterSequence },
+    occurred_at: new Date().toISOString(),
+    created_by: user.id,
+    device_id: 'web',
+  }));
+
+  const allRows = [...voidMarkers, ...newRows];
+  if (allRows.length === 0) return null;
+
+  // Insert with retry
+  const maxRetries = 3;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const { data: maxRow } = await supabase
+      .from('game_events')
+      .select('sequence_number')
+      .eq('game_id', gameId)
+      .order('sequence_number', { ascending: false })
+      .limit(1)
+      .single();
+
+    const baseSeq = maxRow?.sequence_number ?? 0;
+    for (let i = 0; i < allRows.length; i++) {
+      allRows[i].sequence_number = baseSeq + 1 + i;
+    }
+
+    const { error } = await supabase.from('game_events').insert(allRows);
+
+    if (!error) break;
+    if (error.code !== '23505' || attempt === maxRetries - 1) {
+      return `Failed to replay at-bat: ${error.message}`;
+    }
+  }
+
+  revalidatePath(`/games/${gameId}/history`);
+  return null;
+}
