@@ -44,17 +44,24 @@ export default async function PlatformAdminLeagueDetailPage({
   if (leagueError) throw new Error(`Failed to fetch league: ${leagueError.message}`);
   if (!league) notFound();
 
-  const [teams, divisions, staff, allTeamsResult] = await Promise.all([
+  const [teams, divisions, staff, allTeamsResult, allOpponentTeamsResult] = await Promise.all([
     getLeagueTeams(db, leagueId),
     getLeagueDivisions(db, leagueId),
     getLeagueStaff(db, leagueId),
     db.from('teams').select('id, name, organization').order('name'),
+    db.from('opponent_teams').select('id, name, city').order('name'),
   ]);
 
   const availableTeams = (allTeamsResult.data ?? []).map((t: any) => ({
     id: t.id as string,
     name: t.name as string,
     organization: t.organization as string | null,
+  }));
+
+  const availableOpponentTeams = (allOpponentTeamsResult.data ?? []).map((t: any) => ({
+    id: t.id as string,
+    name: t.name as string,
+    city: t.city as string | null,
   }));
 
   return (
@@ -96,6 +103,7 @@ export default async function PlatformAdminLeagueDetailPage({
         })}
         isAdmin={true}
         availableTeams={availableTeams}
+        availableOpponentTeams={availableOpponentTeams}
       />
     </div>
   );
