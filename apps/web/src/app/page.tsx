@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { createClient } from '@supabase/supabase-js';
 import { ScoringDemo } from '@/components/home/ScoringDemo';
 import { LeadCaptureForm } from '@/components/home/LeadCaptureForm';
+import { HashRedirect } from '@/components/auth/HashRedirect';
 
 export const metadata: Metadata = {
   title: 'DiamondOS — Baseball Coaching Platform',
@@ -111,6 +112,7 @@ export default async function HomePage(): Promise<JSX.Element> {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      <HashRedirect />
       {/* ── Nav ─────────────────────────────────────────────────────────────── */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur border-b border-gray-200">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
