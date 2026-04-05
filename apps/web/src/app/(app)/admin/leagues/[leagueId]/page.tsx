@@ -78,6 +78,8 @@ export default async function PlatformAdminLeagueDetailPage({
 
       <LeagueAdminClient
         leagueId={leagueId}
+        leagueName={league.name}
+        leagueDescription={league.description}
         teams={teams.map((t) => ({
           id: t.id,
           teamId: t.team_id ?? t.opponent_team_id ?? '',
