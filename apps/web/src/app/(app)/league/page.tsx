@@ -7,7 +7,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueAccess } from '@/lib/league-access';
-import { getLeagueTeams, getLeagueDivisions, getLeagueStaff } from '@baseball/database';
+import { getLeagueTeams, getLeagueDivisions, getLeagueStaff, leagueMemberName } from '@baseball/database';
 import { weAreHome } from '@baseball/shared';
 
 export const metadata: Metadata = { title: 'League' };
@@ -47,29 +47,55 @@ export default async function LeaguePage(): Promise<JSX.Element | null> {
     getLeagueAccess(league.id, user.id),
   ]);
 
-  // Build standings from completed games
-  const teamIds = teams.map((t) => t.team_id);
-  const { data: completedGames, error: gamesError } = await db
-    .from('games')
-    .select('team_id, home_score, away_score, location_type, neutral_home_team, status')
-    .in('team_id', teamIds)
-    .eq('status', 'completed');
-  if (gamesError) throw new Error(`Failed to fetch league games: ${gamesError.message}`);
+  // Build standings from completed games — platform teams + opponent teams
+  const platformIds = teams.filter((t) => t.team_id).map((t) => t.team_id!);
+  const opponentIds = teams.filter((t) => t.opponent_team_id).map((t) => t.opponent_team_id!);
 
   type TeamRecord = { wins: number; losses: number; ties: number };
   const records = new Map<string, TeamRecord>();
-  for (const tid of teamIds) {
-    records.set(tid, { wins: 0, losses: 0, ties: 0 });
+  for (const t of teams) {
+    records.set((t.team_id ?? t.opponent_team_id)!, { wins: 0, losses: 0, ties: 0 });
   }
-  for (const g of completedGames) {
-    const rec = records.get(g.team_id);
-    if (!rec) continue;
-    const isHome = weAreHome(g.location_type, g.neutral_home_team);
-    const our = isHome ? g.home_score : g.away_score;
-    const their = isHome ? g.away_score : g.home_score;
-    if (our > their) rec.wins++;
-    else if (our < their) rec.losses++;
-    else rec.ties++;
+
+  // Platform team games (team_id perspective)
+  if (platformIds.length > 0) {
+    const { data: platformGames, error: pgErr } = await db
+      .from('games')
+      .select('team_id, home_score, away_score, location_type, neutral_home_team')
+      .in('team_id', platformIds)
+      .eq('status', 'completed');
+    if (pgErr) throw new Error(`Failed to fetch platform games: ${pgErr.message}`);
+    for (const g of platformGames) {
+      const rec = records.get(g.team_id);
+      if (!rec) continue;
+      const isHome = weAreHome(g.location_type, g.neutral_home_team);
+      const our = isHome ? g.home_score : g.away_score;
+      const their = isHome ? g.away_score : g.home_score;
+      if (our > their) rec.wins++;
+      else if (our < their) rec.losses++;
+      else rec.ties++;
+    }
+  }
+
+  // Opponent team games (inverse perspective — opponent is the other side)
+  if (opponentIds.length > 0) {
+    const { data: oppGames, error: ogErr } = await db
+      .from('games')
+      .select('opponent_team_id, home_score, away_score, location_type, neutral_home_team')
+      .in('opponent_team_id', opponentIds)
+      .eq('status', 'completed');
+    if (ogErr) throw new Error(`Failed to fetch opponent games: ${ogErr.message}`);
+    for (const g of oppGames) {
+      const rec = records.get(g.opponent_team_id);
+      if (!rec) continue;
+      // Opponent is the inverse side of the coaching team
+      const coachIsHome = weAreHome(g.location_type, g.neutral_home_team);
+      const our = coachIsHome ? g.away_score : g.home_score;
+      const their = coachIsHome ? g.home_score : g.away_score;
+      if (our > their) rec.wins++;
+      else if (our < their) rec.losses++;
+      else rec.ties++;
+    }
   }
 
   // Group teams by division
@@ -129,18 +155,22 @@ export default async function LeaguePage(): Promise<JSX.Element | null> {
                 <tbody className="divide-y divide-gray-100">
                   {divTeams
                     .map((t) => {
-                      const rec = records.get(t.team_id) ?? { wins: 0, losses: 0, ties: 0 };
+                      const key = (t.team_id ?? t.opponent_team_id)!;
+                      const rec = records.get(key) ?? { wins: 0, losses: 0, ties: 0 };
                       const total = rec.wins + rec.losses + rec.ties;
                       const pct = total > 0 ? rec.wins / total : 0;
-                      return { ...t, rec, pct };
+                      return { ...t, key, rec, pct };
                     })
                     .sort((a, b) => b.pct - a.pct)
                     .map((t) => (
-                      <tr key={t.team_id} className={t.team_id === activeTeam.id ? 'bg-brand-50' : ''}>
+                      <tr key={t.key} className={t.team_id === activeTeam.id ? 'bg-brand-50' : ''}>
                         <td className="px-6 py-3 font-medium text-gray-900">
-                          {t.teams.name}
-                          {t.teams.organization && (
+                          {leagueMemberName(t)}
+                          {t.teams?.organization && (
                             <span className="ml-2 text-xs text-gray-400">{t.teams.organization}</span>
+                          )}
+                          {t.opponent_team_id && (
+                            <span className="ml-2 text-xs font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Opponent</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-center tabular-nums">{t.rec.wins}</td>

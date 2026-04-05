@@ -13,6 +13,7 @@ type TeamEntry = {
   teamName: string;
   organization: string | null;
   divisionId: string | null;
+  isOpponentTeam?: boolean;
 };
 
 type Division = {
@@ -34,6 +35,12 @@ type AvailableTeam = {
   organization: string | null;
 };
 
+type AvailableOpponentTeam = {
+  id: string;
+  name: string;
+  city: string | null;
+};
+
 interface LeagueAdminClientProps {
   leagueId: string;
   teams: TeamEntry[];
@@ -41,6 +48,7 @@ interface LeagueAdminClientProps {
   staff: StaffEntry[];
   isAdmin: boolean;
   availableTeams?: AvailableTeam[];
+  availableOpponentTeams?: AvailableOpponentTeam[];
 }
 
 export function LeagueAdminClient({
@@ -50,11 +58,14 @@ export function LeagueAdminClient({
   staff,
   isAdmin,
   availableTeams,
+  availableOpponentTeams,
 }: LeagueAdminClientProps): JSX.Element {
   const router = useRouter();
   const [newDivisionName, setNewDivisionName] = useState('');
   const [addTeamId, setAddTeamId] = useState('');
   const [addTeamDivision, setAddTeamDivision] = useState('');
+  const [addOpponentTeamId, setAddOpponentTeamId] = useState('');
+  const [addOpponentDivision, setAddOpponentDivision] = useState('');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -94,7 +105,12 @@ export function LeagueAdminClient({
 
   // Filter out teams already in the league for the dropdown
   const teamsNotInLeague = (availableTeams ?? []).filter(
-    (at) => !teams.some((t) => t.teamId === at.id),
+    (at) => !teams.some((t) => !t.isOpponentTeam && t.teamId === at.id),
+  );
+
+  // Filter out opponent teams already in the league
+  const opponentTeamsNotInLeague = (availableOpponentTeams ?? []).filter(
+    (ot) => !teams.some((t) => t.isOpponentTeam && t.teamId === ot.id),
   );
 
   async function handleAddTeam(e: React.FormEvent) {
@@ -116,6 +132,26 @@ export function LeagueAdminClient({
       if (error) { setErrorMsg(error.message); return; }
       setAddTeamId('');
       setAddTeamDivision('');
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleAddOpponentTeam(e: React.FormEvent) {
+    e.preventDefault();
+    if (!addOpponentTeamId) return;
+    setSaving(true);
+    setErrorMsg(null);
+    try {
+      const { error } = await supabase.from('league_members').insert({
+        league_id: leagueId,
+        opponent_team_id: addOpponentTeamId,
+        division_id: addOpponentDivision || null,
+      });
+      if (error) { setErrorMsg(error.message); return; }
+      setAddOpponentTeamId('');
+      setAddOpponentDivision('');
       router.refresh();
     } finally {
       setSaving(false);
@@ -237,6 +273,9 @@ export function LeagueAdminClient({
                       {t.organization && (
                         <span className="ml-2 text-xs text-gray-400">{t.organization}</span>
                       )}
+                      {t.isOpponentTeam && (
+                        <span className="ml-2 text-xs font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Opponent</span>
+                      )}
                     </td>
                     <td className="py-3">
                       <select
@@ -308,6 +347,48 @@ export function LeagueAdminClient({
               Add Team
             </button>
           </form>
+
+          {/* Add opponent team */}
+          {opponentTeamsNotInLeague.length > 0 && (
+            <>
+              <div className="border-t border-gray-100 pt-4 mt-4">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Add Opponent Team</p>
+              </div>
+              <form onSubmit={handleAddOpponentTeam} className="flex gap-2">
+                <select
+                  value={addOpponentTeamId}
+                  onChange={(e) => { setAddOpponentTeamId(e.target.value); setErrorMsg(null); }}
+                  className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  <option value="">Select an opponent team…</option>
+                  {opponentTeamsNotInLeague.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}{t.city ? ` — ${t.city}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {divisions.length > 0 && (
+                  <select
+                    value={addOpponentDivision}
+                    onChange={(e) => setAddOpponentDivision(e.target.value)}
+                    className="text-sm border border-gray-300 rounded-lg px-3 py-2"
+                  >
+                    <option value="">No division</option>
+                    {divisions.map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  type="submit"
+                  disabled={saving || !addOpponentTeamId}
+                  className="text-sm font-medium bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                >
+                  Add Opponent
+                </button>
+              </form>
+            </>
+          )}
         </div>
       </div>
 

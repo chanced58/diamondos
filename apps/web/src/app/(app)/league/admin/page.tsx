@@ -36,6 +36,16 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
     getLeagueStaff(db, league.id),
   ]);
 
+  // Fetch opponent teams owned by platform teams in the league
+  const platformTeamIds = teams.filter((t) => t.team_id).map((t) => t.team_id!);
+  const { data: availableOpponentTeams } = platformTeamIds.length > 0
+    ? await db
+        .from('opponent_teams')
+        .select('id, name, city')
+        .in('team_id', platformTeamIds)
+        .order('name')
+    : { data: [] };
+
   return (
     <div className="p-8 max-w-4xl">
       <h1 className="text-2xl font-bold text-gray-900 mb-1">Manage League</h1>
@@ -45,10 +55,11 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
         leagueId={league.id}
         teams={teams.map((t) => ({
           id: t.id,
-          teamId: t.team_id,
-          teamName: t.teams?.name ?? 'Unknown',
+          teamId: t.team_id ?? t.opponent_team_id ?? '',
+          teamName: t.teams?.name ?? t.opponent_teams?.name ?? 'Unknown',
           organization: t.teams?.organization ?? null,
           divisionId: t.division_id,
+          isOpponentTeam: t.opponent_team_id !== null,
         }))}
         divisions={divisions}
         staff={staff.map((s) => {
@@ -63,6 +74,11 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
           };
         })}
         isAdmin={access.isLeagueAdmin}
+        availableOpponentTeams={(availableOpponentTeams ?? []).map((t) => ({
+          id: t.id,
+          name: t.name,
+          city: t.city,
+        }))}
       />
     </div>
   );

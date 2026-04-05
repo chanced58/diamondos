@@ -73,10 +73,11 @@ export default async function PlatformAdminLeagueDetailPage({
         leagueId={leagueId}
         teams={teams.map((t) => ({
           id: t.id,
-          teamId: t.team_id,
-          teamName: t.teams?.name ?? 'Unknown',
+          teamId: t.team_id ?? t.opponent_team_id ?? '',
+          teamName: t.teams?.name ?? t.opponent_teams?.name ?? 'Unknown',
           organization: t.teams?.organization ?? null,
           divisionId: t.division_id,
+          isOpponentTeam: t.opponent_team_id !== null,
         }))}
         divisions={divisions}
         staff={staff.map((s) => {
