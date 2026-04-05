@@ -975,6 +975,14 @@ function AddPitchButton({
           >{label}</button>
         ))}
       </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <button type="button" disabled={isPending} onClick={() => handleSelect('hit_by_pitch')}
+          className="py-1.5 text-xs font-medium rounded-md border border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100 disabled:opacity-40 transition-colors"
+        >HBP</button>
+        <button type="button" disabled={isPending} onClick={() => handleSelect('in_play')}
+          className="py-1.5 text-xs font-medium rounded-md border border-brand-300 bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-40 transition-colors"
+        >In Play</button>
+      </div>
       {error && <p className="text-[11px] text-red-600">{error}</p>}
       <button type="button" onClick={() => setOpen(false)} className="text-[11px] text-gray-400 hover:text-gray-600">Cancel</button>
     </div>
