@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import type {
   GameHistoryTree as GameHistoryTreeType,
   InningNode,
@@ -11,7 +12,7 @@ import type {
   HistoryEventNode,
   EventCategory,
 } from '@baseball/shared';
-import { replaceEventAction, insertCorrectionEventAction, voidEventAction, replayAtBatAction } from '@/app/(app)/games/[gameId]/actions';
+import { replaceEventAction, insertCorrectionEventAction, insertCorrectionEventsBatchAction, voidEventAction, replayAtBatAction } from '@/app/(app)/games/[gameId]/actions';
 import type { GameEvent } from '@baseball/shared';
 
 export type PlayerEntry = { id: string; name: string };
@@ -73,6 +74,7 @@ function ReplaceEventPanel({
   gameId: string;
   onDone: () => void;
 }) {
+  const router = useRouter();
   const [step, setStep] = useState<'type' | 'in-play-result' | 'trajectory' | 'fielding' | 'error-fielder'>('type');
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +102,7 @@ function ReplaceEventPanel({
       const err = await replaceEventAction(null, formData);
       if (err) { setError(err); return; }
       onDone();
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to replace event.');
     } finally {
@@ -125,6 +128,7 @@ function ReplaceEventPanel({
       const err = await insertCorrectionEventAction(null, formData);
       if (err) { setError(err); return; }
       onDone();
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to add result.');
     } finally {
@@ -144,6 +148,7 @@ function ReplaceEventPanel({
       const err = await voidEventAction(null, formData);
       if (err) { setError(err); return; }
       onDone();
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to delete event.');
     } finally {
@@ -551,6 +556,7 @@ function AddEventPanel({
   insertAfterSequence?: number;
   onDone: () => void;
 }) {
+  const router = useRouter();
   const [step, setStep] = useState<'players' | 'type' | 'trajectory' | 'fielding' | 'error-fielder'>('players');
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -601,6 +607,7 @@ function AddEventPanel({
       const err = await insertCorrectionEventAction(null, formData);
       if (err) { setError(err); return; }
       onDone();
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to add event.');
     } finally {
@@ -904,21 +911,29 @@ function AddPitchButton({
   isOpponentBatter: boolean;
   isOpponentPitcher: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const router = useRouter();
+  const [step, setStep] = useState<'closed' | 'pitch' | 'in-play-result' | 'trajectory' | 'fielding' | 'error-fielder'>('closed');
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingResult, setPendingResult] = useState<string | null>(null);
+  const [trajectory, setTrajectory] = useState<string | null>(null);
+  const [fieldingSeq, setFieldingSeq] = useState<number[]>([]);
 
-  async function handleSelect(outcome: string) {
+  function buildBatterPitcher(): Record<string, unknown> {
+    const bp: Record<string, unknown> = {};
+    if (isOpponentBatter) bp.opponentBatterId = batterId;
+    else if (batterId) bp.batterId = batterId;
+    if (isOpponentPitcher) bp.opponentPitcherId = pitcherId;
+    else if (pitcherId) bp.pitcherId = pitcherId;
+    return bp;
+  }
+
+  async function insertPitch(outcome: string) {
     if (isPending) return;
     setIsPending(true);
     setError(null);
     try {
-      const payload: Record<string, unknown> = { outcome, insertAfterSequence };
-      if (isOpponentBatter) payload.opponentBatterId = batterId;
-      else if (batterId) payload.batterId = batterId;
-      if (isOpponentPitcher) payload.opponentPitcherId = pitcherId;
-      else if (pitcherId) payload.pitcherId = pitcherId;
-
+      const payload: Record<string, unknown> = { ...buildBatterPitcher(), outcome, insertAfterSequence };
       const formData = new FormData();
       formData.set('gameId', gameId);
       formData.set('eventType', 'pitch_thrown');
@@ -927,7 +942,8 @@ function AddPitchButton({
       formData.set('payload', JSON.stringify(payload));
       const err = await insertCorrectionEventAction(null, formData);
       if (err) { setError(err); return; }
-      setOpen(false);
+      setStep('closed');
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to add pitch.');
     } finally {
@@ -935,11 +951,83 @@ function AddPitchButton({
     }
   }
 
-  if (!open) {
+  async function insertInPlayResult(eventType: string, resultPayload: Record<string, unknown>) {
+    if (isPending) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      const bp = buildBatterPitcher();
+
+      // Walk, Strikeout, and Sac Fly/Bunt don't get an in-play pitch — insert the result directly
+      const noInPlayPitch = ['walk', 'strikeout', 'sacrifice_fly', 'sacrifice_bunt'].includes(eventType);
+
+      if (noInPlayPitch) {
+        const formData = new FormData();
+        formData.set('gameId', gameId);
+        formData.set('eventType', eventType);
+        formData.set('inning', String(inning));
+        formData.set('isTopOfInning', String(isTopOfInning));
+        formData.set('payload', JSON.stringify({ ...bp, ...resultPayload, insertAfterSequence }));
+        const err = await insertCorrectionEventAction(null, formData);
+        if (err) { setError(err); return; }
+      } else {
+        // Atomic batch: insert pitch_thrown (in_play) + result together
+        const events = [
+          {
+            eventType: 'pitch_thrown',
+            inning,
+            isTopOfInning,
+            payload: { ...bp, outcome: 'in_play', insertAfterSequence },
+          },
+          {
+            eventType,
+            inning,
+            isTopOfInning,
+            payload: { ...bp, ...resultPayload, insertAfterSequence },
+          },
+        ];
+        const formData = new FormData();
+        formData.set('gameId', gameId);
+        formData.set('events', JSON.stringify(events));
+        const err = await insertCorrectionEventsBatchAction(null, formData);
+        if (err) { setError(err); return; }
+      }
+
+      setStep('closed');
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to add in-play result.');
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  function handleHitResult(hitType: string, selectedTrajectory?: string) {
+    insertInPlayResult('hit', { hitType, trajectory: selectedTrajectory ?? trajectory ?? undefined });
+  }
+
+  function handleOutResult(eventType: string) {
+    const outType = TRAJECTORY_TO_OUT_TYPE[trajectory ?? ''] ?? 'groundout';
+    insertInPlayResult(eventType, {
+      outType,
+      trajectory: trajectory ?? undefined,
+      fieldingSequence: fieldingSeq.length > 0 ? fieldingSeq : undefined,
+    });
+  }
+
+  function handleErrorWithFielder(errorBy: number) {
+    insertInPlayResult('field_error', { errorBy, trajectory: trajectory ?? undefined });
+  }
+
+  function handleDirectInPlayResult(eventType: string, extra: Record<string, unknown> = {}) {
+    insertInPlayResult(eventType, extra);
+  }
+
+  if (step === 'closed') {
     return (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => setStep('pitch')}
         className="group flex items-center gap-1 py-0.5 text-[11px] text-gray-300 hover:text-brand-600 transition-colors"
         aria-label="Insert pitch"
       >
@@ -951,6 +1039,140 @@ function AddPitchButton({
     );
   }
 
+  // ── In Play sub-step: error fielder ──
+  if (step === 'error-fielder') {
+    return (
+      <div className="my-1 p-2 bg-white rounded-lg border border-brand-200 shadow-sm space-y-2">
+        <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Who made the error?</p>
+        <div className="grid grid-cols-3 gap-1.5">
+          {POSITIONS.map(({ positionNumber, label }) => (
+            <button key={positionNumber} type="button" disabled={isPending} onClick={() => handleErrorWithFielder(positionNumber)}
+              className="py-1.5 text-xs font-medium rounded-md border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors"
+            >{label}</button>
+          ))}
+        </div>
+        {error && <p className="text-[11px] text-red-600">{error}</p>}
+        <button type="button" onClick={() => setStep('trajectory')} className="text-[11px] text-gray-400 hover:text-gray-600">← Back</button>
+      </div>
+    );
+  }
+
+  // ── In Play sub-step: fielding order ──
+  if (step === 'fielding') {
+    const eventType = pendingResult === 'double_play' ? 'double_play' : pendingResult === 'triple_play' ? 'triple_play' : 'out';
+    const buttonLabel = pendingResult === 'double_play' ? 'DP' : pendingResult === 'triple_play' ? 'TP' : pendingResult === 'field_choice' ? 'FC' : 'Out';
+    return (
+      <div className="my-1 p-2 bg-white rounded-lg border border-brand-200 shadow-sm space-y-2">
+        <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Fielding play order</p>
+        {fieldingSeq.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-gray-900 tracking-wider">
+              {fieldingSeq.map((num) => POSITIONS.find((p) => p.positionNumber === num)?.label ?? String(num)).join('-')}
+            </span>
+            <button type="button" onClick={() => setFieldingSeq((s) => s.slice(0, -1))} className="text-[11px] text-gray-400 hover:text-gray-600 underline">Undo</button>
+          </div>
+        )}
+        <div className="grid grid-cols-3 gap-1.5">
+          {POSITIONS.map(({ positionNumber, label }) => (
+            <button key={positionNumber} type="button" disabled={fieldingSeq.length >= 8} onClick={() => setFieldingSeq((s) => [...s, positionNumber])}
+              className="py-1.5 text-xs font-medium rounded-md border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >{positionNumber} — {label}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <button type="button" disabled={isPending} onClick={() => handleOutResult(eventType)}
+            className="flex-1 py-1.5 text-xs font-semibold rounded-md bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-40 transition-colors"
+          >Record {buttonLabel}</button>
+          <button type="button" onClick={() => handleOutResult(eventType)} className="text-[11px] text-gray-400 hover:text-gray-600 underline">Skip</button>
+        </div>
+        {error && <p className="text-[11px] text-red-600">{error}</p>}
+        <button type="button" onClick={() => { setStep('trajectory'); setFieldingSeq([]); }} className="text-[11px] text-gray-400 hover:text-gray-600">← Back</button>
+      </div>
+    );
+  }
+
+  // ── In Play sub-step: trajectory ──
+  if (step === 'trajectory' && pendingResult) {
+    return (
+      <div className="my-1 p-2 bg-white rounded-lg border border-brand-200 shadow-sm space-y-2">
+        <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">How was it hit?</p>
+        <div className="grid grid-cols-3 gap-1.5">
+          {[
+            { label: 'Ground Ball', value: 'ground_ball' },
+            { label: 'Line Drive', value: 'line_drive' },
+            { label: 'Fly Ball', value: 'fly_ball' },
+          ].map(({ label, value }) => (
+            <button key={value} type="button" disabled={isPending}
+              onClick={() => {
+                setTrajectory(value);
+                if (pendingResult === 'error') setStep('error-fielder');
+                else if (['out', 'double_play', 'triple_play', 'field_choice'].includes(pendingResult)) setStep('fielding');
+                else handleHitResult(pendingResult, value);
+              }}
+              className="py-1.5 text-xs font-medium rounded-md border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >{label}</button>
+          ))}
+        </div>
+        {error && <p className="text-[11px] text-red-600">{error}</p>}
+        <button type="button" onClick={() => { setStep('in-play-result'); setPendingResult(null); }} className="text-[11px] text-gray-400 hover:text-gray-600">← Back</button>
+      </div>
+    );
+  }
+
+  // ── In Play sub-step: result picker ──
+  if (step === 'in-play-result') {
+    return (
+      <div className="my-1 p-2 bg-white rounded-lg border border-brand-200 shadow-sm space-y-2">
+        <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">In play — what happened?</p>
+        <div className="grid grid-cols-4 gap-1.5">
+          {([
+            { label: 'Single', value: 'single' },
+            { label: 'Double', value: 'double' },
+            { label: 'Triple', value: 'triple' },
+            { label: 'HR', value: 'home_run' },
+          ] as const).map(({ label, value }) => (
+            <button key={value} type="button" disabled={isPending}
+              onClick={() => { setPendingResult(value); setStep('trajectory'); }}
+              className="py-1.5 text-xs font-medium rounded-md border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >{label}</button>
+          ))}
+        </div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {([
+            { label: 'Out', value: 'out' },
+            { label: 'DP', value: 'double_play' },
+            { label: 'TP', value: 'triple_play' },
+            { label: 'FC', value: 'field_choice' },
+          ] as const).map(({ label, value }) => (
+            <button key={value} type="button" disabled={isPending}
+              onClick={() => { setPendingResult(value); setStep('trajectory'); }}
+              className="py-1.5 text-xs font-medium rounded-md border border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >{label}</button>
+          ))}
+        </div>
+        <button type="button" disabled={isPending}
+          onClick={() => { setPendingResult('error'); setStep('trajectory'); }}
+          className="w-full py-1.5 text-xs font-medium rounded-md border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors"
+        >Error</button>
+        <div className="grid grid-cols-3 gap-1.5">
+          {([
+            { label: 'Walk', eventType: 'walk' },
+            { label: 'Strikeout', eventType: 'strikeout' },
+            { label: 'Sac Fly', eventType: 'sacrifice_fly' },
+          ] as const).map(({ label, eventType }) => (
+            <button key={eventType} type="button" disabled={isPending}
+              onClick={() => handleDirectInPlayResult(eventType)}
+              className="py-1.5 text-xs font-medium rounded-md border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-40 transition-colors"
+            >{label}</button>
+          ))}
+        </div>
+        {error && <p className="text-[11px] text-red-600">{error}</p>}
+        <button type="button" onClick={() => setStep('pitch')} className="text-[11px] text-gray-400 hover:text-gray-600">← Back to pitch</button>
+      </div>
+    );
+  }
+
+  // ── Main: pitch outcome picker ──
   return (
     <div className="my-1 p-2 bg-white rounded-lg border border-brand-200 shadow-sm space-y-2">
       <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Add pitch</p>
@@ -960,7 +1182,7 @@ function AddPitchButton({
           { label: 'Called K', outcome: 'called_strike' },
           { label: 'Swing K', outcome: 'swinging_strike' },
         ].map(({ label, outcome }) => (
-          <button key={outcome} type="button" disabled={isPending} onClick={() => handleSelect(outcome)}
+          <button key={outcome} type="button" disabled={isPending} onClick={() => insertPitch(outcome)}
             className="py-1.5 text-xs font-medium rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 transition-colors"
           >{label}</button>
         ))}
@@ -970,21 +1192,21 @@ function AddPitchButton({
           { label: 'Foul', outcome: 'foul' },
           { label: 'Foul Tip', outcome: 'foul_tip' },
         ].map(({ label, outcome }) => (
-          <button key={outcome} type="button" disabled={isPending} onClick={() => handleSelect(outcome)}
+          <button key={outcome} type="button" disabled={isPending} onClick={() => insertPitch(outcome)}
             className="py-1.5 text-xs font-medium rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 transition-colors"
           >{label}</button>
         ))}
       </div>
       <div className="grid grid-cols-2 gap-1.5">
-        <button type="button" disabled={isPending} onClick={() => handleSelect('hit_by_pitch')}
+        <button type="button" disabled={isPending} onClick={() => insertPitch('hit_by_pitch')}
           className="py-1.5 text-xs font-medium rounded-md border border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100 disabled:opacity-40 transition-colors"
         >HBP</button>
-        <button type="button" disabled={isPending} onClick={() => handleSelect('in_play')}
+        <button type="button" disabled={isPending} onClick={() => setStep('in-play-result')}
           className="py-1.5 text-xs font-medium rounded-md border border-brand-300 bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-40 transition-colors"
-        >In Play</button>
+        >In Play →</button>
       </div>
       {error && <p className="text-[11px] text-red-600">{error}</p>}
-      <button type="button" onClick={() => setOpen(false)} className="text-[11px] text-gray-400 hover:text-gray-600">Cancel</button>
+      <button type="button" onClick={() => setStep('closed')} className="text-[11px] text-gray-400 hover:text-gray-600">Cancel</button>
     </div>
   );
 }
@@ -1045,17 +1267,24 @@ function MidAtBatRow({ node, isCoach, gameId }: { node: HistoryEventNode; isCoac
 // ── Pitch Row ───────────────────────────────────────────────────────────────
 
 function PitchRow({ pitch, isCoach, gameId }: { pitch: PitchNode; isCoach?: boolean; gameId?: string }) {
+  const router = useRouter();
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function handleDelete() {
     if (deleting) return;
     if (!confirm('Delete this pitch?')) return;
     setDeleting(true);
+    setDeleteError(null);
     try {
       const formData = new FormData();
       formData.set('gameId', gameId!);
       formData.set('eventId', pitch.event.id);
-      await voidEventAction(null, formData);
+      const err = await voidEventAction(null, formData);
+      if (err) { setDeleteError(err); return; }
+      router.refresh();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to delete pitch.');
     } finally {
       setDeleting(false);
     }
@@ -1083,6 +1312,7 @@ function PitchRow({ pitch, isCoach, gameId }: { pitch: PitchNode; isCoach?: bool
           </>
         )}
       </div>
+      {deleteError && <p className="text-xs text-red-600 ml-4">{deleteError}</p>}
     </div>
   );
 }
@@ -1134,6 +1364,7 @@ function ReplayAtBatPanel({
   precedingSequence: number;
   onDone: () => void;
 }) {
+  const router = useRouter();
   const [pitches, setPitches] = useState<Array<{ outcome: string }>>([]);
   const [resultStep, setResultStep] = useState<'pitches' | 'type' | 'trajectory' | 'fielding' | 'error-fielder'>('pitches');
   const [pendingResult, setPendingResult] = useState<string | null>(null);
@@ -1189,6 +1420,7 @@ function ReplayAtBatPanel({
       const err = await replayAtBatAction(null, formData);
       if (err) { setError(err); return; }
       onDone();
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to replay at-bat.');
     } finally {
