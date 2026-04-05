@@ -395,15 +395,22 @@ function applyInsertionOrder(events: GameEvent[]): GameEvent[] {
   insertions.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
   for (const ins of insertions) {
     const targetSeq = (ins.payload as Record<string, unknown>).insertAfterSequence as number;
-    // Find the last index where sequenceNumber <= targetSeq or is another
-    // insertion targeting the same or earlier position
+    // Find the target event by exact sequence number match (supports both
+    // normal events and chained insertions targeting other insertions)
     let insertIdx = result.length; // default: append
     for (let i = result.length - 1; i >= 0; i--) {
-      const r = result[i];
-      const rPayload = r.payload as Record<string, unknown>;
-      const rTarget = typeof rPayload.insertAfterSequence === 'number' ? rPayload.insertAfterSequence : r.sequenceNumber;
-      if (rTarget <= targetSeq) {
+      if (result[i].sequenceNumber === targetSeq) {
         insertIdx = i + 1;
+        // Skip past any insertions that also target this same sequence
+        while (insertIdx < result.length) {
+          const nextPayload = result[insertIdx].payload as Record<string, unknown>;
+          const nextTarget = typeof nextPayload.insertAfterSequence === 'number' ? nextPayload.insertAfterSequence : null;
+          if (nextTarget === targetSeq) {
+            insertIdx++;
+          } else {
+            break;
+          }
+        }
         break;
       }
     }
