@@ -3,6 +3,7 @@ import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { createServerClient } from '@/lib/supabase/server';
 import { LoginForm } from '@/components/auth/LoginForm';
+import { HashRedirect } from '@/components/auth/HashRedirect';
 
 export const metadata: Metadata = { title: 'Sign In' };
 
@@ -34,6 +35,7 @@ export default async function LoginPage({
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <HashRedirect />
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-brand-700">Baseball Coaches</h1>
