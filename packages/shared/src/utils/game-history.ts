@@ -765,9 +765,10 @@ export function buildGameHistoryTree(
             else if (rp.safeAtBase === 3) runnerThird = true;
           }
         } else if (event.eventType === EventType.BALK) {
-          // Runner on third scores; the run is credited by a subsequent SCORE
-          // event, so we only clear the base here to keep runner state accurate.
-          if (runnerThird) runnerThird = false;
+          if (runnerThird) {
+            addRuns(1);
+            runnerThird = false;
+          }
           runnerThird = runnerSecond;
           runnerSecond = runnerFirst;
           runnerFirst = false;

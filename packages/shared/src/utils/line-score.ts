@@ -222,6 +222,13 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
         else if (safeAtBase === 2) second = runnerId ?? 'unknown';
         else if (safeAtBase === 3) third = runnerId ?? 'unknown';
       }
+    } else if (etype === 'balk') {
+      if (third && outs < 3) {
+        scoreRun(1);
+      }
+      third = second;
+      second = first;
+      first = null;
     }
   }
 
