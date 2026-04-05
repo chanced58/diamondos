@@ -131,8 +131,7 @@ export default async function LeagueStatsPage({
       .in('status', ['completed', 'in_progress']);
     const oppGameIds = (oppGamesData ?? []).map((g) => g.id);
 
-    // Fetch events for opponent games (may overlap with platform games — dedup via Set)
-    const allGameIds = new Set([...gameIds, ...oppGameIds]);
+    // Fetch events for opponent games not already fetched (dedup)
     const missingGameIds = oppGameIds.filter((id) => !gameIds.includes(id));
     if (missingGameIds.length > 0) {
       for (let i = 0; i < missingGameIds.length; i += BATCH_SIZE) {
