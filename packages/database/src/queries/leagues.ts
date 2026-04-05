@@ -45,9 +45,10 @@ export type LeagueSummary = {
   state_code: string | null;
 };
 
-export type LeagueTeam = {
+export type LeagueMember = {
   id: string;
-  team_id: string;
+  team_id: string | null;
+  opponent_team_id: string | null;
   league_id: string;
   division_id: string | null;
   is_active: boolean;
@@ -58,9 +59,19 @@ export type LeagueTeam = {
     logo_url: string | null;
     primary_color: string | null;
     secondary_color: string | null;
-  };
+  } | null;
+  opponent_teams: {
+    id: string;
+    name: string;
+    abbreviation: string | null;
+    city: string | null;
+    logo_url: string | null;
+  } | null;
   league_divisions: { id: string; name: string } | null;
 };
+
+/** @deprecated Use LeagueMember instead */
+export type LeagueTeam = LeagueMember;
 
 export type LeagueDivision = {
   id: string;
@@ -90,7 +101,7 @@ export async function getLeagueForTeam(
 }
 
 /**
- * Get all teams in a league with their division info.
+ * Get all members (platform teams + opponent teams) in a league with their division info.
  */
 export async function getLeagueTeams(
   client: AnyClient,
@@ -98,15 +109,20 @@ export async function getLeagueTeams(
 ) {
   const { data, error } = await client
     .from('league_members')
-    .select('id, team_id, league_id, division_id, is_active, teams(id, name, organization, logo_url, primary_color, secondary_color), league_divisions(id, name)')
+    .select(`
+      id, team_id, opponent_team_id, league_id, division_id, is_active,
+      teams(id, name, organization, logo_url, primary_color, secondary_color),
+      opponent_teams(id, name, abbreviation, city, logo_url),
+      league_divisions(id, name)
+    `)
     .eq('league_id', leagueId)
     .eq('is_active', true);
   if (error) throw error;
-  return (data ?? []) as unknown as LeagueTeam[];
+  return (data ?? []) as unknown as LeagueMember[];
 }
 
 /**
- * Get all team IDs in a league.
+ * Get platform team IDs in a league (excludes opponent teams).
  */
 export async function getLeagueTeamIds(
   client: AnyClient,
@@ -116,9 +132,34 @@ export async function getLeagueTeamIds(
     .from('league_members')
     .select('team_id')
     .eq('league_id', leagueId)
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .not('team_id', 'is', null);
   if (error) throw error;
   return (data ?? []).map((r: any) => r.team_id);
+}
+
+/**
+ * Get opponent team IDs in a league.
+ */
+export async function getLeagueOpponentTeamIds(
+  client: AnyClient,
+  leagueId: string,
+): Promise<string[]> {
+  const { data, error } = await client
+    .from('league_members')
+    .select('opponent_team_id')
+    .eq('league_id', leagueId)
+    .eq('is_active', true)
+    .not('opponent_team_id', 'is', null);
+  if (error) throw error;
+  return (data ?? []).map((r: any) => r.opponent_team_id);
+}
+
+/** Display name for any league member (platform or opponent). */
+export function leagueMemberName(m: LeagueMember): string {
+  if (m.teams) return m.teams.name;
+  if (m.opponent_teams) return m.opponent_teams.name;
+  return 'Unknown';
 }
 
 /**

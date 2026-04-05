@@ -672,7 +672,8 @@ export type Database = {
           is_active: boolean
           joined_at: string
           league_id: string
-          team_id: string
+          opponent_team_id: string | null
+          team_id: string | null
         }
         Insert: {
           division_id?: string | null
@@ -680,7 +681,8 @@ export type Database = {
           is_active?: boolean
           joined_at?: string
           league_id: string
-          team_id: string
+          opponent_team_id?: string | null
+          team_id?: string | null
         }
         Update: {
           division_id?: string | null
@@ -688,7 +690,8 @@ export type Database = {
           is_active?: boolean
           joined_at?: string
           league_id?: string
-          team_id?: string
+          opponent_team_id?: string | null
+          team_id?: string | null
         }
         Relationships: [
           {
@@ -703,6 +706,13 @@ export type Database = {
             columns: ["league_id"]
             isOneToOne: false
             referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_members_opponent_team_id_fkey"
+            columns: ["opponent_team_id"]
+            isOneToOne: false
+            referencedRelation: "opponent_teams"
             referencedColumns: ["id"]
           },
           {

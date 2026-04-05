@@ -6,8 +6,8 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
-import { getLeagueTeamIds } from '@baseball/database';
-import { derivePitchingStats, deriveBattingStats } from '@baseball/shared';
+import { getLeagueTeamIds, getLeagueOpponentTeamIds } from '@baseball/database';
+import { derivePitchingStats, deriveBattingStats, computeOpponentBatting } from '@baseball/shared';
 import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
 import { PitchingStatsTable } from '../PitchingStatsTable';
 import { BattingStatsTable } from '../BattingStatsTable';
@@ -109,7 +109,7 @@ export default async function LeagueStatsPage({
 
   const allPlayerIds = new Set(playerList.map((p) => p.id));
 
-  // Compute stats
+  // Compute platform player stats
   const pitchingStatsMap = derivePitchingStats(rawEvents, playerList);
   const allPitchingStats: PitchingStats[] = Array.from(pitchingStatsMap.values())
     .filter((s) => allPlayerIds.has(s.playerId))
@@ -119,6 +119,111 @@ export default async function LeagueStatsPage({
   const allBattingStats: BattingStats[] = Array.from(battingStatsMap.values())
     .filter((s) => allPlayerIds.has(s.playerId))
     .sort((a, b) => b.plateAppearances - a.plateAppearances);
+
+  // Opponent team stats — fetch games and players for league opponent teams
+  const opponentTeamIds = await getLeagueOpponentTeamIds(db, league.id);
+  if (opponentTeamIds.length > 0) {
+    // Get games where opponent_team_id is in the league
+    const { data: oppGamesData } = await db
+      .from('games')
+      .select('id, opponent_team_id')
+      .in('opponent_team_id', opponentTeamIds)
+      .in('status', ['completed', 'in_progress']);
+    const oppGameIds = (oppGamesData ?? []).map((g) => g.id);
+
+    // Fetch events for opponent games (may overlap with platform games — dedup via Set)
+    const allGameIds = new Set([...gameIds, ...oppGameIds]);
+    const missingGameIds = oppGameIds.filter((id) => !gameIds.includes(id));
+    if (missingGameIds.length > 0) {
+      for (let i = 0; i < missingGameIds.length; i += BATCH_SIZE) {
+        const batch = missingGameIds.slice(i, i + BATCH_SIZE);
+        const { data: events } = await db
+          .from('game_events')
+          .select('*')
+          .in('game_id', batch)
+          .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
+          .order('game_id')
+          .order('sequence_number');
+        for (const e of events ?? []) rawEvents.push(e);
+      }
+    }
+
+    // Fetch opponent players
+    const { data: oppPlayers } = await db
+      .from('opponent_players')
+      .select('id, opponent_team_id, first_name, last_name')
+      .in('opponent_team_id', opponentTeamIds);
+
+    // Get opponent team names
+    const { data: oppTeamsData } = await db
+      .from('opponent_teams')
+      .select('id, name')
+      .in('id', opponentTeamIds);
+    const oppTeamNameMap = new Map((oppTeamsData ?? []).map((t) => [t.id, t.name]));
+
+    // Build opponent player name map for computeOpponentBatting
+    const oppPlayerNameMap = new Map<string, string>(
+      (oppPlayers ?? []).map((p) => [p.id, `${p.first_name} ${p.last_name}`]),
+    );
+    const oppPlayerTeamMap = new Map<string, string>(
+      (oppPlayers ?? []).map((p) => [p.id, p.opponent_team_id]),
+    );
+
+    // Opponent batting stats — map OppBattingRow to BattingStats shape
+    const oppBattingRows = computeOpponentBatting(rawEvents, oppPlayerNameMap);
+    for (const row of oppBattingRows) {
+      const oppTeamId = oppPlayerTeamMap.get(row.playerId);
+      const teamName = oppTeamId ? oppTeamNameMap.get(oppTeamId) : 'Unknown';
+      allBattingStats.push({
+        playerId: row.playerId,
+        playerName: `${row.playerName} (${teamName})`,
+        gamesAppeared: 0,
+        plateAppearances: row.pa,
+        atBats: row.ab,
+        runs: row.r,
+        hits: row.h,
+        doubles: row.doubles,
+        triples: row.triples,
+        homeRuns: row.hr,
+        rbi: row.rbi,
+        walks: row.bb,
+        strikeouts: row.k,
+        hitByPitch: row.hbp,
+        sacrificeFlies: row.sf,
+        sacrificeHits: row.sh,
+        avg: row.avg,
+        obp: row.obp,
+        slg: row.slg,
+        ops: row.ops,
+        iso: (row.slg || 0) - (row.avg || 0),
+        babip: NaN,
+        kPct: row.pa > 0 ? row.k / row.pa : 0,
+        bbPct: row.pa > 0 ? row.bb / row.pa : 0,
+        woba: NaN,
+        battedBalls: 0,
+        hardHitBalls: 0,
+        hardHitPct: NaN,
+      });
+    }
+
+    // Opponent pitching stats
+    const oppPlayerList = (oppPlayers ?? []).map((p) => ({
+      id: p.id,
+      firstName: p.first_name,
+      lastName: `${p.last_name} (${oppTeamNameMap.get(p.opponent_team_id) ?? 'Unknown'})`,
+    }));
+    const oppPitchingMap = derivePitchingStats(rawEvents, oppPlayerList);
+    const oppPlayerIds = new Set((oppPlayers ?? []).map((p) => p.id));
+    for (const [, s] of oppPitchingMap) {
+      if (oppPlayerIds.has(s.playerId) && s.totalPitches > 0) {
+        allPitchingStats.push(s);
+      }
+    }
+
+    // Re-sort after merging
+    allBattingStats.sort((a, b) => b.plateAppearances - a.plateAppearances);
+    allPitchingStats.sort((a, b) => b.inningsPitchedOuts - a.inningsPitchedOuts);
+  }
 
   return (
     <div className="p-8">
