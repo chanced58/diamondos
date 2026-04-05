@@ -12,7 +12,7 @@ import type {
   HistoryEventNode,
   EventCategory,
 } from '@baseball/shared';
-import { replaceEventAction, insertCorrectionEventAction, voidEventAction, replayAtBatAction } from '@/app/(app)/games/[gameId]/actions';
+import { replaceEventAction, insertCorrectionEventAction, insertCorrectionEventsBatchAction, voidEventAction, replayAtBatAction } from '@/app/(app)/games/[gameId]/actions';
 import type { GameEvent } from '@baseball/shared';
 
 export type PlayerEntry = { id: string; name: string };
@@ -956,27 +956,42 @@ function AddPitchButton({
     setIsPending(true);
     setError(null);
     try {
-      // First insert the pitch_thrown with outcome: in_play
-      const pitchPayload: Record<string, unknown> = { ...buildBatterPitcher(), outcome: 'in_play', insertAfterSequence };
-      const pitchForm = new FormData();
-      pitchForm.set('gameId', gameId);
-      pitchForm.set('eventType', 'pitch_thrown');
-      pitchForm.set('inning', String(inning));
-      pitchForm.set('isTopOfInning', String(isTopOfInning));
-      pitchForm.set('payload', JSON.stringify(pitchPayload));
-      const pitchErr = await insertCorrectionEventAction(null, pitchForm);
-      if (pitchErr) { setError(pitchErr); return; }
+      const bp = buildBatterPitcher();
 
-      // Then insert the result event after the same position
-      // (higher sequence number means it sorts after the pitch)
-      const resultForm = new FormData();
-      resultForm.set('gameId', gameId);
-      resultForm.set('eventType', eventType);
-      resultForm.set('inning', String(inning));
-      resultForm.set('isTopOfInning', String(isTopOfInning));
-      resultForm.set('payload', JSON.stringify({ ...buildBatterPitcher(), ...resultPayload, insertAfterSequence }));
-      const resultErr = await insertCorrectionEventAction(null, resultForm);
-      if (resultErr) { setError(resultErr); return; }
+      // Walk, Strikeout, and Sac Fly/Bunt don't get an in-play pitch — insert the result directly
+      const noInPlayPitch = ['walk', 'strikeout', 'sacrifice_fly', 'sacrifice_bunt'].includes(eventType);
+
+      if (noInPlayPitch) {
+        const formData = new FormData();
+        formData.set('gameId', gameId);
+        formData.set('eventType', eventType);
+        formData.set('inning', String(inning));
+        formData.set('isTopOfInning', String(isTopOfInning));
+        formData.set('payload', JSON.stringify({ ...bp, ...resultPayload, insertAfterSequence }));
+        const err = await insertCorrectionEventAction(null, formData);
+        if (err) { setError(err); return; }
+      } else {
+        // Atomic batch: insert pitch_thrown (in_play) + result together
+        const events = [
+          {
+            eventType: 'pitch_thrown',
+            inning,
+            isTopOfInning,
+            payload: { ...bp, outcome: 'in_play', insertAfterSequence },
+          },
+          {
+            eventType,
+            inning,
+            isTopOfInning,
+            payload: { ...bp, ...resultPayload, insertAfterSequence },
+          },
+        ];
+        const formData = new FormData();
+        formData.set('gameId', gameId);
+        formData.set('events', JSON.stringify(events));
+        const err = await insertCorrectionEventsBatchAction(null, formData);
+        if (err) { setError(err); return; }
+      }
 
       setStep('closed');
       router.refresh();
@@ -1254,17 +1269,22 @@ function MidAtBatRow({ node, isCoach, gameId }: { node: HistoryEventNode; isCoac
 function PitchRow({ pitch, isCoach, gameId }: { pitch: PitchNode; isCoach?: boolean; gameId?: string }) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function handleDelete() {
     if (deleting) return;
     if (!confirm('Delete this pitch?')) return;
     setDeleting(true);
+    setDeleteError(null);
     try {
       const formData = new FormData();
       formData.set('gameId', gameId!);
       formData.set('eventId', pitch.event.id);
-      await voidEventAction(null, formData);
+      const err = await voidEventAction(null, formData);
+      if (err) { setDeleteError(err); return; }
       router.refresh();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to delete pitch.');
     } finally {
       setDeleting(false);
     }
@@ -1292,6 +1312,7 @@ function PitchRow({ pitch, isCoach, gameId }: { pitch: PitchNode; isCoach?: bool
           </>
         )}
       </div>
+      {deleteError && <p className="text-xs text-red-600 ml-4">{deleteError}</p>}
     </div>
   );
 }
