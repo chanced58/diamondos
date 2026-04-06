@@ -620,6 +620,7 @@ export async function endGameAction(_prevState: string | null | undefined, formD
     })
     .eq('id', gameId);
 
+  revalidatePath(`/dashboard`);
   redirect(`/games/${gameId}`);
 }
 
@@ -658,6 +659,7 @@ export async function recalculateScoresAction(
   revalidatePath(`/games/${gameId}`);
   revalidatePath(`/games/${gameId}/stats`);
   revalidatePath(`/games/${gameId}/history`);
+  revalidatePath(`/dashboard`);
   redirect(`/games/${gameId}`);
 }
 
