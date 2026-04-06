@@ -35,8 +35,11 @@ export async function GET(request: NextRequest) {
   const playersParam = searchParams.get('players');
   const next = searchParams.get('next') ?? '/dashboard';
 
-  const redirectUrl = new URL(next, request.url);
-  const errorUrl = new URL('/login?error=auth_failed', request.url);
+  // Use the public app URL for redirects. In hosted environments like Render,
+  // request.url resolves to the internal address (e.g. 0.0.0.0:PORT).
+  const origin = process.env.NEXT_PUBLIC_APP_URL ?? request.nextUrl.origin;
+  const redirectUrl = new URL(next, origin);
+  const errorUrl = new URL('/login?error=auth_failed', origin);
 
   // Build the success response FIRST so Supabase can set cookies on it
   const response = NextResponse.redirect(redirectUrl);
