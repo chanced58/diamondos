@@ -223,9 +223,9 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
         else if (safeAtBase === 3) third = runnerId ?? 'unknown';
       }
     } else if (etype === 'balk') {
-      if (third && outs < 3) {
-        scoreRun(1);
-      }
+      // Advance runners; the run is credited by the subsequent SCORE event
+      // recorded by the mobile scoring app.
+      if (third) third = null;
       third = second;
       second = first;
       first = null;

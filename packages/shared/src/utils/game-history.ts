@@ -765,10 +765,9 @@ export function buildGameHistoryTree(
             else if (rp.safeAtBase === 3) runnerThird = true;
           }
         } else if (event.eventType === EventType.BALK) {
-          if (runnerThird) {
-            addRuns(1);
-            runnerThird = false;
-          }
+          // Advance runners; the run is credited by the subsequent SCORE event
+          // recorded by the mobile scoring app.
+          if (runnerThird) runnerThird = false;
           runnerThird = runnerSecond;
           runnerSecond = runnerFirst;
           runnerFirst = false;
