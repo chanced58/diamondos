@@ -33,11 +33,17 @@ export async function GET(request: NextRequest) {
   const role = searchParams.get('role');
   const playerId = searchParams.get('player');
   const playersParam = searchParams.get('players');
-  const next = searchParams.get('next') ?? '/dashboard';
+  const nextParam = searchParams.get('next') ?? '/dashboard';
 
   // Use the public app URL for redirects. In hosted environments like Render,
   // request.url resolves to the internal address (e.g. 0.0.0.0:PORT).
-  const origin = process.env.NEXT_PUBLIC_APP_URL ?? request.nextUrl.origin;
+  const origin = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? request.nextUrl.origin;
+
+  // Validate next param to prevent open redirects: must be a relative path
+  // starting with '/' but not '//' (protocol-relative).
+  const next = (nextParam.startsWith('/') && !nextParam.startsWith('//'))
+    ? nextParam
+    : '/dashboard';
   const redirectUrl = new URL(next, origin);
   const errorUrl = new URL('/login?error=auth_failed', origin);
 
@@ -75,7 +81,7 @@ export async function GET(request: NextRequest) {
       console.error('[auth/callback] Code exchange failed:', error.message);
       const errorParam = isPkceError ? 'link_wrong_browser' : 'auth_failed';
       return NextResponse.redirect(
-        new URL(`/login?error=${errorParam}`, request.url),
+        new URL(`/login?error=${errorParam}`, origin),
       );
     }
   } else if (tokenHash && type) {
