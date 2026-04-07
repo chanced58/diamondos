@@ -227,7 +227,13 @@ export function LeagueAdminClient({
           role: inviteRole,
         }),
       });
-      const data = await res.json();
+      let data: { error?: string; message?: string };
+      try {
+        data = await res.json();
+      } catch {
+        setErrorMsg(`Server error (${res.status}): failed to parse response`);
+        return;
+      }
       if (!res.ok) {
         setErrorMsg(data.error ?? 'Failed to invite staff member');
         return;

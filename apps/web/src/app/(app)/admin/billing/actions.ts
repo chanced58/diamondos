@@ -25,6 +25,15 @@ async function getAdminClient() {
   return supabase;
 }
 
+const VALID_TIERS = ['free', 'starter', 'pro', 'enterprise'] as const;
+const VALID_STATUSES = ['active', 'trial', 'past_due', 'cancelled', 'expired'] as const;
+
+function parseCents(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 export async function createSubscription(formData: FormData) {
   const supabase = await getAdminClient();
 
@@ -33,15 +42,17 @@ export async function createSubscription(formData: FormData) {
   const leagueId = formData.get('leagueId') as string | null;
   const tier = formData.get('tier') as string;
   const status = formData.get('status') as string;
+
+  if (!VALID_TIERS.includes(tier as any)) return { error: `Invalid tier: ${tier}` };
+  if (!VALID_STATUSES.includes(status as any)) return { error: `Invalid status: ${status}` };
+
   const billingContactName = (formData.get('billingContactName') as string) || null;
   const billingContactEmail = (formData.get('billingContactEmail') as string) || null;
   const trialStartsAt = (formData.get('trialStartsAt') as string) || null;
   const trialEndsAt = (formData.get('trialEndsAt') as string) || null;
   const startsAt = (formData.get('startsAt') as string) || null;
   const endsAt = (formData.get('endsAt') as string) || null;
-  const monthlyPriceCents = formData.get('monthlyPriceCents')
-    ? parseInt(formData.get('monthlyPriceCents') as string, 10)
-    : null;
+  const monthlyPriceCents = parseCents(formData.get('monthlyPriceCents') as string | null);
   const notes = (formData.get('notes') as string) || null;
 
   const { error } = await (supabase as any).from('subscriptions').insert({
@@ -72,15 +83,17 @@ export async function updateSubscription(formData: FormData) {
   const id = formData.get('id') as string;
   const tier = formData.get('tier') as string;
   const status = formData.get('status') as string;
+
+  if (!VALID_TIERS.includes(tier as any)) return { error: `Invalid tier: ${tier}` };
+  if (!VALID_STATUSES.includes(status as any)) return { error: `Invalid status: ${status}` };
+
   const billingContactName = (formData.get('billingContactName') as string) || null;
   const billingContactEmail = (formData.get('billingContactEmail') as string) || null;
   const trialStartsAt = (formData.get('trialStartsAt') as string) || null;
   const trialEndsAt = (formData.get('trialEndsAt') as string) || null;
   const startsAt = (formData.get('startsAt') as string) || null;
   const endsAt = (formData.get('endsAt') as string) || null;
-  const monthlyPriceCents = formData.get('monthlyPriceCents')
-    ? parseInt(formData.get('monthlyPriceCents') as string, 10)
-    : null;
+  const monthlyPriceCents = parseCents(formData.get('monthlyPriceCents') as string | null);
   const notes = (formData.get('notes') as string) || null;
 
   const { error } = await (supabase as any)

@@ -58,6 +58,15 @@ create index idx_subscriptions_team_id on public.subscriptions(team_id);
 create index idx_subscriptions_league_id on public.subscriptions(league_id);
 create index idx_subscriptions_status on public.subscriptions(status);
 
+-- Prevent multiple active/trial subscriptions per entity
+create unique index idx_subscriptions_team_unique_active
+  on public.subscriptions(team_id)
+  where team_id is not null and status not in ('cancelled', 'expired');
+
+create unique index idx_subscriptions_league_unique_active
+  on public.subscriptions(league_id)
+  where league_id is not null and status not in ('cancelled', 'expired');
+
 -- Auto-update updated_at
 create or replace function public.set_subscriptions_updated_at()
 returns trigger language plpgsql as $$

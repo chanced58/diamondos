@@ -147,7 +147,7 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
           >
             <option value="all">All Statuses</option>
             {STATUSES.map((s) => (
-              <option key={s} value={s}>{s.replace('_', ' ')}</option>
+              <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
             ))}
           </select>
           <select
@@ -226,7 +226,7 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
                     </td>
                     <td className="px-6 py-4">
                       <span className={`text-xs font-medium px-2 py-1 rounded-full capitalize ${statusColors[sub.status] ?? ''}`}>
-                        {sub.status.replace('_', ' ')}
+                        {sub.status.replace(/_/g, ' ')}
                       </span>
                     </td>
                     <td className="px-6 py-4">
@@ -344,22 +344,21 @@ function SubscriptionForm({
           <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
           <select name="status" defaultValue={initial?.status ?? 'trial'} className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
             {STATUSES.map((s) => (
-              <option key={s} value={s}>{s.replace('_', ' ')}</option>
+              <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Monthly Price ($)</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Monthly Price (cents)</label>
           <input
             type="number"
             name="monthlyPriceCents"
             step="1"
             min="0"
             defaultValue={initial?.monthlyPriceCents ?? ''}
-            placeholder="e.g. 2999"
+            placeholder="e.g. 2999 = $29.99"
             className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2"
           />
-          <p className="text-xs text-gray-400 mt-0.5">In cents (2999 = $29.99)</p>
         </div>
       </div>
 

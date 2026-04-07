@@ -26,24 +26,38 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Platform admin access required' }, { status: 403 });
   }
 
-  const body = await req.json();
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 });
+  }
+
   const { leagueId, email, firstName, lastName, role } = body as {
     leagueId: string;
     email: string;
     firstName?: string;
     lastName?: string;
-    role: 'league_admin' | 'league_manager';
+    role: string;
   };
 
   if (!leagueId || !email || !role) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
-  // Check if user already exists
-  const { data: existingUsers } = await supabase.auth.admin.listUsers();
-  const existingUser = existingUsers?.users?.find(
-    (u) => u.email?.toLowerCase() === email.toLowerCase(),
-  );
+  const VALID_ROLES = ['league_admin', 'league_manager'] as const;
+  if (!VALID_ROLES.includes(role as any)) {
+    return NextResponse.json({ error: `Invalid role: ${role}` }, { status: 400 });
+  }
+
+  // Check if user already exists via user_profiles (avoids listUsers pagination limits)
+  const { data: existingProfile } = await supabase
+    .from('user_profiles')
+    .select('id')
+    .eq('email', email.toLowerCase())
+    .maybeSingle();
+
+  const existingUser = existingProfile ? { id: existingProfile.id } : null;
 
   let staffUserId: string;
 
@@ -74,12 +88,15 @@ export async function POST(req: NextRequest) {
     staffUserId = inviteData.user.id;
 
     // Create user profile
-    await supabase.from('user_profiles').upsert({
+    const { error: profileError } = await supabase.from('user_profiles').upsert({
       id: staffUserId,
       email,
       first_name: firstName || null,
       last_name: lastName || null,
     });
+    if (profileError) {
+      return NextResponse.json({ error: `Profile creation failed: ${profileError.message}` }, { status: 500 });
+    }
   }
 
   // Add to league_staff
@@ -102,11 +119,14 @@ export async function POST(req: NextRequest) {
     .limit(1);
 
   if (channels?.[0]) {
-    await (supabase as any).from('league_channel_members').insert({
+    const { error: channelMemberError } = await (supabase as any).from('league_channel_members').insert({
       league_channel_id: channels[0].id,
       user_id: staffUserId,
       can_post: role === 'league_admin',
     });
+    if (channelMemberError) {
+      console.error(`Failed to add staff ${staffUserId} to channel ${channels[0].id}: ${channelMemberError.message}`);
+    }
   }
 
   const action = existingUser ? 'added' : 'invited';

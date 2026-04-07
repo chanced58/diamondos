@@ -53,17 +53,19 @@ export async function createTeamAction(_prevState: string | null | undefined, fo
   let coachUserId = user.id;
 
   if (assignDifferentCoach) {
-    // Check if the coach already has an account
-    const { data: existingUsers } = await supabase.auth.admin.listUsers();
-    const existingUser = existingUsers?.users?.find(
-      (u) => u.email?.toLowerCase() === coachEmail,
-    );
+    // Check if the coach already has an account via user_profiles (avoids listUsers pagination limits)
+    const { data: existingProfile } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('email', coachEmail)
+      .maybeSingle();
 
-    if (existingUser) {
-      coachUserId = existingUser.id;
+    if (existingProfile) {
+      coachUserId = existingProfile.id;
     } else {
       // Invite the coach via magic link
-      const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app')}/auth/callback`;
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app');
+      const redirectTo = `${appUrl}/auth/callback?team=${team.id}&role=head_coach`;
       const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
         coachEmail,
         { redirectTo, data: { first_name: coachFirstName, last_name: coachLastName } },
@@ -72,21 +74,23 @@ export async function createTeamAction(_prevState: string | null | undefined, fo
       coachUserId = inviteData.user.id;
 
       // Create user profile for the invited coach
-      await supabase.from('user_profiles').upsert({
+      const { error: profileError } = await supabase.from('user_profiles').upsert({
         id: coachUserId,
         email: coachEmail,
         first_name: coachFirstName || null,
         last_name: coachLastName || null,
       });
+      if (profileError) return `Profile creation failed: ${profileError.message}`;
     }
 
-    // Also record in team_invitations for tracking
-    await supabase.from('team_invitations').insert({
+    // Record in team_invitations for tracking
+    const { error: invitationError } = await supabase.from('team_invitations').insert({
       team_id: team.id,
       email: coachEmail,
       role: 'head_coach',
       invited_by: user.id,
     });
+    if (invitationError) return `Invitation tracking failed: ${invitationError.message}`;
   }
 
   // 3. Add coach as head_coach

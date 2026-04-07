@@ -46,13 +46,15 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
   let leagueAdminUserId = user.id;
 
   if (assignDifferentAdmin) {
-    const { data: existingUsers } = await supabase.auth.admin.listUsers();
-    const existingUser = existingUsers?.users?.find(
-      (u) => u.email?.toLowerCase() === adminEmail,
-    );
+    // Check via user_profiles to avoid listUsers pagination limits
+    const { data: existingProfile } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('email', adminEmail)
+      .maybeSingle();
 
-    if (existingUser) {
-      leagueAdminUserId = existingUser.id;
+    if (existingProfile) {
+      leagueAdminUserId = existingProfile.id;
     } else {
       const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app')}/auth/callback`;
       const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
@@ -62,12 +64,13 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
       if (inviteError) return `Admin invite failed: ${inviteError.message}`;
       leagueAdminUserId = inviteData.user.id;
 
-      await supabase.from('user_profiles').upsert({
+      const { error: profileError } = await supabase.from('user_profiles').upsert({
         id: leagueAdminUserId,
         email: adminEmail,
         first_name: adminFirstName || null,
         last_name: adminLastName || null,
       });
+      if (profileError) return `Profile creation failed: ${profileError.message}`;
     }
   }
 
