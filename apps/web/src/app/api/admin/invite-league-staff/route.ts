@@ -77,7 +77,8 @@ export async function POST(req: NextRequest) {
     }
   } else {
     // Invite new user
-    const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app')}/auth/callback`;
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app');
+    const redirectTo = appUrl ? `${appUrl}/auth/callback` : '/auth/callback';
     const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
       email,
       { redirectTo, data: { first_name: firstName, last_name: lastName } },
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
     // Create user profile
     const { error: profileError } = await supabase.from('user_profiles').upsert({
       id: staffUserId,
-      email,
+      email: email.toLowerCase(),
       first_name: firstName || null,
       last_name: lastName || null,
     });

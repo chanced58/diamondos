@@ -35,70 +35,31 @@ function parseCents(value: string | null): number | null {
 }
 
 export async function createSubscription(formData: FormData) {
-  const supabase = await getAdminClient();
+  try {
+    const supabase = await getAdminClient();
 
-  const entityType = formData.get('entityType') as string;
-  const teamId = formData.get('teamId') as string | null;
-  const leagueId = formData.get('leagueId') as string | null;
-  const tier = formData.get('tier') as string;
-  const status = formData.get('status') as string;
+    const entityType = formData.get('entityType') as string;
+    const teamId = formData.get('teamId') as string | null;
+    const leagueId = formData.get('leagueId') as string | null;
+    const tier = formData.get('tier') as string;
+    const status = formData.get('status') as string;
 
-  if (!VALID_TIERS.includes(tier as any)) return { error: `Invalid tier: ${tier}` };
-  if (!VALID_STATUSES.includes(status as any)) return { error: `Invalid status: ${status}` };
+    if (!VALID_TIERS.includes(tier as any)) return { error: `Invalid tier: ${tier}` };
+    if (!VALID_STATUSES.includes(status as any)) return { error: `Invalid status: ${status}` };
 
-  const billingContactName = (formData.get('billingContactName') as string) || null;
-  const billingContactEmail = (formData.get('billingContactEmail') as string) || null;
-  const trialStartsAt = (formData.get('trialStartsAt') as string) || null;
-  const trialEndsAt = (formData.get('trialEndsAt') as string) || null;
-  const startsAt = (formData.get('startsAt') as string) || null;
-  const endsAt = (formData.get('endsAt') as string) || null;
-  const monthlyPriceCents = parseCents(formData.get('monthlyPriceCents') as string | null);
-  const notes = (formData.get('notes') as string) || null;
+    const billingContactName = (formData.get('billingContactName') as string) || null;
+    const billingContactEmail = (formData.get('billingContactEmail') as string) || null;
+    const trialStartsAt = (formData.get('trialStartsAt') as string) || null;
+    const trialEndsAt = (formData.get('trialEndsAt') as string) || null;
+    const startsAt = (formData.get('startsAt') as string) || null;
+    const endsAt = (formData.get('endsAt') as string) || null;
+    const monthlyPriceCents = parseCents(formData.get('monthlyPriceCents') as string | null);
+    const notes = (formData.get('notes') as string) || null;
 
-  const { error } = await (supabase as any).from('subscriptions').insert({
-    entity_type: entityType,
-    team_id: entityType === 'team' ? teamId : null,
-    league_id: entityType === 'league' ? leagueId : null,
-    tier,
-    status,
-    billing_contact_name: billingContactName,
-    billing_contact_email: billingContactEmail,
-    trial_starts_at: trialStartsAt || null,
-    trial_ends_at: trialEndsAt || null,
-    starts_at: startsAt || null,
-    ends_at: endsAt || null,
-    monthly_price_cents: monthlyPriceCents,
-    notes,
-  });
-
-  if (error) return { error: error.message };
-
-  revalidatePath('/admin/billing');
-  return { success: true };
-}
-
-export async function updateSubscription(formData: FormData) {
-  const supabase = await getAdminClient();
-
-  const id = formData.get('id') as string;
-  const tier = formData.get('tier') as string;
-  const status = formData.get('status') as string;
-
-  if (!VALID_TIERS.includes(tier as any)) return { error: `Invalid tier: ${tier}` };
-  if (!VALID_STATUSES.includes(status as any)) return { error: `Invalid status: ${status}` };
-
-  const billingContactName = (formData.get('billingContactName') as string) || null;
-  const billingContactEmail = (formData.get('billingContactEmail') as string) || null;
-  const trialStartsAt = (formData.get('trialStartsAt') as string) || null;
-  const trialEndsAt = (formData.get('trialEndsAt') as string) || null;
-  const startsAt = (formData.get('startsAt') as string) || null;
-  const endsAt = (formData.get('endsAt') as string) || null;
-  const monthlyPriceCents = parseCents(formData.get('monthlyPriceCents') as string | null);
-  const notes = (formData.get('notes') as string) || null;
-
-  const { error } = await (supabase as any)
-    .from('subscriptions')
-    .update({
+    const { error } = await (supabase as any).from('subscriptions').insert({
+      entity_type: entityType,
+      team_id: entityType === 'team' ? teamId : null,
+      league_id: entityType === 'league' ? leagueId : null,
       tier,
       status,
       billing_contact_name: billingContactName,
@@ -109,11 +70,60 @@ export async function updateSubscription(formData: FormData) {
       ends_at: endsAt || null,
       monthly_price_cents: monthlyPriceCents,
       notes,
-    })
-    .eq('id', id);
+    });
 
-  if (error) return { error: error.message };
+    if (error) return { error: error.message };
 
-  revalidatePath('/admin/billing');
-  return { success: true };
+    revalidatePath('/admin/billing');
+    return { success: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function updateSubscription(formData: FormData) {
+  try {
+    const supabase = await getAdminClient();
+
+    const id = formData.get('id') as string;
+    const tier = formData.get('tier') as string;
+    const status = formData.get('status') as string;
+
+    if (!VALID_TIERS.includes(tier as any)) return { error: `Invalid tier: ${tier}` };
+    if (!VALID_STATUSES.includes(status as any)) return { error: `Invalid status: ${status}` };
+
+    const billingContactName = (formData.get('billingContactName') as string) || null;
+    const billingContactEmail = (formData.get('billingContactEmail') as string) || null;
+    const trialStartsAt = (formData.get('trialStartsAt') as string) || null;
+    const trialEndsAt = (formData.get('trialEndsAt') as string) || null;
+    const startsAt = (formData.get('startsAt') as string) || null;
+    const endsAt = (formData.get('endsAt') as string) || null;
+    const monthlyPriceCents = parseCents(formData.get('monthlyPriceCents') as string | null);
+    const notes = (formData.get('notes') as string) || null;
+
+    const { data, error } = await (supabase as any)
+      .from('subscriptions')
+      .update({
+        tier,
+        status,
+        billing_contact_name: billingContactName,
+        billing_contact_email: billingContactEmail,
+        trial_starts_at: trialStartsAt || null,
+        trial_ends_at: trialEndsAt || null,
+        starts_at: startsAt || null,
+        ends_at: endsAt || null,
+        monthly_price_cents: monthlyPriceCents,
+        notes,
+      })
+      .eq('id', id)
+      .select();
+
+    if (error) return { error: error.message };
+    if (!data || data.length === 0) return { error: 'Subscription not found' };
+
+    revalidatePath('/admin/billing');
+    return { success: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
 }

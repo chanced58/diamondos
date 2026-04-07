@@ -29,14 +29,14 @@ type Entity = { id: string; name: string };
 const TIERS = ['free', 'starter', 'pro', 'enterprise'] as const;
 const STATUSES = ['active', 'trial', 'past_due', 'cancelled', 'expired'] as const;
 
-const tierColors: Record<string, string> = {
+const TIER_COLORS: Record<string, string> = {
   free: 'bg-gray-100 text-gray-700',
   starter: 'bg-blue-50 text-blue-700',
   pro: 'bg-purple-50 text-purple-700',
   enterprise: 'bg-amber-50 text-amber-700',
 };
 
-const statusColors: Record<string, string> = {
+const STATUS_COLORS: Record<string, string> = {
   active: 'bg-green-50 text-green-700',
   trial: 'bg-blue-50 text-blue-700',
   past_due: 'bg-red-50 text-red-700',
@@ -140,25 +140,33 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
       {/* Controls */}
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="text-sm border border-gray-300 rounded-lg px-3 py-2"
-          >
-            <option value="all">All Statuses</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
-            ))}
-          </select>
-          <select
-            value={filterEntity}
-            onChange={(e) => setFilterEntity(e.target.value)}
-            className="text-sm border border-gray-300 rounded-lg px-3 py-2"
-          >
-            <option value="all">All Entities</option>
-            <option value="team">Teams</option>
-            <option value="league">Leagues</option>
-          </select>
+          <div>
+            <label htmlFor="filter-status" className="sr-only">Filter by status</label>
+            <select
+              id="filter-status"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="text-sm border border-gray-300 rounded-lg px-3 py-2"
+            >
+              <option value="all">All Statuses</option>
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="filter-entity" className="sr-only">Filter by entity type</label>
+            <select
+              id="filter-entity"
+              value={filterEntity}
+              onChange={(e) => setFilterEntity(e.target.value)}
+              className="text-sm border border-gray-300 rounded-lg px-3 py-2"
+            >
+              <option value="all">All Entities</option>
+              <option value="team">Teams</option>
+              <option value="league">Leagues</option>
+            </select>
+          </div>
         </div>
         <button
           onClick={() => { setShowCreateForm(!showCreateForm); setEditingId(null); }}
@@ -220,12 +228,12 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
                       <div className="text-xs text-gray-400 capitalize">{sub.entityType}</div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full capitalize ${tierColors[sub.tier] ?? ''}`}>
+                      <span className={`text-xs font-medium px-2 py-1 rounded-full capitalize ${TIER_COLORS[sub.tier] ?? ''}`}>
                         {sub.tier}
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full capitalize ${statusColors[sub.status] ?? ''}`}>
+                      <span className={`text-xs font-medium px-2 py-1 rounded-full capitalize ${STATUS_COLORS[sub.status] ?? ''}`}>
                         {sub.status.replace(/_/g, ' ')}
                       </span>
                     </td>
@@ -297,8 +305,9 @@ function SubscriptionForm({
       {!initial && (
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Entity Type</label>
+            <label htmlFor="sub-entity-type" className="block text-xs font-medium text-gray-500 mb-1">Entity Type</label>
             <select
+              id="sub-entity-type"
               name="entityType"
               value={entityType}
               onChange={(e) => setEntityType(e.target.value as 'team' | 'league')}
@@ -309,18 +318,18 @@ function SubscriptionForm({
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">
+            <label htmlFor="sub-entity-id" className="block text-xs font-medium text-gray-500 mb-1">
               {entityType === 'team' ? 'Team' : 'League'}
             </label>
             {entityType === 'team' ? (
-              <select name="teamId" required className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
+              <select id="sub-entity-id" name="teamId" required className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
                 <option value="">Select a team...</option>
                 {teams.map((t) => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </select>
             ) : (
-              <select name="leagueId" required className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
+              <select id="sub-entity-id" name="leagueId" required className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
                 <option value="">Select a league...</option>
                 {leagues.map((l) => (
                   <option key={l.id} value={l.id}>{l.name}</option>
@@ -333,24 +342,25 @@ function SubscriptionForm({
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Tier</label>
-          <select name="tier" defaultValue={initial?.tier ?? 'free'} className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
+          <label htmlFor="sub-tier" className="block text-xs font-medium text-gray-500 mb-1">Tier</label>
+          <select id="sub-tier" name="tier" defaultValue={initial?.tier ?? 'free'} className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
             {TIERS.map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-          <select name="status" defaultValue={initial?.status ?? 'trial'} className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
+          <label htmlFor="sub-status" className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+          <select id="sub-status" name="status" defaultValue={initial?.status ?? 'trial'} className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
             {STATUSES.map((s) => (
               <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Monthly Price (cents)</label>
+          <label htmlFor="sub-price" className="block text-xs font-medium text-gray-500 mb-1">Monthly Price (cents)</label>
           <input
+            id="sub-price"
             type="number"
             name="monthlyPriceCents"
             step="1"
@@ -364,8 +374,9 @@ function SubscriptionForm({
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Billing Contact Name</label>
+          <label htmlFor="sub-contact-name" className="block text-xs font-medium text-gray-500 mb-1">Billing Contact Name</label>
           <input
+            id="sub-contact-name"
             type="text"
             name="billingContactName"
             defaultValue={initial?.billingContactName ?? ''}
@@ -373,8 +384,9 @@ function SubscriptionForm({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Billing Contact Email</label>
+          <label htmlFor="sub-contact-email" className="block text-xs font-medium text-gray-500 mb-1">Billing Contact Email</label>
           <input
+            id="sub-contact-email"
             type="email"
             name="billingContactEmail"
             defaultValue={initial?.billingContactEmail ?? ''}
@@ -385,8 +397,9 @@ function SubscriptionForm({
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Trial Starts</label>
+          <label htmlFor="sub-trial-starts" className="block text-xs font-medium text-gray-500 mb-1">Trial Starts</label>
           <input
+            id="sub-trial-starts"
             type="date"
             name="trialStartsAt"
             defaultValue={initial?.trialStartsAt?.split('T')[0] ?? ''}
@@ -394,8 +407,9 @@ function SubscriptionForm({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Trial Ends</label>
+          <label htmlFor="sub-trial-ends" className="block text-xs font-medium text-gray-500 mb-1">Trial Ends</label>
           <input
+            id="sub-trial-ends"
             type="date"
             name="trialEndsAt"
             defaultValue={initial?.trialEndsAt?.split('T')[0] ?? ''}
@@ -403,8 +417,9 @@ function SubscriptionForm({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Starts At</label>
+          <label htmlFor="sub-starts" className="block text-xs font-medium text-gray-500 mb-1">Starts At</label>
           <input
+            id="sub-starts"
             type="date"
             name="startsAt"
             defaultValue={initial?.startsAt?.split('T')[0] ?? ''}
@@ -412,8 +427,9 @@ function SubscriptionForm({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Ends At</label>
+          <label htmlFor="sub-ends" className="block text-xs font-medium text-gray-500 mb-1">Ends At</label>
           <input
+            id="sub-ends"
             type="date"
             name="endsAt"
             defaultValue={initial?.endsAt?.split('T')[0] ?? ''}
@@ -423,8 +439,9 @@ function SubscriptionForm({
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
+        <label htmlFor="sub-notes" className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
         <textarea
+          id="sub-notes"
           name="notes"
           rows={2}
           defaultValue={initial?.notes ?? ''}

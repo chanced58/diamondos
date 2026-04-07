@@ -56,7 +56,8 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
     if (existingProfile) {
       leagueAdminUserId = existingProfile.id;
     } else {
-      const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app')}/auth/callback`;
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app');
+      const redirectTo = appUrl ? `${appUrl}/auth/callback` : '/auth/callback';
       const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
         adminEmail,
         { redirectTo, data: { first_name: adminFirstName, last_name: adminLastName } },

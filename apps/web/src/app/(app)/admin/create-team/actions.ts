@@ -65,7 +65,9 @@ export async function createTeamAction(_prevState: string | null | undefined, fo
     } else {
       // Invite the coach via magic link
       const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app');
-      const redirectTo = `${appUrl}/auth/callback?team=${team.id}&role=head_coach`;
+      const redirectTo = appUrl
+        ? `${appUrl}/auth/callback?team=${team.id}&role=head_coach`
+        : `/auth/callback?team=${team.id}&role=head_coach`;
       const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
         coachEmail,
         { redirectTo, data: { first_name: coachFirstName, last_name: coachLastName } },
