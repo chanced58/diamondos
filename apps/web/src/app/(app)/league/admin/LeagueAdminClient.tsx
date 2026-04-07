@@ -74,6 +74,11 @@ export function LeagueAdminClient({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [editName, setEditName] = useState(initialName ?? '');
   const [editDescription, setEditDescription] = useState(initialDescription ?? '');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteFirstName, setInviteFirstName] = useState('');
+  const [inviteLastName, setInviteLastName] = useState('');
+  const [inviteRole, setInviteRole] = useState<'league_admin' | 'league_manager'>('league_manager');
+  const [inviteStatus, setInviteStatus] = useState<string | null>(null);
 
   // Cast to any — league tables are not in generated types until `gen-types` runs
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -197,6 +202,40 @@ export function LeagueAdminClient({
     try {
       const { error } = await supabase.from('league_staff').delete().eq('id', staffId);
       if (error) { setErrorMsg(error.message); return; }
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleInviteStaff(e: React.FormEvent) {
+    e.preventDefault();
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email) return;
+    setSaving(true);
+    setErrorMsg(null);
+    setInviteStatus(null);
+    try {
+      const res = await fetch('/api/admin/invite-league-staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leagueId,
+          email,
+          firstName: inviteFirstName.trim(),
+          lastName: inviteLastName.trim(),
+          role: inviteRole,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMsg(data.error ?? 'Failed to invite staff member');
+        return;
+      }
+      setInviteEmail('');
+      setInviteFirstName('');
+      setInviteLastName('');
+      setInviteStatus(data.message ?? 'Staff member invited successfully');
       router.refresh();
     } finally {
       setSaving(false);
@@ -487,6 +526,59 @@ export function LeagueAdminClient({
                 ))}
               </ul>
             )}
+
+            {/* Invite Staff */}
+            <div className="border-t border-gray-100 pt-4 mt-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Invite Staff Member</p>
+              {inviteStatus && (
+                <div className="mb-3 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm text-green-700">
+                  {inviteStatus}
+                </div>
+              )}
+              <form onSubmit={handleInviteStaff} className="space-y-3">
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="Email address"
+                    required
+                    className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <select
+                    value={inviteRole}
+                    onChange={(e) => setInviteRole(e.target.value as 'league_admin' | 'league_manager')}
+                    className="text-sm border border-gray-300 rounded-lg px-3 py-2"
+                  >
+                    <option value="league_manager">Manager</option>
+                    <option value="league_admin">Admin</option>
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={inviteFirstName}
+                    onChange={(e) => setInviteFirstName(e.target.value)}
+                    placeholder="First name"
+                    className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <input
+                    type="text"
+                    value={inviteLastName}
+                    onChange={(e) => setInviteLastName(e.target.value)}
+                    placeholder="Last name"
+                    className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={saving || !inviteEmail.trim()}
+                    className="text-sm font-medium bg-brand-700 text-white px-4 py-2 rounded-lg hover:bg-brand-800 disabled:opacity-50 transition-colors"
+                  >
+                    Invite
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}

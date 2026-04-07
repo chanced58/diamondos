@@ -18,6 +18,11 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
     stateCode: (formData.get('stateCode') ?? undefined) as string | undefined,
   };
 
+  const adminEmail = ((formData.get('adminEmail') as string) || '').trim().toLowerCase();
+  const adminFirstName = ((formData.get('adminFirstName') as string) || '').trim();
+  const adminLastName = ((formData.get('adminLastName') as string) || '').trim();
+  const assignDifferentAdmin = adminEmail.length > 0;
+
   const parsed = createLeagueSchema.safeParse(raw);
   if (!parsed.success) {
     return parsed.error.errors[0].message;
@@ -37,6 +42,35 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
 
   if (!profile?.is_platform_admin) return 'Platform admin access required.';
 
+  // Resolve league admin user ID
+  let leagueAdminUserId = user.id;
+
+  if (assignDifferentAdmin) {
+    const { data: existingUsers } = await supabase.auth.admin.listUsers();
+    const existingUser = existingUsers?.users?.find(
+      (u) => u.email?.toLowerCase() === adminEmail,
+    );
+
+    if (existingUser) {
+      leagueAdminUserId = existingUser.id;
+    } else {
+      const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app')}/auth/callback`;
+      const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
+        adminEmail,
+        { redirectTo, data: { first_name: adminFirstName, last_name: adminLastName } },
+      );
+      if (inviteError) return `Admin invite failed: ${inviteError.message}`;
+      leagueAdminUserId = inviteData.user.id;
+
+      await supabase.from('user_profiles').upsert({
+        id: leagueAdminUserId,
+        email: adminEmail,
+        first_name: adminFirstName || null,
+        last_name: adminLastName || null,
+      });
+    }
+  }
+
   // 1. Create the league
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
@@ -52,10 +86,10 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
     .single();
   if (leagueError) return `League insert failed: ${leagueError.message}`;
 
-  // 2. Add creator as league_admin
+  // 2. Add league admin
   const { error: staffError } = await db.from('league_staff').insert({
     league_id: league.id,
-    user_id: user.id,
+    user_id: leagueAdminUserId,
     role: 'league_admin',
   });
   if (staffError) {
@@ -81,10 +115,10 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
     return `Channel insert failed: ${channelError.message}`;
   }
 
-  // 4. Add creator to the channel with post permission
+  // 4. Add league admin to the channel with post permission
   const { error: cmError } = await db.from('league_channel_members').insert({
     league_channel_id: channel.id,
-    user_id: user.id,
+    user_id: leagueAdminUserId,
     can_post: true,
   });
   if (cmError) {

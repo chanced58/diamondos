@@ -64,6 +64,7 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
     { href: '/admin/leagues',      label: 'All Leagues',   icon: '🏆' },
     { href: '/admin/users',        label: 'All Users',     icon: '👥' },
     { href: '/admin/create-team',  label: 'Create Team',   icon: '➕' },
+    { href: '/admin/billing',      label: 'Billing',       icon: '💳' },
   ];
 
   const navItems = isAdminPanel ? adminNavItems : teamNavItems;

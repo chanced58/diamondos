@@ -168,6 +168,17 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
               </h3>
               <p className="text-sm text-gray-500 mt-1">Set up a new team.</p>
             </Link>
+
+            <Link
+              href="/admin/billing"
+              className="bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-400 hover:shadow-sm transition-all group"
+            >
+              <div className="text-2xl mb-2">💳</div>
+              <h3 className="font-semibold text-gray-900 group-hover:text-gray-700 transition-colors">
+                Billing
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">Manage subscriptions.</p>
+            </Link>
           </div>
         </div>
       </div>
