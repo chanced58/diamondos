@@ -19,6 +19,11 @@ export async function createTeamAction(_prevState: string | null | undefined, fo
     stateCode: (formData.get('stateCode') as string) || undefined,
   };
 
+  const coachEmail = ((formData.get('coachEmail') as string) || '').trim().toLowerCase();
+  const coachFirstName = ((formData.get('coachFirstName') as string) || '').trim();
+  const coachLastName = ((formData.get('coachLastName') as string) || '').trim();
+  const assignDifferentCoach = coachEmail.length > 0;
+
   const parsed = createTeamSchema.safeParse(raw);
   if (!parsed.success) {
     return parsed.error.errors[0].message;
@@ -44,13 +49,79 @@ export async function createTeamAction(_prevState: string | null | undefined, fo
     .single();
   if (teamError) return `Team insert failed: ${teamError.message}`;
 
-  // 2. Add creator as head coach
+  // 2. Determine coach user ID
+  let coachUserId = user.id;
+
+  if (assignDifferentCoach) {
+    // Only platform admins can assign a different coach (uses admin invite API)
+    const { data: adminProfile } = await supabase
+      .from('user_profiles')
+      .select('is_platform_admin')
+      .eq('id', user.id)
+      .single();
+    if (!adminProfile?.is_platform_admin) {
+      await supabase.from('teams').delete().eq('id', team.id);
+      return 'Only platform admins can assign a different head coach.';
+    }
+
+    // Check if the coach already has an account via user_profiles (avoids listUsers pagination limits)
+    const { data: existingProfile } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('email', coachEmail)
+      .maybeSingle();
+
+    if (existingProfile) {
+      coachUserId = existingProfile.id;
+    } else {
+      // Invite the coach via magic link
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app');
+      const redirectTo = appUrl
+        ? `${appUrl}/auth/callback?team=${team.id}&role=head_coach`
+        : `/auth/callback?team=${team.id}&role=head_coach`;
+      const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
+        coachEmail,
+        { redirectTo, data: { first_name: coachFirstName, last_name: coachLastName } },
+      );
+      if (inviteError) {
+        await supabase.from('teams').delete().eq('id', team.id);
+        return `Coach invite failed: ${inviteError.message}`;
+      }
+      coachUserId = inviteData.user.id;
+
+      // Create user profile for the invited coach
+      const { error: profileError } = await supabase.from('user_profiles').upsert({
+        id: coachUserId,
+        email: coachEmail,
+        first_name: coachFirstName || null,
+        last_name: coachLastName || null,
+      });
+      if (profileError) {
+        await supabase.from('teams').delete().eq('id', team.id);
+        return `Profile creation failed: ${profileError.message}`;
+      }
+    }
+
+    // Record in team_invitations for tracking
+    const { error: invitationError } = await supabase.from('team_invitations').insert({
+      team_id: team.id,
+      email: coachEmail,
+      role: 'head_coach',
+      invited_by: user.id,
+    });
+    if (invitationError) {
+      await supabase.from('teams').delete().eq('id', team.id);
+      return `Invitation tracking failed: ${invitationError.message}`;
+    }
+  }
+
+  // 3. Add coach as head_coach
   const { error: memberError } = await supabase
     .from('team_members')
-    .insert({ team_id: team.id, user_id: user.id, role: 'head_coach' });
+    .insert({ team_id: team.id, user_id: coachUserId, role: 'head_coach' });
   if (memberError) return `Member insert failed: ${memberError.message}`;
 
-  // 3. Create default Announcements channel
+  // 4. Create default Announcements channel
   const { data: channel, error: channelError } = await supabase
     .from('channels')
     .insert({
@@ -63,10 +134,10 @@ export async function createTeamAction(_prevState: string | null | undefined, fo
     .single();
   if (channelError) return `Channel insert failed: ${channelError.message}`;
 
-  // 4. Add creator to the channel with post permission
+  // 5. Add coach to the channel with post permission
   const { error: cmError } = await supabase.from('channel_members').insert({
     channel_id: channel.id,
-    user_id: user.id,
+    user_id: coachUserId,
     can_post: true,
   });
   if (cmError) return `Channel member insert failed: ${cmError.message}`;
