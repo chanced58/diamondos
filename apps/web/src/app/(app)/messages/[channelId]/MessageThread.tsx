@@ -25,8 +25,25 @@ type Props = {
   canPost: boolean;
   currentUserId: string;
   memberProfiles: Record<string, MemberProfile>;
+  memberRoles: Record<string, string>;
   isCoach: boolean;
 };
+
+function getRoleBadge(role: string | undefined) {
+  if (!role) return null;
+  switch (role) {
+    case 'head_coach':
+    case 'assistant_coach':
+    case 'athletic_director':
+      return <span className="text-[10px] font-medium bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Coach</span>;
+    case 'player':
+      return <span className="text-[10px] font-medium bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">Player</span>;
+    case 'parent':
+      return <span className="text-[10px] font-medium bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">Parent</span>;
+    default:
+      return <span className="text-[10px] font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">Staff</span>;
+  }
+}
 
 function getInitials(profile: MemberProfile | null) {
   if (!profile) return '?';
@@ -45,6 +62,7 @@ export function MessageThread({
   canPost,
   currentUserId,
   memberProfiles,
+  memberRoles,
   isCoach,
 }: Props): JSX.Element | null {
   const isAnnouncement = channelType === 'announcement';
@@ -173,6 +191,7 @@ export function MessageThread({
                           <span className="text-sm font-bold text-brand-900">
                             {isOwn ? 'You' : getFullName(profile)}
                           </span>
+                          {getRoleBadge(memberRoles[msg.sender_id])}
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-brand-500 font-medium">
@@ -219,10 +238,11 @@ export function MessageThread({
 
                   <div className="flex-1 min-w-0">
                     {showHeader && (
-                      <div className="flex items-baseline gap-2 mb-0.5">
+                      <div className="flex items-center gap-2 mb-0.5">
                         <span className="text-sm font-semibold text-gray-900">
                           {isOwn ? 'You' : getFullName(profile)}
                         </span>
+                        {getRoleBadge(memberRoles[msg.sender_id])}
                         <span className="text-xs text-gray-400">
                           {formatTime(msg.created_at)}
                         </span>
