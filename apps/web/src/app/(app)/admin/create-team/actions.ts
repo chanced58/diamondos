@@ -53,6 +53,17 @@ export async function createTeamAction(_prevState: string | null | undefined, fo
   let coachUserId = user.id;
 
   if (assignDifferentCoach) {
+    // Only platform admins can assign a different coach (uses admin invite API)
+    const { data: adminProfile } = await supabase
+      .from('user_profiles')
+      .select('is_platform_admin')
+      .eq('id', user.id)
+      .single();
+    if (!adminProfile?.is_platform_admin) {
+      await supabase.from('teams').delete().eq('id', team.id);
+      return 'Only platform admins can assign a different head coach.';
+    }
+
     // Check if the coach already has an account via user_profiles (avoids listUsers pagination limits)
     const { data: existingProfile } = await supabase
       .from('user_profiles')
@@ -72,7 +83,10 @@ export async function createTeamAction(_prevState: string | null | undefined, fo
         coachEmail,
         { redirectTo, data: { first_name: coachFirstName, last_name: coachLastName } },
       );
-      if (inviteError) return `Coach invite failed: ${inviteError.message}`;
+      if (inviteError) {
+        await supabase.from('teams').delete().eq('id', team.id);
+        return `Coach invite failed: ${inviteError.message}`;
+      }
       coachUserId = inviteData.user.id;
 
       // Create user profile for the invited coach
@@ -82,7 +96,10 @@ export async function createTeamAction(_prevState: string | null | undefined, fo
         first_name: coachFirstName || null,
         last_name: coachLastName || null,
       });
-      if (profileError) return `Profile creation failed: ${profileError.message}`;
+      if (profileError) {
+        await supabase.from('teams').delete().eq('id', team.id);
+        return `Profile creation failed: ${profileError.message}`;
+      }
     }
 
     // Record in team_invitations for tracking
@@ -92,7 +109,10 @@ export async function createTeamAction(_prevState: string | null | undefined, fo
       role: 'head_coach',
       invited_by: user.id,
     });
-    if (invitationError) return `Invitation tracking failed: ${invitationError.message}`;
+    if (invitationError) {
+      await supabase.from('teams').delete().eq('id', team.id);
+      return `Invitation tracking failed: ${invitationError.message}`;
+    }
   }
 
   // 3. Add coach as head_coach

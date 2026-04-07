@@ -50,6 +50,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Invalid role: ${role}` }, { status: 400 });
   }
 
+  // Verify the league exists
+  const { data: league } = await (supabase as any)
+    .from('leagues')
+    .select('id')
+    .eq('id', leagueId)
+    .maybeSingle();
+  if (!league) {
+    return NextResponse.json({ error: 'League not found' }, { status: 404 });
+  }
+
   // Check if user already exists via user_profiles (avoids listUsers pagination limits)
   const { data: existingProfile } = await supabase
     .from('user_profiles')
@@ -119,6 +129,7 @@ export async function POST(req: NextRequest) {
     .eq('channel_type', 'announcement')
     .limit(1);
 
+  let channelWarning: string | undefined;
   if (channels?.[0]) {
     const { error: channelMemberError } = await (supabase as any).from('league_channel_members').insert({
       league_channel_id: channels[0].id,
@@ -126,7 +137,7 @@ export async function POST(req: NextRequest) {
       can_post: role === 'league_admin',
     });
     if (channelMemberError) {
-      console.error(`Failed to add staff ${staffUserId} to channel ${channels[0].id}: ${channelMemberError.message}`);
+      channelWarning = `Staff added but announcement channel access failed: ${channelMemberError.message}`;
     }
   }
 
@@ -134,5 +145,6 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     message: `Staff member ${action} successfully`,
     userId: staffUserId,
+    ...(channelWarning ? { warning: channelWarning } : {}),
   });
 }

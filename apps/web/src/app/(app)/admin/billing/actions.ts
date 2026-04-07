@@ -39,11 +39,14 @@ export async function createSubscription(formData: FormData) {
     const supabase = await getAdminClient();
 
     const entityType = formData.get('entityType') as string;
-    const teamId = formData.get('teamId') as string | null;
-    const leagueId = formData.get('leagueId') as string | null;
+    const teamId = (formData.get('teamId') as string | null)?.trim() || null;
+    const leagueId = (formData.get('leagueId') as string | null)?.trim() || null;
     const tier = formData.get('tier') as string;
     const status = formData.get('status') as string;
 
+    if (entityType !== 'team' && entityType !== 'league') return { error: `Invalid entity type: ${entityType}` };
+    if (entityType === 'team' && !teamId) return { error: 'Team is required when entity type is team' };
+    if (entityType === 'league' && !leagueId) return { error: 'League is required when entity type is league' };
     if (!VALID_TIERS.includes(tier as any)) return { error: `Invalid tier: ${tier}` };
     if (!VALID_STATUSES.includes(status as any)) return { error: `Invalid status: ${status}` };
 
@@ -85,7 +88,9 @@ export async function updateSubscription(formData: FormData) {
   try {
     const supabase = await getAdminClient();
 
-    const id = formData.get('id') as string;
+    const id = ((formData.get('id') as string) || '').trim();
+    if (!id) return { error: 'Missing or invalid subscription id' };
+
     const tier = formData.get('tier') as string;
     const status = formData.get('status') as string;
 

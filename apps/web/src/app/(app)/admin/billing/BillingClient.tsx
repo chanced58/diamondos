@@ -83,7 +83,7 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
     .filter((s) => s.status === 'active' && s.monthlyPriceCents)
     .reduce((sum, s) => sum + (s.monthlyPriceCents ?? 0), 0);
 
-  async function handleCreate(formData: FormData) {
+  function handleCreate(formData: FormData) {
     setError(null);
     startTransition(async () => {
       const result = await createSubscription(formData);
@@ -96,7 +96,7 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
     });
   }
 
-  async function handleUpdate(formData: FormData) {
+  function handleUpdate(formData: FormData) {
     setError(null);
     startTransition(async () => {
       const result = await updateSubscription(formData);
