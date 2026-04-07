@@ -172,8 +172,9 @@ export function ParentSection({
       </div>
 
       {canInvite && (() => {
+        const linkedParentIds = new Set(parentLinks.map((l) => l.parentUserId));
         const unlinkedCount = parents.filter(
-          (p) => !parentLinks.some((l) => l.parentUserId === p.userId),
+          (p) => !linkedParentIds.has(p.userId),
         ).length;
         return unlinkedCount > 0 ? (
           <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">

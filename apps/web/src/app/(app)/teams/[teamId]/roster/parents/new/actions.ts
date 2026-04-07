@@ -46,6 +46,19 @@ export async function inviteParentAction(
     return 'Only head coaches and athletic directors can add parents.';
   }
 
+  // Validate that all linked player IDs belong to this team
+  if (linkedPlayerIds.length > 0) {
+    const { data: teamPlayers } = await supabase
+      .from('players')
+      .select('id')
+      .eq('team_id', teamId)
+      .eq('is_active', true);
+    const validPlayerIds = new Set((teamPlayers ?? []).map((p) => p.id));
+    if (linkedPlayerIds.some((id) => !validPlayerIds.has(id))) {
+      return 'Please select at least one player to link this parent to.';
+    }
+  }
+
   // No email provided — placeholder record only (can't create parent_player_links without a user account)
   if (!email) {
     await supabase.from('team_invitations').insert({
