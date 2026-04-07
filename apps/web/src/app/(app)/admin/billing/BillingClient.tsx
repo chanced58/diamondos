@@ -1,7 +1,7 @@
 'use client';
 
 import type { JSX } from 'react';
-import { useState, useTransition } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSubscription, updateSubscription } from './actions';
 
@@ -62,7 +62,7 @@ interface BillingClientProps {
 
 export function BillingClient({ subscriptions, teams, leagues }: BillingClientProps): JSX.Element {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [saving, setSaving] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,9 +83,10 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
     .filter((s) => s.status === 'active' && s.monthlyPriceCents)
     .reduce((sum, s) => sum + (s.monthlyPriceCents ?? 0), 0);
 
-  function handleCreate(formData: FormData) {
+  async function handleCreate(formData: FormData) {
     setError(null);
-    startTransition(async () => {
+    setSaving(true);
+    try {
       const result = await createSubscription(formData);
       if (result.error) {
         setError(result.error);
@@ -93,12 +94,15 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
         setShowCreateForm(false);
         router.refresh();
       }
-    });
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function handleUpdate(formData: FormData) {
+  async function handleUpdate(formData: FormData) {
     setError(null);
-    startTransition(async () => {
+    setSaving(true);
+    try {
       const result = await updateSubscription(formData);
       if (result.error) {
         setError(result.error);
@@ -106,7 +110,9 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
         setEditingId(null);
         router.refresh();
       }
-    });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -182,7 +188,7 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
           onSubmit={handleCreate}
           teams={teams}
           leagues={leagues}
-          isPending={isPending}
+          isSaving={saving}
         />
       )}
 
@@ -215,7 +221,7 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
                         onSubmit={handleUpdate}
                         teams={teams}
                         leagues={leagues}
-                        isPending={isPending}
+                        isSaving={saving}
                         initial={sub}
                         onCancel={() => setEditingId(null)}
                       />
@@ -285,14 +291,14 @@ function SubscriptionForm({
   onSubmit,
   teams,
   leagues,
-  isPending,
+  isSaving,
   initial,
   onCancel,
 }: {
   onSubmit: (formData: FormData) => void;
   teams: Entity[];
   leagues: Entity[];
-  isPending: boolean;
+  isSaving: boolean;
   initial?: Subscription;
   onCancel?: () => void;
 }) {
@@ -452,10 +458,10 @@ function SubscriptionForm({
       <div className="flex gap-2">
         <button
           type="submit"
-          disabled={isPending}
+          disabled={isSaving}
           className="text-sm font-medium bg-brand-700 text-white px-5 py-2 rounded-lg hover:bg-brand-800 disabled:opacity-50 transition-colors"
         >
-          {isPending ? 'Saving...' : initial ? 'Update Subscription' : 'Create Subscription'}
+          {isSaving ? 'Saving...' : initial ? 'Update Subscription' : 'Create Subscription'}
         </button>
         {onCancel && (
           <button
