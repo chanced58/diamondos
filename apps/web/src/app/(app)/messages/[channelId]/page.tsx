@@ -91,6 +91,19 @@ export default async function ChannelPage({
     }
   }
 
+  // Fetch team member roles for role badges
+  const memberRoles: Record<string, string> = {};
+  if (channel.team_id) {
+    const { data: teamMembers } = await db
+      .from('team_members')
+      .select('user_id, role')
+      .eq('team_id', channel.team_id)
+      .eq('is_active', true);
+    for (const tm of teamMembers ?? []) {
+      memberRoles[tm.user_id] = tm.role;
+    }
+  }
+
   // Compute channel display name (DMs use the other participant's name)
   let displayName = channel.name ?? 'Conversation';
   if (channel.channel_type === 'direct') {
@@ -138,6 +151,7 @@ export default async function ChannelPage({
         canPost={myMembership.can_post}
         currentUserId={user.id}
         memberProfiles={memberProfiles}
+        memberRoles={memberRoles}
         isCoach={isCoach}
       />
     </div>

@@ -171,6 +171,20 @@ export function ParentSection({
         )}
       </div>
 
+      {canInvite && (() => {
+        const unlinkedCount = parents.filter(
+          (p) => !parentLinks.some((l) => l.parentUserId === p.userId),
+        ).length;
+        return unlinkedCount > 0 ? (
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+            <span className="text-amber-600 text-sm">⚠</span>
+            <span className="text-xs text-amber-700 font-medium">
+              {unlinkedCount} parent{unlinkedCount > 1 ? 's are' : ' is'} not linked to any player.
+            </span>
+          </div>
+        ) : null;
+      })()}
+
       {open && (
         <div className="mb-4 bg-gray-50 border border-gray-200 rounded-xl p-5">
           <p className="text-sm font-semibold text-gray-800 mb-4">Add Parent</p>

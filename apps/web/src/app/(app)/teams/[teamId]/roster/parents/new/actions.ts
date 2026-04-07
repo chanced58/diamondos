@@ -24,6 +24,9 @@ export async function inviteParentAction(
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return 'Please enter a valid email address.';
   }
+  if (email && linkedPlayerIds.length === 0) {
+    return 'Please select at least one player to link this parent to.';
+  }
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
