@@ -3,7 +3,7 @@ import type { JSX } from 'react';
 
 import { useState, useMemo } from 'react';
 import type { BattingStats, StatTier } from '@baseball/shared';
-import { formatBattingRate, formatBattingPct } from '@baseball/shared';
+import { formatBattingRate, formatBattingPct, SubscriptionTier, hasFeature, Feature } from '@baseball/shared';
 
 type SortKey = keyof Omit<BattingStats, 'playerId' | 'playerName'> | 'playerName';
 
@@ -51,6 +51,13 @@ const TIER_KEYS: Record<StatTier, Set<SortKey>> = {
   ]),
   college: new Set<SortKey>(ALL_COLUMNS.map((c) => c.key)),
 };
+
+// Columns visible on the free subscription tier (counting stats + AVG only)
+const FREE_TIER_BATTING_KEYS = new Set<SortKey>([
+  'playerName', 'gamesAppeared', 'plateAppearances', 'atBats',
+  'runs', 'hits', 'doubles', 'triples', 'homeRuns', 'rbi',
+  'walks', 'strikeouts', 'hitByPitch', 'sacrificeFlies', 'avg',
+]);
 
 function getValue(s: BattingStats, key: SortKey): number | string {
   if (key === 'playerName') return s.playerName;
@@ -117,13 +124,19 @@ function computeTotals(rows: BattingStats[]): BattingStats {
   };
 }
 
-export function BattingStatsTable({ stats, tier = 'high_school' }: { stats: BattingStats[]; tier?: StatTier }): JSX.Element | null {
+export function BattingStatsTable({ stats, tier = 'high_school', subscriptionTier = SubscriptionTier.PRO }: { stats: BattingStats[]; tier?: StatTier; subscriptionTier?: SubscriptionTier }): JSX.Element | null {
   const [sortKey, setSortKey] = useState<SortKey>('plateAppearances');
   const [sortAsc, setSortAsc] = useState(false);
 
+  const isAdvanced = hasFeature(subscriptionTier, Feature.ADVANCED_BATTING_STATS);
+
   const columns = useMemo(
-    () => ALL_COLUMNS.filter((col) => TIER_KEYS[tier].has(col.key)),
-    [tier],
+    () => ALL_COLUMNS.filter((col) => {
+      if (!TIER_KEYS[tier].has(col.key)) return false;
+      if (!isAdvanced && !FREE_TIER_BATTING_KEYS.has(col.key)) return false;
+      return true;
+    }),
+    [tier, isAdvanced],
   );
 
   function handleSort(key: SortKey) {

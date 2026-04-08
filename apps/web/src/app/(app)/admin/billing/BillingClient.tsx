@@ -26,14 +26,13 @@ type Subscription = {
 
 type Entity = { id: string; name: string };
 
-const TIERS = ['free', 'starter', 'pro', 'enterprise'] as const;
+const TIERS = ['free', 'starter', 'pro'] as const;
 const STATUSES = ['active', 'trial', 'past_due', 'cancelled', 'expired'] as const;
 
 const TIER_COLORS: Record<string, string> = {
   free: 'bg-gray-100 text-gray-700',
   starter: 'bg-blue-50 text-blue-700',
   pro: 'bg-purple-50 text-purple-700',
-  enterprise: 'bg-amber-50 text-amber-700',
 };
 
 const STATUS_COLORS: Record<string, string> = {

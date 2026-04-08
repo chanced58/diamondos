@@ -25,7 +25,7 @@ async function getAdminClient() {
   return supabase;
 }
 
-const VALID_TIERS = ['free', 'starter', 'pro', 'enterprise'] as const;
+const VALID_TIERS = ['free', 'starter', 'pro'] as const;
 const VALID_STATUSES = ['active', 'trial', 'past_due', 'cancelled', 'expired'] as const;
 
 function parseCents(value: string | null): number | null {

@@ -7,6 +7,8 @@ import { getUserAccess } from '@/lib/user-access';
 import { addToTeamChannels } from '@/lib/team-channels';
 import { seedDefaultChannels } from './seed';
 import { getLeagueForTeam, getLeagueChannelsForUser } from '@baseball/database';
+import { getTeamTier } from '@/lib/team-tier';
+import { hasFeature, Feature } from '@baseball/shared';
 
 export type SidebarChannel = {
   id: string;
@@ -357,10 +359,15 @@ export async function getChannelSidebarData(): Promise<ChannelSidebarData | null
     console.error('[messages] league channels fetch error:', e);
   }
 
+  // Gate channels by subscription tier
+  const subscriptionTier = await getTeamTier(activeTeam.id);
+  const canTopics = hasFeature(subscriptionTier, Feature.TOPIC_CHANNELS);
+  const canDMs = hasFeature(subscriptionTier, Feature.DIRECT_MESSAGES);
+
   return {
     announcements: channels.filter((c) => c.channel_type === 'announcement'),
-    topics: channels.filter((c) => c.channel_type === 'topic'),
-    dms: channels.filter((c) => c.channel_type === 'direct'),
+    topics: canTopics ? channels.filter((c) => c.channel_type === 'topic') : [],
+    dms: canDMs ? channels.filter((c) => c.channel_type === 'direct') : [],
     leagueChannels,
     leagueName,
     isCoach,

@@ -5,7 +5,8 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getUserAccess } from '@/lib/user-access';
-import { formatDate, formatTime } from '@baseball/shared';
+import { formatDate, formatTime, hasFeature, Feature } from '@baseball/shared';
+import { getTeamTier } from '@/lib/team-tier';
 
 export const metadata: Metadata = { title: 'Practices' };
 
@@ -22,9 +23,24 @@ export default async function PracticesPage(): Promise<JSX.Element | null> {
   );
 
   // Check if user is a coach on this team
-  const { isCoach } = activeTeam
-    ? await getUserAccess(activeTeam.id, user.id)
-    : { isCoach: false };
+  const [{ isCoach }, subscriptionTier] = await Promise.all([
+    activeTeam ? getUserAccess(activeTeam.id, user.id) : Promise.resolve({ isCoach: false }),
+    activeTeam ? getTeamTier(activeTeam.id) : Promise.resolve(null),
+  ]);
+
+  const canAccessPractices = subscriptionTier ? hasFeature(subscriptionTier, Feature.PRACTICE_PLANNING) : false;
+
+  if (activeTeam && !canAccessPractices) {
+    return (
+      <div className="p-8">
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">Practices</h1>
+        <div className="bg-white rounded-xl border border-gray-200 px-6 py-12 text-center">
+          <p className="text-gray-500 mb-2">Practice planning is available on the Starter plan and above.</p>
+          <p className="text-sm text-gray-400">Contact your platform admin to upgrade your team subscription.</p>
+        </div>
+      </div>
+    );
+  }
 
   const { data: practices } = activeTeam
     ? await db

@@ -112,7 +112,49 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // 4. Fetch compliance rule for this season
+  // 4. Check subscription tier — skip compliance alerts for free tier
+  const { data: teamSub } = await supabase
+    .from('subscriptions')
+    .select('tier')
+    .eq('entity_type', 'team')
+    .eq('team_id', game.team_id)
+    .in('status', ['active', 'trial'])
+    .limit(1)
+    .maybeSingle();
+
+  // If no direct team sub, check if team belongs to a league with a subscription
+  let effectiveTier = teamSub?.tier ?? 'free';
+  if (effectiveTier === 'free') {
+    const { data: leagueMember } = await supabase
+      .from('league_members')
+      .select('league_id')
+      .eq('team_id', game.team_id)
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle();
+
+    if (leagueMember) {
+      const { data: leagueSub } = await supabase
+        .from('subscriptions')
+        .select('tier')
+        .eq('entity_type', 'league')
+        .eq('league_id', leagueMember.league_id)
+        .in('status', ['active', 'trial'])
+        .limit(1)
+        .maybeSingle();
+      if (leagueSub) effectiveTier = leagueSub.tier;
+    }
+  }
+
+  // Free tier: pitch counts are tracked but compliance alerts are not sent
+  if (effectiveTier === 'free') {
+    return new Response(JSON.stringify({ pitchCount, tier: 'free', alertsSkipped: true }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // 5. Fetch compliance rule for this season
   const { data: seasonRule } = await supabase
     .from('season_compliance_rules')
     .select('pitch_compliance_rules(*)')
