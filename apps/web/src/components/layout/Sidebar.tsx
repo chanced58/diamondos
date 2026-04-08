@@ -6,6 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { SubscriptionTier, hasFeature, Feature } from '@baseball/shared';
 
 const SIDEBAR_KEY = 'sidebar-collapsed';
 
@@ -19,9 +20,10 @@ interface SidebarProps {
   isPlatformAdmin?: boolean;
   leagueId?: string;
   leagueName?: string;
+  subscriptionTier?: SubscriptionTier;
 }
 
-export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, secondaryColor, isPlatformAdmin, leagueId, leagueName }: SidebarProps): JSX.Element | null {
+export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, secondaryColor, isPlatformAdmin, leagueId, leagueName, subscriptionTier = SubscriptionTier.FREE }: SidebarProps): JSX.Element | null {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
@@ -45,15 +47,18 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
   const bg     = isAdminPanel ? '#1f2937' : (primaryColor   ?? '#1e2d6b');
   const active = isAdminPanel ? '#374151' : (secondaryColor ?? '#1e3a8a');
 
+  const canPractices = hasFeature(subscriptionTier, Feature.PRACTICE_PLANNING);
+  const canLeague = hasFeature(subscriptionTier, Feature.LEAGUE_MANAGEMENT);
+
   const teamNavItems = [
     { href: '/dashboard',                                  label: 'Dashboard',       icon: '⚾' },
     { href: '/games',                                      label: 'Schedule',        icon: '📋' },
-    { href: '/practices',                                  label: 'Practices',       icon: '🏋️' },
+    ...(canPractices ? [{ href: '/practices',              label: 'Practices',       icon: '🏋️' }] : []),
     { href: '/compliance',                                 label: 'Stats',           icon: '📊' },
     { href: '/messages',                                   label: 'Messages',        icon: '💬' },
     { href: teamId ? `/teams/${teamId}/admin` : '/teams',  label: 'Team Management', icon: '👥' },
-    // Show league nav item when team belongs to a league
-    ...(leagueId ? [{ href: '/league', label: leagueName ?? 'League', icon: '🏆' }] : []),
+    // Show league nav item when team belongs to a league and has Pro tier
+    ...(leagueId && canLeague ? [{ href: '/league', label: leagueName ?? 'League', icon: '🏆' }] : []),
     // Non-platform-admins see the generic Admin link; platform admins get the dedicated link below
     ...(!isPlatformAdmin ? [{ href: '/admin', label: 'Admin', icon: '⚙️' }] : []),
   ];

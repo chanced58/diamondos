@@ -7,6 +7,8 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
 import { TeamBrandingForm } from './TeamBrandingForm';
 import { MyProfileForm } from './MyProfileForm';
+import { getTeamTier } from '@/lib/team-tier';
+import { hasFeature, Feature } from '@baseball/shared';
 
 export const metadata: Metadata = { title: 'Team Admin' };
 
@@ -24,7 +26,7 @@ export default async function TeamAdminPage({
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const [membershipResult, teamResult, profileResult] = await Promise.all([
+  const [membershipResult, teamResult, profileResult, subscriptionTier] = await Promise.all([
     db
       .from('team_members')
       .select('role')
@@ -34,6 +36,7 @@ export default async function TeamAdminPage({
       .maybeSingle(),
     db.from('teams').select('name, logo_url, primary_color, secondary_color, created_by').eq('id', params.teamId).single(),
     db.from('user_profiles').select('first_name, last_name, phone').eq('id', user.id).maybeSingle(),
+    getTeamTier(params.teamId),
   ]);
 
   let role = membershipResult.data?.role;
@@ -133,15 +136,22 @@ export default async function TeamAdminPage({
         </div>
       </section>
 
-      {/* Team Branding */}
+      {/* Team Branding — Pro tier only */}
       <section>
         <h2 className="text-lg font-semibold text-gray-900 mb-3">Team Branding</h2>
-        <TeamBrandingForm
-          teamId={params.teamId}
-          currentLogoUrl={team?.logo_url ?? null}
-          currentPrimaryColor={team?.primary_color ?? null}
-          currentSecondaryColor={team?.secondary_color ?? null}
-        />
+        {hasFeature(subscriptionTier, Feature.CUSTOM_BRANDING) ? (
+          <TeamBrandingForm
+            teamId={params.teamId}
+            currentLogoUrl={team?.logo_url ?? null}
+            currentPrimaryColor={team?.primary_color ?? null}
+            currentSecondaryColor={team?.secondary_color ?? null}
+          />
+        ) : (
+          <div className="bg-white border border-gray-200 rounded-xl px-5 py-8 text-center">
+            <p className="text-gray-500 text-sm">Custom team branding is available on the Pro plan.</p>
+            <p className="text-xs text-gray-400 mt-1">Contact your platform admin to upgrade.</p>
+          </div>
+        )}
       </section>
     </div>
   );

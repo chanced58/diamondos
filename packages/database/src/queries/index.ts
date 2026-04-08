@@ -4,3 +4,4 @@ export * from './games';
 export * from './game-events';
 export * from './messages';
 export * from './leagues';
+export * from './subscriptions';

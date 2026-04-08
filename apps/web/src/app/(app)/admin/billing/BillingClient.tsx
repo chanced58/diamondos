@@ -26,7 +26,7 @@ type Subscription = {
 
 type Entity = { id: string; name: string };
 
-const TIERS = ['free', 'starter', 'pro', 'enterprise'] as const;
+const TIERS = ['free', 'starter', 'pro'] as const;
 const STATUSES = ['active', 'trial', 'past_due', 'cancelled', 'expired'] as const;
 
 const TIER_COLORS: Record<string, string> = {
@@ -353,6 +353,9 @@ function SubscriptionForm({
             {TIERS.map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
+            {initial?.tier === 'enterprise' && (
+              <option value="enterprise">enterprise</option>
+            )}
           </select>
         </div>
         <div>
