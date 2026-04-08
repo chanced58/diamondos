@@ -9,6 +9,7 @@
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { resolveEffectiveTier } from '../_shared/resolve-tier.ts';
 
 interface GameEventRecord {
   id: string;
@@ -113,38 +114,7 @@ Deno.serve(async (req: Request) => {
   }
 
   // 4. Check subscription tier — skip compliance alerts for free tier
-  const { data: teamSub } = await supabase
-    .from('subscriptions')
-    .select('tier')
-    .eq('entity_type', 'team')
-    .eq('team_id', game.team_id)
-    .in('status', ['active', 'trial'])
-    .limit(1)
-    .maybeSingle();
-
-  // If no direct team sub, check if team belongs to a league with a subscription
-  let effectiveTier = teamSub?.tier ?? 'free';
-  if (effectiveTier === 'free') {
-    const { data: leagueMember } = await supabase
-      .from('league_members')
-      .select('league_id')
-      .eq('team_id', game.team_id)
-      .eq('is_active', true)
-      .limit(1)
-      .maybeSingle();
-
-    if (leagueMember) {
-      const { data: leagueSub } = await supabase
-        .from('subscriptions')
-        .select('tier')
-        .eq('entity_type', 'league')
-        .eq('league_id', leagueMember.league_id)
-        .in('status', ['active', 'trial'])
-        .limit(1)
-        .maybeSingle();
-      if (leagueSub) effectiveTier = leagueSub.tier;
-    }
-  }
+  const effectiveTier = await resolveEffectiveTier(supabase, game.team_id);
 
   // Free tier: pitch counts are tracked but compliance alerts are not sent
   if (effectiveTier === 'free') {

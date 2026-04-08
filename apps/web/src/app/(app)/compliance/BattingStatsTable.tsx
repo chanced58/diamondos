@@ -124,7 +124,7 @@ function computeTotals(rows: BattingStats[]): BattingStats {
   };
 }
 
-export function BattingStatsTable({ stats, tier = 'high_school', subscriptionTier = SubscriptionTier.PRO }: { stats: BattingStats[]; tier?: StatTier; subscriptionTier?: SubscriptionTier }): JSX.Element | null {
+export function BattingStatsTable({ stats, tier = 'high_school', subscriptionTier = SubscriptionTier.FREE }: { stats: BattingStats[]; tier?: StatTier; subscriptionTier?: SubscriptionTier }): JSX.Element | null {
   const [sortKey, setSortKey] = useState<SortKey>('plateAppearances');
   const [sortAsc, setSortAsc] = useState(false);
 

@@ -99,7 +99,7 @@ function getValue(s: PitchingStats, key: SortKey): number | string {
   return s[key];
 }
 
-export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_school', subscriptionTier = SubscriptionTier.PRO }: Props): JSX.Element | null {
+export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_school', subscriptionTier = SubscriptionTier.FREE }: Props): JSX.Element | null {
   const [sortKey, setSortKey] = useState<SortKey>('inningsPitchedOuts');
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);

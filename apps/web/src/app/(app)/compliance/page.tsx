@@ -51,8 +51,6 @@ export default async function CompliancePage({
   let tab = VALID_TABS.includes(searchParams.tab as typeof VALID_TABS[number])
     ? (searchParams.tab as typeof VALID_TABS[number])
     : 'pitching';
-  // Gate opponents tab to Pro tier
-  if (tab === 'opponents' && !canViewOpponents) tab = 'pitching';
 
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
@@ -72,6 +70,8 @@ export default async function CompliancePage({
   ]);
 
   const canViewOpponents = hasFeature(subscriptionTier, Feature.OPPONENT_TRACKING);
+  // Gate opponents tab to Pro tier
+  if (tab === 'opponents' && !canViewOpponents) tab = 'pitching';
 
   // Get team level for tier-aware stat display
   const { data: teamData } = await db
