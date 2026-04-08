@@ -33,6 +33,7 @@ const TIER_COLORS: Record<string, string> = {
   free: 'bg-gray-100 text-gray-700',
   starter: 'bg-blue-50 text-blue-700',
   pro: 'bg-purple-50 text-purple-700',
+  enterprise: 'bg-amber-50 text-amber-700',
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -352,6 +353,9 @@ function SubscriptionForm({
             {TIERS.map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
+            {initial?.tier === 'enterprise' && (
+              <option value="enterprise">enterprise</option>
+            )}
           </select>
         </div>
         <div>

@@ -26,6 +26,7 @@ async function getAdminClient() {
 }
 
 const VALID_TIERS = ['free', 'starter', 'pro'] as const;
+const VALID_TIERS_FOR_UPDATE = ['free', 'starter', 'pro', 'enterprise'] as const;
 const VALID_STATUSES = ['active', 'trial', 'past_due', 'cancelled', 'expired'] as const;
 
 function parseCents(value: string | null): number | null {
@@ -94,7 +95,7 @@ export async function updateSubscription(formData: FormData) {
     const tier = formData.get('tier') as string;
     const status = formData.get('status') as string;
 
-    if (!VALID_TIERS.includes(tier as any)) return { error: `Invalid tier: ${tier}` };
+    if (!VALID_TIERS_FOR_UPDATE.includes(tier as any)) return { error: `Invalid tier: ${tier}` };
     if (!VALID_STATUSES.includes(status as any)) return { error: `Invalid status: ${status}` };
 
     const billingContactName = (formData.get('billingContactName') as string) || null;

@@ -1,5 +1,15 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+/** Canonical tier values used by the application. */
+type AppTier = 'free' | 'starter' | 'pro';
+
+/** Normalize a DB tier string to one of the three app tiers. */
+function normalizeTier(dbTier: string): AppTier {
+  if (dbTier === 'starter') return 'starter';
+  if (dbTier === 'pro' || dbTier === 'enterprise') return 'pro';
+  return 'free';
+}
+
 /**
  * Resolves the effective subscription tier for a team.
  *
@@ -11,7 +21,7 @@ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 export async function resolveEffectiveTier(
   supabase: SupabaseClient,
   teamId: string,
-): Promise<string> {
+): Promise<AppTier> {
   // 1. Check direct team subscription
   const { data: teamSub } = await supabase
     .from('subscriptions')
@@ -22,7 +32,7 @@ export async function resolveEffectiveTier(
     .limit(1)
     .maybeSingle();
 
-  if (teamSub?.tier) return teamSub.tier;
+  if (teamSub?.tier) return normalizeTier(teamSub.tier);
 
   // 2. Check league subscription inheritance
   const { data: leagueMember } = await supabase
@@ -42,7 +52,7 @@ export async function resolveEffectiveTier(
       .in('status', ['active', 'trial'])
       .limit(1)
       .maybeSingle();
-    if (leagueSub?.tier) return leagueSub.tier;
+    if (leagueSub?.tier) return normalizeTier(leagueSub.tier);
   }
 
   // 3. Default

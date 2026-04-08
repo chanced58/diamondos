@@ -16,22 +16,26 @@ export async function getTeamTier(teamId: string): Promise<SubscriptionTier> {
 
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey);
 
-  // 1. Check for a direct team subscription
-  const teamSub = await getSubscriptionForTeam(db, teamId);
-  if (teamSub) {
-    return toTier(teamSub.tier);
-  }
-
-  // 2. Check if the team belongs to a league with an active subscription
-  const league = await getLeagueForTeam(db, teamId);
-  if (league) {
-    const leagueSub = await getSubscriptionForLeague(db, league.id);
-    if (leagueSub) {
-      return toTier(leagueSub.tier);
+  try {
+    // 1. Check for a direct team subscription
+    const teamSub = await getSubscriptionForTeam(db, teamId);
+    if (teamSub) {
+      return toTier(teamSub.tier);
     }
+
+    // 2. Check if the team belongs to a league with an active subscription
+    const league = await getLeagueForTeam(db, teamId);
+    if (league) {
+      const leagueSub = await getSubscriptionForLeague(db, league.id);
+      if (leagueSub) {
+        return toTier(leagueSub.tier);
+      }
+    }
+  } catch (err) {
+    console.error(`[team-tier] Failed to resolve tier for team ${teamId}:`, err);
   }
 
-  // 3. Default to free
+  // 3. Default to free (fail-closed)
   return SubscriptionTier.FREE;
 }
 
