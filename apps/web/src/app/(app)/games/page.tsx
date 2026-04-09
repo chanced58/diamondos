@@ -200,6 +200,12 @@ export default async function SchedulePage({
               + Event
             </Link>
             <Link
+              href="/games/opponents"
+              className="text-sm text-brand-700 hover:underline font-medium px-2"
+            >
+              Opponents
+            </Link>
+            <Link
               href="/games/demo/lineup"
               className="text-sm text-brand-700 hover:underline font-medium px-2"
             >
