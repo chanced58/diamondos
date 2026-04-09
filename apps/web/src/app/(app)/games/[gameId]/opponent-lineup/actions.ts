@@ -135,6 +135,43 @@ export async function addOpponentPlayerAction(
 }
 
 /**
+ * Update an existing opponent player's details.
+ */
+export async function updateOpponentPlayerAction(
+  _prevState: string | null | undefined,
+  formData: FormData,
+): Promise<string | null> {
+  const gameId = formData.get('gameId') as string;
+  const playerId = formData.get('playerId') as string;
+  const firstName = (formData.get('firstName') as string | null)?.trim();
+  const lastName = (formData.get('lastName') as string | null)?.trim();
+  const jerseyNumber = (formData.get('jerseyNumber') as string | null)?.trim() || null;
+  const rawPosition = formData.get('primaryPosition') as string | null;
+  const primaryPosition = rawPosition ? (POSITION_TO_DB[rawPosition] ?? null) : null;
+
+  if (!firstName || !lastName) return 'First and last name are required.';
+
+  const ctx = await getCoachContext(gameId);
+  if (!ctx) return 'Not authorized.';
+
+  const { error } = await ctx.db
+    .from('opponent_players')
+    .update({
+      first_name: firstName,
+      last_name: lastName,
+      jersey_number: jerseyNumber,
+      primary_position: primaryPosition,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', playerId);
+
+  if (error) return `Failed to update player: ${error.message}`;
+
+  revalidatePath(`/games/${gameId}/opponent-lineup`);
+  return null;
+}
+
+/**
  * Remove an opponent player from the roster.
  */
 export async function removeOpponentPlayerAction(
