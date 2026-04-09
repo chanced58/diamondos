@@ -7,6 +7,7 @@ import {
   saveOpponentTeamAction,
   addOpponentPlayerAction,
   removeOpponentPlayerAction,
+  updateOpponentPlayerAction,
   saveOpponentLineupAction,
 } from './actions';
 
@@ -127,7 +128,7 @@ function OpponentTeamSection({
   );
 }
 
-/** Section 2: Add players to the opponent team roster. */
+/** Section 2: Add players to the opponent team roster with inline editing. */
 function OpponentRosterSection({
   gameId,
   opponentTeamId,
@@ -140,6 +141,9 @@ function OpponentRosterSection({
   const [addError, addAction] = useFormState(addOpponentPlayerAction, null);
   const [removeError, removeAction] = useFormState(removeOpponentPlayerAction, null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
@@ -211,10 +215,15 @@ function OpponentRosterSection({
         </div>
       )}
 
-      {/* Section-level remove error banner */}
+      {/* Section-level error banners */}
       {removeError && (
         <div className="px-5 py-2 bg-red-50 border-b border-red-200 text-xs text-red-700">
           {removeError}
+        </div>
+      )}
+      {updateError && (
+        <div className="px-5 py-2 bg-red-50 border-b border-red-200 text-xs text-red-700">
+          {updateError}
         </div>
       )}
 
@@ -230,32 +239,121 @@ function OpponentRosterSection({
               <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide w-12">#</th>
               <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Player</th>
               <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide w-16">Pos</th>
-              <th className="w-16" />
+              <th className="w-28" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {players.map((player) => (
-              <tr key={player.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 font-mono text-gray-400 text-sm">
-                  {player.jerseyNumber ?? '—'}
-                </td>
-                <td className="px-4 py-3 font-medium text-gray-900">
-                  {player.lastName}, {player.firstName}
-                </td>
-                <td className="px-4 py-3 text-gray-500">
-                  {player.primaryPosition
-                    ? (DB_TO_POSITION[player.primaryPosition] ?? player.primaryPosition)
-                    : '—'}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <form action={removeAction} className="inline">
-                    <input type="hidden" name="gameId" value={gameId} />
-                    <input type="hidden" name="playerId" value={player.id} />
-                    <DestructiveButton label="Remove" pendingLabel="..." />
-                  </form>
-                </td>
-              </tr>
-            ))}
+            {players.map((player) =>
+              editingPlayerId === player.id ? (
+                <tr key={player.id} className="bg-blue-50">
+                  <td colSpan={4} className="px-4 py-3">
+                    <form
+                      action={async (formData) => {
+                        setIsUpdating(true);
+                        const result = await updateOpponentPlayerAction(null, formData);
+                        setIsUpdating(false);
+                        if (result) {
+                          setUpdateError(result);
+                        } else {
+                          setUpdateError(null);
+                          setEditingPlayerId(null);
+                        }
+                      }}
+                      className="flex flex-wrap items-end gap-2"
+                    >
+                      <input type="hidden" name="gameId" value={gameId} />
+                      <input type="hidden" name="playerId" value={player.id} />
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">#</label>
+                        <input
+                          type="text"
+                          name="jerseyNumber"
+                          defaultValue={player.jerseyNumber ?? ''}
+                          placeholder="00"
+                          className="w-14 border border-gray-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">First</label>
+                        <input
+                          type="text"
+                          name="firstName"
+                          required
+                          defaultValue={player.firstName}
+                          className="w-28 border border-gray-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Last</label>
+                        <input
+                          type="text"
+                          name="lastName"
+                          required
+                          defaultValue={player.lastName}
+                          className="w-28 border border-gray-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Pos</label>
+                        <select
+                          name="primaryPosition"
+                          defaultValue={player.primaryPosition ? (DB_TO_POSITION[player.primaryPosition] ?? '') : ''}
+                          className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        >
+                          <option value="">—</option>
+                          {POSITIONS.map((pos) => (
+                            <option key={pos} value={pos}>{pos}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={isUpdating}
+                        className="bg-brand-700 text-white font-semibold px-4 py-2 rounded-lg text-sm hover:bg-brand-800 disabled:opacity-50 transition-colors"
+                      >
+                        {isUpdating ? 'Saving...' : 'Save'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isUpdating}
+                        onClick={() => { setEditingPlayerId(null); setUpdateError(null); }}
+                        className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1.5 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={player.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 font-mono text-gray-400 text-sm">
+                    {player.jerseyNumber ?? '—'}
+                  </td>
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    {player.lastName}, {player.firstName}
+                  </td>
+                  <td className="px-4 py-3 text-gray-500">
+                    {player.primaryPosition
+                      ? (DB_TO_POSITION[player.primaryPosition] ?? player.primaryPosition)
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingPlayerId(player.id)}
+                      className="text-sm text-brand-700 hover:text-brand-900 transition-colors"
+                    >
+                      Edit
+                    </button>
+                    <form action={removeAction} className="inline">
+                      <input type="hidden" name="gameId" value={gameId} />
+                      <input type="hidden" name="playerId" value={player.id} />
+                      <DestructiveButton label="Remove" pendingLabel="..." />
+                    </form>
+                  </td>
+                </tr>
+              ),
+            )}
           </tbody>
         </table>
       )}

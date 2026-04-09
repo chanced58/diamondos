@@ -12,7 +12,7 @@ const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 async function getAuthorizedCoach(supabase: SupabaseClient, userId: string, gameId: string) {
   const { data: game } = await supabase
     .from('games')
-    .select('team_id, opponent_name, scheduled_at, status, location_type, neutral_home_team')
+    .select('team_id, opponent_name, opponent_team_id, scheduled_at, status, location_type, neutral_home_team')
     .eq('id', gameId)
     .single();
   if (!game) return { error: 'Game not found.' };
@@ -144,6 +144,77 @@ export async function startGameAction(_prevState: string | null | undefined, for
 
   if (!count || count === 0) {
     return 'Set the lineup before starting the game.';
+  }
+
+  // ── Auto-generate default opponent lineup if none exists ──────────────
+  // This allows coaches to start a game without pre-entering the opponent roster.
+  // Default players ("Player 1" through "Player 15") can be edited during or after the game.
+  const { count: oppLineupCount } = await supabase
+    .from('opponent_game_lineups')
+    .select('id', { count: 'exact', head: true })
+    .eq('game_id', gameId);
+
+  if (!oppLineupCount || oppLineupCount === 0) {
+    let opponentTeamId = game.opponent_team_id;
+
+    // Create opponent team if it doesn't exist
+    if (!opponentTeamId) {
+      const { data: newTeam, error: teamErr } = await supabase
+        .from('opponent_teams')
+        .insert({ team_id: game.team_id, name: game.opponent_name, created_by: user.id })
+        .select('id')
+        .single();
+      if (teamErr || !newTeam) return `Failed to create opponent team: ${teamErr?.message}`;
+
+      const { error: linkErr } = await supabase
+        .from('games')
+        .update({ opponent_team_id: newTeam.id })
+        .eq('id', gameId);
+      if (linkErr) {
+        // Rollback: remove the orphaned opponent team
+        await supabase.from('opponent_teams').delete().eq('id', newTeam.id);
+        return `Failed to link opponent team to game: ${linkErr.message}`;
+      }
+      opponentTeamId = newTeam.id;
+    }
+
+    // Check if the team already has players
+    const { data: existingPlayers } = await supabase
+      .from('opponent_players')
+      .select('id')
+      .eq('opponent_team_id', opponentTeamId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: true });
+
+    let playerIds: string[] = (existingPlayers ?? []).map((p) => p.id);
+
+    // Backfill to 15 default players if fewer exist
+    const needed = 15 - playerIds.length;
+    if (needed > 0) {
+      const startIdx = playerIds.length + 1;
+      const defaultPlayers = Array.from({ length: needed }, (_, i) => ({
+        opponent_team_id: opponentTeamId!,
+        first_name: 'Player',
+        last_name: String(startIdx + i),
+      }));
+      const { data: inserted, error: playersErr } = await supabase
+        .from('opponent_players')
+        .insert(defaultPlayers)
+        .select('id');
+      if (playersErr || !inserted) return `Failed to create default opponent players: ${playersErr?.message}`;
+      playerIds = [...playerIds, ...inserted.map((p) => p.id)];
+    }
+
+    // Create lineup entries for up to 9 players
+    const lineupEntries = playerIds.slice(0, 9).map((id, i) => ({
+      game_id: gameId,
+      opponent_player_id: id,
+      batting_order: i + 1,
+      is_starter: true,
+      starting_position: i === 0 ? 'pitcher' : null,
+    }));
+    const { error: lineupErr } = await supabase.from('opponent_game_lineups').insert(lineupEntries);
+    if (lineupErr) return `Failed to create default opponent lineup: ${lineupErr.message}`;
   }
 
   // Get starting pitcher — prefer the player with position 'pitcher'; fall back to first in order.
