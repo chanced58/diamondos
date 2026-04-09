@@ -79,6 +79,7 @@ export async function createGameAction(_prevState: string | null | undefined, fo
         .from('league_members')
         .select('league_id')
         .eq('opponent_team_id', opponentTeamId)
+        .eq('is_active', true)
         .limit(1)
         .maybeSingle();
 
@@ -88,6 +89,7 @@ export async function createGameAction(_prevState: string | null | undefined, fo
           .select('id')
           .eq('league_id', sharedLeague.league_id)
           .eq('team_id', teamId)
+          .eq('is_active', true)
           .maybeSingle();
         inSameLeague = !!teamMembership;
       }

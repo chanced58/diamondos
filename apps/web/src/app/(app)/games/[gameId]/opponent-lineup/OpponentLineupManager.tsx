@@ -146,12 +146,17 @@ function OpponentRosterSection({
   async function handleAddPlayer(formData: FormData) {
     setAddPending(true);
     setAddError(null);
-    const result = await addOpponentPlayerAction(null, formData);
-    setAddPending(false);
-    if (result) {
-      setAddError(result);
-    } else {
-      addFormRef.current?.reset();
+    try {
+      const result = await addOpponentPlayerAction(null, formData);
+      if (result) {
+        setAddError(result);
+      } else {
+        addFormRef.current?.reset();
+      }
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : 'Failed to add player.');
+    } finally {
+      setAddPending(false);
     }
   }
 
