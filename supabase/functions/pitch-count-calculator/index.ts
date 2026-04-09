@@ -9,6 +9,7 @@
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { resolveEffectiveTier } from '../_shared/resolve-tier.ts';
 
 interface GameEventRecord {
   id: string;
@@ -112,7 +113,18 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // 4. Fetch compliance rule for this season
+  // 4. Check subscription tier — skip compliance alerts for free tier
+  const effectiveTier = await resolveEffectiveTier(supabase, game.team_id);
+
+  // Free tier: pitch counts are tracked but compliance alerts are not sent
+  if (effectiveTier === 'free') {
+    return new Response(JSON.stringify({ pitchCount, tier: 'free', alertsSkipped: true }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // 5. Fetch compliance rule for this season
   const { data: seasonRule } = await supabase
     .from('season_compliance_rules')
     .select('pitch_compliance_rules(*)')

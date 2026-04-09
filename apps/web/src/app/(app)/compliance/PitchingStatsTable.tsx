@@ -3,7 +3,7 @@ import type { JSX } from 'react';
 
 import { useState, useMemo } from 'react';
 import type { PitchingStats, StatTier } from '@baseball/shared';
-import { formatInningsPitched, formatAverage } from '@baseball/shared';
+import { formatInningsPitched, formatAverage, SubscriptionTier, hasFeature, Feature } from '@baseball/shared';
 
 type ComplianceInfo = {
   pitchCount: number;
@@ -17,6 +17,7 @@ type Props = {
   complianceMap: Record<string, ComplianceInfo>;
   today: string;
   tier?: StatTier;
+  subscriptionTier?: SubscriptionTier;
 };
 
 type SortKey =
@@ -83,6 +84,12 @@ const TIER_KEYS: Record<StatTier, Set<SortKey>> = {
   college: new Set<SortKey>(ALL_COLUMNS.map((c) => c.key)),
 };
 
+// Columns visible on the free subscription tier (counting stats + ERA only)
+const FREE_TIER_PITCHING_KEYS = new Set<SortKey>([
+  'playerName', 'inningsPitchedOuts', 'totalPitches',
+  'era', 'hitsAllowed', 'walksAllowed', 'strikeouts', 'hitBatters', 'wildPitches',
+]);
+
 // Ball-strike count grid
 const COUNT_ROWS = [0, 1, 2, 3];
 const COUNT_COLS = [0, 1, 2];
@@ -92,14 +99,20 @@ function getValue(s: PitchingStats, key: SortKey): number | string {
   return s[key];
 }
 
-export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_school' }: Props): JSX.Element | null {
+export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_school', subscriptionTier = SubscriptionTier.FREE }: Props): JSX.Element | null {
   const [sortKey, setSortKey] = useState<SortKey>('inningsPitchedOuts');
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  const isAdvanced = hasFeature(subscriptionTier, Feature.ADVANCED_PITCHING_STATS);
+
   const columns = useMemo(
-    () => ALL_COLUMNS.filter((col) => TIER_KEYS[tier].has(col.key)),
-    [tier],
+    () => ALL_COLUMNS.filter((col) => {
+      if (!TIER_KEYS[tier].has(col.key)) return false;
+      if (!isAdvanced && !FREE_TIER_PITCHING_KEYS.has(col.key)) return false;
+      return true;
+    }),
+    [tier, isAdvanced],
   );
 
   function handleSort(key: SortKey) {

@@ -14,6 +14,8 @@ import type { OpponentTeamStats } from './OpponentsStatsTable';
 import { SeasonPicker } from './SeasonPicker';
 import { TierToggle } from './TierToggle';
 import { getActiveLeague } from '@/lib/active-league';
+import { getTeamTier } from '@/lib/team-tier';
+import { hasFeature, Feature } from '@baseball/shared';
 
 export const metadata: Metadata = { title: 'Stats' };
 
@@ -46,7 +48,7 @@ export default async function CompliancePage({
   searchParams: { tab?: string; season?: string; tier?: string };
 }): Promise<JSX.Element | null> {
   const VALID_TABS = ['pitching', 'hitting', 'opponents'] as const;
-  const tab = VALID_TABS.includes(searchParams.tab as typeof VALID_TABS[number])
+  let tab = VALID_TABS.includes(searchParams.tab as typeof VALID_TABS[number])
     ? (searchParams.tab as typeof VALID_TABS[number])
     : 'pitching';
 
@@ -62,7 +64,14 @@ export default async function CompliancePage({
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const league = await getActiveLeague(activeTeam.id);
+  const [league, subscriptionTier] = await Promise.all([
+    getActiveLeague(activeTeam.id),
+    getTeamTier(activeTeam.id),
+  ]);
+
+  const canViewOpponents = hasFeature(subscriptionTier, Feature.OPPONENT_TRACKING);
+  // Gate opponents tab to Pro tier
+  if (tab === 'opponents' && !canViewOpponents) tab = 'pitching';
 
   // Get team level for tier-aware stat display
   const { data: teamData } = await db
@@ -291,7 +300,7 @@ export default async function CompliancePage({
             seasons={(allSeasons ?? []).map((s) => ({ id: s.id, name: s.name }))}
             currentSeasonId={season?.id ?? null}
           />
-          {league && (
+          {league && canViewOpponents && (
             <Link
               href="/compliance/league"
               className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-100 transition-colors"
@@ -332,16 +341,18 @@ export default async function CompliancePage({
         >
           Hitting
         </Link>
-        <Link
-          href={`/compliance?tab=opponents${season ? `&season=${season.id}` : ''}&tier=${tier}`}
-          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-            tab === 'opponents'
-              ? 'bg-white text-gray-900 shadow-sm'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Opponents
-        </Link>
+        {canViewOpponents && (
+          <Link
+            href={`/compliance?tab=opponents${season ? `&season=${season.id}` : ''}&tier=${tier}`}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              tab === 'opponents'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Opponents
+          </Link>
+        )}
       </div>
 
       {/* Pitching tab */}
@@ -361,6 +372,7 @@ export default async function CompliancePage({
             complianceMap={complianceMap}
             today={today}
             tier={tier}
+            subscriptionTier={subscriptionTier}
           />
         )
       )}
@@ -377,7 +389,7 @@ export default async function CompliancePage({
             </p>
           </div>
         ) : (
-          <BattingStatsTable stats={allBattingStats} tier={tier} />
+          <BattingStatsTable stats={allBattingStats} tier={tier} subscriptionTier={subscriptionTier} />
         )
       )}
 

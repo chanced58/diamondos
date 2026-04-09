@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { addToTeamChannels } from '@/lib/team-channels';
 import { getActiveLeague } from '@/lib/active-league';
+import { getTeamTier } from '@/lib/team-tier';
 
 export default async function AppLayout({ children }: { children: ReactNode }): Promise<JSX.Element> {
   const supabase = createServerClient();
@@ -192,8 +193,11 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
     }
   }
 
-  // Resolve league context for the active team
-  const league = activeTeam ? await getActiveLeague(activeTeam.id) : null;
+  // Resolve league context and subscription tier for the active team
+  const [league, subscriptionTier] = await Promise.all([
+    activeTeam ? getActiveLeague(activeTeam.id) : null,
+    activeTeam ? getTeamTier(activeTeam.id) : null,
+  ]);
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -207,6 +211,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         isPlatformAdmin={isPlatformAdmin}
         leagueId={league?.id}
         leagueName={league?.name}
+        subscriptionTier={subscriptionTier ?? undefined}
       />
       <main className="flex-1 overflow-auto">
         {children}

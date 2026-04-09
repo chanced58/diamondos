@@ -18,6 +18,11 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
     stateCode: (formData.get('stateCode') ?? undefined) as string | undefined,
   };
 
+  const adminEmail = ((formData.get('adminEmail') as string) || '').trim().toLowerCase();
+  const adminFirstName = ((formData.get('adminFirstName') as string) || '').trim();
+  const adminLastName = ((formData.get('adminLastName') as string) || '').trim();
+  const assignDifferentAdmin = adminEmail.length > 0;
+
   const parsed = createLeagueSchema.safeParse(raw);
   if (!parsed.success) {
     return parsed.error.errors[0].message;
@@ -37,9 +42,10 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
 
   if (!profile?.is_platform_admin) return 'Platform admin access required.';
 
-  // 1. Create the league
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
+
+  // 1. Create the league first (before inviting anyone)
   const { data: league, error: leagueError } = await db
     .from('leagues')
     .insert({
@@ -52,18 +58,64 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
     .single();
   if (leagueError) return `League insert failed: ${leagueError.message}`;
 
-  // 2. Add creator as league_admin
+  // Helper to clean up the league and all related records on failure
+  async function rollbackLeague() {
+    await db.from('league_channel_members').delete().eq('league_channel_id', league.id);
+    await db.from('league_channels').delete().eq('league_id', league.id);
+    await db.from('league_staff').delete().eq('league_id', league.id);
+    await db.from('leagues').delete().eq('id', league.id);
+  }
+
+  // 2. Resolve league admin user ID (invite if needed, after league exists)
+  let leagueAdminUserId = user.id;
+
+  if (assignDifferentAdmin) {
+    const { data: existingProfile } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('email', adminEmail)
+      .maybeSingle();
+
+    if (existingProfile) {
+      leagueAdminUserId = existingProfile.id;
+    } else {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app');
+      const redirectTo = appUrl ? `${appUrl}/auth/callback` : '/auth/callback';
+      const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
+        adminEmail,
+        { redirectTo, data: { first_name: adminFirstName, last_name: adminLastName } },
+      );
+      if (inviteError) {
+        await rollbackLeague();
+        return `Admin invite failed: ${inviteError.message}`;
+      }
+      leagueAdminUserId = inviteData.user.id;
+
+      const { error: profileError } = await supabase.from('user_profiles').upsert({
+        id: leagueAdminUserId,
+        email: adminEmail,
+        first_name: adminFirstName || null,
+        last_name: adminLastName || null,
+      });
+      if (profileError) {
+        await rollbackLeague();
+        return `Profile creation failed: ${profileError.message}`;
+      }
+    }
+  }
+
+  // 3. Add league admin
   const { error: staffError } = await db.from('league_staff').insert({
     league_id: league.id,
-    user_id: user.id,
+    user_id: leagueAdminUserId,
     role: 'league_admin',
   });
   if (staffError) {
-    await db.from('leagues').delete().eq('id', league.id);
+    await rollbackLeague();
     return `Staff insert failed: ${staffError.message}`;
   }
 
-  // 3. Create default Announcements channel
+  // 4. Create default Announcements channel
   const { data: channel, error: channelError } = await db
     .from('league_channels')
     .insert({
@@ -76,21 +128,18 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
     .select()
     .single();
   if (channelError) {
-    await db.from('league_staff').delete().eq('league_id', league.id);
-    await db.from('leagues').delete().eq('id', league.id);
+    await rollbackLeague();
     return `Channel insert failed: ${channelError.message}`;
   }
 
-  // 4. Add creator to the channel with post permission
+  // 5. Add league admin to the channel with post permission
   const { error: cmError } = await db.from('league_channel_members').insert({
     league_channel_id: channel.id,
-    user_id: user.id,
+    user_id: leagueAdminUserId,
     can_post: true,
   });
   if (cmError) {
-    await db.from('league_channels').delete().eq('id', channel.id);
-    await db.from('league_staff').delete().eq('league_id', league.id);
-    await db.from('leagues').delete().eq('id', league.id);
+    await rollbackLeague();
     return `Channel member insert failed: ${cmError.message}`;
   }
 
