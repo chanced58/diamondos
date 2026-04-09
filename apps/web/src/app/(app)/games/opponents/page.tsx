@@ -51,7 +51,7 @@ export default async function OpponentsPage(): Promise<JSX.Element | null> {
 
   // Get player counts per team
   const teamIds = (opponentTeams ?? []).map((t) => t.id);
-  let playerCounts: Record<string, number> = {};
+  const playerCounts: Record<string, number> = {};
   if (teamIds.length > 0) {
     const { data: counts } = await db
       .from('opponent_players')
