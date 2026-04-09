@@ -2,6 +2,7 @@
 
 import type { JSX } from 'react';
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
 
@@ -70,6 +71,10 @@ export function LeagueAdminClient({
   const [addTeamDivision, setAddTeamDivision] = useState('');
   const [addOpponentTeamId, setAddOpponentTeamId] = useState('');
   const [addOpponentDivision, setAddOpponentDivision] = useState('');
+  const [newOpponentName, setNewOpponentName] = useState('');
+  const [newOpponentAbbreviation, setNewOpponentAbbreviation] = useState('');
+  const [newOpponentCity, setNewOpponentCity] = useState('');
+  const [newOpponentState, setNewOpponentState] = useState('');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [editName, setEditName] = useState(initialName ?? '');
@@ -163,6 +168,50 @@ export function LeagueAdminClient({
       if (error) { setErrorMsg(error.message); return; }
       setAddOpponentTeamId('');
       setAddOpponentDivision('');
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCreateOpponentTeam(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newOpponentName.trim()) return;
+    setSaving(true);
+    setErrorMsg(null);
+    try {
+      // Create the opponent team owned by the league
+      const { data: newTeam, error: insertError } = await supabase
+        .from('opponent_teams')
+        .insert({
+          league_id: leagueId,
+          name: newOpponentName.trim(),
+          abbreviation: newOpponentAbbreviation.trim() || null,
+          city: newOpponentCity.trim() || null,
+          state_code: newOpponentState.trim() || null,
+        })
+        .select('id')
+        .single();
+      if (insertError) { setErrorMsg(insertError.message); return; }
+
+      // Also add it as a league member
+      const { error: memberError } = await supabase
+        .from('league_members')
+        .insert({
+          league_id: leagueId,
+          opponent_team_id: newTeam.id,
+        });
+      if (memberError) {
+        // Clean up the orphaned opponent team
+        await supabase.from('opponent_teams').delete().eq('id', newTeam.id);
+        setErrorMsg(memberError.message);
+        return;
+      }
+
+      setNewOpponentName('');
+      setNewOpponentAbbreviation('');
+      setNewOpponentCity('');
+      setNewOpponentState('');
       router.refresh();
     } finally {
       setSaving(false);
@@ -379,7 +428,16 @@ export function LeagueAdminClient({
                 {teams.map((t) => (
                   <tr key={t.id}>
                     <td className="py-3">
-                      <span className="font-medium text-gray-900">{t.teamName}</span>
+                      {t.isOpponentTeam ? (
+                        <Link
+                          href={`/league/admin/opponent-teams/${t.teamId}`}
+                          className="font-medium text-brand-700 hover:underline"
+                        >
+                          {t.teamName}
+                        </Link>
+                      ) : (
+                        <span className="font-medium text-gray-900">{t.teamName}</span>
+                      )}
                       {t.organization && (
                         <span className="ml-2 text-xs text-gray-400">{t.organization}</span>
                       )}
@@ -458,11 +516,11 @@ export function LeagueAdminClient({
             </button>
           </form>
 
-          {/* Add opponent team */}
-          {opponentTeamsNotInLeague.length > 0 && (
+          {/* Add existing opponent team (admin only) */}
+          {isAdmin && opponentTeamsNotInLeague.length > 0 && (
             <>
               <div className="border-t border-gray-100 pt-4 mt-4">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Add Opponent Team</p>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Add Existing Opponent Team</p>
               </div>
               <form onSubmit={handleAddOpponentTeam} className="flex gap-2">
                 <select
@@ -495,6 +553,59 @@ export function LeagueAdminClient({
                   className="text-sm font-medium bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
                 >
                   Add Opponent
+                </button>
+              </form>
+            </>
+          )}
+
+          {/* Create new opponent team (admin only) */}
+          {isAdmin && (
+            <>
+              <div className="border-t border-gray-100 pt-4 mt-4">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Create Opponent Team</p>
+              </div>
+              <form onSubmit={handleCreateOpponentTeam} className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={newOpponentName}
+                    onChange={(e) => setNewOpponentName(e.target.value)}
+                    placeholder="Team name *"
+                    required
+                    className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <input
+                    type="text"
+                    value={newOpponentAbbreviation}
+                    onChange={(e) => setNewOpponentAbbreviation(e.target.value)}
+                    placeholder="Abbreviation"
+                    maxLength={6}
+                    className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={newOpponentCity}
+                    onChange={(e) => setNewOpponentCity(e.target.value)}
+                    placeholder="City"
+                    className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <input
+                    type="text"
+                    value={newOpponentState}
+                    onChange={(e) => setNewOpponentState(e.target.value)}
+                    placeholder="State (e.g. TX)"
+                    maxLength={2}
+                    className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={saving || !newOpponentName.trim()}
+                  className="text-sm font-medium bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                >
+                  Create Opponent Team
                 </button>
               </form>
             </>
