@@ -179,7 +179,10 @@ export async function updateOpponentPlayerAction(
   const ctx = await getCoachContext(gameId);
   if (!ctx) return 'Not authorized.';
 
-  const { error } = await ctx.db
+  const { game, db } = ctx;
+  if (!game.opponent_team_id) return 'No opponent team linked to this game.';
+
+  const { error } = await db
     .from('opponent_players')
     .update({
       first_name: firstName,
@@ -188,7 +191,8 @@ export async function updateOpponentPlayerAction(
       primary_position: primaryPosition,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', playerId);
+    .eq('id', playerId)
+    .eq('opponent_team_id', game.opponent_team_id);
 
   if (error) return `Failed to update player: ${error.message}`;
 

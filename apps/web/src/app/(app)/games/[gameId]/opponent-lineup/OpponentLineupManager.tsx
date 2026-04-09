@@ -140,9 +140,10 @@ function OpponentRosterSection({
 }): JSX.Element {
   const [addError, addAction] = useFormState(addOpponentPlayerAction, null);
   const [removeError, removeAction] = useFormState(removeOpponentPlayerAction, null);
-  const [updateError, updateAction] = useFormState(updateOpponentPlayerAction, null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
@@ -247,9 +248,16 @@ function OpponentRosterSection({
                 <tr key={player.id} className="bg-blue-50">
                   <td colSpan={4} className="px-4 py-3">
                     <form
-                      action={(formData) => {
-                        updateAction(formData);
-                        setEditingPlayerId(null);
+                      action={async (formData) => {
+                        setIsUpdating(true);
+                        const result = await updateOpponentPlayerAction(null, formData);
+                        setIsUpdating(false);
+                        if (result) {
+                          setUpdateError(result);
+                        } else {
+                          setUpdateError(null);
+                          setEditingPlayerId(null);
+                        }
                       }}
                       className="flex flex-wrap items-end gap-2"
                     >
@@ -298,11 +306,18 @@ function OpponentRosterSection({
                           ))}
                         </select>
                       </div>
-                      <SubmitButton label="Save" pendingLabel="Saving..." />
+                      <button
+                        type="submit"
+                        disabled={isUpdating}
+                        className="bg-brand-700 text-white font-semibold px-4 py-2 rounded-lg text-sm hover:bg-brand-800 disabled:opacity-50 transition-colors"
+                      >
+                        {isUpdating ? 'Saving...' : 'Save'}
+                      </button>
                       <button
                         type="button"
-                        onClick={() => setEditingPlayerId(null)}
-                        className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1.5"
+                        disabled={isUpdating}
+                        onClick={() => { setEditingPlayerId(null); setUpdateError(null); }}
+                        className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1.5 disabled:opacity-50"
                       >
                         Cancel
                       </button>

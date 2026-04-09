@@ -166,7 +166,15 @@ export async function startGameAction(_prevState: string | null | undefined, for
         .single();
       if (teamErr || !newTeam) return `Failed to create opponent team: ${teamErr?.message}`;
 
-      await supabase.from('games').update({ opponent_team_id: newTeam.id }).eq('id', gameId);
+      const { error: linkErr } = await supabase
+        .from('games')
+        .update({ opponent_team_id: newTeam.id })
+        .eq('id', gameId);
+      if (linkErr) {
+        // Rollback: remove the orphaned opponent team
+        await supabase.from('opponent_teams').delete().eq('id', newTeam.id);
+        return `Failed to link opponent team to game: ${linkErr.message}`;
+      }
       opponentTeamId = newTeam.id;
     }
 
@@ -178,23 +186,23 @@ export async function startGameAction(_prevState: string | null | undefined, for
       .eq('is_active', true)
       .order('created_at', { ascending: true });
 
-    let playerIds: string[];
+    let playerIds: string[] = (existingPlayers ?? []).map((p) => p.id);
 
-    if (existingPlayers && existingPlayers.length > 0) {
-      playerIds = existingPlayers.map((p) => p.id);
-    } else {
-      // Bulk-insert 15 default players
-      const defaultPlayers = Array.from({ length: 15 }, (_, i) => ({
+    // Backfill to 15 default players if fewer exist
+    const needed = 15 - playerIds.length;
+    if (needed > 0) {
+      const startIdx = playerIds.length + 1;
+      const defaultPlayers = Array.from({ length: needed }, (_, i) => ({
         opponent_team_id: opponentTeamId!,
         first_name: 'Player',
-        last_name: String(i + 1),
+        last_name: String(startIdx + i),
       }));
       const { data: inserted, error: playersErr } = await supabase
         .from('opponent_players')
         .insert(defaultPlayers)
         .select('id');
       if (playersErr || !inserted) return `Failed to create default opponent players: ${playersErr?.message}`;
-      playerIds = inserted.map((p) => p.id);
+      playerIds = [...playerIds, ...inserted.map((p) => p.id)];
     }
 
     // Create lineup entries for up to 9 players

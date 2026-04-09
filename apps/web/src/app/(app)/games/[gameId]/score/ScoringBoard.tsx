@@ -611,6 +611,22 @@ export function ScoringBoard({
   const [jerseyOverrides, setJerseyOverrides] = useState<Record<string, string>>({});
   const [jerseyPromptValue, setJerseyPromptValue] = useState('');
   const [jerseyPromptDismissed, setJerseyPromptDismissed] = useState<Set<string>>(new Set());
+  const [jerseySaveError, setJerseySaveError] = useState<string | null>(null);
+
+  const saveJerseyNumber = async (playerId: string, value: string) => {
+    setJerseySaveError(null);
+    const supabase = createBrowserClient();
+    const { error } = await supabase
+      .from('opponent_players')
+      .update({ jersey_number: value })
+      .eq('id', playerId);
+    if (error) {
+      setJerseySaveError(`Failed to save jersey #: ${error.message}`);
+      return;
+    }
+    setJerseyOverrides((prev) => ({ ...prev, [playerId]: value }));
+    setJerseyPromptValue('');
+  };
 
   function resetAnnotations() {
     setPitchType(null);
@@ -1503,6 +1519,9 @@ export function ScoringBoard({
               <p className="text-sm font-medium text-amber-900">
                 Enter jersey # for {activeBatter.player.lastName}
               </p>
+              {jerseySaveError && (
+                <p className="text-xs text-red-600 mt-1">{jerseySaveError}</p>
+              )}
               <div className="flex items-center gap-2 mt-2">
                 <input
                   type="text"
@@ -1515,13 +1534,7 @@ export function ScoringBoard({
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       if (jerseyPromptValue.trim()) {
-                        const playerId = activeBatter!.playerId;
-                        const val = jerseyPromptValue.trim();
-                        setJerseyOverrides((prev) => ({ ...prev, [playerId]: val }));
-                        // Persist to database
-                        const supabase = createBrowserClient();
-                        supabase.from('opponent_players').update({ jersey_number: val }).eq('id', playerId).then();
-                        setJerseyPromptValue('');
+                        saveJerseyNumber(activeBatter!.playerId, jerseyPromptValue.trim());
                       }
                     }
                   }}
@@ -1530,12 +1543,7 @@ export function ScoringBoard({
                   type="button"
                   onClick={() => {
                     if (jerseyPromptValue.trim()) {
-                      const playerId = activeBatter!.playerId;
-                      const val = jerseyPromptValue.trim();
-                      setJerseyOverrides((prev) => ({ ...prev, [playerId]: val }));
-                      const supabase = createBrowserClient();
-                      supabase.from('opponent_players').update({ jersey_number: val }).eq('id', playerId).then();
-                      setJerseyPromptValue('');
+                      saveJerseyNumber(activeBatter!.playerId, jerseyPromptValue.trim());
                     }
                   }}
                   className="bg-amber-600 text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-amber-700 transition-colors"
@@ -1547,6 +1555,7 @@ export function ScoringBoard({
                   onClick={() => {
                     setJerseyPromptDismissed((prev) => new Set(prev).add(activeBatter!.playerId));
                     setJerseyPromptValue('');
+                    setJerseySaveError(null);
                   }}
                   className="text-sm text-amber-700 hover:text-amber-900 transition-colors"
                 >
