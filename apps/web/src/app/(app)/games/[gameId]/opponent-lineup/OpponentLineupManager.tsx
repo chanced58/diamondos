@@ -1,7 +1,7 @@
 'use client';
 import type { JSX } from 'react';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import {
   saveOpponentTeamAction,
@@ -138,12 +138,31 @@ function OpponentRosterSection({
   opponentTeamId: string;
   players: OpponentPlayer[];
 }): JSX.Element {
-  const [addError, addAction] = useFormState(addOpponentPlayerAction, null);
   const [removeError, removeAction] = useFormState(removeOpponentPlayerAction, null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [addPending, setAddPending] = useState(false);
+  const addFormRef = useRef<HTMLFormElement>(null);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+
+  async function handleAddPlayer(formData: FormData) {
+    setAddPending(true);
+    setAddError(null);
+    try {
+      const result = await addOpponentPlayerAction(null, formData);
+      if (result) {
+        setAddError(result);
+      } else {
+        addFormRef.current?.reset();
+      }
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : 'Failed to add player.');
+    } finally {
+      setAddPending(false);
+    }
+  }
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
@@ -166,7 +185,7 @@ function OpponentRosterSection({
               {addError}
             </div>
           )}
-          <form action={addAction} className="flex flex-wrap items-end gap-2">
+          <form ref={addFormRef} action={handleAddPlayer} className="flex flex-wrap items-end gap-2">
             <input type="hidden" name="gameId" value={gameId} />
             <input type="hidden" name="opponentTeamId" value={opponentTeamId} />
             <div>
@@ -210,7 +229,13 @@ function OpponentRosterSection({
                 ))}
               </select>
             </div>
-            <SubmitButton label="Add" pendingLabel="Adding..." />
+            <button
+              type="submit"
+              disabled={addPending}
+              className="bg-brand-700 text-white font-semibold px-4 py-2 rounded-lg text-sm hover:bg-brand-800 disabled:opacity-50 transition-colors"
+            >
+              {addPending ? 'Adding...' : 'Add'}
+            </button>
           </form>
         </div>
       )}
@@ -250,13 +275,18 @@ function OpponentRosterSection({
                     <form
                       action={async (formData) => {
                         setIsUpdating(true);
-                        const result = await updateOpponentPlayerAction(null, formData);
-                        setIsUpdating(false);
-                        if (result) {
-                          setUpdateError(result);
-                        } else {
-                          setUpdateError(null);
-                          setEditingPlayerId(null);
+                        try {
+                          const result = await updateOpponentPlayerAction(null, formData);
+                          if (result) {
+                            setUpdateError(result);
+                          } else {
+                            setUpdateError(null);
+                            setEditingPlayerId(null);
+                          }
+                        } catch (err) {
+                          setUpdateError(err instanceof Error ? err.message : 'Failed to update player.');
+                        } finally {
+                          setIsUpdating(false);
                         }
                       }}
                       className="flex flex-wrap items-end gap-2"

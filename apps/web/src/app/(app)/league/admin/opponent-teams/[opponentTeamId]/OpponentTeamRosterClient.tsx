@@ -1,7 +1,7 @@
 'use client';
 import type { JSX } from 'react';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import {
   updateOpponentTeamAction,
@@ -184,9 +184,28 @@ function RosterSection({
   opponentTeamId: string;
   players: OpponentPlayer[];
 }): JSX.Element {
-  const [addError, addAction] = useFormState(addPlayerAction, null);
   const [removeError, removeAction] = useFormState(removePlayerAction, null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [addPending, setAddPending] = useState(false);
+  const addFormRef = useRef<HTMLFormElement>(null);
+
+  async function handleAddPlayer(formData: FormData) {
+    setAddPending(true);
+    setAddError(null);
+    try {
+      const result = await addPlayerAction(null, formData);
+      if (result) {
+        setAddError(result);
+      } else {
+        addFormRef.current?.reset();
+      }
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : 'Failed to add player.');
+    } finally {
+      setAddPending(false);
+    }
+  }
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
@@ -208,7 +227,7 @@ function RosterSection({
               {addError}
             </div>
           )}
-          <form action={addAction} className="flex flex-wrap items-end gap-2">
+          <form ref={addFormRef} action={handleAddPlayer} className="flex flex-wrap items-end gap-2">
             <input type="hidden" name="opponentTeamId" value={opponentTeamId} />
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">#</label>
@@ -274,7 +293,13 @@ function RosterSection({
                 <option value="left">L</option>
               </select>
             </div>
-            <SubmitButton label="Add" pendingLabel="Adding..." />
+            <button
+              type="submit"
+              disabled={addPending}
+              className="bg-brand-700 text-white font-semibold px-4 py-2 rounded-lg text-sm hover:bg-brand-800 disabled:opacity-50 transition-colors"
+            >
+              {addPending ? 'Adding...' : 'Add'}
+            </button>
           </form>
         </div>
       )}

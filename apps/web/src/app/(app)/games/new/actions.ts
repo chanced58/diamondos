@@ -60,27 +60,39 @@ export async function createGameAction(_prevState: string | null | undefined, fo
   // Validate opponentTeamId belongs to this team or the team's league
   let validatedOpponentTeamId: string | null = null;
   if (opponentTeamId) {
-    const { data: opponentTeam } = await supabase
+    const { data: opponentTeam, error: otError } = await supabase
       .from('opponent_teams')
-      .select('id, team_id, league_id')
+      .select('id, team_id')
       .eq('id', opponentTeamId)
       .single();
 
-    if (!opponentTeam) return 'Selected opponent team not found.';
+    if (otError || !opponentTeam) return 'Selected opponent team not found.';
 
     // Must belong to this team directly...
     const ownedByTeam = opponentTeam.team_id === teamId;
 
-    // ...or be in the same league as this team
+    // ...or be accessible via a shared league (opponent team is a league member,
+    // and this team is also a member of that same league)
     let inSameLeague = false;
-    if (opponentTeam.league_id) {
-      const { data: teamMembership } = await supabase
+    if (!ownedByTeam) {
+      const { data: sharedLeague } = await supabase
         .from('league_members')
-        .select('id')
-        .eq('league_id', opponentTeam.league_id)
-        .eq('team_id', teamId)
+        .select('league_id')
+        .eq('opponent_team_id', opponentTeamId)
+        .eq('is_active', true)
+        .limit(1)
         .maybeSingle();
-      inSameLeague = !!teamMembership;
+
+      if (sharedLeague) {
+        const { data: teamMembership } = await supabase
+          .from('league_members')
+          .select('id')
+          .eq('league_id', sharedLeague.league_id)
+          .eq('team_id', teamId)
+          .eq('is_active', true)
+          .maybeSingle();
+        inSameLeague = !!teamMembership;
+      }
     }
 
     if (!ownedByTeam && !inSameLeague) {
