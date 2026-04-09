@@ -13,6 +13,7 @@ export async function createGameAction(_prevState: string | null | undefined, fo
 
   const teamId       = formData.get('teamId') as string;
   const opponent     = (formData.get('opponent') as string)?.trim();
+  const opponentTeamId = (formData.get('opponentTeamId') as string)?.trim() || null;
   const date         = formData.get('date') as string;
   const time         = (formData.get('time') as string) || '12:00';
   const locationType = (formData.get('locationType') as string) || 'home';
@@ -69,6 +70,7 @@ export async function createGameAction(_prevState: string | null | undefined, fo
     .insert({
       team_id:       teamId,
       opponent_name: opponent,
+      opponent_team_id: opponentTeamId,
       scheduled_at:  scheduledAt,
       location_type:     locationType,
       neutral_home_team: neutralHomeTeam,
