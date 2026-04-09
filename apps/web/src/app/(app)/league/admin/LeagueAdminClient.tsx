@@ -196,7 +196,12 @@ export function LeagueAdminClient({
           league_id: leagueId,
           opponent_team_id: newTeam.id,
         });
-      if (memberError) { setErrorMsg(memberError.message); return; }
+      if (memberError) {
+        // Clean up the orphaned opponent team
+        await supabase.from('opponent_teams').delete().eq('id', newTeam.id);
+        setErrorMsg(memberError.message);
+        return;
+      }
 
       setNewOpponentName('');
       setNewOpponentAbbreviation('');
@@ -466,8 +471,8 @@ export function LeagueAdminClient({
             </button>
           </form>
 
-          {/* Add existing opponent team */}
-          {opponentTeamsNotInLeague.length > 0 && (
+          {/* Add existing opponent team (admin only) */}
+          {isAdmin && opponentTeamsNotInLeague.length > 0 && (
             <>
               <div className="border-t border-gray-100 pt-4 mt-4">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Add Existing Opponent Team</p>
@@ -508,54 +513,58 @@ export function LeagueAdminClient({
             </>
           )}
 
-          {/* Create new opponent team */}
-          <div className="border-t border-gray-100 pt-4 mt-4">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Create Opponent Team</p>
-          </div>
-          <form onSubmit={handleCreateOpponentTeam} className="space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="text"
-                value={newOpponentName}
-                onChange={(e) => setNewOpponentName(e.target.value)}
-                placeholder="Team name *"
-                required
-                className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <input
-                type="text"
-                value={newOpponentAbbreviation}
-                onChange={(e) => setNewOpponentAbbreviation(e.target.value)}
-                placeholder="Abbreviation"
-                maxLength={6}
-                className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="text"
-                value={newOpponentCity}
-                onChange={(e) => setNewOpponentCity(e.target.value)}
-                placeholder="City"
-                className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <input
-                type="text"
-                value={newOpponentState}
-                onChange={(e) => setNewOpponentState(e.target.value)}
-                placeholder="State (e.g. TX)"
-                maxLength={2}
-                className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={saving || !newOpponentName.trim()}
-              className="text-sm font-medium bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
-            >
-              Create Opponent Team
-            </button>
-          </form>
+          {/* Create new opponent team (admin only) */}
+          {isAdmin && (
+            <>
+              <div className="border-t border-gray-100 pt-4 mt-4">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Create Opponent Team</p>
+              </div>
+              <form onSubmit={handleCreateOpponentTeam} className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={newOpponentName}
+                    onChange={(e) => setNewOpponentName(e.target.value)}
+                    placeholder="Team name *"
+                    required
+                    className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <input
+                    type="text"
+                    value={newOpponentAbbreviation}
+                    onChange={(e) => setNewOpponentAbbreviation(e.target.value)}
+                    placeholder="Abbreviation"
+                    maxLength={6}
+                    className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={newOpponentCity}
+                    onChange={(e) => setNewOpponentCity(e.target.value)}
+                    placeholder="City"
+                    className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <input
+                    type="text"
+                    value={newOpponentState}
+                    onChange={(e) => setNewOpponentState(e.target.value)}
+                    placeholder="State (e.g. TX)"
+                    maxLength={2}
+                    className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={saving || !newOpponentName.trim()}
+                  className="text-sm font-medium bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                >
+                  Create Opponent Team
+                </button>
+              </form>
+            </>
+          )}
         </div>
       </div>
 

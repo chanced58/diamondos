@@ -43,7 +43,7 @@ async function getLeagueStaffContext(opponentTeamId: string) {
   if (!team || !team.league_id) return null;
 
   const access = await getLeagueAccess(team.league_id, user.id);
-  if (!access.isLeagueStaff) return null;
+  if (!access.isLeagueAdmin) return null;
 
   return { user, team, db, leagueId: team.league_id };
 }
@@ -149,7 +149,8 @@ export async function removePlayerAction(
   const { error } = await ctx.db
     .from('opponent_players')
     .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq('id', playerId);
+    .eq('id', playerId)
+    .eq('opponent_team_id', opponentTeamId);
 
   if (error) return `Failed to remove player: ${error.message}`;
 

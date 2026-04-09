@@ -29,7 +29,7 @@ export default async function OpponentTeamPage({
   if (!league) redirect('/league');
 
   const access = await getLeagueAccess(league.id, user.id);
-  if (!access.isLeagueStaff) redirect('/league');
+  if (!access.isLeagueAdmin) redirect('/league');
 
   const db = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

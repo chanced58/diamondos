@@ -57,6 +57,38 @@ export async function createGameAction(_prevState: string | null | undefined, fo
 
   if (!isCoach) return 'Only coaches can schedule games.';
 
+  // Validate opponentTeamId belongs to this team or the team's league
+  let validatedOpponentTeamId: string | null = null;
+  if (opponentTeamId) {
+    const { data: opponentTeam } = await supabase
+      .from('opponent_teams')
+      .select('id, team_id, league_id')
+      .eq('id', opponentTeamId)
+      .single();
+
+    if (!opponentTeam) return 'Selected opponent team not found.';
+
+    // Must belong to this team directly...
+    const ownedByTeam = opponentTeam.team_id === teamId;
+
+    // ...or be in the same league as this team
+    let inSameLeague = false;
+    if (opponentTeam.league_id) {
+      const { data: teamMembership } = await supabase
+        .from('league_members')
+        .select('id')
+        .eq('league_id', opponentTeam.league_id)
+        .eq('team_id', teamId)
+        .maybeSingle();
+      inSameLeague = !!teamMembership;
+    }
+
+    if (!ownedByTeam && !inSameLeague) {
+      return 'Selected opponent team does not belong to your team or league.';
+    }
+    validatedOpponentTeamId = opponentTeam.id;
+  }
+
   // Look up active season so the game is automatically linked
   const { data: activeSeason } = await supabase
     .from('seasons')
@@ -70,7 +102,7 @@ export async function createGameAction(_prevState: string | null | undefined, fo
     .insert({
       team_id:       teamId,
       opponent_name: opponent,
-      opponent_team_id: opponentTeamId,
+      opponent_team_id: validatedOpponentTeamId,
       scheduled_at:  scheduledAt,
       location_type:     locationType,
       neutral_home_team: neutralHomeTeam,

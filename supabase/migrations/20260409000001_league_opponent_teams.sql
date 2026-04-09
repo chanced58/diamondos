@@ -18,15 +18,33 @@ ALTER TABLE public.opponent_teams
 ALTER TABLE public.opponent_teams
   ADD COLUMN stats_visible boolean NOT NULL DEFAULT false;
 
--- 5. CHECK: at least one owner (team_id or league_id) must be set
+-- 5. CHECK: exactly one owner (team_id XOR league_id) must be set
 ALTER TABLE public.opponent_teams
   ADD CONSTRAINT chk_opponent_teams_owner
-  CHECK (team_id IS NOT NULL OR league_id IS NOT NULL);
+  CHECK (
+    (team_id IS NOT NULL AND league_id IS NULL)
+    OR (team_id IS NULL AND league_id IS NOT NULL)
+  );
 
 -- 6. Index on league_id for league-scoped queries
 CREATE INDEX idx_opponent_teams_league_id
   ON public.opponent_teams(league_id)
   WHERE league_id IS NOT NULL;
+
+-- ─── Helper: is_league_admin ─────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION public.is_league_admin(p_league_id uuid, p_user_id uuid)
+RETURNS boolean
+LANGUAGE sql SECURITY DEFINER STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.league_staff
+    WHERE league_id = p_league_id
+      AND user_id = p_user_id
+      AND role = 'league_admin'
+      AND is_active = true
+  );
+$$;
 
 -- ─── RLS for league staff ────────────────────────────────────────────────────
 
@@ -38,16 +56,16 @@ CREATE POLICY "league_staff_view_opponent_teams"
     AND public.is_league_staff(league_id, auth.uid())
   );
 
--- League staff can create/update/delete opponent teams owned by their league
-CREATE POLICY "league_staff_manage_opponent_teams"
+-- League admins can create/update/delete opponent teams owned by their league
+CREATE POLICY "league_admin_manage_opponent_teams"
   ON public.opponent_teams FOR ALL
   USING (
     league_id IS NOT NULL
-    AND public.is_league_staff(league_id, auth.uid())
+    AND public.is_league_admin(league_id, auth.uid())
   )
   WITH CHECK (
     league_id IS NOT NULL
-    AND public.is_league_staff(league_id, auth.uid())
+    AND public.is_league_admin(league_id, auth.uid())
   );
 
 -- League staff can view opponent players belonging to league-owned opponent teams
@@ -62,15 +80,15 @@ CREATE POLICY "league_staff_view_opponent_players"
     )
   );
 
--- League staff can manage opponent players belonging to league-owned opponent teams
-CREATE POLICY "league_staff_manage_opponent_players"
+-- League admins can manage opponent players belonging to league-owned opponent teams
+CREATE POLICY "league_admin_manage_opponent_players"
   ON public.opponent_players FOR ALL
   USING (
     EXISTS (
       SELECT 1 FROM public.opponent_teams ot
       WHERE ot.id = public.opponent_players.opponent_team_id
         AND ot.league_id IS NOT NULL
-        AND public.is_league_staff(ot.league_id, auth.uid())
+        AND public.is_league_admin(ot.league_id, auth.uid())
     )
   )
   WITH CHECK (
@@ -78,7 +96,7 @@ CREATE POLICY "league_staff_manage_opponent_players"
       SELECT 1 FROM public.opponent_teams ot
       WHERE ot.id = public.opponent_players.opponent_team_id
         AND ot.league_id IS NOT NULL
-        AND public.is_league_staff(ot.league_id, auth.uid())
+        AND public.is_league_admin(ot.league_id, auth.uid())
     )
   );
 
