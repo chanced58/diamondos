@@ -177,6 +177,18 @@ export default async function GameDetailPage({
         </div>
       )}
 
+      {/* ── Edit Opponent Lineup (completed games — coaches only) ── */}
+      {isCompleted && isCoach && (
+        <div className="mb-6">
+          <Link
+            href={`/games/${game.id}/opponent-lineup`}
+            className="inline-block text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium transition-colors text-gray-700"
+          >
+            Edit Opponent Lineup
+          </Link>
+        </div>
+      )}
+
       {/* ── Game details ────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
         <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
@@ -255,12 +267,22 @@ export default async function GameDetailPage({
       {game.status === 'in_progress' && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-5 mb-6">
           <p className="text-sm font-semibold text-green-800 mb-2">Game in progress</p>
-          <Link
-            href={`/games/${game.id}/score`}
-            className="inline-block bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-green-800 transition-colors"
-          >
-            Continue Scoring →
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/games/${game.id}/score`}
+              className="inline-block bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-green-800 transition-colors"
+            >
+              Continue Scoring →
+            </Link>
+            {isCoach && (
+              <Link
+                href={`/games/${game.id}/opponent-lineup`}
+                className="inline-block text-sm bg-white border border-green-300 text-green-800 hover:bg-green-100 px-4 py-2 rounded-lg font-medium transition-colors"
+              >
+                Edit Opponent Lineup
+              </Link>
+            )}
+          </div>
         </div>
       )}
 

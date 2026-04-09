@@ -607,6 +607,11 @@ export function ScoringBoard({
   const [wildPitchPending, setWildPitchPending] = useState(false);
   const [passedBallPending, setPassedBallPending] = useState(false);
 
+  // Jersey number prompt state for opponent batters without a jersey number
+  const [jerseyOverrides, setJerseyOverrides] = useState<Record<string, string>>({});
+  const [jerseyPromptValue, setJerseyPromptValue] = useState('');
+  const [jerseyPromptDismissed, setJerseyPromptDismissed] = useState<Set<string>>(new Set());
+
   function resetAnnotations() {
     setPitchType(null);
     setZoneLocation(null);
@@ -829,25 +834,33 @@ export function ScoringBoard({
     return [...history, ...currentGameHits];
   })();
 
+  // Resolve jersey number with overrides from the in-game prompt
+  const resolveJersey = (playerId: string, original: number | string | null): number | string | null => {
+    return jerseyOverrides[playerId] ?? original;
+  };
+
   // Player name lookup (searches both lineups)
   const playerName = (playerId: string | null) => {
     if (!playerId) return '—';
     const entry = [...lineup, ...(opponentLineup ?? [])].find((l) => l.playerId === playerId);
     if (!entry) return '—';
-    return `${entry.player.lastName} #${entry.player.jerseyNumber ?? '—'}`;
+    const jersey = resolveJersey(playerId, entry.player.jerseyNumber);
+    return `${entry.player.lastName} #${jersey ?? '—'}`;
   };
 
   // Jersey-number label for the baserunner diamond (short form: "#7")
   const runnerJerseyLabel = (playerId: string | null): string | null => {
     if (!playerId) return null;
     const entry = [...lineup, ...(opponentLineup ?? [])].find((l) => l.playerId === playerId);
-    return entry?.player.jerseyNumber != null ? `#${entry.player.jerseyNumber}` : null;
+    const jersey = resolveJersey(playerId, entry?.player.jerseyNumber ?? null);
+    return jersey != null ? `#${jersey}` : null;
   };
 
   const getRunnerLabel = (playerId: string): string => {
     const entry = [...lineup, ...(opponentLineup ?? [])].find((l) => l.playerId === playerId);
     if (!entry) return 'Unknown';
-    const num = entry.player.jerseyNumber != null ? ` #${entry.player.jerseyNumber}` : '';
+    const jersey = resolveJersey(playerId, entry.player.jerseyNumber);
+    const num = jersey != null ? ` #${jersey}` : '';
     return `${entry.player.lastName}${num}`;
   };
 
@@ -1462,7 +1475,7 @@ export function ScoringBoard({
               <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Batting</p>
               <p className="font-semibold text-gray-900">
                 {activeBatter
-                  ? `${activeBatter.player.lastName} #${activeBatter.player.jerseyNumber ?? '—'}`
+                  ? `${activeBatter.player.lastName} #${resolveJersey(activeBatter.playerId, activeBatter.player.jerseyNumber) ?? '—'}`
                   : '—'}
               </p>
             </div>
@@ -1470,7 +1483,7 @@ export function ScoringBoard({
               <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Pitching</p>
               <p className="font-semibold text-gray-900">
                 {activePitcher
-                  ? `${activePitcher.player.lastName} #${activePitcher.player.jerseyNumber ?? '—'}`
+                  ? `${activePitcher.player.lastName} #${resolveJersey(activePitcher.playerId, activePitcher.player.jerseyNumber) ?? '—'}`
                   : '—'}
               </p>
               {activePitcherPitchCount > 0 && (
@@ -1479,6 +1492,70 @@ export function ScoringBoard({
             </div>
           </div>
         </div>
+
+        {/* ── Jersey Number Prompt (opponent batters without a number) ── */}
+        {isCoach && isOpponentBatting && activeBatter &&
+         activeBatter.player.jerseyNumber == null &&
+         !jerseyOverrides[activeBatter.playerId] &&
+         !jerseyPromptDismissed.has(activeBatter.playerId) && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-900">
+                Enter jersey # for {activeBatter.player.lastName}
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={jerseyPromptValue}
+                  onChange={(e) => setJerseyPromptValue(e.target.value)}
+                  placeholder="#"
+                  className="w-16 border border-amber-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (jerseyPromptValue.trim()) {
+                        const playerId = activeBatter!.playerId;
+                        const val = jerseyPromptValue.trim();
+                        setJerseyOverrides((prev) => ({ ...prev, [playerId]: val }));
+                        // Persist to database
+                        const supabase = createBrowserClient();
+                        supabase.from('opponent_players').update({ jersey_number: val }).eq('id', playerId).then();
+                        setJerseyPromptValue('');
+                      }
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (jerseyPromptValue.trim()) {
+                      const playerId = activeBatter!.playerId;
+                      const val = jerseyPromptValue.trim();
+                      setJerseyOverrides((prev) => ({ ...prev, [playerId]: val }));
+                      const supabase = createBrowserClient();
+                      supabase.from('opponent_players').update({ jersey_number: val }).eq('id', playerId).then();
+                      setJerseyPromptValue('');
+                    }
+                  }}
+                  className="bg-amber-600 text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-amber-700 transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setJerseyPromptDismissed((prev) => new Set(prev).add(activeBatter!.playerId));
+                    setJerseyPromptValue('');
+                  }}
+                  className="text-sm text-amber-700 hover:text-amber-900 transition-colors"
+                >
+                  Skip
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Pitch Controls (coaches only) ─────────────────────── */}
         {isCoach && (
