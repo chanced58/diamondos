@@ -336,14 +336,12 @@ export function applyPitchRevertedTyped(events: GameEvent[]): GameEvent[] {
     if (event.eventType === EventType.PITCH_REVERTED) {
       const payload = event.payload as Record<string, unknown>;
       const keepUntilSeq = payload.revertToSequenceNumber as number;
-      // Rebuild from original events up to keepUntilSeq, then re-process
-      // remaining events so voided markers after the revert point are re-applied
-      const kept = events.slice(0, i).filter(
-        (e) => e.eventType !== EventType.PITCH_REVERTED
-          && e.eventType !== EventType.EVENT_VOIDED
-          && e.sequenceNumber <= keepUntilSeq,
-      );
-      result.splice(0, result.length, ...kept);
+      // Filter the accumulated result (not the original array) so that
+      // earlier reverts are respected — going back to the original would
+      // restore events that a previous revert had already removed.
+      result.splice(0, result.length, ...result.filter(
+        (e) => e.sequenceNumber <= keepUntilSeq,
+      ));
     } else if (event.eventType === EventType.EVENT_VOIDED) {
       const payload = event.payload as Record<string, unknown>;
       const voidedId = payload.voidedEventId as string;
