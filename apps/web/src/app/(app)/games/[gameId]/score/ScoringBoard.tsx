@@ -649,21 +649,24 @@ export function ScoringBoard({
     const dbPosition = position ? (ASSIGN_POSITION_TO_DB[position] ?? null) : null;
     const { error } = await supabase
       .from('opponent_game_lineups')
-      .insert({
-        game_id: game.id,
-        opponent_player_id: playerId,
-        batting_order: battingOrder,
-        starting_position: dbPosition as 'pitcher' | 'catcher' | 'first_base' | 'second_base' | 'third_base' | 'shortstop' | 'left_field' | 'center_field' | 'right_field' | 'designated_hitter' | null,
-        is_starter: true,
-      });
+      .upsert(
+        {
+          game_id: game.id,
+          opponent_player_id: playerId,
+          batting_order: battingOrder,
+          starting_position: dbPosition as 'pitcher' | 'catcher' | 'first_base' | 'second_base' | 'third_base' | 'shortstop' | 'left_field' | 'center_field' | 'right_field' | 'designated_hitter' | null,
+          is_starter: true,
+        },
+        { onConflict: 'game_id,opponent_player_id' },
+      );
     if (error) {
       setAssignBatterError(`Failed to assign batter: ${error.message}`);
       return;
     }
     const rosterPlayer = (opponentRoster ?? []).find((r) => r.id === playerId);
-    setLocalOpponentLineup((prev) => [
-      ...prev,
-      {
+    setLocalOpponentLineup((prev) => {
+      const existing = prev.findIndex((l) => l.playerId === playerId);
+      const entry: LineupEntry = {
         playerId,
         battingOrder,
         startingPosition: position || null,
@@ -673,8 +676,14 @@ export function ScoringBoard({
           lastName: rosterPlayer?.lastName ?? 'Player',
           jerseyNumber: rosterPlayer?.jerseyNumber ?? null,
         },
-      },
-    ]);
+      };
+      if (existing >= 0) {
+        const next = [...prev];
+        next[existing] = entry;
+        return next;
+      }
+      return [...prev, entry];
+    });
     setAssignBatterPlayerId('');
     setAssignBatterPosition('');
   };
@@ -794,11 +803,9 @@ export function ScoringBoard({
     effectiveOpponentStarters.find((s) => s.battingOrder === expectedOpponentSlot) ?? null;
 
   // Clear skipped-slot dismissals when the active slot changes (skip is per-PA only)
-  const prevSlotRef = useRef(expectedOpponentSlot);
-  if (prevSlotRef.current !== expectedOpponentSlot) {
-    prevSlotRef.current = expectedOpponentSlot;
-    if (skippedSlots.size > 0) setSkippedSlots(new Set());
-  }
+  useEffect(() => {
+    setSkippedSlots(new Set());
+  }, [expectedOpponentSlot]);
 
   // The batter currently at the plate (our player or opponent)
   const activeBatter = isOpponentBatting ? currentOpponentBatter : currentBatter;
@@ -2692,7 +2699,7 @@ export function ScoringBoard({
                   : (teamRoster ?? lineup.map((l) => l.player).filter((p): p is typeof p & { id: string } => p.id !== null));
               const currentLineupIds = new Set(
                 isOpp
-                  ? localOpponentLineup.map((l) => l.playerId)
+                  ? effectiveOpponentStarters.map((l) => l.playerId)
                   : lineup.map((l) => l.playerId),
               );
 

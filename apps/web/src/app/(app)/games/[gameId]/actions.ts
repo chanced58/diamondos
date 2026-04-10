@@ -375,8 +375,8 @@ export async function updateGameAction(
           .select('opponent_team_id')
           .eq('opponent_team_id', opponentTeamIdRaw)
           .in('league_id', leagueIds)
-          .maybeSingle();
-        if (leagueLinked) opponentTeamId = opponentTeamIdRaw;
+          .limit(1);
+        if (leagueLinked && leagueLinked.length > 0) opponentTeamId = opponentTeamIdRaw;
       }
 
       if (!opponentTeamId) return 'Selected opponent team not found or not accessible.';
