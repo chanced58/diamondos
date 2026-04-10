@@ -192,13 +192,7 @@ export function deriveBattingStats(
           if (r2 && 2 + bases >= 4) scoreRunner(r2);    // scores on double+
           if (r1 && 1 + bases >= 4) scoreRunner(r1);    // scores on triple
 
-          // Place remaining runners
-          const new1 = bases === 1 ? batterId : null;
-          const new2 = bases === 2 ? batterId : (bases === 1 ? r1 : null);
-          const new3 = bases === 3 ? batterId
-            : (bases === 2 && (r1 || r2) ? (r1 ?? r2) : null)
-              || (bases === 1 ? r2 : null);
-          // Keep non-scoring runners that didn't advance past their base
+          // Advance non-scoring runners
           if (bases === 1) {
             r3 = r2 ?? null; // r2 advances to 3rd; r3 already scored so clear it
             r2 = r1;       // r1 advances to 2nd
@@ -363,9 +357,8 @@ export function deriveBattingStats(
         if (r1 === runnerId) r1 = null;
         else if (r2 === runnerId) r2 = null;
         else if (r3 === runnerId) r3 = null;
-        // Place on new base (or score)
-        if (toBase === 4) scoreRunner(runnerId);
-        else if (toBase === 3) r3 = runnerId;
+        // Place on new base (toBase 4 = scored; run credited by SCORE event)
+        if (toBase === 3) r3 = runnerId;
         else if (toBase === 2) r2 = runnerId;
         continue;
       }
@@ -387,8 +380,8 @@ export function deriveBattingStats(
         if (r1 === runnerId) r1 = null;
         else if (r2 === runnerId) r2 = null;
         else if (r3 === runnerId) r3 = null;
-        if (toBase === 4) scoreRunner(runnerId);
-        else if (toBase === 3) r3 = runnerId;
+        // toBase 4 = scored; run credited by SCORE event
+        if (toBase === 3) r3 = runnerId;
         else if (toBase === 2) r2 = runnerId;
         else if (toBase === 1) r1 = runnerId;
         continue;

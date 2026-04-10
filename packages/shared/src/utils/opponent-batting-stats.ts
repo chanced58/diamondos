@@ -111,8 +111,8 @@ export function computeOpponentBatting(
             if (r1 === runnerId) r1 = null;
             else if (r2 === runnerId) r2 = null;
             else if (r3 === runnerId) r3 = null;
-            if (toBase === 4) scoreRunner(runnerId);
-            else if (toBase === 3) r3 = runnerId;
+            // toBase 4 = scored; run credited by SCORE event
+            if (toBase === 3) r3 = runnerId;
             else if (toBase === 2) r2 = runnerId;
           }
         }
@@ -132,8 +132,8 @@ export function computeOpponentBatting(
             if (r1 === runnerId) r1 = null;
             else if (r2 === runnerId) r2 = null;
             else if (r3 === runnerId) r3 = null;
-            if (toBase === 4) scoreRunner(runnerId);
-            else if (toBase === 3) r3 = runnerId;
+            // toBase 4 = scored; run credited by SCORE event
+            if (toBase === 3) r3 = runnerId;
             else if (toBase === 2) r2 = runnerId;
             else if (toBase === 1) r1 = runnerId;
           }
