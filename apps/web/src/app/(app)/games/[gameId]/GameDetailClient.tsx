@@ -6,9 +6,17 @@ import { useFormState, useFormStatus } from 'react-dom';
 import { EditGameForm } from './EditGameForm';
 import { resetGameAction, recalculateScoresAction } from './actions';
 
+type OpponentTeamOption = {
+  id: string;
+  name: string;
+  city: string | null;
+};
+
 type GameEditProps = {
   gameId: string;
   opponentName: string;
+  opponentTeamId: string;
+  opponentTeams: OpponentTeamOption[];
   scheduledDate: string;   // YYYY-MM-DD
   scheduledTime: string;   // HH:MM
   locationType: string;
@@ -40,12 +48,14 @@ export function EditGameButton(props: GameEditProps): JSX.Element {
             <EditGameForm
               gameId={props.gameId}
               defaultOpponent={props.opponentName}
+              defaultOpponentTeamId={props.opponentTeamId}
               defaultDate={props.scheduledDate}
               defaultTime={props.scheduledTime}
               defaultLocationType={props.locationType}
               defaultNeutralHomeTeam={props.neutralHomeTeam}
               defaultVenue={props.venueName}
               defaultNotes={props.notes}
+              opponentTeams={props.opponentTeams}
               onCancel={() => setEditing(false)}
             />
           </div>

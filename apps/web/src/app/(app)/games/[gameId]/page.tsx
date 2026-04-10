@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { getActiveLeague } from '@/lib/active-league';
 import { getUserAccess } from '@/lib/user-access';
 import { formatDate, formatTime, weAreHome } from '@baseball/shared';
 import { CancelGameForm } from './CancelGameForm';
@@ -69,6 +70,34 @@ export default async function GameDetailPage({
 
   const hasLineup = (lineupCount ?? 0) > 0;
   const hasOpponentLineup = (opponentLineupCount ?? 0) > 0;
+
+  // Fetch opponent teams for the edit form (team-owned + league)
+  const { data: teamOpponents } = await db
+    .from('opponent_teams')
+    .select('id, name, city')
+    .eq('team_id', game.team_id)
+    .order('name');
+
+  let leagueOpponents: { id: string; name: string; city: string | null }[] = [];
+  const league = await getActiveLeague(game.team_id);
+  if (league) {
+    const { data: leagueMembers } = await db
+      .from('league_members')
+      .select('opponent_team_id, opponent_teams(id, name, city)')
+      .eq('league_id', league.id)
+      .not('opponent_team_id', 'is', null);
+    leagueOpponents = (leagueMembers ?? [])
+      .filter((m) => m.opponent_teams)
+      .map((m) => {
+        const ot = Array.isArray(m.opponent_teams) ? m.opponent_teams[0] : m.opponent_teams;
+        return { id: ot.id, name: ot.name, city: ot.city };
+      });
+  }
+
+  const allOpponentTeams = [...(teamOpponents ?? []), ...leagueOpponents];
+  const uniqueOpponentTeams = Array.from(
+    new Map(allOpponentTeams.map((t) => [t.id, t])).values(),
+  ).sort((a, b) => a.name.localeCompare(b.name));
 
   const statusStyle = STATUS_STYLES[game.status] ?? STATUS_STYLES.scheduled;
   const isHome = weAreHome(game.location_type, game.neutral_home_team);
@@ -143,6 +172,8 @@ export default async function GameDetailPage({
           <EditGameButton
             gameId={game.id}
             opponentName={game.opponent_name}
+            opponentTeamId={game.opponent_team_id ?? ''}
+            opponentTeams={uniqueOpponentTeams}
             scheduledDate={scheduledDate}
             scheduledTime={scheduledTime}
             locationType={game.location_type}

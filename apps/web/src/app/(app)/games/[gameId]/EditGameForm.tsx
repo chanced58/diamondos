@@ -25,46 +25,96 @@ const inputClass =
 const selectClass =
   'w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent';
 
+type OpponentTeamOption = {
+  id: string;
+  name: string;
+  city: string | null;
+};
+
 type Props = {
   gameId: string;
   defaultOpponent: string;
+  defaultOpponentTeamId: string;
   defaultDate: string;   // YYYY-MM-DD
   defaultTime: string;   // HH:MM
   defaultLocationType: string;
   defaultNeutralHomeTeam: string;
   defaultVenue: string;
   defaultNotes: string;
+  opponentTeams?: OpponentTeamOption[];
   onCancel: () => void;
 };
 
 export function EditGameForm({
   gameId,
   defaultOpponent,
+  defaultOpponentTeamId,
   defaultDate,
   defaultTime,
   defaultLocationType,
   defaultNeutralHomeTeam,
   defaultVenue,
   defaultNotes,
+  opponentTeams = [],
   onCancel,
 }: Props): JSX.Element | null {
   const [error, formAction] = useFormState(updateGameAction, null);
   const [locationType, setLocationType] = useState(defaultLocationType);
+  const [selectedOpponentTeamId, setSelectedOpponentTeamId] = useState(defaultOpponentTeamId);
+  const [opponentName, setOpponentName] = useState(defaultOpponent);
+
+  function handleOpponentTeamChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const id = e.target.value;
+    setSelectedOpponentTeamId(id);
+    if (id) {
+      const team = opponentTeams.find((t) => t.id === id);
+      if (team) setOpponentName(team.name);
+    }
+  }
 
   return (
     <form action={formAction} className="space-y-5">
       <input type="hidden" name="gameId" value={gameId} />
+      <input type="hidden" name="opponentTeamId" value={selectedOpponentTeamId} />
 
-      {/* Opponent */}
+      {/* Opponent team selection */}
+      {opponentTeams.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Select Opponent Team
+          </label>
+          <select
+            value={selectedOpponentTeamId}
+            onChange={handleOpponentTeamChange}
+            className={selectClass}
+          >
+            <option value="">Type name below instead...</option>
+            {opponentTeams.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}{t.city ? ` — ${t.city}` : ''}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-400 mt-1">
+            Select a known opponent team, or type a name below for a new opponent.
+          </p>
+        </div>
+      )}
+
+      {/* Opponent name */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          Opponent <span className="text-red-500">*</span>
+          Opponent {!selectedOpponentTeamId && <span className="text-red-500">*</span>}
         </label>
         <input
           type="text"
           name="opponent"
           required
-          defaultValue={defaultOpponent}
+          value={opponentName}
+          onChange={(e) => {
+            setOpponentName(e.target.value);
+            if (selectedOpponentTeamId) setSelectedOpponentTeamId('');
+          }}
           placeholder="e.g. Central High School"
           className={inputClass}
         />

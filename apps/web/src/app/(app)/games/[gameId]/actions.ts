@@ -343,8 +343,21 @@ export async function updateGameAction(
   const opponent = (formData.get('opponent') as string)?.trim();
   const date     = formData.get('date') as string;
   const time     = (formData.get('time') as string) || '12:00';
+  const opponentTeamIdRaw = (formData.get('opponentTeamId') as string)?.trim() || null;
   if (!opponent) return 'Opponent name is required.';
   if (!date)     return 'Game date is required.';
+
+  // Validate opponent team exists if provided
+  let opponentTeamId: string | null = null;
+  if (opponentTeamIdRaw) {
+    const { data: opponentTeam } = await supabase
+      .from('opponent_teams')
+      .select('id')
+      .eq('id', opponentTeamIdRaw)
+      .single();
+    if (!opponentTeam) return 'Selected opponent team not found.';
+    opponentTeamId = opponentTeam.id;
+  }
 
   const [year, month, day] = date.split('-').map(Number);
   const [hour, minute]     = time.split(':').map(Number);
@@ -366,8 +379,9 @@ export async function updateGameAction(
   const { error } = await supabase
     .from('games')
     .update({
-      opponent_name: opponent,
-      scheduled_at:  scheduledAt,
+      opponent_name:     opponent,
+      opponent_team_id:  opponentTeamId,
+      scheduled_at:      scheduledAt,
       location_type:     locationType,
       neutral_home_team: neutralHomeTeam,
       venue_name:        venue,
