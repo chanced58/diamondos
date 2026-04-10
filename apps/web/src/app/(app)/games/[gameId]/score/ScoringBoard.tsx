@@ -528,6 +528,7 @@ export function ScoringBoard({
   seasonSprayPoints?: Record<string, SprayPt[]>;
   scoringConfig?: ScoringConfig;
 }): JSX.Element {
+  const [localOpponentLineup, setLocalOpponentLineup] = useState<LineupEntry[]>(opponentLineup ?? []);
   const [eventRows, setEventRows] = useState<EventRow[]>(initialEvents);
   const nextSeqNum = useRef(
     Math.max(
@@ -613,6 +614,12 @@ export function ScoringBoard({
   const [jerseyPromptDismissed, setJerseyPromptDismissed] = useState<Set<string>>(new Set());
   const [jerseySaveError, setJerseySaveError] = useState<string | null>(null);
 
+  // Inline batter assignment state (for assigning roster players to lineup slots during scoring)
+  const [assignBatterPlayerId, setAssignBatterPlayerId] = useState('');
+  const [assignBatterPosition, setAssignBatterPosition] = useState('');
+  const [skippedSlots, setSkippedSlots] = useState<Set<number>>(new Set());
+  const [assignBatterError, setAssignBatterError] = useState<string | null>(null);
+
   const saveJerseyNumber = async (playerId: string, value: string) => {
     setJerseySaveError(null);
     const supabase = createBrowserClient();
@@ -626,6 +633,59 @@ export function ScoringBoard({
     }
     setJerseyOverrides((prev) => ({ ...prev, [playerId]: value }));
     setJerseyPromptValue('');
+  };
+
+  const ASSIGN_POSITION_TO_DB: Record<string, string> = {
+    P: 'pitcher', C: 'catcher', '1B': 'first_base', '2B': 'second_base',
+    '3B': 'third_base', SS: 'shortstop', LF: 'left_field', CF: 'center_field',
+    RF: 'right_field', DH: 'designated_hitter',
+  };
+
+  const ASSIGN_POSITIONS = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH'] as const;
+
+  const assignBatter = async (playerId: string, battingOrder: number, position: string) => {
+    setAssignBatterError(null);
+    const supabase = createBrowserClient();
+    const dbPosition = position ? (ASSIGN_POSITION_TO_DB[position] ?? null) : null;
+    const { error } = await supabase
+      .from('opponent_game_lineups')
+      .upsert(
+        {
+          game_id: game.id,
+          opponent_player_id: playerId,
+          batting_order: battingOrder,
+          starting_position: dbPosition as 'pitcher' | 'catcher' | 'first_base' | 'second_base' | 'third_base' | 'shortstop' | 'left_field' | 'center_field' | 'right_field' | 'designated_hitter' | null,
+          is_starter: true,
+        },
+        { onConflict: 'game_id,opponent_player_id' },
+      );
+    if (error) {
+      setAssignBatterError(`Failed to assign batter: ${error.message}`);
+      return;
+    }
+    const rosterPlayer = (opponentRoster ?? []).find((r) => r.id === playerId);
+    setLocalOpponentLineup((prev) => {
+      const existing = prev.findIndex((l) => l.playerId === playerId);
+      const entry: LineupEntry = {
+        playerId,
+        battingOrder,
+        startingPosition: position || null,
+        player: {
+          id: playerId,
+          firstName: rosterPlayer?.firstName ?? 'Unknown',
+          lastName: rosterPlayer?.lastName ?? 'Player',
+          jerseyNumber: rosterPlayer?.jerseyNumber ?? null,
+        },
+      };
+      if (existing >= 0) {
+        const next = [...prev];
+        next[existing] = entry;
+        return next;
+      }
+      return [...prev, entry];
+    });
+    setAssignBatterPlayerId('');
+    setAssignBatterPosition('');
   };
 
   function resetAnnotations() {
@@ -679,7 +739,7 @@ export function ScoringBoard({
     isHome ? gameState.isTopOfInning : !gameState.isTopOfInning;
 
   // Opponent starters sorted by batting order
-  const opponentStarters = (opponentLineup ?? [])
+  const opponentStarters = localOpponentLineup
     .filter((l) => l.battingOrder >= 1 && l.battingOrder <= 9)
     .sort((a, b) => a.battingOrder - b.battingOrder);
 
@@ -738,9 +798,14 @@ export function ScoringBoard({
   const completedOpponentPAs = opponentBatsInTop
     ? gameState.completedTopHalfPAs
     : gameState.completedBottomHalfPAs;
-  const opponentBatterIdx =
-    effectiveOpponentStarters.length > 0 ? completedOpponentPAs % effectiveOpponentStarters.length : 0;
-  const currentOpponentBatter = effectiveOpponentStarters[opponentBatterIdx] ?? null;
+  const expectedOpponentSlot = (completedOpponentPAs % 9) + 1;
+  const currentOpponentBatter =
+    effectiveOpponentStarters.find((s) => s.battingOrder === expectedOpponentSlot) ?? null;
+
+  // Clear skipped-slot dismissals when the active slot changes (skip is per-PA only)
+  useEffect(() => {
+    setSkippedSlots(new Set());
+  }, [expectedOpponentSlot]);
 
   // The batter currently at the plate (our player or opponent)
   const activeBatter = isOpponentBatting ? currentOpponentBatter : currentBatter;
@@ -780,7 +845,7 @@ export function ScoringBoard({
 
   // When opponent is batting → our team pitches; when our team is batting → opponent pitches.
   const currentTeamPitcher     = derivePitcher(lineup,              teamRoster,     false);
-  const currentOpponentPitcher = derivePitcher(opponentLineup ?? [], opponentRoster, true);
+  const currentOpponentPitcher = derivePitcher(localOpponentLineup, opponentRoster, true);
   const activePitcher    = isOpponentBatting ? currentTeamPitcher : currentOpponentPitcher;
   const activePitcherId  = activePitcher?.playerId ?? null;
 
@@ -858,7 +923,7 @@ export function ScoringBoard({
   // Player name lookup (searches both lineups)
   const playerName = (playerId: string | null) => {
     if (!playerId) return '—';
-    const entry = [...lineup, ...(opponentLineup ?? [])].find((l) => l.playerId === playerId);
+    const entry = [...lineup, ...localOpponentLineup].find((l) => l.playerId === playerId);
     if (!entry) return '—';
     const jersey = resolveJersey(playerId, entry.player.jerseyNumber);
     return `${entry.player.lastName} #${jersey ?? '—'}`;
@@ -867,13 +932,13 @@ export function ScoringBoard({
   // Jersey-number label for the baserunner diamond (short form: "#7")
   const runnerJerseyLabel = (playerId: string | null): string | null => {
     if (!playerId) return null;
-    const entry = [...lineup, ...(opponentLineup ?? [])].find((l) => l.playerId === playerId);
+    const entry = [...lineup, ...localOpponentLineup].find((l) => l.playerId === playerId);
     const jersey = resolveJersey(playerId, entry?.player.jerseyNumber ?? null);
     return jersey != null ? `#${jersey}` : null;
   };
 
   const getRunnerLabel = (playerId: string): string => {
-    const entry = [...lineup, ...(opponentLineup ?? [])].find((l) => l.playerId === playerId);
+    const entry = [...lineup, ...localOpponentLineup].find((l) => l.playerId === playerId);
     if (!entry) return 'Unknown';
     const jersey = resolveJersey(playerId, entry.player.jerseyNumber);
     const num = jersey != null ? ` #${jersey}` : '';
@@ -1565,6 +1630,82 @@ export function ScoringBoard({
             </div>
           </div>
         )}
+
+        {/* ── Inline Batter Assignment (opponent batting, slot not filled) ── */}
+        {isCoach && isOpponentBatting && !currentOpponentBatter &&
+         (opponentRoster ?? []).length > 0 &&
+         !skippedSlots.has(expectedOpponentSlot) && (() => {
+          const assignedIds = new Set(localOpponentLineup.map((l) => l.playerId));
+          const availablePlayers = (opponentRoster ?? []).filter((r) => !assignedIds.has(r.id));
+          return (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <p className="text-sm font-medium text-blue-900 mb-2">
+                Assign Opponent Batter #{expectedOpponentSlot}
+              </p>
+              {assignBatterError && (
+                <p className="text-xs text-red-600 mb-2">{assignBatterError}</p>
+              )}
+              {availablePlayers.length === 0 ? (
+                <p className="text-xs text-blue-700">No unassigned roster players remaining.</p>
+              ) : (
+                <div className="flex flex-wrap items-end gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-blue-700 mb-1">Player</label>
+                    <select
+                      value={assignBatterPlayerId}
+                      onChange={(e) => setAssignBatterPlayerId(e.target.value)}
+                      className="border border-blue-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    >
+                      <option value="">Select player...</option>
+                      {availablePlayers.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.jerseyNumber ? `#${p.jerseyNumber} ` : ''}{p.lastName}, {p.firstName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-blue-700 mb-1">Position</label>
+                    <select
+                      value={assignBatterPosition}
+                      onChange={(e) => setAssignBatterPosition(e.target.value)}
+                      className="border border-blue-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    >
+                      <option value="">—</option>
+                      {ASSIGN_POSITIONS.map((pos) => (
+                        <option key={pos} value={pos}>{pos}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!assignBatterPlayerId}
+                    onClick={() => {
+                      if (assignBatterPlayerId) {
+                        assignBatter(assignBatterPlayerId, expectedOpponentSlot, assignBatterPosition);
+                      }
+                    }}
+                    className="bg-blue-600 text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  >
+                    Assign as #{expectedOpponentSlot}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSkippedSlots((prev) => new Set(prev).add(expectedOpponentSlot));
+                      setAssignBatterPlayerId('');
+                      setAssignBatterPosition('');
+                      setAssignBatterError(null);
+                    }}
+                    className="text-sm text-blue-700 hover:text-blue-900 transition-colors"
+                  >
+                    Skip
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ── Pitch Controls (coaches only) ─────────────────────── */}
         {isCoach && (
@@ -2449,7 +2590,7 @@ export function ScoringBoard({
               // Show the defensive team's pitchers: our team when opponent bats, opponent when we bat
               const isOpponentPitching = !isOpponentBatting;
               const pitcherPool = isOpponentPitching
-                ? (opponentRoster ?? (opponentLineup ?? []).map((e) => e.player))
+                ? (opponentRoster ?? localOpponentLineup.map((e) => e.player))
                 : (teamRoster ?? lineup.map((e) => e.player));
               return (
                 <>
@@ -2558,7 +2699,7 @@ export function ScoringBoard({
                   : (teamRoster ?? lineup.map((l) => l.player).filter((p): p is typeof p & { id: string } => p.id !== null));
               const currentLineupIds = new Set(
                 isOpp
-                  ? (opponentLineup ?? []).map((l) => l.playerId)
+                  ? effectiveOpponentStarters.map((l) => l.playerId)
                   : lineup.map((l) => l.playerId),
               );
 

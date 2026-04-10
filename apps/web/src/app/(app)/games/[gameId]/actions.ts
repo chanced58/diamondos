@@ -343,8 +343,45 @@ export async function updateGameAction(
   const opponent = (formData.get('opponent') as string)?.trim();
   const date     = formData.get('date') as string;
   const time     = (formData.get('time') as string) || '12:00';
+  const opponentTeamIdRaw = (formData.get('opponentTeamId') as string)?.trim() || null;
   if (!opponent) return 'Opponent name is required.';
   if (!date)     return 'Game date is required.';
+
+  // Validate opponent team belongs to this team or its league
+  let opponentTeamId: string | null = null;
+  if (opponentTeamIdRaw) {
+    // Check team-owned
+    const { data: teamOwned } = await supabase
+      .from('opponent_teams')
+      .select('id')
+      .eq('id', opponentTeamIdRaw)
+      .eq('team_id', game.team_id)
+      .maybeSingle();
+
+    if (teamOwned) {
+      opponentTeamId = teamOwned.id;
+    } else {
+      // Check league-linked: find leagues this team belongs to, then check if
+      // the opponent team is a league member in any of those leagues.
+      const { data: teamLeagues } = await supabase
+        .from('league_members')
+        .select('league_id')
+        .eq('team_id', game.team_id);
+      const leagueIds = (teamLeagues ?? []).map((l) => l.league_id);
+
+      if (leagueIds.length > 0) {
+        const { data: leagueLinked } = await supabase
+          .from('league_members')
+          .select('opponent_team_id')
+          .eq('opponent_team_id', opponentTeamIdRaw)
+          .in('league_id', leagueIds)
+          .limit(1);
+        if (leagueLinked && leagueLinked.length > 0) opponentTeamId = opponentTeamIdRaw;
+      }
+
+      if (!opponentTeamId) return 'Selected opponent team not found or not accessible.';
+    }
+  }
 
   const [year, month, day] = date.split('-').map(Number);
   const [hour, minute]     = time.split(':').map(Number);
@@ -366,8 +403,9 @@ export async function updateGameAction(
   const { error } = await supabase
     .from('games')
     .update({
-      opponent_name: opponent,
-      scheduled_at:  scheduledAt,
+      opponent_name:     opponent,
+      opponent_team_id:  opponentTeamId,
+      scheduled_at:      scheduledAt,
       location_type:     locationType,
       neutral_home_team: neutralHomeTeam,
       venue_name:        venue,

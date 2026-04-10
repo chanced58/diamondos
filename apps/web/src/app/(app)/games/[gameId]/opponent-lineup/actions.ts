@@ -202,6 +202,58 @@ export async function updateOpponentPlayerAction(
 }
 
 /**
+ * Auto-fill the game lineup from the opponent team roster.
+ * Creates one opponent_game_lineups entry per active roster player, all set to Bench
+ * (batting_order = NULL) so the coach can then assign batting order 1–9.
+ */
+export async function autoFillLineupFromRosterAction(
+  _prevState: string | null | undefined,
+  formData: FormData,
+): Promise<string | null> {
+  const gameId = formData.get('gameId') as string;
+  if (!gameId) return 'Missing game ID.';
+
+  const ctx = await getCoachContext(gameId);
+  if (!ctx) return 'Not authorized.';
+
+  const { game, db } = ctx;
+  if (!game.opponent_team_id) return 'No opponent team linked to this game.';
+
+  // Load active roster players
+  const { data: players, error: fetchError } = await db
+    .from('opponent_players')
+    .select('id, primary_position')
+    .eq('opponent_team_id', game.opponent_team_id)
+    .eq('is_active', true)
+    .order('created_at');
+
+  if (fetchError) return `Failed to load roster: ${fetchError.message}`;
+  if (!players || players.length === 0) return 'No active players in the roster.';
+
+  // Clear any existing lineup entries for this game
+  const { error: deleteError } = await db
+    .from('opponent_game_lineups')
+    .delete()
+    .eq('game_id', gameId);
+  if (deleteError) return `Failed to clear existing lineup: ${deleteError.message}`;
+
+  // Insert one entry per roster player — all benched (batting_order = NULL)
+  const { error: insertError } = await db.from('opponent_game_lineups').insert(
+    players.map((p) => ({
+      game_id: gameId,
+      opponent_player_id: p.id,
+      batting_order: null,
+      starting_position: p.primary_position ?? null,
+      is_starter: true,
+    })),
+  );
+  if (insertError) return `Failed to auto-fill lineup: ${insertError.message}`;
+
+  revalidatePath(`/games/${gameId}/opponent-lineup`);
+  return null;
+}
+
+/**
  * Save the batting order and starting positions for opponent players in this game.
  */
 export async function saveOpponentLineupAction(

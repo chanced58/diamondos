@@ -9,6 +9,7 @@ import {
   removeOpponentPlayerAction,
   updateOpponentPlayerAction,
   saveOpponentLineupAction,
+  autoFillLineupFromRosterAction,
 } from './actions';
 
 const POSITIONS = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH'] as const;
@@ -402,6 +403,7 @@ function OpponentBattingOrderSection({
   existingLineup: LineupEntry[];
 }): JSX.Element {
   const [error, action] = useFormState(saveOpponentLineupAction, null);
+  const [autoFillError, autoFillAction] = useFormState(autoFillLineupFromRosterAction, null);
 
   function getDefaultOrder(playerId: string): string {
     const entry = existingLineup.find((e) => e.playerId === playerId);
@@ -419,11 +421,25 @@ function OpponentBattingOrderSection({
     return aOrder - bOrder;
   });
 
+  const showAutoFill = existingLineup.length === 0 && players.length > 0;
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
-      <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
+      <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-700">Batting Order</h2>
+        {showAutoFill && (
+          <form action={autoFillAction} className="inline">
+            <input type="hidden" name="gameId" value={gameId} />
+            <SubmitButton label="Auto-fill from roster" pendingLabel="Filling..." />
+          </form>
+        )}
       </div>
+      {autoFillError && (
+        <div className="px-5 py-2 bg-red-50 border-b border-red-200 text-xs text-red-700">
+          {autoFillError}
+        </div>
+      )}
+
       {players.length === 0 ? (
         <div className="px-5 py-6 text-sm text-gray-400 text-center">
           Add players to the roster above before setting the batting order.
