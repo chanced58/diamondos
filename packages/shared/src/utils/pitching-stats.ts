@@ -237,9 +237,10 @@ export function derivePitchingStats(
         atBatState.clear();
         pendingContact.clear();
         clearRunners();
-        // Reset pitcher — the next PITCH_THROWN will set the correct pitcher
-        // for this half-inning. Without this, SCORE events between INNING_CHANGE
-        // and the first pitch would be attributed to the previous half-inning's pitcher.
+        // Reset pitcher — the next PITCH_THROWN (or quick-walk/HBP handler)
+        // will set the correct pitcher for this half-inning. Without this,
+        // events between INNING_CHANGE and the first pitch would be
+        // attributed to the previous half-inning's pitcher.
         currentPitcherId = null;
       }
 
@@ -460,12 +461,22 @@ export function derivePitchingStats(
 
       // ── WALK (explicit event) ────────────────────────────────────────────
       // Quick-walk (no preceding PITCH_THROWN events) won't have set
-      // walkCountedByPitch, so we must count walksAllowed here.
+      // walkCountedByPitch, so we must count walksAllowed here and ensure
+      // gamesAppeared / totalPAs are tracked for rate denominators.
       if (etype === EventType.WALK) {
         const pitcherId: string | undefined = payload?.pitcherId;
         const batterId: string | undefined = payload?.batterId;
         if (pitcherId) {
+          // Seed currentPitcherId so forceAdvanceRunners/scoreRun see it
+          if (!currentPitcherId) currentPitcherId = pitcherId;
           if (!walkCountedByPitch) {
+            // Quick-walk: no PITCH_THROWN preceded this, so gamesAppeared
+            // and totalPAs were never incremented for this PA.
+            if (!appearedThisGame.has(pitcherId)) {
+              appearedThisGame.add(pitcherId);
+              getStats(pitcherId).gamesAppeared += 1;
+            }
+            getStats(pitcherId).totalPAs += 1;
             getStats(pitcherId).walksAllowed += 1;
           }
         }
@@ -478,6 +489,10 @@ export function derivePitchingStats(
       if (etype === EventType.HIT_BY_PITCH) {
         const pitcherId: string | undefined = payload?.pitcherId;
         const batterId: string | undefined = payload?.batterId;
+        if (pitcherId) {
+          // Seed currentPitcherId so forceAdvanceRunners/scoreRun see it
+          if (!currentPitcherId) currentPitcherId = pitcherId;
+        }
         if (pitcherId && batterId) {
           resetAtBat(batterId);
         }

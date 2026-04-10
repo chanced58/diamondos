@@ -219,6 +219,10 @@ export function deriveGameState(
         state.balls = 0;
         state.strikes = 0;
         state.runnersOnBase = { first: null, second: null, third: null };
+        // Clear stale pitcher — the next PITCH_THROWN or PITCHING_CHANGE
+        // will set the correct pitcher for the new half-inning.
+        state.currentPitcherId = null;
+        state.currentPitcherPitchCount = 0;
         if (state.isTopOfInning) {
           state.isTopOfInning = false;
         } else {
