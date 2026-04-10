@@ -691,7 +691,9 @@ export function buildGameHistoryTree(
           forceAdvance();
         } else if (event.eventType === EventType.FIELD_ERROR) {
           forceAdvance();
-        } else if (event.eventType === EventType.SACRIFICE_FLY || event.eventType === EventType.SACRIFICE_BUNT) {
+        } else if (event.eventType === EventType.SACRIFICE_FLY) {
+          // Only sac fly auto-scores from 3rd; sac bunt scoring depends on the
+          // play and is handled by a separate SCORE event if applicable.
           if (runnerThird) {
             addRuns(1);
             runnerThird = false;
@@ -719,8 +721,8 @@ export function buildGameHistoryTree(
       case EventType.BALK: {
         // Update base state for score tracking
         if (event.eventType === EventType.SCORE) {
-          const sp = event.payload as ScorePayload;
-          addRuns(sp.rbis ?? 1);
+          // Each SCORE event = exactly 1 run (rbis is RBI credit, which may be 0 for balks)
+          addRuns(1);
         } else if (event.eventType === EventType.STOLEN_BASE) {
           const bp = event.payload as BaserunnerMovePayload;
           if (bp.fromBase === 1) runnerFirst = false;

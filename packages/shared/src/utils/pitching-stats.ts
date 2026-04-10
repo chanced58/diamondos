@@ -142,6 +142,10 @@ export function derivePitchingStats(
     // so the subsequent explicit STRIKEOUT event can skip redundant stat updates.
     let strikeoutHandledByPitch = false;
 
+    // Set by pitch progression when a walk is detected via ab.balls >= 4,
+    // so the subsequent explicit WALK event can skip redundant walksAllowed increment.
+    let walkCountedByPitch = false;
+
     // ── Base-runner tracking for run attribution to pitchers ────────────────
     // Track runner ID + whether they reached on error for earned run distinction
     type RunnerState = { id: string; reachedOnError: boolean } | null;
@@ -224,15 +228,19 @@ export function derivePitchingStats(
         pendingContact.clear();
       }
 
-      if (etype === EventType.GAME_START && payload?.startingPitcherId) {
-        currentPitcherId = payload.startingPitcherId as string;
+      if (etype === EventType.GAME_START) {
+        currentPitcherId = (payload?.homeLineupPitcherId as string) ?? null;
       }
 
-      // ── Inning change → clear at-bat state ──────────────────────────────
+      // ── Inning change → clear at-bat state and reset pitcher ──────────
       if (etype === EventType.INNING_CHANGE) {
         atBatState.clear();
         pendingContact.clear();
         clearRunners();
+        // Reset pitcher — the next PITCH_THROWN will set the correct pitcher
+        // for this half-inning. Without this, SCORE events between INNING_CHANGE
+        // and the first pitch would be attributed to the previous half-inning's pitcher.
+        currentPitcherId = null;
       }
 
       // ── PITCH_THROWN ────────────────────────────────────────────────────
@@ -298,6 +306,7 @@ export function derivePitchingStats(
           if (ab.balls >= 4) {
             // Walk — terminal
             s.walksAllowed += 1;
+            walkCountedByPitch = true;
             if (ab.reachedThreeBalls) s.threeBallCountPAs += 1;
             if (ab.reachedThreeZero) s.threeZeroCountPAs += 1;
             resetAtBat(batterId);
@@ -450,12 +459,18 @@ export function derivePitchingStats(
       }
 
       // ── WALK (explicit event) ────────────────────────────────────────────
+      // Quick-walk (no preceding PITCH_THROWN events) won't have set
+      // walkCountedByPitch, so we must count walksAllowed here.
       if (etype === EventType.WALK) {
         const pitcherId: string | undefined = payload?.pitcherId;
         const batterId: string | undefined = payload?.batterId;
-        if (pitcherId && batterId) {
-          resetAtBat(batterId);
+        if (pitcherId) {
+          if (!walkCountedByPitch) {
+            getStats(pitcherId).walksAllowed += 1;
+          }
         }
+        if (batterId) resetAtBat(batterId);
+        walkCountedByPitch = false;
         forceAdvanceRunners(batterId ? { id: batterId, reachedOnError: false } : null);
       }
 

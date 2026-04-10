@@ -176,9 +176,21 @@ export function deriveGameState(
         break;
       }
 
-      case EventType.SACRIFICE_BUNT:
+      case EventType.SACRIFICE_BUNT: {
+        state.outs++;
+        state.balls = 0;
+        state.strikes = 0;
+        incrementPA(state);
+        break;
+      }
+
       case EventType.SACRIFICE_FLY: {
         state.outs++;
+        // Runner on 3rd scores on sac fly (if fewer than 3 outs)
+        if (state.runnersOnBase.third && state.outs < OUTS_PER_INNING) {
+          addRuns(state, 1, state.isTopOfInning);
+          state.runnersOnBase = { ...state.runnersOnBase, third: null };
+        }
         state.balls = 0;
         state.strikes = 0;
         incrementPA(state);
@@ -314,9 +326,8 @@ export function deriveGameState(
       }
 
       case EventType.BALK: {
-        // All runners advance one base; runner on third scores
+        // All runners advance one base; runner on 3rd scores via subsequent SCORE event
         const runners = { ...state.runnersOnBase };
-        if (runners.third) addRuns(state, 1, state.isTopOfInning);
         runners.third  = runners.second;
         runners.second = runners.first;
         runners.first  = null;
@@ -377,7 +388,7 @@ function forceAdvanceRunners(
   // A runner is forced only if every base between them and home is occupied.
   const updated = { ...runners };
   if (updated.first && updated.second && updated.third) {
-    updated.third = null; // runner on 3rd scores
+    // runner on 3rd scores (run counted by caller)
     updated.third = updated.second;
     updated.second = updated.first;
     updated.first = batterId;
