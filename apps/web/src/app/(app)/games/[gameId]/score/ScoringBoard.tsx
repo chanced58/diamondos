@@ -793,6 +793,13 @@ export function ScoringBoard({
   const currentOpponentBatter =
     effectiveOpponentStarters.find((s) => s.battingOrder === expectedOpponentSlot) ?? null;
 
+  // Clear skipped-slot dismissals when the active slot changes (skip is per-PA only)
+  const prevSlotRef = useRef(expectedOpponentSlot);
+  if (prevSlotRef.current !== expectedOpponentSlot) {
+    prevSlotRef.current = expectedOpponentSlot;
+    if (skippedSlots.size > 0) setSkippedSlots(new Set());
+  }
+
   // The batter currently at the plate (our player or opponent)
   const activeBatter = isOpponentBatting ? currentOpponentBatter : currentBatter;
   const activeBatterId = activeBatter?.playerId ?? null;

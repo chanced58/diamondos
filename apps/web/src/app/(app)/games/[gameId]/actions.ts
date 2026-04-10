@@ -347,16 +347,40 @@ export async function updateGameAction(
   if (!opponent) return 'Opponent name is required.';
   if (!date)     return 'Game date is required.';
 
-  // Validate opponent team exists if provided
+  // Validate opponent team belongs to this team or its league
   let opponentTeamId: string | null = null;
   if (opponentTeamIdRaw) {
-    const { data: opponentTeam } = await supabase
+    // Check team-owned
+    const { data: teamOwned } = await supabase
       .from('opponent_teams')
       .select('id')
       .eq('id', opponentTeamIdRaw)
-      .single();
-    if (!opponentTeam) return 'Selected opponent team not found.';
-    opponentTeamId = opponentTeam.id;
+      .eq('team_id', game.team_id)
+      .maybeSingle();
+
+    if (teamOwned) {
+      opponentTeamId = teamOwned.id;
+    } else {
+      // Check league-linked: find leagues this team belongs to, then check if
+      // the opponent team is a league member in any of those leagues.
+      const { data: teamLeagues } = await supabase
+        .from('league_members')
+        .select('league_id')
+        .eq('team_id', game.team_id);
+      const leagueIds = (teamLeagues ?? []).map((l) => l.league_id);
+
+      if (leagueIds.length > 0) {
+        const { data: leagueLinked } = await supabase
+          .from('league_members')
+          .select('opponent_team_id')
+          .eq('opponent_team_id', opponentTeamIdRaw)
+          .in('league_id', leagueIds)
+          .maybeSingle();
+        if (leagueLinked) opponentTeamId = opponentTeamIdRaw;
+      }
+
+      if (!opponentTeamId) return 'Selected opponent team not found or not accessible.';
+    }
   }
 
   const [year, month, day] = date.split('-').map(Number);
