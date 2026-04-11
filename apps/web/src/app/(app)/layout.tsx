@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { addToTeamChannels } from '@/lib/team-channels';
 import { getActiveLeague } from '@/lib/active-league';
+import { getLeagueAccess } from '@/lib/league-access';
 import { getTeamTier } from '@/lib/team-tier';
 
 export default async function AppLayout({ children }: { children: ReactNode }): Promise<JSX.Element> {
@@ -199,6 +200,9 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
     activeTeam ? getTeamTier(activeTeam.id) : null,
   ]);
 
+  // Check if user is a league admin (for sidebar nav)
+  const leagueAccess = league ? await getLeagueAccess(league.id, user.id) : null;
+
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar
@@ -212,6 +216,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         leagueId={league?.id}
         leagueName={league?.name}
         subscriptionTier={subscriptionTier ?? undefined}
+        isLeagueAdmin={leagueAccess?.isLeagueAdmin ?? false}
       />
       <main className="flex-1 overflow-auto">
         {children}
