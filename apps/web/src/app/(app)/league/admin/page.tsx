@@ -6,7 +6,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueAccess } from '@/lib/league-access';
-import { getLeagueTeams, getLeagueDivisions, getLeagueStaff } from '@baseball/database';
+import { getLeagueTeamsAll, getLeagueDivisions, getLeagueStaff } from '@baseball/database';
 import { LeagueAdminClient } from './LeagueAdminClient';
 
 export const metadata: Metadata = { title: 'League Admin' };
@@ -31,7 +31,7 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
   );
 
   const [teams, divisions, staff] = await Promise.all([
-    getLeagueTeams(db, league.id),
+    getLeagueTeamsAll(db, league.id),
     getLeagueDivisions(db, league.id),
     getLeagueStaff(db, league.id),
   ]);
@@ -56,6 +56,7 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
           organization: t.teams?.organization ?? null,
           divisionId: t.division_id,
           isOpponentTeam: t.opponent_team_id !== null,
+          isActive: t.is_active,
         }))}
         divisions={divisions}
         staff={staff.map((s) => {

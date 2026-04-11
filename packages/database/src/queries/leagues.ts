@@ -73,6 +73,13 @@ export type LeagueMember = {
 /** @deprecated Use LeagueMember instead */
 export type LeagueTeam = LeagueMember;
 
+const LEAGUE_MEMBER_SELECT = `
+  id, team_id, opponent_team_id, league_id, division_id, is_active,
+  teams(id, name, organization, logo_url, primary_color, secondary_color),
+  opponent_teams(id, name, abbreviation, city, logo_url),
+  league_divisions(id, name)
+`;
+
 export type LeagueDivision = {
   id: string;
   league_id: string;
@@ -101,7 +108,23 @@ export async function getLeagueForTeam(
 }
 
 /**
- * Get all members (platform teams + opponent teams) in a league with their division info.
+ * Get ALL members (platform teams + opponent teams) in a league regardless of active status.
+ * Use this in admin views where inactive teams should be visible.
+ */
+export async function getLeagueTeamsAll(
+  client: AnyClient,
+  leagueId: string,
+): Promise<LeagueMember[]> {
+  const { data, error } = await client
+    .from('league_members')
+    .select(LEAGUE_MEMBER_SELECT)
+    .eq('league_id', leagueId);
+  if (error) throw error;
+  return (data ?? []) as unknown as LeagueMember[];
+}
+
+/**
+ * Get active members (platform teams + opponent teams) in a league with their division info.
  */
 export async function getLeagueTeams(
   client: AnyClient,
@@ -109,12 +132,7 @@ export async function getLeagueTeams(
 ) {
   const { data, error } = await client
     .from('league_members')
-    .select(`
-      id, team_id, opponent_team_id, league_id, division_id, is_active,
-      teams(id, name, organization, logo_url, primary_color, secondary_color),
-      opponent_teams(id, name, abbreviation, city, logo_url),
-      league_divisions(id, name)
-    `)
+    .select(LEAGUE_MEMBER_SELECT)
     .eq('league_id', leagueId)
     .eq('is_active', true);
   if (error) throw error;
