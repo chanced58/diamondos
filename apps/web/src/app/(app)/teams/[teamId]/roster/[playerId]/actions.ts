@@ -58,7 +58,8 @@ export async function updatePlayerAction(_prevState: string | null | undefined, 
       phone: phone || null,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', playerId);
+    .eq('id', playerId)
+    .eq('team_id', teamId);
   if (error) return `Failed to update player: ${error.message}`;
 
   // Keep jersey_number in sync on the active player_team_memberships record

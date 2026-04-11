@@ -129,7 +129,7 @@ export async function reactivatePlayerAction(_prevState: string | null | undefin
     // Revert the player update so the two tables stay consistent
     await supabase
       .from('players')
-      .update({ is_active: false, disabled_at: new Date().toISOString(), disabled_by: user.id })
+      .update({ is_active: false, jersey_number: null, disabled_at: new Date().toISOString(), disabled_by: user.id })
       .eq('id', playerId)
       .eq('team_id', teamId);
     return `Failed to update membership: ${membershipError.message}`;

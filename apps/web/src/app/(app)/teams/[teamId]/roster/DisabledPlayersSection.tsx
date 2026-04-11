@@ -2,7 +2,7 @@
 import type { JSX } from 'react';
 
 import Link from 'next/link';
-import { POSITION_ABBREVIATIONS } from '@baseball/shared';
+import { POSITION_ABBREVIATIONS, formatDate } from '@baseball/shared';
 import { ReactivateForm } from './ReactivateForm';
 
 type DisabledPlayer = {
@@ -64,7 +64,7 @@ export function DisabledPlayersSection({ teamId, players, isCoach }: Props): JSX
                   </td>
                   <td className="px-4 py-3 text-gray-400 text-xs">
                     {player.disabledAt
-                      ? new Date(player.disabledAt).toLocaleDateString()
+                      ? formatDate(player.disabledAt)
                       : '—'}
                   </td>
                   {isCoach && (
