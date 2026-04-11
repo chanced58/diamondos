@@ -107,7 +107,7 @@ export async function getLeagueForTeam(
 export async function getLeagueTeamsAll(
   client: AnyClient,
   leagueId: string,
-) {
+): Promise<LeagueMember[]> {
   const { data, error } = await client
     .from('league_members')
     .select(`

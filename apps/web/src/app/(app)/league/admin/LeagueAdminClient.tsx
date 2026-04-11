@@ -220,6 +220,7 @@ export function LeagueAdminClient({
   }
 
   async function handleRemoveTeam(membershipId: string) {
+    if (!isAdmin) { setErrorMsg('Only league admins can remove teams.'); return; }
     setSaving(true);
     setErrorMsg(null);
     try {
@@ -232,6 +233,7 @@ export function LeagueAdminClient({
   }
 
   async function handleToggleTeamActive(membershipId: string, currentlyActive: boolean) {
+    if (!isAdmin) { setErrorMsg('Only league admins can change team status.'); return; }
     setSaving(true);
     setErrorMsg(null);
     try {
@@ -438,7 +440,7 @@ export function LeagueAdminClient({
                   <th className="pb-2">Team</th>
                   <th className="pb-2">Status</th>
                   <th className="pb-2">Division</th>
-                  <th className="pb-2 text-right">Actions</th>
+                  {isAdmin && <th className="pb-2 text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -481,29 +483,31 @@ export function LeagueAdminClient({
                         ))}
                       </select>
                     </td>
-                    <td className="py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleToggleTeamActive(t.id, t.isActive)}
-                          disabled={saving}
-                          className={`text-xs ${t.isActive ? 'text-gray-500 hover:text-gray-700' : 'text-brand-700 hover:text-brand-800'}`}
-                        >
-                          {t.isActive ? 'Deactivate' : 'Activate'}
-                        </button>
-                        <span className="text-gray-200">|</span>
-                        <button
-                          onClick={() => {
-                            if (confirm(`Permanently remove ${t.teamName} from this league? This cannot be undone.`)) {
-                              handleRemoveTeam(t.id);
-                            }
-                          }}
-                          disabled={saving}
-                          className="text-xs text-red-600 hover:text-red-800"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </td>
+                    {isAdmin && (
+                      <td className="py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleToggleTeamActive(t.id, t.isActive)}
+                            disabled={saving}
+                            className={`text-xs ${t.isActive ? 'text-gray-500 hover:text-gray-700' : 'text-brand-700 hover:text-brand-800'}`}
+                          >
+                            {t.isActive ? 'Deactivate' : 'Activate'}
+                          </button>
+                          <span className="text-gray-200">|</span>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Permanently remove ${t.teamName} from this league? This cannot be undone.`)) {
+                                handleRemoveTeam(t.id);
+                              }
+                            }}
+                            disabled={saving}
+                            className="text-xs text-red-600 hover:text-red-800"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
