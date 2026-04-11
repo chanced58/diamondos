@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { updatePlayerSchema } from '@baseball/shared';
+import { canManageRoster } from '@/lib/roster-access';
 
 export async function updatePlayerAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
@@ -57,7 +58,8 @@ export async function updatePlayerAction(_prevState: string | null | undefined, 
       phone: phone || null,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', playerId);
+    .eq('id', playerId)
+    .eq('team_id', teamId);
   if (error) return `Failed to update player: ${error.message}`;
 
   // Keep jersey_number in sync on the active player_team_memberships record
@@ -80,24 +82,45 @@ export async function deactivatePlayerAction(_prevState: string | null | undefin
   const playerId = formData.get('playerId') as string;
   if (!teamId || !playerId) return 'Missing required IDs.';
 
+  const allowed = await canManageRoster(teamId, user.id);
+  if (!allowed) return 'You do not have permission to remove players from this roster.';
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
+  const now = new Date().toISOString();
   const { error } = await supabase
     .from('players')
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq('id', playerId);
+    .update({
+      is_active: false,
+      jersey_number: null,
+      disabled_at: now,
+      disabled_by: user.id,
+      updated_at: now,
+    })
+    .eq('id', playerId)
+    .eq('team_id', teamId);
   if (error) return `Failed to remove player: ${error.message}`;
 
-  // Also deactivate the player_team_memberships record
-  await supabase
+  // Deactivate the player_team_memberships record
+  const { error: membershipError } = await supabase
     .from('player_team_memberships')
-    .update({ is_active: false, left_at: new Date().toISOString(), transfer_reason: 'deactivated' })
+    .update({ is_active: false, left_at: now, transfer_reason: 'deactivated' })
     .eq('player_id', playerId)
     .eq('team_id', teamId)
     .eq('is_active', true);
+
+  if (membershipError) {
+    // Revert the player update so the two tables stay consistent
+    await supabase
+      .from('players')
+      .update({ is_active: true, jersey_number: null, disabled_at: null, disabled_by: null })
+      .eq('id', playerId)
+      .eq('team_id', teamId);
+    return `Failed to update membership: ${membershipError.message}`;
+  }
 
   redirect(`/teams/${teamId}/roster`);
 }
