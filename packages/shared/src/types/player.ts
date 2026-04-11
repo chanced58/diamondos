@@ -36,6 +36,8 @@ export interface Player {
   phone?: string;
   notes?: string;
   isActive: boolean;
+  disabledAt?: string;
+  disabledBy?: string;
   createdAt: string;
   updatedAt: string;
 }

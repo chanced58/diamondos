@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { updatePlayerSchema } from '@baseball/shared';
+import { canManageRoster } from '@/lib/roster-access';
 
 export async function updatePlayerAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
@@ -80,6 +81,9 @@ export async function deactivatePlayerAction(_prevState: string | null | undefin
   const playerId = formData.get('playerId') as string;
   if (!teamId || !playerId) return 'Missing required IDs.';
 
+  const allowed = await canManageRoster(teamId, user.id);
+  if (!allowed) return 'You do not have permission to remove players from this roster.';
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -87,7 +91,13 @@ export async function deactivatePlayerAction(_prevState: string | null | undefin
 
   const { error } = await supabase
     .from('players')
-    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .update({
+      is_active: false,
+      jersey_number: null,
+      disabled_at: new Date().toISOString(),
+      disabled_by: user.id,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', playerId);
   if (error) return `Failed to remove player: ${error.message}`;
 

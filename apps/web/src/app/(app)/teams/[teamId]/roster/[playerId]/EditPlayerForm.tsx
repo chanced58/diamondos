@@ -4,6 +4,7 @@ import type { JSX } from 'react';
 import { useState } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { updatePlayerAction, deactivatePlayerAction } from './actions';
+import { reactivatePlayerAction } from '../actions';
 import { PlayerPosition, BatsThrows, POSITION_ABBREVIATIONS } from '@baseball/shared';
 
 function SubmitButton({ label, pendingLabel }: { label: string; pendingLabel: string }) {
@@ -222,6 +223,40 @@ export function DeactivatePlayerForm({ player, teamId }: { player: Player; teamI
         }}
       >
         Remove from roster
+      </button>
+    </form>
+  );
+}
+
+export function ReactivatePlayerForm({ player, teamId }: { player: Player; teamId: string }): JSX.Element | null {
+  const [error, formAction] = useFormState(reactivatePlayerAction, null);
+  const [jerseyNumber, setJerseyNumber] = useState('');
+
+  return (
+    <form action={formAction} className="flex items-center gap-2">
+      <input type="hidden" name="teamId" value={teamId} />
+      <input type="hidden" name="playerId" value={player.id} />
+      <input
+        type="number"
+        name="jerseyNumber"
+        min={0}
+        max={99}
+        placeholder="Jersey #"
+        value={jerseyNumber}
+        onChange={(e) => setJerseyNumber(e.target.value)}
+        className="w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-brand-500"
+      />
+      {error && <span className="text-xs text-red-600">{error}</span>}
+      <button
+        type="submit"
+        className="text-sm font-medium text-brand-700 hover:text-brand-800 bg-brand-50 border border-brand-200 px-3 py-1.5 rounded-lg transition-colors"
+        onClick={(e) => {
+          if (!confirm(`Reactivate ${player.first_name} ${player.last_name} to the roster?`)) {
+            e.preventDefault();
+          }
+        }}
+      >
+        Reactivate
       </button>
     </form>
   );
