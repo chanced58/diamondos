@@ -10,10 +10,11 @@ import { isCoachRole } from '@baseball/shared';
  *   3. User is a league admin for any league that contains this team
  */
 export async function canManageRoster(teamId: string, userId: string): Promise<boolean> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!serviceRoleKey) return false;
+  if (!supabaseUrl || !serviceRoleKey) return false;
 
-  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey);
+  const db = createClient(supabaseUrl, serviceRoleKey);
 
   const [profileResult, membershipResult, leagueAdminResult] = await Promise.all([
     db

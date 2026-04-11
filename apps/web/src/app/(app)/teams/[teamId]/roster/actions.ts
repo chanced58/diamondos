@@ -22,27 +22,38 @@ export async function removePlayerAction(_prevState: string | null | undefined, 
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
+  const now = new Date().toISOString();
   const { error } = await supabase
     .from('players')
     .update({
       is_active: false,
       jersey_number: null,
-      disabled_at: new Date().toISOString(),
+      disabled_at: now,
       disabled_by: user.id,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     })
     .eq('id', playerId)
     .eq('team_id', teamId);
 
   if (error) return `Failed to remove player: ${error.message}`;
 
-  // Also deactivate the player_team_memberships record
-  await supabase
+  // Deactivate the player_team_memberships record
+  const { error: membershipError } = await supabase
     .from('player_team_memberships')
-    .update({ is_active: false, left_at: new Date().toISOString(), transfer_reason: 'removed' })
+    .update({ is_active: false, left_at: now, transfer_reason: 'removed' })
     .eq('player_id', playerId)
     .eq('team_id', teamId)
     .eq('is_active', true);
+
+  if (membershipError) {
+    // Revert the player update so the two tables stay consistent
+    await supabase
+      .from('players')
+      .update({ is_active: true, jersey_number: null, disabled_at: null, disabled_by: null })
+      .eq('id', playerId)
+      .eq('team_id', teamId);
+    return `Failed to update membership: ${membershipError.message}`;
+  }
 
   redirect(`/teams/${teamId}/roster`);
 }
@@ -90,8 +101,9 @@ export async function reactivatePlayerAction(_prevState: string | null | undefin
     .eq('team_id', teamId)
     .maybeSingle();
 
+  let membershipError: { message: string } | null = null;
   if (existing) {
-    await supabase
+    const { error: updateErr } = await supabase
       .from('player_team_memberships')
       .update({
         is_active: true,
@@ -100,8 +112,9 @@ export async function reactivatePlayerAction(_prevState: string | null | undefin
         transfer_reason: null,
       })
       .eq('id', existing.id);
+    membershipError = updateErr;
   } else {
-    await supabase
+    const { error: insertErr } = await supabase
       .from('player_team_memberships')
       .insert({
         player_id: playerId,
@@ -109,6 +122,17 @@ export async function reactivatePlayerAction(_prevState: string | null | undefin
         jersey_number: jerseyNumber,
         is_active: true,
       });
+    membershipError = insertErr;
+  }
+
+  if (membershipError) {
+    // Revert the player update so the two tables stay consistent
+    await supabase
+      .from('players')
+      .update({ is_active: false, disabled_at: new Date().toISOString(), disabled_by: user.id })
+      .eq('id', playerId)
+      .eq('team_id', teamId);
+    return `Failed to update membership: ${membershipError.message}`;
   }
 
   redirect(`/teams/${teamId}/roster`);

@@ -1,11 +1,9 @@
 'use client';
 import type { JSX } from 'react';
 
-import { useState } from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
-import { reactivatePlayerAction } from './actions';
 import { POSITION_ABBREVIATIONS } from '@baseball/shared';
+import { ReactivateForm } from './ReactivateForm';
 
 type DisabledPlayer = {
   id: string;
@@ -14,62 +12,6 @@ type DisabledPlayer = {
   primaryPosition: string | null;
   disabledAt: string | null;
 };
-
-function ReactivateButton() {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="text-xs font-medium text-brand-700 hover:text-brand-800 disabled:opacity-50 transition-colors"
-    >
-      {pending ? 'Reactivating...' : 'Reactivate'}
-    </button>
-  );
-}
-
-function ReactivateForm({ player, teamId }: { player: DisabledPlayer; teamId: string }) {
-  const [error, formAction] = useFormState(reactivatePlayerAction, null);
-  const [jerseyNumber, setJerseyNumber] = useState('');
-  const [showForm, setShowForm] = useState(false);
-
-  if (!showForm) {
-    return (
-      <button
-        onClick={() => setShowForm(true)}
-        className="text-xs font-medium text-brand-700 hover:text-brand-800 transition-colors"
-      >
-        Reactivate
-      </button>
-    );
-  }
-
-  return (
-    <form action={formAction} className="flex items-center gap-2">
-      <input type="hidden" name="teamId" value={teamId} />
-      <input type="hidden" name="playerId" value={player.id} />
-      <input
-        type="number"
-        name="jerseyNumber"
-        min={0}
-        max={99}
-        placeholder="#"
-        value={jerseyNumber}
-        onChange={(e) => setJerseyNumber(e.target.value)}
-        className="w-14 border border-gray-300 rounded px-2 py-1 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-brand-500"
-      />
-      <ReactivateButton />
-      <button
-        type="button"
-        onClick={() => setShowForm(false)}
-        className="text-xs text-gray-400 hover:text-gray-600"
-      >
-        Cancel
-      </button>
-      {error && <span className="text-xs text-red-600">{error}</span>}
-    </form>
-  );
-}
 
 type Props = {
   teamId: string;
@@ -135,7 +77,10 @@ export function DisabledPlayersSection({ teamId, players, isCoach }: Props): JSX
                           View
                         </Link>
                         <span className="text-gray-200">|</span>
-                        <ReactivateForm player={player} teamId={teamId} />
+                        <ReactivateForm
+                          playerId={player.id}
+                          teamId={teamId}
+                        />
                       </div>
                     </td>
                   )}
