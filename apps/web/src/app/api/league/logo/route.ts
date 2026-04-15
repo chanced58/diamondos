@@ -30,21 +30,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No leagueId provided' }, { status: 400 });
   }
 
-  // Verify user is league staff
+  // Verify user is league admin
   const { data: staffRow } = await db
     .from('league_staff')
     .select('role')
     .eq('league_id', leagueId)
     .eq('user_id', user.id)
     .eq('is_active', true)
+    .eq('role', 'league_admin')
     .maybeSingle();
 
   if (!staffRow) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const allowed = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp'];
-  if (!allowed.includes(file.type)) {
+  const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp'];
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
     return NextResponse.json({ error: 'Invalid file type. Use PNG, JPEG, SVG, or WebP.' }, { status: 400 });
   }
 

@@ -35,7 +35,9 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
     .eq('is_active', true)
     .maybeSingle();
 
-  if (!staffRow) return { error: 'You do not have access to this league' };
+  if (!staffRow || staffRow.role !== 'league_admin') {
+    return { error: 'You do not have access to this league' };
+  }
 
   // Verify setup hasn't already been completed
   const { data: league } = await db
@@ -50,7 +52,7 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
   const cleanTeamNames = input.teamNames.map((n) => n.trim()).filter(Boolean);
   if (cleanTeamNames.length < 2) return { error: 'At least 2 team names are required' };
 
-  // 1. Update the league row
+  // 1. Update the league row (without setup_completed_at — set only after all steps succeed)
   const { error: updateError } = await db
     .from('leagues')
     .update({
@@ -60,7 +62,6 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
       state_code: input.stateCode || null,
       current_season: input.currentSeason,
       logo_url: input.logoUrl,
-      setup_completed_at: new Date().toISOString(),
     })
     .eq('id', input.leagueId);
 
@@ -124,7 +125,7 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
     .maybeSingle();
 
   if (!existingChannel) {
-    const { data: channel } = await db
+    const { data: channel, error: channelError } = await db
       .from('league_channels')
       .insert({
         league_id: input.leagueId,
@@ -136,14 +137,32 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
       .select('id')
       .single();
 
+    if (channelError) {
+      console.error('Failed to create league announcements channel:', channelError.message);
+      return { error: 'Failed to create announcements channel: ' + channelError.message };
+    }
+
     if (channel) {
-      await db.from('league_channel_members').insert({
+      const { error: memberError } = await db.from('league_channel_members').insert({
         league_channel_id: channel.id,
         user_id: user.id,
         can_post: true,
       });
+
+      if (memberError) {
+        console.error('Failed to add admin to announcements channel:', memberError.message);
+        return { error: 'Failed to add admin to announcements channel: ' + memberError.message };
+      }
     }
   }
+
+  // Mark setup as complete only after all operations succeeded
+  const { error: completeError } = await db
+    .from('leagues')
+    .update({ setup_completed_at: new Date().toISOString() })
+    .eq('id', input.leagueId);
+
+  if (completeError) return { error: 'Failed to finalize setup: ' + completeError.message };
 
   return {};
 }

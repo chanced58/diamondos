@@ -80,12 +80,13 @@ export function LeagueSetupWizard({ leagueId, initialName, initialStateCode }: P
   }
 
   function handleRemoveDivision(idx: number) {
+    const removedName = divisions[idx];
     setDivisions((prev) => prev.filter((_, i) => i !== idx));
-    // Clear any team assignments to this division
+    // Clear any team assignments to the removed division
     setTeamDivisions((prev) => {
       const next = { ...prev };
       for (const [k, v] of Object.entries(next)) {
-        if (v === String(idx)) delete next[k];
+        if (v === removedName) delete next[k];
       }
       return next;
     });
@@ -112,10 +113,14 @@ export function LeagueSetupWizard({ leagueId, initialName, initialStateCode }: P
         formData.append('file', logoFile);
         formData.append('leagueId', leagueId);
         const res = await fetch('/api/league/logo', { method: 'POST', body: formData });
-        if (res.ok) {
-          const data = await res.json();
-          logoUrl = data.logo_url;
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: 'Logo upload failed' }));
+          setError(body.error ?? 'Logo upload failed');
+          setSaving(false);
+          return;
         }
+        const data = await res.json();
+        logoUrl = data.logo_url;
       }
 
       const result = await completeLeagueSetupAction({
@@ -375,6 +380,7 @@ export function LeagueSetupWizard({ leagueId, initialName, initialStateCode }: P
                         onClick={() => handleRemoveDivision(idx)}
                         className="text-gray-400 hover:text-red-500 text-lg leading-none"
                         title="Remove division"
+                        aria-label={`Remove division ${idx + 1}`}
                       >
                         &times;
                       </button>

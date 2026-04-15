@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getLeagueForStaff } from '@baseball/database';
-import { LeagueSetupWizard } from './LeagueSetupWizard';
+import { LeagueSetupWizard } from './league-setup-wizard';
 
 export const metadata = { title: 'League Setup' };
 
