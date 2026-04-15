@@ -1,7 +1,38 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+
+export async function markInviteAcceptedAction(formData: FormData): Promise<void> {
+  const authClient = createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return;
+
+  const adminUserId = (formData.get('adminUserId') as string)?.trim();
+  if (!adminUserId) return;
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  // Gate: platform admin only
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('is_platform_admin')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile?.is_platform_admin) return;
+
+  await supabase
+    .from('user_profiles')
+    .update({ has_set_password: true })
+    .eq('id', adminUserId);
+
+  revalidatePath('/admin/leagues');
+}
 
 export async function inviteLeagueAdminAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();

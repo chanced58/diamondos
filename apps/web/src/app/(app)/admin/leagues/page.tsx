@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getAllLeagues } from '@baseball/database';
 import { InviteLeagueAdminForm } from './invite-league-admin-form';
+import { markInviteAcceptedAction } from './actions';
 
 export const metadata: Metadata = { title: 'All Leagues — Platform Admin' };
 
@@ -31,14 +32,14 @@ export default async function PlatformAdminLeaguesPage(): Promise<JSX.Element | 
   const leagues = await getAllLeagues(db);
 
   // Fetch league admin status for all leagues in one query
-  type AdminInfo = { name: string; hasSignedIn: boolean };
+  type AdminInfo = { name: string; userId: string; hasSignedIn: boolean };
   const adminMap = new Map<string, AdminInfo>();
 
   if (leagues.length > 0) {
     const leagueIds = leagues.map((l) => l.id);
     const { data: staffRows } = await db
       .from('league_staff')
-      .select('league_id, user_profiles(first_name, last_name, email, has_set_password)')
+      .select('league_id, user_id, user_profiles(first_name, last_name, email, has_set_password)')
       .in('league_id', leagueIds)
       .eq('role', 'league_admin')
       .eq('is_active', true);
@@ -47,7 +48,7 @@ export default async function PlatformAdminLeaguesPage(): Promise<JSX.Element | 
       const p = Array.isArray(row.user_profiles) ? row.user_profiles[0] : row.user_profiles;
       if (!p) continue;
       const name = `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || p.email || 'Unknown';
-      adminMap.set(row.league_id, { name, hasSignedIn: p.has_set_password === true });
+      adminMap.set(row.league_id, { name, userId: row.user_id, hasSignedIn: p.has_set_password === true });
     }
   }
 
@@ -113,13 +114,26 @@ export default async function PlatformAdminLeaguesPage(): Promise<JSX.Element | 
                       {admin ? (
                         <div>
                           <div className="text-gray-900">{admin.name}</div>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                            admin.hasSignedIn
-                              ? 'bg-green-50 text-green-700'
-                              : 'bg-amber-50 text-amber-700'
-                          }`}>
-                            {admin.hasSignedIn ? 'Active' : 'Pending'}
-                          </span>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                              admin.hasSignedIn
+                                ? 'bg-green-50 text-green-700'
+                                : 'bg-amber-50 text-amber-700'
+                            }`}>
+                              {admin.hasSignedIn ? 'Active' : 'Pending'}
+                            </span>
+                            {!admin.hasSignedIn && (
+                              <form action={markInviteAcceptedAction} className="inline">
+                                <input type="hidden" name="adminUserId" value={admin.userId} />
+                                <button
+                                  type="submit"
+                                  className="text-xs text-brand-700 hover:text-brand-800 hover:underline"
+                                >
+                                  Mark accepted
+                                </button>
+                              </form>
+                            )}
+                          </div>
                         </div>
                       ) : (
                         <span className="text-gray-300">&mdash;</span>
