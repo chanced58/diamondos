@@ -4,6 +4,7 @@ import type { JSX } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
+import { APP_TIERS } from '@baseball/shared';
 import { inviteLeagueAdminAction } from './actions';
 
 function SubmitButton() {
@@ -78,6 +79,21 @@ export function InviteLeagueAdminForm(): JSX.Element {
             placeholder="Doe"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
           />
+        </div>
+        <div className="w-32">
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Tier
+          </label>
+          <select
+            name="tier"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+          >
+            {APP_TIERS.map((tier) => (
+              <option key={tier} value={tier}>
+                {tier.charAt(0).toUpperCase() + tier.slice(1)}
+              </option>
+            ))}
+          </select>
         </div>
         <SubmitButton />
       </form>
