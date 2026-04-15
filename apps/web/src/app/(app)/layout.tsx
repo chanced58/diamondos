@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { getTeamsForUser } from '@baseball/database';
+import { getTeamsForUser, getLeagueForStaff } from '@baseball/database';
 import type { TeamSummary } from '@baseball/database';
 import type { ReactNode } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -169,6 +169,19 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
       }
     } catch {
       // Non-fatal — channel membership will be retried on next page load
+    }
+  }
+
+  // League admin setup detection: if the user has no team but is league staff
+  // with an incomplete setup, redirect them to the setup wizard.
+  if (!activeTeam && !isPlatformAdmin && db) {
+    try {
+      const staffLeague = await getLeagueForStaff(db, user.id);
+      if (staffLeague && !staffLeague.setup_completed_at) {
+        redirect('/league/setup');
+      }
+    } catch {
+      // Non-fatal — fall through to normal flow
     }
   }
 

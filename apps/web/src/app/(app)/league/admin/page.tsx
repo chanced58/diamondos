@@ -25,6 +25,9 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
   const access = await getLeagueAccess(league.id, user.id);
   if (!access.isLeagueStaff) redirect('/league');
 
+  // Guard: redirect to setup wizard if league setup is not complete
+  if (!league.setup_completed_at) redirect('/league/setup');
+
   const db = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
