@@ -22,6 +22,7 @@ type Subscription = {
   notes: string | null;
   zohoAccountId: string | null;
   createdAt: string;
+  adminSignedIn: boolean | null;
 };
 
 type Entity = { id: string; name: string };
@@ -231,7 +232,18 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
                   <tr key={sub.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="font-medium text-gray-900">{sub.entityName}</div>
-                      <div className="text-xs text-gray-400 capitalize">{sub.entityType}</div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs text-gray-400 capitalize">{sub.entityType}</span>
+                        {sub.entityType === 'league' && sub.adminSignedIn !== null && (
+                          <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${
+                            sub.adminSignedIn
+                              ? 'bg-green-50 text-green-700'
+                              : 'bg-amber-50 text-amber-700'
+                          }`}>
+                            {sub.adminSignedIn ? 'Admin Active' : 'Pending Invite'}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <span className={`text-xs font-medium px-2 py-1 rounded-full capitalize ${TIER_COLORS[sub.tier] ?? ''}`}>
@@ -367,15 +379,15 @@ function SubscriptionForm({
           </select>
         </div>
         <div>
-          <label htmlFor="sub-price" className="block text-xs font-medium text-gray-500 mb-1">Monthly Price (cents)</label>
+          <label htmlFor="sub-price" className="block text-xs font-medium text-gray-500 mb-1">Monthly Price ($)</label>
           <input
             id="sub-price"
             type="number"
-            name="monthlyPriceCents"
-            step="1"
+            name="monthlyPriceDollars"
+            step="0.01"
             min="0"
-            defaultValue={initial?.monthlyPriceCents ?? ''}
-            placeholder="e.g. 2999 = $29.99"
+            defaultValue={initial?.monthlyPriceCents != null ? (initial.monthlyPriceCents / 100).toFixed(2) : ''}
+            placeholder="e.g. 29.99"
             className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2"
           />
         </div>
