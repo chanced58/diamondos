@@ -88,9 +88,9 @@ export function InviteLeagueAdminForm(): JSX.Element {
             name="tier"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
           >
-            {APP_TIERS.map((t) => (
-              <option key={t} value={t}>
-                {t.charAt(0).toUpperCase() + t.slice(1)}
+            {APP_TIERS.map((tier) => (
+              <option key={tier} value={tier}>
+                {tier.charAt(0).toUpperCase() + tier.slice(1)}
               </option>
             ))}
           </select>

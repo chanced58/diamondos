@@ -13,7 +13,9 @@ export async function inviteLeagueAdminAction(_prevState: string | null | undefi
   const email = ((formData.get('email') as string) || '').trim().toLowerCase();
   const firstName = ((formData.get('firstName') as string) || '').trim();
   const lastName = ((formData.get('lastName') as string) || '').trim();
-  const tier = ((formData.get('tier') as string) || 'free').trim().toLowerCase();
+  const VALID_TIERS = ['free', 'starter', 'pro'] as const;
+  const rawTier = ((formData.get('tier') as string) || 'free').trim().toLowerCase();
+  const tier = VALID_TIERS.includes(rawTier as any) ? rawTier : 'free';
 
   if (!email) return 'Email is required.';
   if (!firstName) return 'First name is required.';
@@ -133,18 +135,16 @@ export async function inviteLeagueAdminAction(_prevState: string | null | undefi
     return `Channel member failed: ${cmError.message}`;
   }
 
-  // 6. Create subscription if tier is not free
-  if (tier !== 'free') {
-    const { error: subError } = await db.from('subscriptions').insert({
-      entity_type: 'league',
-      league_id: league.id,
-      tier,
-      status: 'active',
-    });
-    if (subError) {
-      await rollbackLeague();
-      return `Subscription creation failed: ${subError.message}`;
-    }
+  // 6. Create league subscription
+  const { error: subError } = await db.from('subscriptions').insert({
+    entity_type: 'league',
+    league_id: league.id,
+    tier,
+    status: 'active',
+  });
+  if (subError) {
+    await rollbackLeague();
+    return `Subscription creation failed: ${subError.message}`;
   }
 
   // Return success message (prefixed with "ok:" so the form can detect it)
