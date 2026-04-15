@@ -5,16 +5,16 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 
-export async function startDmAction(formData: FormData) {
+export async function startDmAction(formData: FormData): Promise<void> {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
-  if (!user) return 'Not authenticated — please log in again.';
+  if (!user) redirect('/login');
 
   const teamId       = formData.get('teamId') as string;
   const targetUserId = formData.get('targetUserId') as string;
 
-  if (!teamId || !targetUserId) return 'Missing required fields.';
-  if (targetUserId === user.id)  return 'You cannot DM yourself.';
+  if (!teamId || !targetUserId) return;
+  if (targetUserId === user.id)  return;
 
   const db = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -61,7 +61,7 @@ export async function startDmAction(formData: FormData) {
     .select('id')
     .single();
 
-  if (error) return `Failed to start conversation: ${error.message}`;
+  if (error) return;
 
   await db.from('channel_members').insert([
     { channel_id: channel.id, user_id: user.id,       can_post: true },
