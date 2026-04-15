@@ -6,7 +6,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueAccess } from '@/lib/league-access';
-import { getLeagueTeamsAll, getLeagueDivisions, getLeagueStaff } from '@baseball/database';
+import { getLeagueTeamsAll, getLeagueDivisions, getLeagueStaff, getLeagueForStaff } from '@baseball/database';
 import { LeagueAdminClient } from './LeagueAdminClient';
 
 export const metadata: Metadata = { title: 'League Admin' };
@@ -16,22 +16,37 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  const activeTeam = await getActiveTeam(supabase, user.id);
-  if (!activeTeam) redirect('/dashboard');
-
-  const league = await getActiveLeague(activeTeam.id);
-  if (!league) redirect('/league');
-
-  const access = await getLeagueAccess(league.id, user.id);
-  if (!access.isLeagueStaff) redirect('/league');
-
-  // Guard: redirect to setup wizard if league setup is not complete
-  if (!league.setup_completed_at) redirect('/league/setup');
-
   const db = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  // Resolve league: try via active team first, fall back to staff membership
+  const activeTeam = await getActiveTeam(supabase, user.id);
+  let league = activeTeam ? await getActiveLeague(activeTeam.id) : null;
+
+  if (!league) {
+    // Standalone league admin (no team) — resolve via staff membership
+    const staffLeague = await getLeagueForStaff(db, user.id);
+    if (staffLeague) {
+      league = {
+        id: staffLeague.id,
+        name: staffLeague.name,
+        description: staffLeague.description,
+        logo_url: staffLeague.logo_url,
+        state_code: staffLeague.state_code,
+        setup_completed_at: staffLeague.setup_completed_at,
+      };
+    }
+  }
+
+  if (!league) redirect('/dashboard');
+
+  const access = await getLeagueAccess(league.id, user.id);
+  if (!access.isLeagueStaff) redirect('/dashboard');
+
+  // Guard: redirect to setup wizard if league setup is not complete
+  if (!league.setup_completed_at) redirect('/league/setup');
 
   const [teams, divisions, staff] = await Promise.all([
     getLeagueTeamsAll(db, league.id),
