@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getAllLeagues } from '@baseball/database';
+import { InviteLeagueAdminForm } from './invite-league-admin-form';
 
 export const metadata: Metadata = { title: 'All Leagues — Platform Admin' };
 
@@ -45,6 +46,8 @@ export default async function PlatformAdminLeaguesPage(): Promise<JSX.Element | 
           + Create league
         </Link>
       </div>
+
+      <InviteLeagueAdminForm />
 
       {leagues.length === 0 ? (
         <p className="text-gray-400 text-sm">No leagues yet.</p>
