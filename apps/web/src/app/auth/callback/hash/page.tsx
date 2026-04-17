@@ -1,7 +1,7 @@
 'use client';
 
 import type { JSX } from 'react';
-import { Suspense, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 /**
  * Hash-fragment bridge for the implicit auth flow.
@@ -78,15 +78,5 @@ function HashBridge(): JSX.Element {
 }
 
 export default function HashBridgePage(): JSX.Element {
-  return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <p className="text-gray-400 text-sm">Loading…</p>
-        </div>
-      }
-    >
-      <HashBridge />
-    </Suspense>
-  );
+  return <HashBridge />;
 }

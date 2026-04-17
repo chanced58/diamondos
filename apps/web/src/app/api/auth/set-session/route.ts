@@ -15,6 +15,14 @@ import { processInvite } from '@/lib/auth/process-invite';
 const JWT_SHAPE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
 export async function POST(request: NextRequest) {
+  const origin = request.headers.get('origin');
+  const expectedOrigin = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL;
+  const secFetchSite = request.headers.get('sec-fetch-site');
+
+  if (secFetchSite !== 'same-origin' && origin !== expectedOrigin) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   let body: {
     access_token?: unknown;
     refresh_token?: unknown;
@@ -63,6 +71,8 @@ export async function POST(request: NextRequest) {
 
   if (error) {
     console.error('[auth/set-session] setSession failed:', error.message);
+    // Return a fresh NextResponse — not `response` — to avoid leaking any
+    // cookies that setAll may have partially written before the failure.
     return NextResponse.json({ error: 'Session exchange failed' }, { status: 401 });
   }
 

@@ -44,6 +44,7 @@ export async function processInvite(user: User, params: InviteParams): Promise<v
     const db: SupabaseClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       serviceKey,
+      { auth: { persistSession: false, autoRefreshToken: false } },
     );
 
     const { error: memberError } = await db
@@ -63,17 +64,13 @@ export async function processInvite(user: User, params: InviteParams): Promise<v
     if (user.email) {
       const emailLower = user.email.toLowerCase();
 
-      await db
+      const { data: invite } = await db
         .from('team_invitations')
         .update({ status: 'accepted', accepted_at: new Date().toISOString() })
         .eq('team_id', teamId)
-        .eq('email', emailLower);
-
-      const { data: invite } = await db
-        .from('team_invitations')
-        .select('first_name, last_name')
-        .eq('team_id', teamId)
         .eq('email', emailLower)
+        .eq('status', 'pending')
+        .select('first_name, last_name')
         .maybeSingle();
 
       if (invite) {
@@ -103,11 +100,15 @@ export async function processInvite(user: User, params: InviteParams): Promise<v
     }
 
     if (role === 'parent' && playersParam) {
-      for (const pid of playersParam.split(',').filter(Boolean)) {
-        await db.from('parent_player_links').upsert(
-          { parent_user_id: user.id, player_id: pid },
-          { onConflict: 'parent_user_id,player_id', ignoreDuplicates: true },
-        );
+      const rows = playersParam
+        .split(',')
+        .filter(Boolean)
+        .map((pid) => ({ parent_user_id: user.id, player_id: pid }));
+      if (rows.length > 0) {
+        await db.from('parent_player_links').upsert(rows, {
+          onConflict: 'parent_user_id,player_id',
+          ignoreDuplicates: true,
+        });
       }
     }
   } catch (err) {

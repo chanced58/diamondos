@@ -1,4 +1,5 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { type EmailOtpType } from '@supabase/supabase-js';
 import { type NextRequest, NextResponse } from 'next/server';
 import { processInvite } from '@/lib/auth/process-invite';
 
@@ -24,12 +25,12 @@ export async function GET(request: NextRequest) {
 
   const code = searchParams.get('code');
   const tokenHash = searchParams.get('token_hash');
-  const type = searchParams.get('type') as
-    | 'magiclink'
-    | 'email'
-    | 'recovery'
-    | 'signup'
-    | null;
+  const VALID_OTP_TYPES: Set<string> = new Set<EmailOtpType>([
+    'signup', 'invite', 'magiclink', 'recovery', 'email_change', 'email',
+  ]);
+  const rawType = searchParams.get('type');
+  const type: EmailOtpType | null =
+    rawType && VALID_OTP_TYPES.has(rawType) ? (rawType as EmailOtpType) : null;
 
   const teamId = searchParams.get('team');
   const role = searchParams.get('role');
