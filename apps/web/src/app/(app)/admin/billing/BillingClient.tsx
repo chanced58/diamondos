@@ -7,9 +7,10 @@ import { createSubscription, updateSubscription } from './actions';
 
 type Subscription = {
   id: string;
-  entityType: 'team' | 'league';
+  entityType: 'team' | 'league' | 'player';
   entityName: string;
   entityId: string;
+  playerHandle: string | null;
   tier: string;
   status: string;
   billingContactName: string | null;
@@ -59,9 +60,10 @@ interface BillingClientProps {
   subscriptions: Subscription[];
   teams: Entity[];
   leagues: Entity[];
+  players: Entity[];
 }
 
-export function BillingClient({ subscriptions, teams, leagues }: BillingClientProps): JSX.Element {
+export function BillingClient({ subscriptions, teams, leagues, players }: BillingClientProps): JSX.Element {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -172,6 +174,7 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
               <option value="all">All Entities</option>
               <option value="team">Teams</option>
               <option value="league">Leagues</option>
+              <option value="player">Players</option>
             </select>
           </div>
         </div>
@@ -189,6 +192,7 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
           onSubmit={handleCreate}
           teams={teams}
           leagues={leagues}
+          players={players}
           isSaving={saving}
         />
       )}
@@ -222,6 +226,7 @@ export function BillingClient({ subscriptions, teams, leagues }: BillingClientPr
                         onSubmit={handleUpdate}
                         teams={teams}
                         leagues={leagues}
+                        players={players}
                         isSaving={saving}
                         initial={sub}
                         onCancel={() => setEditingId(null)}
@@ -303,6 +308,7 @@ function SubscriptionForm({
   onSubmit,
   teams,
   leagues,
+  players,
   isSaving,
   initial,
   onCancel,
@@ -310,11 +316,17 @@ function SubscriptionForm({
   onSubmit: (formData: FormData) => void;
   teams: Entity[];
   leagues: Entity[];
+  players: Entity[];
   isSaving: boolean;
   initial?: Subscription;
   onCancel?: () => void;
 }) {
-  const [entityType, setEntityType] = useState<'team' | 'league'>(initial?.entityType ?? 'team');
+  const [entityType, setEntityType] = useState<'team' | 'league' | 'player'>(
+    initial?.entityType ?? 'team',
+  );
+
+  const entityLabel =
+    entityType === 'team' ? 'Team' : entityType === 'league' ? 'League' : 'Player';
 
   return (
     <form action={onSubmit} className="bg-gray-50 border border-gray-200 rounded-xl p-6 space-y-4">
@@ -328,29 +340,39 @@ function SubscriptionForm({
               id="sub-entity-type"
               name="entityType"
               value={entityType}
-              onChange={(e) => setEntityType(e.target.value as 'team' | 'league')}
+              onChange={(e) => setEntityType(e.target.value as 'team' | 'league' | 'player')}
               className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2"
             >
               <option value="team">Team</option>
               <option value="league">League</option>
+              <option value="player">Player</option>
             </select>
           </div>
           <div>
             <label htmlFor="sub-entity-id" className="block text-xs font-medium text-gray-500 mb-1">
-              {entityType === 'team' ? 'Team' : 'League'}
+              {entityLabel}
             </label>
-            {entityType === 'team' ? (
+            {entityType === 'team' && (
               <select id="sub-entity-id" name="teamId" required className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
                 <option value="">Select a team...</option>
                 {teams.map((t) => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </select>
-            ) : (
+            )}
+            {entityType === 'league' && (
               <select id="sub-entity-id" name="leagueId" required className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
                 <option value="">Select a league...</option>
                 {leagues.map((l) => (
                   <option key={l.id} value={l.id}>{l.name}</option>
+                ))}
+              </select>
+            )}
+            {entityType === 'player' && (
+              <select id="sub-entity-id" name="userId" required className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
+                <option value="">Select a player...</option>
+                {players.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>
             )}

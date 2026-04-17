@@ -42,12 +42,16 @@ export async function createSubscription(formData: FormData) {
     const entityType = formData.get('entityType') as string;
     const teamId = (formData.get('teamId') as string | null)?.trim() || null;
     const leagueId = (formData.get('leagueId') as string | null)?.trim() || null;
+    const userId = (formData.get('userId') as string | null)?.trim() || null;
     const tier = formData.get('tier') as string;
     const status = formData.get('status') as string;
 
-    if (entityType !== 'team' && entityType !== 'league') return { error: `Invalid entity type: ${entityType}` };
+    if (entityType !== 'team' && entityType !== 'league' && entityType !== 'player') {
+      return { error: `Invalid entity type: ${entityType}` };
+    }
     if (entityType === 'team' && !teamId) return { error: 'Team is required when entity type is team' };
     if (entityType === 'league' && !leagueId) return { error: 'League is required when entity type is league' };
+    if (entityType === 'player' && !userId) return { error: 'Player is required when entity type is player' };
     if (!VALID_TIERS.includes(tier as any)) return { error: `Invalid tier: ${tier}` };
     if (!VALID_STATUSES.includes(status as any)) return { error: `Invalid status: ${status}` };
 
@@ -64,6 +68,7 @@ export async function createSubscription(formData: FormData) {
       entity_type: entityType,
       team_id: entityType === 'team' ? teamId : null,
       league_id: entityType === 'league' ? leagueId : null,
+      user_id: entityType === 'player' ? userId : null,
       tier,
       status,
       billing_contact_name: billingContactName,
@@ -79,6 +84,7 @@ export async function createSubscription(formData: FormData) {
     if (error) return { error: error.message };
 
     revalidatePath('/admin/billing');
+    revalidatePath('/admin/players');
     return { success: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
@@ -128,6 +134,7 @@ export async function updateSubscription(formData: FormData) {
     if (!data || data.length === 0) return { error: 'Subscription not found' };
 
     revalidatePath('/admin/billing');
+    revalidatePath('/admin/players');
     return { success: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
