@@ -43,10 +43,27 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
     }
   }
 
+  // Check if user has a Player Pro profile — used to surface the My Profile
+  // nav item and to skip team-membership self-healing for player-only users.
+  let hasPlayerProfile = false;
+  if (db) {
+    try {
+      const { data: pp } = await db
+        .from('player_profiles')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      hasPlayerProfile = !!pp;
+    } catch {
+      // Non-fatal
+    }
+  }
+
   // Self-healing: if a NON-admin user created a team but has no team_members row,
   // auto-create the membership. Platform admins don't need team_members rows —
-  // they access teams via the admin panel cookie.
-  if (!activeTeam && !isPlatformAdmin && db) {
+  // they access teams via the admin panel cookie. Players with a Pro profile
+  // may not have a team yet — skip team-membership self-healing for them.
+  if (!activeTeam && !isPlatformAdmin && !hasPlayerProfile && db) {
     const { data: ownTeam } = await db
       .from('teams')
       .select('id, name, organization, logo_url, primary_color, secondary_color')
@@ -80,7 +97,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
   // Self-healing: ensure team membership exists for any invitation (pending or accepted).
   // Covers: lost callback URL params, direct login, and deactivated memberships from
   // failed user deletions.
-  if (!activeTeam && !isPlatformAdmin && db && user.email) {
+  if (!activeTeam && !isPlatformAdmin && !hasPlayerProfile && db && user.email) {
     const { data: invites } = await db
       .from('team_invitations')
       .select('id, team_id, role, email, first_name, last_name, status')
@@ -212,6 +229,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         leagueId={league?.id}
         leagueName={league?.name}
         subscriptionTier={subscriptionTier ?? undefined}
+        hasPlayerProfile={hasPlayerProfile}
       />
       <main className="flex-1 overflow-auto">
         {children}

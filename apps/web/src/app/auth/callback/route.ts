@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
   const role = searchParams.get('role');
   const playerId = searchParams.get('player');
   const playersParam = searchParams.get('players');
+  const intent = searchParams.get('intent');
   const nextParam = searchParams.get('next') ?? '/dashboard';
 
   // Use the public app URL for redirects. In hosted environments like Render,
@@ -198,6 +199,72 @@ export async function GET(request: NextRequest) {
     } catch (err) {
       console.error('[auth/callback] Invite processing failed:', err);
       // Non-fatal — self-healing logic in app layout will retry
+    }
+  }
+
+  // --- Provision Player Pro profile on first login ---
+  const effectiveIntent =
+    intent ?? (user?.user_metadata?.intent as string | undefined) ?? null;
+  if (user && effectiveIntent === 'player') {
+    try {
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (serviceKey) {
+        const db = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          serviceKey,
+        );
+
+        const { data: existing } = await db
+          .from('player_profiles')
+          .select('user_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (!existing) {
+          const requestedHandle = user.user_metadata?.player_handle as string | undefined;
+          if (requestedHandle) {
+            // Ensure the handle is still free — another user may have taken it
+            // in the window between signup and click.
+            const { data: taken } = await db
+              .from('player_profiles')
+              .select('user_id')
+              .ilike('handle', requestedHandle)
+              .maybeSingle();
+
+            const finalHandle = taken
+              ? `${requestedHandle}-${user.id.slice(0, 6)}`
+              : requestedHandle;
+
+            const { error: profileErr } = await db.from('player_profiles').insert({
+              user_id: user.id,
+              handle: finalHandle,
+              is_public: false,
+            });
+            if (profileErr) {
+              console.error('[auth/callback] player_profiles insert failed:', profileErr.message);
+            }
+          }
+        }
+
+        // Backfill user_profiles name from signup metadata
+        const firstName = user.user_metadata?.first_name as string | undefined;
+        const lastName = user.user_metadata?.last_name as string | undefined;
+        if (firstName || lastName) {
+          const { data: profile } = await db
+            .from('user_profiles')
+            .select('first_name, last_name')
+            .eq('id', user.id)
+            .maybeSingle();
+          const updates: Record<string, string> = {};
+          if (firstName && !profile?.first_name) updates.first_name = firstName;
+          if (lastName && !profile?.last_name) updates.last_name = lastName;
+          if (Object.keys(updates).length > 0) {
+            await db.from('user_profiles').update(updates).eq('id', user.id);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[auth/callback] Player provisioning failed:', err);
     }
   }
 

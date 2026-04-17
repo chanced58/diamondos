@@ -21,9 +21,10 @@ interface SidebarProps {
   leagueId?: string;
   leagueName?: string;
   subscriptionTier?: SubscriptionTier;
+  hasPlayerProfile?: boolean;
 }
 
-export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, secondaryColor, isPlatformAdmin, leagueId, leagueName, subscriptionTier = SubscriptionTier.FREE }: SidebarProps): JSX.Element | null {
+export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, secondaryColor, isPlatformAdmin, leagueId, leagueName, subscriptionTier = SubscriptionTier.FREE, hasPlayerProfile }: SidebarProps): JSX.Element | null {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
@@ -59,6 +60,8 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
     { href: teamId ? `/teams/${teamId}/admin` : '/teams',  label: 'Team Management', icon: '👥' },
     // Show league nav item when team belongs to a league and has Pro tier
     ...(leagueId && canLeague ? [{ href: '/league', label: leagueName ?? 'League', icon: '🏆' }] : []),
+    // Player profile link for users who also have a player profile
+    ...(hasPlayerProfile ? [{ href: '/players/me', label: 'My Profile', icon: '🎖️' }] : []),
     // Non-platform-admins see the generic Admin link; platform admins get the dedicated link below
     ...(!isPlatformAdmin ? [{ href: '/admin', label: 'Admin', icon: '⚙️' }] : []),
   ];
@@ -68,6 +71,7 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
     { href: '/admin/teams',        label: 'All Teams',     icon: '🏟️' },
     { href: '/admin/leagues',      label: 'All Leagues',   icon: '🏆' },
     { href: '/admin/users',        label: 'All Users',     icon: '👥' },
+    { href: '/admin/players',      label: 'Player Pro',    icon: '🎖️' },
     { href: '/admin/create-team',  label: 'Create Team',   icon: '➕' },
     { href: '/admin/billing',      label: 'Billing',       icon: '💳' },
   ];
