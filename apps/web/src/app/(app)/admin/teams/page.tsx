@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { RemoveTeamButton } from './RemoveTeamButton';
 
 export const metadata: Metadata = { title: 'All Teams — Platform Admin' };
 
@@ -107,12 +108,15 @@ export default async function PlatformAdminTeamsPage(): Promise<JSX.Element | nu
                     {new Date(team.createdAt).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/teams/${team.id}/roster`}
-                      className="text-xs text-brand-700 hover:underline"
-                    >
-                      View roster →
-                    </Link>
+                    <div className="flex items-center justify-end gap-3">
+                      <Link
+                        href={`/teams/${team.id}/roster`}
+                        className="text-xs text-brand-700 hover:underline"
+                      >
+                        View roster →
+                      </Link>
+                      <RemoveTeamButton teamId={team.id} teamName={team.name} />
+                    </div>
                   </td>
                 </tr>
               ))}

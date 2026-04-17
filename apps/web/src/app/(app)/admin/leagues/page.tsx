@@ -5,6 +5,8 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getAllLeagues } from '@baseball/database';
+import { InviteLeagueAdminForm } from './invite-league-admin-form';
+import { markInviteAcceptedAction } from './actions';
 
 export const metadata: Metadata = { title: 'All Leagues — Platform Admin' };
 
@@ -29,6 +31,27 @@ export default async function PlatformAdminLeaguesPage(): Promise<JSX.Element | 
 
   const leagues = await getAllLeagues(db);
 
+  // Fetch league admin status for all leagues in one query
+  type AdminInfo = { name: string; userId: string; hasSignedIn: boolean };
+  const adminMap = new Map<string, AdminInfo>();
+
+  if (leagues.length > 0) {
+    const leagueIds = leagues.map((l) => l.id);
+    const { data: staffRows } = await db
+      .from('league_staff')
+      .select('league_id, user_id, user_profiles(first_name, last_name, email, has_set_password)')
+      .in('league_id', leagueIds)
+      .eq('role', 'league_admin')
+      .eq('is_active', true);
+
+    for (const row of staffRows ?? []) {
+      const p = Array.isArray(row.user_profiles) ? row.user_profiles[0] : row.user_profiles;
+      if (!p) continue;
+      const name = `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || p.email || 'Unknown';
+      adminMap.set(row.league_id, { name, userId: row.user_id, hasSignedIn: p.has_set_password === true });
+    }
+  }
+
   return (
     <div className="p-8 max-w-5xl">
       <div className="flex items-center gap-3 mb-1">
@@ -46,6 +69,8 @@ export default async function PlatformAdminLeaguesPage(): Promise<JSX.Element | 
         </Link>
       </div>
 
+      <InviteLeagueAdminForm />
+
       {leagues.length === 0 ? (
         <p className="text-gray-400 text-sm">No leagues yet.</p>
       ) : (
@@ -55,6 +80,9 @@ export default async function PlatformAdminLeaguesPage(): Promise<JSX.Element | 
               <tr>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   League
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  Admin
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   State
@@ -72,32 +100,64 @@ export default async function PlatformAdminLeaguesPage(): Promise<JSX.Element | 
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {leagues.map((league) => (
-                <tr key={league.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3">
-                    <span className="font-medium text-gray-900">{league.name}</span>
-                    {league.description && (
-                      <span className="ml-2 text-xs text-gray-400 truncate">{league.description}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {league.state_code ?? <span className="text-gray-300">&mdash;</span>}
-                  </td>
-                  <td className="px-4 py-3 text-right text-gray-600">{league.team_count}</td>
-                  <td className="px-4 py-3 text-right text-gray-600">{league.staff_count}</td>
-                  <td className="px-4 py-3 text-gray-500">
-                    {new Date(league.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/admin/leagues/${league.id}`}
-                      className="text-xs text-brand-700 hover:underline"
-                    >
-                      Manage &rarr;
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+              {leagues.map((league) => {
+                const admin = adminMap.get(league.id);
+                return (
+                  <tr key={league.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <span className="font-medium text-gray-900">{league.name}</span>
+                      {league.description && (
+                        <span className="ml-2 text-xs text-gray-400 truncate">{league.description}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {admin ? (
+                        <div>
+                          <div className="text-gray-900">{admin.name}</div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                              admin.hasSignedIn
+                                ? 'bg-green-50 text-green-700'
+                                : 'bg-amber-50 text-amber-700'
+                            }`}>
+                              {admin.hasSignedIn ? 'Active' : 'Pending'}
+                            </span>
+                            {!admin.hasSignedIn && (
+                              <form action={markInviteAcceptedAction} className="inline">
+                                <input type="hidden" name="adminUserId" value={admin.userId} />
+                                <button
+                                  type="submit"
+                                  className="text-xs text-brand-700 hover:text-brand-800 hover:underline"
+                                >
+                                  Mark accepted
+                                </button>
+                              </form>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-300">&mdash;</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {league.state_code ?? <span className="text-gray-300">&mdash;</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-600">{league.team_count}</td>
+                    <td className="px-4 py-3 text-right text-gray-600">{league.staff_count}</td>
+                    <td className="px-4 py-3 text-gray-500">
+                      {new Date(league.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link
+                        href={`/admin/leagues/${league.id}`}
+                        className="text-xs text-brand-700 hover:underline"
+                      >
+                        Manage &rarr;
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

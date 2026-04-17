@@ -144,7 +144,13 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
     } else if (etype === 'out' || etype === 'strikeout' || etype === 'dropped_third_strike') {
       // Track outs — dropped_third_strike only counts as out when thrown_out
       if (etype === 'dropped_third_strike') {
-        if (payload.outcome === 'thrown_out') outs++;
+        if (payload.outcome === 'thrown_out') {
+          outs++;
+        } else {
+          // Batter reaches first — force-advance runners
+          const batterId = (payload.batterId ?? payload.opponentBatterId ?? 'unknown') as string;
+          forceAdvance(batterId);
+        }
       } else {
         outs++;
       }

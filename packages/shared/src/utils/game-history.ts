@@ -336,14 +336,12 @@ export function applyPitchRevertedTyped(events: GameEvent[]): GameEvent[] {
     if (event.eventType === EventType.PITCH_REVERTED) {
       const payload = event.payload as Record<string, unknown>;
       const keepUntilSeq = payload.revertToSequenceNumber as number;
-      // Rebuild from original events up to keepUntilSeq, then re-process
-      // remaining events so voided markers after the revert point are re-applied
-      const kept = events.slice(0, i).filter(
-        (e) => e.eventType !== EventType.PITCH_REVERTED
-          && e.eventType !== EventType.EVENT_VOIDED
-          && e.sequenceNumber <= keepUntilSeq,
-      );
-      result.splice(0, result.length, ...kept);
+      // Filter the accumulated result (not the original array) so that
+      // earlier reverts are respected — going back to the original would
+      // restore events that a previous revert had already removed.
+      result.splice(0, result.length, ...result.filter(
+        (e) => e.sequenceNumber <= keepUntilSeq,
+      ));
     } else if (event.eventType === EventType.EVENT_VOIDED) {
       const payload = event.payload as Record<string, unknown>;
       const voidedId = payload.voidedEventId as string;
@@ -691,7 +689,9 @@ export function buildGameHistoryTree(
           forceAdvance();
         } else if (event.eventType === EventType.FIELD_ERROR) {
           forceAdvance();
-        } else if (event.eventType === EventType.SACRIFICE_FLY || event.eventType === EventType.SACRIFICE_BUNT) {
+        } else if (event.eventType === EventType.SACRIFICE_FLY) {
+          // Only sac fly auto-scores from 3rd; sac bunt scoring depends on the
+          // play and is handled by a separate SCORE event if applicable.
           if (runnerThird) {
             addRuns(1);
             runnerThird = false;
@@ -719,8 +719,8 @@ export function buildGameHistoryTree(
       case EventType.BALK: {
         // Update base state for score tracking
         if (event.eventType === EventType.SCORE) {
-          const sp = event.payload as ScorePayload;
-          addRuns(sp.rbis ?? 1);
+          // Each SCORE event = exactly 1 run (rbis is RBI credit, which may be 0 for balks)
+          addRuns(1);
         } else if (event.eventType === EventType.STOLEN_BASE) {
           const bp = event.payload as BaserunnerMovePayload;
           if (bp.fromBase === 1) runnerFirst = false;

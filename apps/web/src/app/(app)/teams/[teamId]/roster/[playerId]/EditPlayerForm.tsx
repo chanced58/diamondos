@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { updatePlayerAction, deactivatePlayerAction } from './actions';
 import { PlayerPosition, BatsThrows, POSITION_ABBREVIATIONS } from '@baseball/shared';
+import { ReactivateForm } from '../ReactivateForm';
 
 function SubmitButton({ label, pendingLabel }: { label: string; pendingLabel: string }) {
   const { pending } = useFormStatus();
@@ -224,5 +225,15 @@ export function DeactivatePlayerForm({ player, teamId }: { player: Player; teamI
         Remove from roster
       </button>
     </form>
+  );
+}
+
+export function ReactivatePlayerForm({ player, teamId }: { player: Player; teamId: string }): JSX.Element | null {
+  return (
+    <ReactivateForm
+      playerId={player.id}
+      teamId={teamId}
+      initialShow
+    />
   );
 }

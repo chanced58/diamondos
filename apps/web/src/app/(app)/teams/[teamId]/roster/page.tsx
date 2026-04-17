@@ -16,6 +16,7 @@ import type { BattingStats, PitchingStats } from '@baseball/shared';
 import { RosterRowActions } from './RosterRowActions';
 import { StaffSection } from './StaffSection';
 import { ParentSection } from './ParentSection';
+import { DisabledPlayersSection } from './DisabledPlayersSection';
 
 export const metadata: Metadata = { title: 'Roster' };
 export const dynamic = 'force-dynamic';
@@ -178,12 +179,18 @@ export default async function RosterPage({ params }: { params: { teamId: string 
   const promotedIds = await healPendingInvitations(db, params.teamId, healableInvites ?? []);
 
   // Now fetch the rest of the data (team_members will include newly healed members)
-  const [playersResult, seasonResult, membershipResult, staffMembersResult, parentMembersResult] = await Promise.all([
+  const [playersResult, disabledPlayersResult, seasonResult, membershipResult, staffMembersResult, parentMembersResult] = await Promise.all([
     db
       .from('players')
       .select('id, first_name, last_name, jersey_number, primary_position, bats, throws, graduation_year, email, user_id')
       .eq('team_id', params.teamId)
       .eq('is_active', true)
+      .order('last_name'),
+    db
+      .from('players')
+      .select('id, first_name, last_name, primary_position, disabled_at')
+      .eq('team_id', params.teamId)
+      .eq('is_active', false)
       .order('last_name'),
     db
       .from('seasons')
@@ -237,6 +244,13 @@ export default async function RosterPage({ params }: { params: { teamId: string 
   }
 
   const players = playersResult.data ?? [];
+  const disabledPlayers = (disabledPlayersResult.data ?? []).map((p) => ({
+    id: p.id as string,
+    firstName: p.first_name as string,
+    lastName: p.last_name as string,
+    primaryPosition: p.primary_position as string | null,
+    disabledAt: p.disabled_at as string | null,
+  }));
   const season = seasonResult.data;
   const role = membershipResult.data?.role;
   const { isCoach: hasCoachAccess, isPlatformAdmin } = await getUserAccess(params.teamId, user.id);
@@ -525,6 +539,13 @@ export default async function RosterPage({ params }: { params: { teamId: string 
           </div>
         )}
       </section>
+
+      {/* ── Disabled Players ─────────────────────────────────────── */}
+      <DisabledPlayersSection
+        teamId={params.teamId}
+        players={disabledPlayers}
+        isCoach={isCoach}
+      />
 
       {/* ── Coaches & Staff ──────────────────────────────────────── */}
       <StaffSection

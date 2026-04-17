@@ -3,12 +3,13 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { getTeamsForUser } from '@baseball/database';
+import { getTeamsForUser, getLeagueForStaff } from '@baseball/database';
 import type { TeamSummary } from '@baseball/database';
 import type { ReactNode } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { addToTeamChannels } from '@/lib/team-channels';
 import { getActiveLeague } from '@/lib/active-league';
+import { getLeagueAccess } from '@/lib/league-access';
 import { getTeamTier } from '@/lib/team-tier';
 
 export default async function AppLayout({ children }: { children: ReactNode }): Promise<JSX.Element> {
@@ -188,6 +189,23 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
     }
   }
 
+  // League admin detection: check if the user is league staff (with or without a team).
+  // Used for setup redirect and for providing league context to the sidebar.
+  let staffLeague: Awaited<ReturnType<typeof getLeagueForStaff>> = null;
+  if (!isPlatformAdmin && db) {
+    try {
+      staffLeague = await getLeagueForStaff(db, user.id);
+    } catch {
+      // Non-fatal — fall through to normal flow
+    }
+  }
+
+  // Redirect to setup wizard if league admin hasn't completed setup.
+  // Note: redirect() must be OUTSIDE try/catch — it throws a NEXT_REDIRECT error.
+  if (!activeTeam && staffLeague && !staffLeague.setup_completed_at) {
+    redirect('/league/setup');
+  }
+
   // Use the active-team-id cookie (set by middleware when visiting /teams/[id]/*)
   // to show the correct team's branding across all routes.
   const cookieStore = cookies();
@@ -210,11 +228,26 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
     }
   }
 
-  // Resolve league context and subscription tier for the active team
-  const [league, subscriptionTier] = await Promise.all([
-    activeTeam ? getActiveLeague(activeTeam.id) : null,
-    activeTeam ? getTeamTier(activeTeam.id) : null,
-  ]);
+  // Resolve league context and subscription tier for the active team.
+  // For standalone league admins (no team), use the staffLeague directly.
+  let league = activeTeam ? await getActiveLeague(activeTeam.id) : null;
+  const subscriptionTier = activeTeam ? await getTeamTier(activeTeam.id) : null;
+
+  // Fallback: if user has no team but IS league staff with completed setup,
+  // use their staff league for sidebar context.
+  if (!league && staffLeague && staffLeague.setup_completed_at) {
+    league = {
+      id: staffLeague.id,
+      name: staffLeague.name,
+      description: staffLeague.description,
+      logo_url: staffLeague.logo_url,
+      state_code: staffLeague.state_code,
+      setup_completed_at: staffLeague.setup_completed_at,
+    };
+  }
+
+  // Check if user is a league admin (for sidebar nav)
+  const leagueAccess = league ? await getLeagueAccess(league.id, user.id) : null;
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -230,6 +263,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         leagueName={league?.name}
         subscriptionTier={subscriptionTier ?? undefined}
         hasPlayerProfile={hasPlayerProfile}
+        isLeagueAdmin={leagueAccess?.isLeagueAdmin ?? false}
       />
       <main className="flex-1 overflow-auto">
         {children}

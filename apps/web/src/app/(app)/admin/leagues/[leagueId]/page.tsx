@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { redirect, notFound } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { getLeagueTeams, getLeagueDivisions, getLeagueStaff } from '@baseball/database';
+import { getLeagueTeamsAll, getLeagueDivisions, getLeagueStaff } from '@baseball/database';
 import { LeagueAdminClient } from '@/app/(app)/league/admin/LeagueAdminClient';
 
 export const metadata: Metadata = { title: 'Manage League — Platform Admin' };
@@ -45,7 +45,7 @@ export default async function PlatformAdminLeagueDetailPage({
   if (!league) notFound();
 
   const [teams, divisions, staff, allTeamsResult, allOpponentTeamsResult] = await Promise.all([
-    getLeagueTeams(db, leagueId),
+    getLeagueTeamsAll(db, leagueId),
     getLeagueDivisions(db, leagueId),
     getLeagueStaff(db, leagueId),
     db.from('teams').select('id, name, organization').order('name'),
@@ -87,6 +87,7 @@ export default async function PlatformAdminLeagueDetailPage({
           organization: t.teams?.organization ?? null,
           divisionId: t.division_id,
           isOpponentTeam: t.opponent_team_id !== null,
+          isActive: t.is_active,
         }))}
         divisions={divisions}
         staff={staff.map((s) => {

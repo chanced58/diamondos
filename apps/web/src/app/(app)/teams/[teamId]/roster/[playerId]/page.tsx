@@ -16,7 +16,7 @@ import {
   formatBattingPct,
 } from '@baseball/shared';
 import type { PitchingStats, BattingStats } from '@baseball/shared';
-import { EditPlayerForm, DeactivatePlayerForm } from './EditPlayerForm';
+import { EditPlayerForm, DeactivatePlayerForm, ReactivatePlayerForm } from './EditPlayerForm';
 
 export const metadata: Metadata = { title: 'Player Profile' };
 
@@ -216,6 +216,26 @@ export default async function PlayerPage({
           )}
         </div>
       </div>
+
+      {/* ── Disabled banner ─────────────────────────────────────────────── */}
+      {!player.is_active && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-5 py-4 mb-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-yellow-900">This player is disabled</p>
+              <p className="text-xs text-yellow-700 mt-0.5">
+                Stats and history are preserved.
+                {player.disabled_at && (
+                  <> Disabled on {new Date(player.disabled_at).toLocaleDateString()}.</>
+                )}
+              </p>
+            </div>
+            {isCoach && (
+              <ReactivatePlayerForm player={player} teamId={params.teamId} />
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Quick stats ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-3 mb-6">
@@ -444,8 +464,8 @@ export default async function PlayerPage({
         )}
       </section>
 
-      {/* ── Edit player info (coaches only) ───────────────────────────── */}
-      {isCoach && (
+      {/* ── Edit player info (coaches only, active players) ────────────── */}
+      {isCoach && player.is_active && (
         <section>
           <details className="group">
             <summary className="flex items-center justify-between cursor-pointer select-none bg-white border border-gray-200 rounded-xl px-5 py-4 hover:bg-gray-50 transition-colors">

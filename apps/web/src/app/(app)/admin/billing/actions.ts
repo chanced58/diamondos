@@ -29,10 +29,10 @@ const VALID_TIERS = ['free', 'starter', 'pro'] as const;
 const VALID_TIERS_FOR_UPDATE = ['free', 'starter', 'pro', 'enterprise'] as const;
 const VALID_STATUSES = ['active', 'trial', 'past_due', 'cancelled', 'expired'] as const;
 
-function parseCents(value: string | null): number | null {
+function dollarsToCents(value: string | null): number | null {
   if (!value) return null;
-  const parsed = parseInt(value, 10);
-  return Number.isNaN(parsed) ? null : parsed;
+  const parsed = parseFloat(value);
+  return Number.isNaN(parsed) ? null : Math.round(parsed * 100);
 }
 
 export async function createSubscription(formData: FormData) {
@@ -57,7 +57,7 @@ export async function createSubscription(formData: FormData) {
     const trialEndsAt = (formData.get('trialEndsAt') as string) || null;
     const startsAt = (formData.get('startsAt') as string) || null;
     const endsAt = (formData.get('endsAt') as string) || null;
-    const monthlyPriceCents = parseCents(formData.get('monthlyPriceCents') as string | null);
+    const monthlyPriceCents = dollarsToCents(formData.get('monthlyPriceDollars') as string | null);
     const notes = (formData.get('notes') as string) || null;
 
     const { error } = await (supabase as any).from('subscriptions').insert({
@@ -104,7 +104,7 @@ export async function updateSubscription(formData: FormData) {
     const trialEndsAt = (formData.get('trialEndsAt') as string) || null;
     const startsAt = (formData.get('startsAt') as string) || null;
     const endsAt = (formData.get('endsAt') as string) || null;
-    const monthlyPriceCents = parseCents(formData.get('monthlyPriceCents') as string | null);
+    const monthlyPriceCents = dollarsToCents(formData.get('monthlyPriceDollars') as string | null);
     const notes = (formData.get('notes') as string) || null;
 
     const { data, error } = await (supabase as any)

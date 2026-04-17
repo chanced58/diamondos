@@ -15,6 +15,7 @@ type TeamEntry = {
   organization: string | null;
   divisionId: string | null;
   isOpponentTeam?: boolean;
+  isActive: boolean;
 };
 
 type Division = {
@@ -219,10 +220,27 @@ export function LeagueAdminClient({
   }
 
   async function handleRemoveTeam(membershipId: string) {
+    if (!isAdmin) { setErrorMsg('Only league admins can remove teams.'); return; }
     setSaving(true);
     setErrorMsg(null);
     try {
       const { error } = await supabase.from('league_members').delete().eq('id', membershipId);
+      if (error) { setErrorMsg(error.message); return; }
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleToggleTeamActive(membershipId: string, currentlyActive: boolean) {
+    if (!isAdmin) { setErrorMsg('Only league admins can change team status.'); return; }
+    setSaving(true);
+    setErrorMsg(null);
+    try {
+      const { error } = await supabase
+        .from('league_members')
+        .update({ is_active: !currentlyActive })
+        .eq('id', membershipId);
       if (error) { setErrorMsg(error.message); return; }
       router.refresh();
     } finally {
@@ -420,13 +438,14 @@ export function LeagueAdminClient({
               <thead>
                 <tr className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-100">
                   <th className="pb-2">Team</th>
+                  <th className="pb-2">Status</th>
                   <th className="pb-2">Division</th>
-                  <th className="pb-2 text-right">Actions</th>
+                  {isAdmin && <th className="pb-2 text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {teams.map((t) => (
-                  <tr key={t.id}>
+                  <tr key={t.id} className={t.isActive ? '' : 'opacity-60'}>
                     <td className="py-3">
                       {t.isOpponentTeam ? (
                         <Link
@@ -436,13 +455,20 @@ export function LeagueAdminClient({
                           {t.teamName}
                         </Link>
                       ) : (
-                        <span className="font-medium text-gray-900">{t.teamName}</span>
+                        <span className={`font-medium ${t.isActive ? 'text-gray-900' : 'text-gray-500'}`}>{t.teamName}</span>
                       )}
                       {t.organization && (
                         <span className="ml-2 text-xs text-gray-400">{t.organization}</span>
                       )}
                       {t.isOpponentTeam && (
                         <span className="ml-2 text-xs font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Opponent</span>
+                      )}
+                    </td>
+                    <td className="py-3">
+                      {t.isActive ? (
+                        <span className="text-xs font-medium text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">Active</span>
+                      ) : (
+                        <span className="text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">Inactive</span>
                       )}
                     </td>
                     <td className="py-3">
@@ -457,15 +483,31 @@ export function LeagueAdminClient({
                         ))}
                       </select>
                     </td>
-                    <td className="py-3 text-right">
-                      <button
-                        onClick={() => handleRemoveTeam(t.id)}
-                        disabled={saving}
-                        className="text-xs text-red-600 hover:text-red-800"
-                      >
-                        Remove
-                      </button>
-                    </td>
+                    {isAdmin && (
+                      <td className="py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleToggleTeamActive(t.id, t.isActive)}
+                            disabled={saving}
+                            className={`text-xs ${t.isActive ? 'text-gray-500 hover:text-gray-700' : 'text-brand-700 hover:text-brand-800'}`}
+                          >
+                            {t.isActive ? 'Deactivate' : 'Activate'}
+                          </button>
+                          <span className="text-gray-200">|</span>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Permanently remove ${t.teamName} from this league? This cannot be undone.`)) {
+                                handleRemoveTeam(t.id);
+                              }
+                            }}
+                            disabled={saving}
+                            className="text-xs text-red-600 hover:text-red-800"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

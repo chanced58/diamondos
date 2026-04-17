@@ -22,9 +22,10 @@ interface SidebarProps {
   leagueName?: string;
   subscriptionTier?: SubscriptionTier;
   hasPlayerProfile?: boolean;
+  isLeagueAdmin?: boolean;
 }
 
-export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, secondaryColor, isPlatformAdmin, leagueId, leagueName, subscriptionTier = SubscriptionTier.FREE, hasPlayerProfile }: SidebarProps): JSX.Element | null {
+export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, secondaryColor, isPlatformAdmin, leagueId, leagueName, subscriptionTier = SubscriptionTier.FREE, hasPlayerProfile, isLeagueAdmin }: SidebarProps): JSX.Element | null {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
@@ -60,6 +61,7 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
     { href: teamId ? `/teams/${teamId}/admin` : '/teams',  label: 'Team Management', icon: '👥' },
     // Show league nav item when team belongs to a league and has Pro tier
     ...(leagueId && canLeague ? [{ href: '/league', label: leagueName ?? 'League', icon: '🏆' }] : []),
+    ...(leagueId && canLeague && isLeagueAdmin ? [{ href: '/league/admin', label: 'League Management', icon: '🛡️' }] : []),
     // Player profile link for users who also have a player profile
     ...(hasPlayerProfile ? [{ href: '/players/me', label: 'My Profile', icon: '🎖️' }] : []),
     // Non-platform-admins see the generic Admin link; platform admins get the dedicated link below
