@@ -72,6 +72,17 @@ export default async function PlayerPage({
 
   const isCoach = access.isCoach;
 
+  // If this player row has been claimed by a Pro user, link to their public profile
+  let claimedProfile: { handle: string; isPublic: boolean } | null = null;
+  if (player.user_id) {
+    const { data: pp } = await db
+      .from('player_profiles')
+      .select('handle, is_public')
+      .eq('user_id', player.user_id)
+      .maybeSingle();
+    if (pp) claimedProfile = { handle: pp.handle, isPublic: pp.is_public };
+  }
+
   // Build a per-category list of { date, text, practiceId } entries
   type NoteEntry = { date: string; text: string; practiceId: string };
   const categoryNotes: Record<CategoryKey, NoteEntry[]> = {
@@ -171,11 +182,27 @@ export default async function PlayerPage({
           {player.first_name[0]}{player.last_name[0]}
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2 flex-wrap">
             {player.first_name} {player.last_name}
             {player.jersey_number != null && (
-              <span className="ml-2 text-lg font-mono text-gray-400">#{player.jersey_number}</span>
+              <span className="text-lg font-mono text-gray-400">#{player.jersey_number}</span>
             )}
+            {claimedProfile && claimedProfile.isPublic ? (
+              <Link
+                href={`/p/${claimedProfile.handle}`}
+                className="text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full hover:bg-amber-100"
+                title="This player has a public Pro recruiting profile"
+              >
+                🎖️ Pro profile →
+              </Link>
+            ) : claimedProfile ? (
+              <span
+                className="text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full"
+                title="This player has a Pro profile (currently private)"
+              >
+                🎖️ Pro profile
+              </span>
+            ) : null}
           </h1>
           {positionLabel && (
             <span className="inline-block mt-1 text-xs font-semibold bg-brand-50 text-brand-700 border border-brand-200 px-2.5 py-0.5 rounded-full capitalize">

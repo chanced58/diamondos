@@ -1,6 +1,7 @@
 export * from './user';
 export * from './team';
 export * from './player';
+export * from './player-profile';
 export * from './game';
 export * from './game-event';
 export * from './opponent';
