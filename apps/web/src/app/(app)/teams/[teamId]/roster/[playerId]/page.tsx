@@ -187,15 +187,22 @@ export default async function PlayerPage({
             {player.jersey_number != null && (
               <span className="text-lg font-mono text-gray-400">#{player.jersey_number}</span>
             )}
-            {claimedProfile && (
+            {claimedProfile && claimedProfile.isPublic ? (
               <Link
                 href={`/p/${claimedProfile.handle}`}
                 className="text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full hover:bg-amber-100"
-                title="This player has a Pro recruiting profile"
+                title="This player has a public Pro recruiting profile"
               >
                 🎖️ Pro profile →
               </Link>
-            )}
+            ) : claimedProfile ? (
+              <span
+                className="text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full"
+                title="This player has a Pro profile (currently private)"
+              >
+                🎖️ Pro profile
+              </span>
+            ) : null}
           </h1>
           {positionLabel && (
             <span className="inline-block mt-1 text-xs font-semibold bg-brand-50 text-brand-700 border border-brand-200 px-2.5 py-0.5 rounded-full capitalize">

@@ -70,7 +70,13 @@ create table public.player_profiles (
   created_at                 timestamptz not null default now(),
   updated_at                 timestamptz not null default now(),
   constraint player_profiles_handle_format
-    check (handle ~ '^[a-z0-9_-]{3,32}$')
+    check (handle ~ '^[a-z0-9_-]{3,32}$'),
+  constraint player_profiles_gpa_check
+    check (gpa is null or (gpa >= 0 and gpa <= 5.00)),
+  constraint player_profiles_sat_check
+    check (sat_score is null or (sat_score >= 400 and sat_score <= 1600)),
+  constraint player_profiles_act_check
+    check (act_score is null or (act_score >= 1 and act_score <= 36))
 );
 
 create unique index player_profiles_handle_unique
@@ -166,6 +172,7 @@ create or replace function public.is_player_pro(uid uuid)
 returns boolean
 language sql
 stable
+parallel safe
 security definer
 set search_path = public
 as $$
@@ -217,9 +224,12 @@ create trigger link_player_to_user_on_insert
   for each row execute function public.link_player_to_user();
 
 create trigger link_player_to_user_on_update
-  before update of email on public.players
+  before update of email, user_id on public.players
   for each row
-  when (new.email is distinct from old.email or new.user_id is null)
+  when (
+    new.email is distinct from old.email
+    or new.user_id is distinct from old.user_id
+  )
   execute function public.link_player_to_user();
 
 -- Reverse sweep: when a user signs up, retroactively claim any roster rows

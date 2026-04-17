@@ -13,9 +13,23 @@ import {
   isHandleAvailable,
   type PlayerProfileUpdate,
 } from '@baseball/database';
-import { getPlayerPro } from '@/lib/player-pro';
+import { getPlayerPro, PLAYER_MEDIA_BUCKET } from '@/lib/player-pro';
 
-const PLAYER_MEDIA_BUCKET = 'player-media';
+const ALLOWED_IMAGE_EXTENSIONS: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+};
+
+function safeImageFileMeta(file: File): { ext: string; contentType: string } | null {
+  const rawExt = file.name.split('.').pop()?.toLowerCase() ?? '';
+  const contentType = ALLOWED_IMAGE_EXTENSIONS[rawExt];
+  if (!contentType) return null;
+  const ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
+  return { ext, contentType };
+}
 
 type ActionResult = { error: string } | { ok: true };
 
@@ -133,12 +147,15 @@ export async function uploadProfilePhotoAction(formData: FormData): Promise<Acti
   if (!file || file.size === 0) return { error: 'No file provided.' };
   if (file.size > 5 * 1024 * 1024) return { error: 'Photo must be under 5 MB.' };
 
-  const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
-  const storagePath = `${user.id}/profile.${ext}`;
+  const meta = safeImageFileMeta(file);
+  if (!meta) {
+    return { error: 'Only JPG, PNG, GIF, or WebP images are allowed.' };
+  }
+  const storagePath = `${user.id}/profile.${meta.ext}`;
 
   const { error: uploadErr } = await db.storage
     .from(PLAYER_MEDIA_BUCKET)
-    .upload(storagePath, file, { upsert: true, contentType: file.type });
+    .upload(storagePath, file, { upsert: true, contentType: meta.contentType });
   if (uploadErr) return { error: `Upload failed: ${uploadErr.message}` };
 
   const { data: { publicUrl } } = db.storage.from(PLAYER_MEDIA_BUCKET).getPublicUrl(storagePath);
@@ -205,15 +222,27 @@ export async function addHighlightAction(formData: FormData): Promise<ActionResu
   if (!title) return { error: 'Title is required.' };
   if (!url) return { error: 'URL is required.' };
 
+  // Validate URL scheme up front to prevent javascript:/data: vectors
+  // that would later be rendered as iframe src or anchor href.
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    return { error: 'Invalid URL.' };
+  }
+  if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+    return { error: 'URL must use http or https.' };
+  }
+
   let provider: VideoProvider = 'other';
   if (VALID_PROVIDERS.includes(providerRaw as VideoProvider)) {
     provider = providerRaw as VideoProvider;
   } else {
-    // Best-effort detect from URL
-    const lower = url.toLowerCase();
-    if (lower.includes('youtube.com') || lower.includes('youtu.be')) provider = 'youtube';
-    else if (lower.includes('hudl.com')) provider = 'hudl';
-    else if (lower.includes('vimeo.com')) provider = 'vimeo';
+    // Best-effort detect from URL host
+    const host = parsedUrl.hostname.toLowerCase();
+    if (host.endsWith('youtube.com') || host === 'youtu.be') provider = 'youtube';
+    else if (host.endsWith('hudl.com')) provider = 'hudl';
+    else if (host.endsWith('vimeo.com')) provider = 'vimeo';
   }
 
   try {
@@ -261,12 +290,15 @@ export async function uploadGalleryPhotoAction(formData: FormData): Promise<Acti
   if (!file || file.size === 0) return { error: 'No file provided.' };
   if (file.size > 5 * 1024 * 1024) return { error: 'Photo must be under 5 MB.' };
 
-  const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
-  const storagePath = `${user.id}/gallery/${Date.now()}.${ext}`;
+  const meta = safeImageFileMeta(file);
+  if (!meta) {
+    return { error: 'Only JPG, PNG, GIF, or WebP images are allowed.' };
+  }
+  const storagePath = `${user.id}/gallery/${Date.now()}.${meta.ext}`;
 
   const { error: uploadErr } = await db.storage
     .from(PLAYER_MEDIA_BUCKET)
-    .upload(storagePath, file, { upsert: false, contentType: file.type });
+    .upload(storagePath, file, { upsert: false, contentType: meta.contentType });
   if (uploadErr) return { error: `Upload failed: ${uploadErr.message}` };
 
   try {
@@ -294,7 +326,14 @@ export async function deleteGalleryPhotoAction(id: string): Promise<ActionResult
     .maybeSingle();
 
   if (row?.storage_path) {
-    await db.storage.from(PLAYER_MEDIA_BUCKET).remove([row.storage_path]);
+    const { error: removeErr } = await db.storage
+      .from(PLAYER_MEDIA_BUCKET)
+      .remove([row.storage_path]);
+    // Log but proceed — leaving an orphan storage object is cheaper than a
+    // stale DB row pointing at a file the user thinks they deleted.
+    if (removeErr) {
+      console.error('[players/me] gallery object removal failed:', removeErr.message);
+    }
   }
 
   try {

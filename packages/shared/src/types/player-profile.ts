@@ -41,6 +41,8 @@ export interface PlayerProfilePhoto {
   createdAt: string;
 }
 
-export const HANDLE_REGEX = /^[a-z0-9_-]{3,32}$/;
-export const HANDLE_MAX_LENGTH = 32;
 export const HANDLE_MIN_LENGTH = 3;
+export const HANDLE_MAX_LENGTH = 32;
+export const HANDLE_REGEX = new RegExp(
+  `^[a-z0-9_-]{${HANDLE_MIN_LENGTH},${HANDLE_MAX_LENGTH}}$`,
+);

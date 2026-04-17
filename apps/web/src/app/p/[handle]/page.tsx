@@ -6,6 +6,7 @@ import { getProfileByHandle } from '@baseball/database';
 import type { PlayerProfile } from '@baseball/shared';
 import { VideoEmbed } from './VideoEmbed';
 import { CareerStats } from '../../(app)/players/me/CareerStats';
+import { PLAYER_MEDIA_BUCKET } from '@/lib/player-pro';
 
 interface Params {
   params: { handle: string };
@@ -18,7 +19,13 @@ interface Params {
  */
 async function loadPublicProfile(handle: string) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!serviceKey) return null;
+  if (!serviceKey) {
+    // Fail loud: a missing service role key would silently 404 every public
+    // profile. Surface this as an error so platform health checks catch it.
+    throw new Error(
+      'SUPABASE_SERVICE_ROLE_KEY is not configured — cannot render public player profile.',
+    );
+  }
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey);
 
   const bundle = await getProfileByHandle(db, handle);
@@ -27,15 +34,9 @@ async function loadPublicProfile(handle: string) {
   const { profile } = bundle;
   if (!profile.isPublic) return null;
 
-  const { data: sub } = await db
-    .from('subscriptions')
-    .select('id')
-    .eq('entity_type', 'player')
-    .eq('user_id', profile.userId)
-    .in('status', ['active', 'trial'])
-    .limit(1)
-    .maybeSingle();
-  if (!sub) return null;
+  // Use the canonical Pro check so the definition lives in one place.
+  const { data: isPro } = await db.rpc('is_player_pro', { uid: profile.userId });
+  if (!isPro) return null;
 
   // Display name from user_profiles
   const { data: userProfile } = await db
@@ -81,7 +82,7 @@ export default async function PublicProfilePage({ params }: Params): Promise<JSX
 
   const galleryUrls = photos.map((p) => ({
     ...p,
-    url: db.storage.from('player-media').getPublicUrl(p.storagePath).data.publicUrl,
+    url: db.storage.from(PLAYER_MEDIA_BUCKET).getPublicUrl(p.storagePath).data.publicUrl,
   }));
 
   return (

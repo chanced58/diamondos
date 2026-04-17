@@ -17,18 +17,32 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const { email, firstName, lastName, handle, graduationYear } = body;
 
-  if (!email || typeof email !== 'string') {
+  if (typeof email !== 'string' || !email.trim()) {
     return NextResponse.json({ error: 'Email is required' }, { status: 400 });
   }
-  if (!firstName || !lastName) {
+  if (typeof firstName !== 'string' || !firstName.trim() || typeof lastName !== 'string' || !lastName.trim()) {
     return NextResponse.json({ error: 'First and last name are required' }, { status: 400 });
   }
-  if (!handle || typeof handle !== 'string') {
+  if (typeof handle !== 'string' || !handle.trim()) {
     return NextResponse.json({ error: 'Handle is required' }, { status: 400 });
   }
 
   const normalizedEmail = email.toLowerCase().trim();
   const normalizedHandle = handle.toLowerCase().trim();
+  const normalizedFirstName = firstName.trim();
+  const normalizedLastName = lastName.trim();
+
+  let normalizedGradYear: number | undefined;
+  if (graduationYear !== undefined && graduationYear !== null && graduationYear !== '') {
+    const n = typeof graduationYear === 'number' ? graduationYear : Number(graduationYear);
+    if (!Number.isInteger(n) || n < 2000 || n > 2100) {
+      return NextResponse.json(
+        { error: 'Graduation year must be a 4-digit year between 2000 and 2100.' },
+        { status: 400 },
+      );
+    }
+    normalizedGradYear = n;
+  }
 
   if (!HANDLE_REGEX.test(normalizedHandle)) {
     return NextResponse.json(
@@ -64,10 +78,10 @@ export async function POST(request: NextRequest) {
   const metadata: Record<string, unknown> = {
     intent: 'player',
     player_handle: normalizedHandle,
-    first_name: firstName,
-    last_name: lastName,
+    first_name: normalizedFirstName,
+    last_name: normalizedLastName,
   };
-  if (graduationYear) metadata.graduation_year = graduationYear;
+  if (normalizedGradYear !== undefined) metadata.graduation_year = normalizedGradYear;
 
   const { error: otpError } = await db.auth.signInWithOtp({
     email: normalizedEmail,

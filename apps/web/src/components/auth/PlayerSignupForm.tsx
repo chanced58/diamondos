@@ -33,26 +33,28 @@ export function PlayerSignupForm(): JSX.Element {
         }),
       });
 
-      const data = await res.json();
+      // Tolerate non-JSON error responses (e.g., proxy HTML errors).
+      const data = await res.json().catch(() => ({} as { error?: string }));
       if (!res.ok) {
         setError(data.error ?? 'Unable to create your account.');
-        setLoading(false);
         return;
       }
       setMode('sent');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   if (mode === 'sent') {
+    const normalizedEmail = email.toLowerCase().trim();
     return (
       <div className="text-center">
         <div className="text-4xl mb-4">📧</div>
         <h2 className="text-xl font-semibold text-gray-900 mb-2">Check your email</h2>
         <p className="text-gray-500">
-          We sent a sign-in link to <strong>{email}</strong>. Click the link to activate your profile.
+          We sent a sign-in link to <strong>{normalizedEmail}</strong>. Click the link to activate your profile.
         </p>
       </div>
     );

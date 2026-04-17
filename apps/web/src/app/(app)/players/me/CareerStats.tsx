@@ -8,7 +8,7 @@ import {
   formatBattingPct,
 } from '@baseball/shared';
 import type { PitchingStats, BattingStats } from '@baseball/shared';
-import { getCareerEventsForUser } from '@baseball/database';
+import { getCareerEventsForUser, getPlayerIdsForUser } from '@baseball/database';
 
 interface Props {
   userId: string;
@@ -27,17 +27,19 @@ export async function CareerStats({ userId, firstName, lastName }: Props): Promi
   if (!serviceKey) {
     return <div className="text-sm text-gray-400">Stats unavailable.</div>;
   }
+  // Service role is used here because career stats aggregate across every
+  // team this user has played for — RLS on game_events is scoped per-team
+  // and wouldn't return cross-team rows. Callers must have already
+  // authorized the request (owner dashboard checks auth.getUser; public
+  // page checks is_player_pro and is_public).
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey);
 
-  const rows = await getCareerEventsForUser(db, userId);
+  const [rows, playerIds] = await Promise.all([
+    getCareerEventsForUser(db, userId),
+    getPlayerIdsForUser(db, userId),
+  ]);
 
-  const { data: players } = await db
-    .from('players')
-    .select('id')
-    .eq('user_id', userId);
-  const playerIdSet = new Set((players ?? []).map((p: { id: string }) => p.id));
-
-  if (rows.length === 0 || playerIdSet.size === 0) {
+  if (rows.length === 0) {
     return (
       <div className="bg-white border border-gray-200 rounded-xl px-5 py-8 text-center text-gray-500">
         <p className="text-sm">No career stats yet.</p>
@@ -47,6 +49,8 @@ export async function CareerStats({ userId, firstName, lastName }: Props): Promi
       </div>
     );
   }
+
+  const playerIdSet = new Set(playerIds);
 
   const { career, seasons } = computeStats(rows, playerIdSet, firstName, lastName);
 
@@ -152,19 +156,26 @@ function computeStats(
       seasonName: string;
       teamName: string;
       events: Record<string, unknown>[];
+      latestGameDate: string | null;
     }
   >();
   for (const r of rows) {
     const key = `${r.seasonId ?? 'none'}::${r.teamId ?? 'none'}`;
-    if (!groupMap.has(key)) {
+    const existing = groupMap.get(key);
+    if (!existing) {
       groupMap.set(key, {
         key,
         seasonName: r.seasonName ?? 'Unlabeled season',
         teamName: r.teamName ?? 'Unknown team',
-        events: [],
+        events: [r.event],
+        latestGameDate: r.gameDate,
       });
+    } else {
+      existing.events.push(r.event);
+      if (r.gameDate && (!existing.latestGameDate || r.gameDate > existing.latestGameDate)) {
+        existing.latestGameDate = r.gameDate;
+      }
     }
-    groupMap.get(key)!.events.push(r.event);
   }
 
   const seasons = [...groupMap.values()]
@@ -174,7 +185,13 @@ function computeStats(
       return { ...g, ...stats };
     })
     .filter((g) => g.batting || g.pitching)
-    .sort((a, b) => b.seasonName.localeCompare(a.seasonName));
+    .sort((a, b) => {
+      // Most recent season first. Groups without a known date sort last.
+      if (!a.latestGameDate && !b.latestGameDate) return 0;
+      if (!a.latestGameDate) return 1;
+      if (!b.latestGameDate) return -1;
+      return b.latestGameDate.localeCompare(a.latestGameDate);
+    });
 
   return { career, seasons };
 }

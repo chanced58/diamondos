@@ -36,10 +36,12 @@ export async function activatePlayerProAction(userId: string): Promise<ActionRes
   if ('error' in ctx) return ctx;
   const { db } = ctx;
 
-  // Is there an existing non-cancelled row? If so, set status to active.
+  // Reactivate an existing non-cancelled row if one exists; otherwise insert.
+  // The partial unique index idx_subscriptions_user_unique_active races two
+  // concurrent admins, so fall back to the update path on 23505.
   const { data: existing } = await db
     .from('subscriptions')
-    .select('id, status')
+    .select('id')
     .eq('entity_type', 'player')
     .eq('user_id', userId)
     .in('status', ['active', 'trial', 'past_due'])
@@ -49,11 +51,7 @@ export async function activatePlayerProAction(userId: string): Promise<ActionRes
   if (existing) {
     const { error } = await db
       .from('subscriptions')
-      .update({
-        status: 'active',
-        tier: 'pro',
-        updated_at: new Date().toISOString(),
-      })
+      .update({ status: 'active', tier: 'pro' })
       .eq('id', existing.id);
     if (error) return { error: error.message };
   } else {
@@ -64,7 +62,21 @@ export async function activatePlayerProAction(userId: string): Promise<ActionRes
       status: 'active',
       starts_at: new Date().toISOString(),
     });
-    if (error) return { error: error.message };
+    if (error) {
+      // 23505 = unique_violation — another admin's insert won the race. Update
+      // the row they just created instead.
+      if (error.code === '23505') {
+        const { error: updateErr } = await db
+          .from('subscriptions')
+          .update({ status: 'active', tier: 'pro' })
+          .eq('entity_type', 'player')
+          .eq('user_id', userId)
+          .not('status', 'in', '(cancelled,expired)');
+        if (updateErr) return { error: updateErr.message };
+      } else {
+        return { error: error.message };
+      }
+    }
   }
 
   revalidatePath('/admin/players');
@@ -78,13 +90,10 @@ export async function deactivatePlayerProAction(userId: string): Promise<ActionR
   if ('error' in ctx) return ctx;
   const { db } = ctx;
 
+  // updated_at is maintained by the set_subscriptions_updated_at trigger.
   const { error } = await db
     .from('subscriptions')
-    .update({
-      status: 'cancelled',
-      ends_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    .update({ status: 'cancelled', ends_at: new Date().toISOString() })
     .eq('entity_type', 'player')
     .eq('user_id', userId)
     .in('status', ['active', 'trial', 'past_due']);

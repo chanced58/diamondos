@@ -221,28 +221,34 @@ export async function GET(request: NextRequest) {
           .maybeSingle();
 
         if (!existing) {
-          const requestedHandle = user.user_metadata?.player_handle as string | undefined;
-          if (requestedHandle) {
-            // Ensure the handle is still free — another user may have taken it
-            // in the window between signup and click.
-            const { data: taken } = await db
-              .from('player_profiles')
-              .select('user_id')
-              .ilike('handle', requestedHandle)
-              .maybeSingle();
+          // Normalize to the same character set the DB CHECK enforces so the
+          // insert can never trip player_profiles_handle_format, and cap at
+          // 25 chars so appending a 7-char suffix stays within the 32-char max.
+          const normalizeHandle = (raw: string) =>
+            raw.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 25);
+          const rawHandle = user.user_metadata?.player_handle as string | undefined;
+          const normalized = rawHandle ? normalizeHandle(rawHandle) : '';
+          // Fall back to a deterministic default when metadata is missing or
+          // gets stripped down to too few chars.
+          const baseHandle = normalized.length >= 3 ? normalized : `player-${user.id.slice(0, 6)}`;
 
-            const finalHandle = taken
-              ? `${requestedHandle}-${user.id.slice(0, 6)}`
-              : requestedHandle;
+          const { data: taken } = await db
+            .from('player_profiles')
+            .select('user_id')
+            .eq('handle', baseHandle)
+            .maybeSingle();
 
-            const { error: profileErr } = await db.from('player_profiles').insert({
-              user_id: user.id,
-              handle: finalHandle,
-              is_public: false,
-            });
-            if (profileErr) {
-              console.error('[auth/callback] player_profiles insert failed:', profileErr.message);
-            }
+          const finalHandle = taken
+            ? `${baseHandle}-${user.id.slice(0, 6)}`
+            : baseHandle;
+
+          const { error: profileErr } = await db.from('player_profiles').insert({
+            user_id: user.id,
+            handle: finalHandle,
+            is_public: false,
+          });
+          if (profileErr) {
+            console.error('[auth/callback] player_profiles insert failed:', profileErr.message);
           }
         }
 

@@ -1,6 +1,9 @@
+import 'server-only';
 import { createClient } from '@supabase/supabase-js';
 import { getProfileByUserId } from '@baseball/database';
 import type { PlayerProfile } from '@baseball/shared';
+
+export const PLAYER_MEDIA_BUCKET = 'player-media';
 
 export interface PlayerProStatus {
   isPro: boolean;

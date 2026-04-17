@@ -133,10 +133,13 @@ export async function getProfileByHandle(
   highlights: PlayerHighlightVideo[];
   photos: PlayerProfilePhoto[];
 } | null> {
+  // Handles are stored lowercase (enforced by CHECK constraint). Use exact
+  // equality on the lowercased value — ilike would treat underscores as
+  // single-character wildcards and match too broadly.
   const { data: profileRow, error: profileErr } = await client
     .from('player_profiles')
     .select(PROFILE_COLUMNS)
-    .ilike('handle', handle)
+    .eq('handle', handle.toLowerCase())
     .maybeSingle();
   if (profileErr) throw profileErr;
   if (!profileRow) return null;
@@ -195,29 +198,25 @@ export async function upsertProfile(
   userId: string,
   update: PlayerProfileUpdate & { handle?: string },
 ): Promise<PlayerProfile> {
-  const row = toRow(update);
+  // Check once whether a row already exists — on new profiles the caller must
+  // provide a handle (INSERT without one violates NOT NULL); on existing rows
+  // a partial update is allowed.
   const { data: existing } = await client
     .from('player_profiles')
     .select('user_id')
     .eq('user_id', userId)
     .maybeSingle();
 
-  if (existing) {
-    const { data, error } = await client
-      .from('player_profiles')
-      .update(row)
-      .eq('user_id', userId)
-      .select(PROFILE_COLUMNS)
-      .single();
-    if (error) throw error;
-    return mapProfile(data as ProfileRow);
+  if (!existing && !update.handle) {
+    throw new Error('Handle is required to create a profile');
   }
 
-  // INSERT requires a handle
-  if (!update.handle) throw new Error('Handle is required to create a profile');
+  const payload = { ...toRow(update), user_id: userId } as Record<string, unknown>;
+  if (!existing) payload.handle = update.handle;
+
   const { data, error } = await client
     .from('player_profiles')
-    .insert({ ...row, user_id: userId, handle: update.handle })
+    .upsert(payload, { onConflict: 'user_id' })
     .select(PROFILE_COLUMNS)
     .single();
   if (error) throw error;
@@ -229,7 +228,10 @@ export async function isHandleAvailable(
   handle: string,
   excludeUserId?: string,
 ): Promise<boolean> {
-  let query = client.from('player_profiles').select('user_id').ilike('handle', handle);
+  let query = client
+    .from('player_profiles')
+    .select('user_id')
+    .eq('handle', handle.toLowerCase());
   if (excludeUserId) query = query.neq('user_id', excludeUserId);
   const { data, error } = await query.maybeSingle();
   if (error) throw error;
@@ -349,9 +351,27 @@ export async function getPlayerIdsForUser(
 }
 
 /**
+ * Columns we read from game_events for stat derivations. Listed explicitly so
+ * schema changes surface at the query boundary rather than silently flowing
+ * into `event as any` at the call site.
+ */
+const GAME_EVENT_COLUMNS = [
+  'id',
+  'game_id',
+  'sequence_number',
+  'event_type',
+  'player_id',
+  'pitcher_id',
+  'batter_id',
+  'event_data',
+  'timestamp',
+].join(', ');
+
+/**
  * Relevant game_events for all of a user's player rows across every team.
- * Joined with games.season_id + teams.name so downstream code can group
- * per season/team for the career breakdown.
+ * Filters events server-side by player_id/pitcher_id and event_type, then
+ * loads only the games those events touched so this scales with one user's
+ * activity rather than the whole database.
  */
 export async function getCareerEventsForUser(
   client: AnyClient,
@@ -360,11 +380,35 @@ export async function getCareerEventsForUser(
   const playerIds = await getPlayerIdsForUser(client, userId);
   if (playerIds.length === 0) return [];
 
+  const playerIdsCsv = playerIds.join(',');
+  const { data: events, error: eventsErr } = await client
+    .from('game_events')
+    .select(GAME_EVENT_COLUMNS)
+    .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
+    .or(`player_id.in.(${playerIdsCsv}),pitcher_id.in.(${playerIdsCsv})`)
+    .order('game_id', { ascending: true })
+    .order('sequence_number', { ascending: true });
+  if (eventsErr) throw eventsErr;
+
+  type RawEvent = Record<string, unknown> & { game_id: string };
+  const eventRows = ((events as unknown) as RawEvent[] | null) ?? [];
+  if (eventRows.length === 0) return [];
+
+  const gameIds = [...new Set(eventRows.map((e) => e.game_id))];
   const { data: games, error: gamesErr } = await client
     .from('games')
-    .select('id, season_id, team_id, game_date, teams(id, name), seasons(id, name)');
+    .select('id, season_id, team_id, game_date, teams(id, name), seasons(id, name)')
+    .in('id', gameIds);
   if (gamesErr) throw gamesErr;
 
+  type GameJoinRow = {
+    id: string;
+    season_id: string | null;
+    team_id: string | null;
+    game_date: string | null;
+    teams: { id: string; name: string } | { id: string; name: string }[] | null;
+    seasons: { id: string; name: string } | { id: string; name: string }[] | null;
+  };
   const gameIndex = new Map<
     string,
     {
@@ -375,14 +419,6 @@ export async function getCareerEventsForUser(
       gameDate: string | null;
     }
   >();
-  type GameJoinRow = {
-    id: string;
-    season_id: string | null;
-    team_id: string | null;
-    game_date: string | null;
-    teams: { id: string; name: string } | { id: string; name: string }[] | null;
-    seasons: { id: string; name: string } | { id: string; name: string }[] | null;
-  };
   for (const g of (games as GameJoinRow[] | null) ?? []) {
     const team = Array.isArray(g.teams) ? g.teams[0] : g.teams;
     const season = Array.isArray(g.seasons) ? g.seasons[0] : g.seasons;
@@ -395,26 +431,8 @@ export async function getCareerEventsForUser(
     });
   }
 
-  const { data: events, error: eventsErr } = await client
-    .from('game_events')
-    .select('*')
-    .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
-    .order('game_id', { ascending: true })
-    .order('sequence_number', { ascending: true });
-  if (eventsErr) throw eventsErr;
-
-  type RawEvent = Record<string, unknown> & {
-    game_id: string;
-    player_id: string | null;
-    pitcher_id: string | null;
-  };
   const result: CareerEventRow[] = [];
-  const playerSet = new Set(playerIds);
-  for (const e of (events as RawEvent[] | null) ?? []) {
-    const involves =
-      (e.player_id && playerSet.has(e.player_id)) ||
-      (e.pitcher_id && playerSet.has(e.pitcher_id));
-    if (!involves) continue;
+  for (const e of eventRows) {
     const meta = gameIndex.get(e.game_id);
     if (!meta) continue;
     result.push({

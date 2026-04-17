@@ -22,10 +22,12 @@ export default async function AdminPlayersPage(): Promise<JSX.Element> {
     .from('user_profiles')
     .select('is_platform_admin')
     .eq('id', user.id)
-    .single();
+    .maybeSingle();
   if (!myProfile?.is_platform_admin) redirect('/admin');
 
-  const [profilesResult, subsResult, userProfilesResult] = await Promise.all([
+  // Fetch profiles and their subscription status first, then fetch only the
+  // user_profiles rows we actually need — avoids pulling the whole user table.
+  const [profilesResult, subsResult] = await Promise.all([
     db
       .from('player_profiles')
       .select('user_id, handle, is_public, created_at')
@@ -35,7 +37,6 @@ export default async function AdminPlayersPage(): Promise<JSX.Element> {
       .select('user_id, status')
       .eq('entity_type', 'player')
       .in('status', ['active', 'trial']),
-    db.from('user_profiles').select('id, first_name, last_name, email'),
   ]);
 
   type ProfileRow = {
@@ -58,8 +59,17 @@ export default async function AdminPlayersPage(): Promise<JSX.Element> {
     email: string | null;
   };
   const userProfileMap = new Map<string, UserProfileRow>();
-  for (const up of (userProfilesResult.data ?? []) as UserProfileRow[]) {
-    userProfileMap.set(up.id, up);
+  if (profiles.length > 0) {
+    const { data: userProfilesData } = await db
+      .from('user_profiles')
+      .select('id, first_name, last_name, email')
+      .in(
+        'id',
+        profiles.map((p) => p.user_id),
+      );
+    for (const up of (userProfilesData ?? []) as UserProfileRow[]) {
+      userProfileMap.set(up.id, up);
+    }
   }
 
   const rows: PlayerAdminRowData[] = profiles.map((p) => {

@@ -1,10 +1,9 @@
 import type { JSX } from 'react';
 import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { listHighlights, listPhotos } from '@baseball/database';
-import { getPlayerPro } from '@/lib/player-pro';
+import { getPlayerPro, PLAYER_MEDIA_BUCKET } from '@/lib/player-pro';
 import { ProfileEditor } from './ProfileEditor';
 import { PhotoUpload } from './PhotoUpload';
 import { PublishToggle } from './PublishToggle';
@@ -15,13 +14,13 @@ import { CareerStats } from './CareerStats';
 export const metadata: Metadata = { title: 'My Profile' };
 
 export default async function PlayerMePage(): Promise<JSX.Element> {
-  const auth = createServerClient();
-  const { data: { user } } = await auth.auth.getUser();
+  // Authenticated SSR client — every read on this page is the owner's own
+  // data (filtered by user.id), so RLS on player_profiles/player_highlight_videos/
+  // player_profile_photos enforces access. getPlayerPro still uses the service
+  // role internally because subscriptions is platform-admin-gated RLS.
+  const db = createServerClient();
+  const { data: { user } } = await db.auth.getUser();
   if (!user) redirect('/login');
-
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!serviceKey) redirect('/dashboard');
-  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey);
 
   const [{ isPro, profile }, userProfileRes] = await Promise.all([
     getPlayerPro(user.id),
@@ -50,7 +49,7 @@ export default async function PlayerMePage(): Promise<JSX.Element> {
   const publicUrl = profile.handle && appUrl ? `${appUrl}/p/${profile.handle}` : null;
 
   const getPublicPhotoUrl = (path: string) =>
-    db.storage.from('player-media').getPublicUrl(path).data.publicUrl;
+    db.storage.from(PLAYER_MEDIA_BUCKET).getPublicUrl(path).data.publicUrl;
 
   return (
     <div className="p-6 md:p-8 max-w-4xl mx-auto space-y-6">

@@ -62,8 +62,14 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
 
   // Self-healing: if a NON-admin user created a team but has no team_members row,
   // auto-create the membership. Platform admins don't need team_members rows —
-  // they access teams via the admin panel cookie. Players with a Pro profile
-  // may not have a team yet — skip team-membership self-healing for them.
+  // they access teams via the admin panel cookie.
+  //
+  // Dual-role limitation: a Pro player who is ALSO a coach/invitee will skip
+  // this auto-heal on first load because hasPlayerProfile=true short-circuits
+  // below. If they land here with activeTeam already set (from getTeamsForUser),
+  // nothing to heal. If they don't, visiting /dashboard won't auto-create the
+  // team_members row — they'll need to follow their coach invite link or have
+  // the coach re-invite them. Low-volume edge case; revisit if it comes up.
   if (!activeTeam && !isPlatformAdmin && !hasPlayerProfile && db) {
     const { data: ownTeam } = await db
       .from('teams')

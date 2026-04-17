@@ -243,13 +243,13 @@ export default async function HomePage(): Promise<JSX.Element> {
           </div>
 
           <div className="pt-6">
-            <a
+            <Link
               href="/players/signup"
               className="inline-flex items-center gap-2 text-sm font-semibold px-5 py-2.5 rounded-lg text-white hover:opacity-90 transition-opacity"
               style={{ backgroundColor: s.primary_color }}
             >
               Are you a player? Create your recruiting profile →
-            </a>
+            </Link>
             <p className="text-xs text-gray-500 mt-3">
               Free to start. Upgrade to Pro to publish publicly and share with recruiters.
             </p>
