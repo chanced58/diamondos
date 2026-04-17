@@ -10,7 +10,6 @@ type Subscription = {
   entityType: 'team' | 'league' | 'player';
   entityName: string;
   entityId: string;
-  playerHandle: string | null;
   tier: string;
   status: string;
   billingContactName: string | null;
@@ -61,9 +60,10 @@ interface BillingClientProps {
   teams: Entity[];
   leagues: Entity[];
   players: Entity[];
+  hasMorePlayers?: boolean;
 }
 
-export function BillingClient({ subscriptions, teams, leagues, players }: BillingClientProps): JSX.Element {
+export function BillingClient({ subscriptions, teams, leagues, players, hasMorePlayers }: BillingClientProps): JSX.Element {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -193,6 +193,7 @@ export function BillingClient({ subscriptions, teams, leagues, players }: Billin
           teams={teams}
           leagues={leagues}
           players={players}
+          hasMorePlayers={hasMorePlayers}
           isSaving={saving}
         />
       )}
@@ -227,6 +228,7 @@ export function BillingClient({ subscriptions, teams, leagues, players }: Billin
                         teams={teams}
                         leagues={leagues}
                         players={players}
+                        hasMorePlayers={hasMorePlayers}
                         isSaving={saving}
                         initial={sub}
                         onCancel={() => setEditingId(null)}
@@ -309,6 +311,7 @@ function SubscriptionForm({
   teams,
   leagues,
   players,
+  hasMorePlayers,
   isSaving,
   initial,
   onCancel,
@@ -317,6 +320,7 @@ function SubscriptionForm({
   teams: Entity[];
   leagues: Entity[];
   players: Entity[];
+  hasMorePlayers?: boolean;
   isSaving: boolean;
   initial?: Subscription;
   onCancel?: () => void;
@@ -369,12 +373,20 @@ function SubscriptionForm({
               </select>
             )}
             {entityType === 'player' && (
-              <select id="sub-entity-id" name="userId" required className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
-                <option value="">Select a player...</option>
-                {players.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+              <>
+                <select id="sub-entity-id" name="userId" required className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
+                  <option value="">Select a player...</option>
+                  {players.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                {hasMorePlayers && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    Showing first {players.length} players. Activate additional players from
+                    <a href="/admin/players" className="underline ml-1">Player Pro admin</a>.
+                  </p>
+                )}
+              </>
             )}
           </div>
         </div>
