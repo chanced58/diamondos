@@ -1,16 +1,14 @@
 import type { JSX } from 'react';
 import type { DemoPlayer } from '../mock-data';
+import { formatHeight } from '../format';
 
 interface Props {
   player: DemoPlayer;
 }
 
 export function MeasurablesCard({ player }: Props): JSX.Element {
-  const ft = Math.floor(player.heightInches / 12);
-  const inch = player.heightInches % 12;
-
   const tiles = [
-    { label: 'Height', value: `${ft}'${inch}"` },
+    { label: 'Height', value: formatHeight(player.heightInches) },
     { label: 'Weight', value: `${player.weightLbs} lbs` },
     { label: '60-yd', value: `${player.sixtyYardDashSeconds.toFixed(2)}s` },
     { label: 'Exit velo (avg)', value: `${player.exitVelocityMph} mph` },

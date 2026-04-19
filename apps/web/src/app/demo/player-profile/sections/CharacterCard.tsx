@@ -20,8 +20,8 @@ export function CharacterCard({ player }: Props): JSX.Element {
       </p>
 
       <ul className="space-y-5">
-        {player.characterHighlights.map((h, i) => (
-          <li key={i} className="border-l-2 border-brand-100 pl-4">
+        {player.characterHighlights.map((h) => (
+          <li key={`${h.coachName}-${h.date}`} className="border-l-2 border-brand-100 pl-4">
             <div className="flex items-start justify-between gap-3 mb-2">
               <span
                 className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border font-semibold ${TAG_STYLES[h.tag]}`}

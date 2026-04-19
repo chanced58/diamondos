@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
 import type { DemoPlayer } from '../mock-data';
+import { formatHeight } from '../format';
 
 interface Props {
   player: DemoPlayer;
@@ -10,13 +11,11 @@ export function ProfileHero({ player }: Props): JSX.Element {
   const initials =
     `${player.firstName.charAt(0)}${player.lastName.charAt(0)}`.toUpperCase();
   const headline = `${player.position} · Class of ${player.gradYear} · ${player.school}`;
-  const ft = Math.floor(player.heightInches / 12);
-  const inch = player.heightInches % 12;
 
   const badges = [
     `#${player.jerseyNumber}`,
     `B/T: ${player.bats}/${player.throws}`,
-    `${ft}'${inch}", ${player.weightLbs} lbs`,
+    `${formatHeight(player.heightInches)}, ${player.weightLbs} lbs`,
     player.hometown,
   ];
 
@@ -25,7 +24,7 @@ export function ProfileHero({ player }: Props): JSX.Element {
       <div className="max-w-4xl mx-auto px-6 py-8 flex items-center gap-6">
         <div
           className="w-24 h-24 md:w-28 md:h-28 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 text-3xl font-bold shrink-0"
-          aria-label={name}
+          aria-hidden="true"
         >
           {initials}
         </div>
