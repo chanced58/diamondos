@@ -208,6 +208,28 @@ export default async function HomePage(): Promise<JSX.Element> {
         </div>
       </section>
 
+      {/* ── Player Profile Preview ─────────────────────────────────────────── */}
+      <section className="pb-16 px-6 pt-4">
+        <div className="max-w-xl mx-auto text-center">
+          <p className="text-sm font-semibold uppercase tracking-wide" style={{ color: s.secondary_color }}>
+            Preview
+          </p>
+          <p className="mt-1 text-2xl font-bold text-gray-900">See the Player Profile</p>
+          <p className="mt-1 text-sm text-gray-400">
+            Lifetime stats, measurables, coach-verified character highlights, and an AI-powered scouting summary — what recruiters will see.
+          </p>
+          <div className="pt-4">
+            <Link
+              href="/demo/player-profile"
+              className="inline-flex items-center gap-2 text-sm font-semibold px-5 py-2.5 rounded-lg text-white hover:opacity-90 transition-opacity"
+              style={{ backgroundColor: s.primary_color }}
+            >
+              Preview a sample profile →
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* ── Portable Stats ────────────────────────────────────────────────── */}
       <section className="py-20 px-6" style={{ backgroundColor: s.accent_color }}>
         <div className="max-w-3xl mx-auto text-center space-y-6">
