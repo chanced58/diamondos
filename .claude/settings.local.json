@@ -50,7 +50,9 @@
       "mcp__claude_ai_Supabase__list_projects",
       "mcp__claude_ai_Supabase__apply_migration",
       "Bash(git fetch:*)",
-      "Bash(git merge:*)"
+      "Bash(git merge:*)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(pnpm format *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\chance\\baseball-app\\baseballcoachesapp\\apps\\web\\src\\app\\(app)\\teams\\[teamId]\\admin"
