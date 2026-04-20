@@ -12,10 +12,12 @@ interface DroppedThirdStrikeDetails {
 
 type Base = 1 | 2 | 3;
 
+export type BattedOutType = 'groundout' | 'flyout' | 'lineout' | 'popout' | 'other';
+
 interface PitchInputProps {
   onRecordPitch: (outcome: PitchOutcome, pitchType?: PitchType) => void;
   onRecordHit: (hitType: HitType) => void;
-  onRecordOut: () => void;
+  onRecordOut: (outType: BattedOutType) => void;
   onRecordWalk: () => void;
   onRecordStrikeout: () => void;
   onRecordError: () => void;
@@ -64,11 +66,17 @@ export function PitchInput({
 }: PitchInputProps) {
   const [showD3KModal, setShowD3KModal] = useState(false);
   const [showFCModal, setShowFCModal] = useState(false);
+  const [showOutModal, setShowOutModal] = useState(false);
   const fcEligible = runnersOnBase.length > 0;
 
   function handleFCPick(runnerId: string, fromBase: Base) {
     setShowFCModal(false);
     onRecordFieldersChoice(runnerId, fromBase);
+  }
+
+  function handleOutPick(outType: BattedOutType) {
+    setShowOutModal(false);
+    onRecordOut(outType);
   }
 
   function handleD3KOutcome(details: DroppedThirdStrikeDetails) {
@@ -120,7 +128,7 @@ export function PitchInput({
           Other plate appearance result
         </Text>
         <View className="flex-row flex-wrap gap-2">
-          <OutcomeButton label="Out" emoji="✋" onPress={onRecordOut} color="bg-gray-600" />
+          <OutcomeButton label="Out" emoji="✋" onPress={() => setShowOutModal(true)} color="bg-gray-600" />
           <OutcomeButton label="Walk (BB)" emoji="🚶" onPress={onRecordWalk} color="bg-green-600" />
           <OutcomeButton label="Strikeout" emoji="K" onPress={onRecordStrikeout} color="bg-red-600" />
           <OutcomeButton label="Error" emoji="E" onPress={onRecordError} color="bg-orange-600" />
@@ -219,6 +227,45 @@ export function PitchInput({
               className="mt-4 py-3 items-center"
               onPress={() => setShowD3KModal(false)}
             >
+              <Text className="text-gray-500 font-semibold">Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Out type picker: scorer picks the trajectory of the batted-ball out */}
+      <Modal
+        visible={showOutModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowOutModal(false)}
+      >
+        <View className="flex-1 justify-end bg-black/50">
+          <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
+            <Text className="text-lg font-bold text-gray-900 mb-1">Out</Text>
+            <Text className="text-sm text-gray-500 mb-4">
+              How was the batter retired?
+            </Text>
+
+            <View className="gap-3">
+              <TouchableOpacity className="bg-gray-600 rounded-xl px-5 py-4" onPress={() => handleOutPick('groundout')}>
+                <Text className="text-white font-semibold">Groundout</Text>
+              </TouchableOpacity>
+              <TouchableOpacity className="bg-gray-600 rounded-xl px-5 py-4" onPress={() => handleOutPick('flyout')}>
+                <Text className="text-white font-semibold">Flyout</Text>
+              </TouchableOpacity>
+              <TouchableOpacity className="bg-gray-600 rounded-xl px-5 py-4" onPress={() => handleOutPick('lineout')}>
+                <Text className="text-white font-semibold">Lineout</Text>
+              </TouchableOpacity>
+              <TouchableOpacity className="bg-gray-600 rounded-xl px-5 py-4" onPress={() => handleOutPick('popout')}>
+                <Text className="text-white font-semibold">Popout</Text>
+              </TouchableOpacity>
+              <TouchableOpacity className="bg-gray-500 rounded-xl px-5 py-4" onPress={() => handleOutPick('other')}>
+                <Text className="text-white font-semibold">Other</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity className="mt-4 py-3 items-center" onPress={() => setShowOutModal(false)}>
               <Text className="text-gray-500 font-semibold">Cancel</Text>
             </TouchableOpacity>
           </View>

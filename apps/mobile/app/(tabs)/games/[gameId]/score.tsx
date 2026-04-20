@@ -7,8 +7,9 @@ import { CountDisplay } from '../../../../src/features/scoring/CountDisplay';
 import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDisplay';
 import { PitchInput } from '../../../../src/features/scoring/PitchInput';
 import { LoadingSpinner } from '@baseball/ui';
-import { EventType, PitchOutcome, HitType, AdvanceReason } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, ScorePayload } from '@baseball/shared';
+import type { BattedOutType } from '../../../../src/features/scoring/PitchInput';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
 
 /**
@@ -58,12 +59,19 @@ export default function ScoringScreen() {
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, payload);
   }
 
-  async function handleOut() {
+  async function handleOut(outType: BattedOutType) {
     if (!gameState) return;
+    const trajectory: HitTrajectory | undefined =
+      outType === 'groundout' ? HitTrajectory.GROUND_BALL
+      : outType === 'flyout' ? HitTrajectory.FLY_BALL
+      : outType === 'lineout' ? HitTrajectory.LINE_DRIVE
+      : outType === 'popout' ? HitTrajectory.FLY_BALL
+      : undefined;
     const payload: OutPayload = {
       batterId: currentBatterId,
       pitcherId: currentPitcherId,
-      outType: 'groundout',
+      outType,
+      ...(trajectory ? { trajectory } : {}),
     };
     await recordEvent(EventType.OUT, gameState.inning, gameState.isTopOfInning, payload);
   }
