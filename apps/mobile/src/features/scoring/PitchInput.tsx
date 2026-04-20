@@ -24,6 +24,8 @@ interface PitchInputProps {
   onRecordSacFly: () => void;
   onRecordSacBunt: () => void;
   onRecordFieldersChoice: (runnerId: string, fromBase: Base) => void;
+  onRecordWildPitch: () => void;
+  onRecordPassedBall: () => void;
   runnersOnBase: { base: Base; runnerId: string }[];
   onRecordDroppedThirdStrike?: (details: DroppedThirdStrikeDetails) => void;
   droppedThirdStrikeEligible?: boolean;
@@ -60,6 +62,8 @@ export function PitchInput({
   onRecordSacFly,
   onRecordSacBunt,
   onRecordFieldersChoice,
+  onRecordWildPitch,
+  onRecordPassedBall,
   runnersOnBase,
   onRecordDroppedThirdStrike,
   droppedThirdStrikeEligible = false,
@@ -101,6 +105,18 @@ export function PitchInput({
               <Text className="font-semibold text-sm">{label}</Text>
             </TouchableOpacity>
           ))}
+          <TouchableOpacity
+            className="border rounded-xl px-4 py-3 bg-amber-100 border-amber-300"
+            onPress={onRecordWildPitch}
+          >
+            <Text className="font-semibold text-sm text-amber-700">WP</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="border rounded-xl px-4 py-3 bg-yellow-100 border-yellow-300"
+            onPress={onRecordPassedBall}
+          >
+            <Text className="font-semibold text-sm text-yellow-700">PB</Text>
+          </TouchableOpacity>
         </View>
       </View>
 

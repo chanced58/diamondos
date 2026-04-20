@@ -136,6 +136,59 @@ export default function ScoringScreen() {
     await recordEvent(EventType.CAUGHT_STEALING, gameState.inning, gameState.isTopOfInning, payload);
   }
 
+  async function advanceAllRunnersOneBase(reason: AdvanceReason) {
+    if (!gameState) return;
+    // Advance runner on 3rd first (they score), then 2nd, then 1st,
+    // in that order so the replay engine sees consistent base state.
+    const runners: Array<{ runnerId: string; fromBase: 1 | 2 | 3 }> = [];
+    if (gameState.runnersOnBase.third)  runners.push({ runnerId: gameState.runnersOnBase.third,  fromBase: 3 });
+    if (gameState.runnersOnBase.second) runners.push({ runnerId: gameState.runnersOnBase.second, fromBase: 2 });
+    if (gameState.runnersOnBase.first)  runners.push({ runnerId: gameState.runnersOnBase.first,  fromBase: 1 });
+    for (const r of runners) {
+      const toBase = (r.fromBase + 1) as 2 | 3 | 4;
+      const advancePayload: BaserunnerMovePayload = {
+        runnerId: r.runnerId,
+        fromBase: r.fromBase,
+        toBase,
+        reason,
+      };
+      await recordEvent(EventType.BASERUNNER_ADVANCE, gameState.inning, gameState.isTopOfInning, advancePayload);
+      if (toBase === 4) {
+        const scorePayload: ScorePayload = { scoringPlayerId: r.runnerId, rbis: 0 };
+        await recordEvent(EventType.SCORE, gameState.inning, gameState.isTopOfInning, scorePayload);
+      }
+    }
+  }
+
+  async function handleWildPitch() {
+    if (!gameState) return;
+    // Record the wild pitch as a thrown ball so pitch count, count state,
+    // and the pitcher's wildPitches stat all update (pitching-stats.ts:288).
+    const pitchPayload: PitchThrownPayload = {
+      pitcherId: currentPitcherId,
+      batterId: currentBatterId,
+      outcome: PitchOutcome.BALL,
+      isWildPitch: true,
+    };
+    await recordEvent(EventType.PITCH_THROWN, gameState.inning, gameState.isTopOfInning, pitchPayload);
+    await advanceAllRunnersOneBase(AdvanceReason.WILD_PITCH);
+  }
+
+  async function handlePassedBall() {
+    if (!gameState) return;
+    // PB is a catcher misplay — pitch is thrown cleanly and catcher fails
+    // to handle it. Flag the pitch so downstream consumers can distinguish
+    // the underlying pitch from the mishandling that followed.
+    const pitchPayload: PitchThrownPayload = {
+      pitcherId: currentPitcherId,
+      batterId: currentBatterId,
+      outcome: PitchOutcome.BALL,
+      isPassedBall: true,
+    };
+    await recordEvent(EventType.PITCH_THROWN, gameState.inning, gameState.isTopOfInning, pitchPayload);
+    await advanceAllRunnersOneBase(AdvanceReason.PASSED_BALL);
+  }
+
   async function handleFieldersChoice(runnerId: string, fromBase: 1 | 2 | 3) {
     if (!gameState) return;
     // OBR: forced runner is retired first, then batter reaches 1st without
@@ -249,6 +302,8 @@ export default function ScoringScreen() {
         onRecordSacFly={handleSacrificeFly}
         onRecordSacBunt={handleSacrificeBunt}
         onRecordFieldersChoice={handleFieldersChoice}
+        onRecordWildPitch={handleWildPitch}
+        onRecordPassedBall={handlePassedBall}
         runnersOnBase={runnersOnBase}
         onRecordDroppedThirdStrike={handleDroppedThirdStrike}
         droppedThirdStrikeEligible={droppedThirdStrikeEligible}
