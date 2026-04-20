@@ -94,6 +94,22 @@ export default function ScoringScreen() {
     });
   }
 
+  async function handleSacrificeFly() {
+    if (!gameState) return;
+    await recordEvent(EventType.SACRIFICE_FLY, gameState.inning, gameState.isTopOfInning, {
+      batterId: currentBatterId,
+      pitcherId: currentPitcherId,
+    });
+  }
+
+  async function handleSacrificeBunt() {
+    if (!gameState) return;
+    await recordEvent(EventType.SACRIFICE_BUNT, gameState.inning, gameState.isTopOfInning, {
+      batterId: currentBatterId,
+      pitcherId: currentPitcherId,
+    });
+  }
+
   async function handleDroppedThirdStrike(details: {
     outcome: DroppedThirdStrikeOutcome;
     fieldingSequence?: number[];
@@ -155,6 +171,8 @@ export default function ScoringScreen() {
         onRecordWalk={handleWalk}
         onRecordStrikeout={handleStrikeout}
         onRecordError={handleError}
+        onRecordSacFly={handleSacrificeFly}
+        onRecordSacBunt={handleSacrificeBunt}
         onRecordDroppedThirdStrike={handleDroppedThirdStrike}
         droppedThirdStrikeEligible={droppedThirdStrikeEligible}
       />

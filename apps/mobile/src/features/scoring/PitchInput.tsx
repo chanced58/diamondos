@@ -17,6 +17,8 @@ interface PitchInputProps {
   onRecordWalk: () => void;
   onRecordStrikeout: () => void;
   onRecordError: () => void;
+  onRecordSacFly: () => void;
+  onRecordSacBunt: () => void;
   onRecordDroppedThirdStrike?: (details: DroppedThirdStrikeDetails) => void;
   droppedThirdStrikeEligible?: boolean;
 }
@@ -49,6 +51,8 @@ export function PitchInput({
   onRecordWalk,
   onRecordStrikeout,
   onRecordError,
+  onRecordSacFly,
+  onRecordSacBunt,
   onRecordDroppedThirdStrike,
   droppedThirdStrikeEligible = false,
 }: PitchInputProps) {
@@ -107,6 +111,8 @@ export function PitchInput({
           <OutcomeButton label="Walk (BB)" emoji="🚶" onPress={onRecordWalk} color="bg-green-600" />
           <OutcomeButton label="Strikeout" emoji="K" onPress={onRecordStrikeout} color="bg-red-600" />
           <OutcomeButton label="Error" emoji="E" onPress={onRecordError} color="bg-orange-600" />
+          <OutcomeButton label="Sac Fly" emoji="SF" onPress={onRecordSacFly} color="bg-teal-600" />
+          <OutcomeButton label="Sac Bunt" emoji="SH" onPress={onRecordSacBunt} color="bg-teal-700" />
           {droppedThirdStrikeEligible && onRecordDroppedThirdStrike && (
             <OutcomeButton
               label="Dropped 3rd K"
