@@ -231,8 +231,16 @@ export function computeOpponentBatting(
         const explicitRbis = payload.rbis as number | undefined;
         s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
       } else if (etype === 'sacrifice_bunt') {
+        // OBR 9.08(a): advances runners one base; squeeze scores r3 for 1 RBI.
         const s = get(batterId);
         s.pa++; s.sh++;
+        const runScored = !!r3;
+        if (r3) scoreRunner(r3);
+        r3 = r2 ?? null;
+        r2 = r1;
+        r1 = null;
+        const explicitRbis = payload.rbis as number | undefined;
+        s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
       } else if (etype === 'dropped_third_strike') {
         const s = get(batterId);
         s.pa++; s.ab++; s.k++;

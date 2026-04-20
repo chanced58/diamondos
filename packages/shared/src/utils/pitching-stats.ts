@@ -533,6 +533,15 @@ export function derivePitchingStats(
             resetAtBat(batterId);
           }
         }
+        // Sac bunt: runners advance one base (runner on 3rd scores).
+        if (etype === EventType.SACRIFICE_BUNT) {
+          if (r3) {
+            scoreRun(r3);
+          }
+          r3 = r2;
+          r2 = r1;
+          r1 = null;
+        }
         // Sac fly: runner on 3rd scores
         if (etype === EventType.SACRIFICE_FLY && r3) {
           scoreRun(r3);

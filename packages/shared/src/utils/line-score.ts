@@ -167,6 +167,12 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
       if (etype === 'sacrifice_fly' && third && outs < 3) {
         scoreRun(1);
         third = null;
+      } else if (etype === 'sacrifice_bunt') {
+        // OBR 9.08(a): sac bunt advances runners one base.
+        if (third && outs < 3) scoreRun(1);
+        third = second;
+        second = first;
+        first = null;
       }
     } else if (etype === 'stolen_base') {
       const toBase = payload.toBase as number | undefined;

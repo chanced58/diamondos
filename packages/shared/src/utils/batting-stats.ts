@@ -345,6 +345,15 @@ export function deriveBattingStats(
         s.plateAppearances += 1;
         s.sacrificeHits += 1;
         s.battedBalls += 1;
+        // OBR 9.08(a): sac bunt advances runners one base; squeeze scores
+        // the runner from third and credits the batter with 1 RBI.
+        const runScored = !!r3;
+        if (r3) scoreRunner(r3);
+        r3 = r2 ?? null;
+        r2 = r1;
+        r1 = null;
+        const explicitRbis = payload?.rbis as number | undefined;
+        s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
         continue;
       }
 

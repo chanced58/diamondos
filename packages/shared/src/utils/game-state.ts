@@ -180,7 +180,20 @@ export function deriveGameState(
       }
 
       case EventType.SACRIFICE_BUNT: {
+        // Per OBR 9.08(a): a sac bunt's purpose is to advance one or more
+        // runners at the cost of the batter's out. The common pattern is
+        // every runner advances one base (squeeze play scores the runner
+        // from third). Uncommon double-advances require manual
+        // BASERUNNER_ADVANCE events.
         state.outs++;
+        if (state.runnersOnBase.third && state.outs < OUTS_PER_INNING) {
+          addRuns(state, 1, state.isTopOfInning);
+        }
+        state.runnersOnBase = {
+          third: state.runnersOnBase.second,
+          second: state.runnersOnBase.first,
+          first: null,
+        };
         state.balls = 0;
         state.strikes = 0;
         incrementPA(state);
