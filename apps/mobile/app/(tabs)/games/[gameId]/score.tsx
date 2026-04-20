@@ -8,7 +8,7 @@ import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDi
 import { PitchInput } from '../../../../src/features/scoring/PitchInput';
 import { LoadingSpinner } from '@baseball/ui';
 import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason } from '@baseball/shared';
-import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, ScorePayload } from '@baseball/shared';
+import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload } from '@baseball/shared';
 import type { BattedOutType } from '../../../../src/features/scoring/PitchInput';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
 
@@ -209,6 +209,52 @@ export default function ScoringScreen() {
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, hitPayload);
   }
 
+  async function handlePickoffOut(fromBase: 1 | 2 | 3, runnerId: string) {
+    if (!gameState) return;
+    const payload: PickoffPayload = {
+      runnerId,
+      base: fromBase,
+      pitcherId: currentPitcherId,
+      outcome: 'out',
+    };
+    await recordEvent(EventType.PICKOFF_ATTEMPT, gameState.inning, gameState.isTopOfInning, payload);
+  }
+
+  async function handleBalk() {
+    if (!gameState) return;
+    await recordEvent(EventType.BALK, gameState.inning, gameState.isTopOfInning, {
+      pitcherId: currentPitcherId,
+    });
+    // Per OBR 6.02(a) all runners advance one base on a balk. The BALK
+    // replay handler shifts r1→r2, r2→r3; the runner previously on
+    // third scores via a SCORE event (OBR 9.04(b)(5): no RBI on a balk).
+    const thirdRunner = gameState.runnersOnBase.third;
+    if (thirdRunner) {
+      const scorePayload: ScorePayload = { scoringPlayerId: thirdRunner, rbis: 0 };
+      await recordEvent(EventType.SCORE, gameState.inning, gameState.isTopOfInning, scorePayload);
+    }
+  }
+
+  async function handleDoublePlay() {
+    if (!gameState) return;
+    // DOUBLE_PLAY credits batter PA+AB and bumps outs by two. The second
+    // runner-out is not attributed to a specific base in this UI yet —
+    // deriveGameState increments outs but leaves the forced runner on
+    // base in the replay state. Tracked as P1 #10 follow-up.
+    await recordEvent(EventType.DOUBLE_PLAY, gameState.inning, gameState.isTopOfInning, {
+      batterId: currentBatterId,
+      pitcherId: currentPitcherId,
+    });
+  }
+
+  async function handleTriplePlay() {
+    if (!gameState) return;
+    await recordEvent(EventType.TRIPLE_PLAY, gameState.inning, gameState.isTopOfInning, {
+      batterId: currentBatterId,
+      pitcherId: currentPitcherId,
+    });
+  }
+
   async function handleRunnerAdvance(fromBase: 1 | 2 | 3, runnerId: string, reason: AdvanceReason) {
     if (!gameState) return;
     const toBase = (fromBase + 1) as 2 | 3 | 4;
@@ -281,6 +327,7 @@ export default function ScoringScreen() {
           onRecordStolenBase={handleStolenBase}
           onRecordCaughtStealing={handleCaughtStealing}
           onRecordAdvance={handleRunnerAdvance}
+          onRecordPickoffOut={handlePickoffOut}
         />
         {isSyncing ? (
           <Text className="text-xs text-blue-500">Syncing…</Text>
@@ -304,6 +351,9 @@ export default function ScoringScreen() {
         onRecordFieldersChoice={handleFieldersChoice}
         onRecordWildPitch={handleWildPitch}
         onRecordPassedBall={handlePassedBall}
+        onRecordBalk={handleBalk}
+        onRecordDoublePlay={handleDoublePlay}
+        onRecordTriplePlay={handleTriplePlay}
         runnersOnBase={runnersOnBase}
         onRecordDroppedThirdStrike={handleDroppedThirdStrike}
         droppedThirdStrikeEligible={droppedThirdStrikeEligible}

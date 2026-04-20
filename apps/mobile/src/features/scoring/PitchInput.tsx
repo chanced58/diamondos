@@ -26,6 +26,9 @@ interface PitchInputProps {
   onRecordFieldersChoice: (runnerId: string, fromBase: Base) => void;
   onRecordWildPitch: () => void;
   onRecordPassedBall: () => void;
+  onRecordBalk: () => void;
+  onRecordDoublePlay: () => void;
+  onRecordTriplePlay: () => void;
   runnersOnBase: { base: Base; runnerId: string }[];
   onRecordDroppedThirdStrike?: (details: DroppedThirdStrikeDetails) => void;
   droppedThirdStrikeEligible?: boolean;
@@ -64,6 +67,9 @@ export function PitchInput({
   onRecordFieldersChoice,
   onRecordWildPitch,
   onRecordPassedBall,
+  onRecordBalk,
+  onRecordDoublePlay,
+  onRecordTriplePlay,
   runnersOnBase,
   onRecordDroppedThirdStrike,
   droppedThirdStrikeEligible = false,
@@ -158,6 +164,9 @@ export function PitchInput({
               color="bg-purple-700"
             />
           )}
+          <OutcomeButton label="Balk" emoji="BK" onPress={onRecordBalk} color="bg-pink-600" />
+          <OutcomeButton label="Double Play" emoji="DP" onPress={onRecordDoublePlay} color="bg-zinc-700" />
+          <OutcomeButton label="Triple Play" emoji="TP" onPress={onRecordTriplePlay} color="bg-zinc-800" />
           {droppedThirdStrikeEligible && onRecordDroppedThirdStrike && (
             <OutcomeButton
               label="Dropped 3rd K"

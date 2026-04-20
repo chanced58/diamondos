@@ -10,6 +10,7 @@ interface BaserunnerDisplayProps {
   onRecordStolenBase?: (fromBase: Base, runnerId: string) => void;
   onRecordCaughtStealing?: (fromBase: Base, runnerId: string) => void;
   onRecordAdvance?: (fromBase: Base, runnerId: string, reason: AdvanceReason) => void;
+  onRecordPickoffOut?: (fromBase: Base, runnerId: string) => void;
 }
 
 const DIAMOND_SIZE = 100;
@@ -24,11 +25,12 @@ export function BaserunnerDisplay({
   onRecordStolenBase,
   onRecordCaughtStealing,
   onRecordAdvance,
+  onRecordPickoffOut,
 }: BaserunnerDisplayProps) {
   const { first, second, third } = gameState.runnersOnBase;
   const [selected, setSelected] = useState<{ base: Base; runnerId: string } | null>(null);
 
-  const interactive = !!(onRecordStolenBase || onRecordCaughtStealing || onRecordAdvance);
+  const interactive = !!(onRecordStolenBase || onRecordCaughtStealing || onRecordAdvance || onRecordPickoffOut);
 
   function handleBaseTap(base: Base, runnerId: string | null) {
     if (!interactive || !runnerId) return;
@@ -54,6 +56,12 @@ export function BaserunnerDisplay({
   function handleAdvance(reason: AdvanceReason) {
     if (!selected) return;
     onRecordAdvance?.(selected.base, selected.runnerId, reason);
+    close();
+  }
+
+  function handlePickoffOut() {
+    if (!selected) return;
+    onRecordPickoffOut?.(selected.base, selected.runnerId);
     close();
   }
 
@@ -130,6 +138,12 @@ export function BaserunnerDisplay({
                 sub={selected ? `Advances to ${baseLabel((selected.base + 1) as 2 | 3 | 4)}` : ''}
                 color="bg-yellow-600"
                 onPress={() => handleAdvance(AdvanceReason.PASSED_BALL)}
+              />
+              <RunnerActionButton
+                label="Picked Off"
+                sub="Runner is out on pickoff throw"
+                color="bg-gray-700"
+                onPress={handlePickoffOut}
               />
             </View>
 
