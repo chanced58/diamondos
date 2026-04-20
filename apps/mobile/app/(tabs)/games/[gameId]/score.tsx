@@ -27,7 +27,7 @@ export default function ScoringScreen() {
 
   const { gameState, loading } = useGameState(gameId, teamId);
   const { recordEvent } = useRecordEvent(gameId);
-  const { isSyncing } = useSyncContext();
+  const { isSyncing, lastSyncError, pendingEventsCount } = useSyncContext();
 
   // Placeholder pitcher/batter IDs — in production these come from the lineup
   const currentPitcherId = gameState?.currentPitcherId ?? 'unknown-pitcher';
@@ -158,9 +158,13 @@ export default function ScoringScreen() {
           </Text>
         </View>
         <BaserunnerDisplay gameState={gameState} />
-        {isSyncing && (
-          <Text className="text-xs text-blue-500">Syncing...</Text>
-        )}
+        {isSyncing ? (
+          <Text className="text-xs text-blue-500">Syncing…</Text>
+        ) : lastSyncError ? (
+          <Text className="text-xs text-red-600">⚠ Sync failed</Text>
+        ) : pendingEventsCount > 0 ? (
+          <Text className="text-xs text-amber-600">{pendingEventsCount} unsynced</Text>
+        ) : null}
       </View>
 
       {/* Bottom: pitch / outcome input */}
