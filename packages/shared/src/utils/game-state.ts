@@ -34,10 +34,20 @@ export function deriveGameState(
   for (const event of events) {
     switch (event.eventType) {
       case EventType.GAME_START: {
-        const p = event.payload as { homeLineupPitcherId?: string; awayLineupPitcherId?: string };
+        const p = event.payload as {
+          homeLineupPitcherId?: string;
+          awayLineupPitcherId?: string;
+          homeLeadoffBatterId?: string;
+          awayLeadoffBatterId?: string;
+        };
         state.currentPitcherId = state.isTopOfInning
           ? p.homeLineupPitcherId ?? null
           : p.awayLineupPitcherId ?? null;
+        // Top of first: away team bats, so the away leadoff is current.
+        // Bottom of first (or when replay starts mid-inning): home leadoff.
+        state.currentBatterId = state.isTopOfInning
+          ? p.awayLeadoffBatterId ?? null
+          : p.homeLeadoffBatterId ?? null;
         break;
       }
 

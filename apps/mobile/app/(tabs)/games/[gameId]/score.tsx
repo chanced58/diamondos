@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
 import { useGameState } from '../../../../src/features/scoring/use-game-state';
 import { useRecordEvent } from '../../../../src/features/scoring/use-record-event';
@@ -58,9 +58,14 @@ export default function ScoringScreen() {
     return () => { cancelled = true; };
   }, [teamId]);
 
-  // Placeholder pitcher/batter IDs — in production these come from the lineup
-  const currentPitcherId = gameState?.currentPitcherId ?? 'unknown-pitcher';
-  const currentBatterId = gameState?.currentBatterId ?? 'unknown-batter';
+  // currentPitcherId / currentBatterId are derived from GAME_START and
+  // PITCH_THROWN events. When unset, emitted events carry undefined for
+  // those fields (the payload types are optional) and stats modules skip
+  // the event rather than attribute to a fake player. Scorer establishes
+  // the starting values via the "Set Lineup" modal below.
+  const currentPitcherId = gameState?.currentPitcherId ?? undefined;
+  const currentBatterId = gameState?.currentBatterId ?? undefined;
+  const [showLineupModal, setShowLineupModal] = useState(false);
 
   async function handlePitch(outcome: PitchOutcome) {
     if (!gameState) return;
@@ -244,6 +249,20 @@ export default function ScoringScreen() {
       fieldersChoice: true,
     };
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, hitPayload);
+  }
+
+  async function handleStartGame(pitcherId: string, batterId: string) {
+    if (!gameState) return;
+    // Seed the lineup: our team is assumed to be the home team in this UI,
+    // so the selected pitcher is home's starter (current when we're in the
+    // field) and the selected batter is home's leadoff (current when we're
+    // batting). Opponent lineup remains undefined until explicitly set via
+    // a later substitution/pitching-change.
+    await recordEvent(EventType.GAME_START, gameState.inning, gameState.isTopOfInning, {
+      homeLineupPitcherId: pitcherId,
+      homeLeadoffBatterId: batterId,
+    });
+    setShowLineupModal(false);
   }
 
   async function handlePitchingChange(newPitcherId: string) {
@@ -435,6 +454,27 @@ export default function ScoringScreen() {
         ) : null}
       </View>
 
+      {/* Pre-game lineup prompt — visible until a starting pitcher is known */}
+      {gameState.currentPitcherId === null && (
+        <TouchableOpacity
+          className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg flex-row items-center"
+          onPress={() => setShowLineupModal(true)}
+        >
+          <Text className="flex-1 text-sm text-amber-900">
+            <Text className="font-semibold">Set starting lineup</Text>
+            <Text> — tap to pick your starting pitcher and leadoff batter.</Text>
+          </Text>
+          <Text className="text-amber-900 font-semibold">Set</Text>
+        </TouchableOpacity>
+      )}
+
+      <LineupSetupModal
+        visible={showLineupModal}
+        roster={roster}
+        onCancel={() => setShowLineupModal(false)}
+        onSubmit={handleStartGame}
+      />
+
       {/* Bottom: pitch / outcome input */}
       <PitchInput
         onRecordPitch={handlePitch}
@@ -461,5 +501,120 @@ export default function ScoringScreen() {
         droppedThirdStrikeEligible={droppedThirdStrikeEligible}
       />
     </View>
+  );
+}
+
+function LineupSetupModal({
+  visible,
+  roster,
+  onCancel,
+  onSubmit,
+}: {
+  visible: boolean;
+  roster: RosterPlayer[];
+  onCancel: () => void;
+  onSubmit: (pitcherId: string, batterId: string) => void;
+}) {
+  const [pitcherId, setPitcherId] = useState<string | null>(null);
+  const [batterId, setBatterId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (visible) {
+      setPitcherId(null);
+      setBatterId(null);
+    }
+  }, [visible]);
+
+  const submittable = pitcherId !== null && batterId !== null;
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onCancel}
+    >
+      <View className="flex-1 justify-end bg-black/50">
+        <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '85%' }}>
+          <Text className="text-lg font-bold text-gray-900 mb-1">Starting Lineup</Text>
+          <Text className="text-sm text-gray-500 mb-4">
+            Pick your starting pitcher and leadoff batter. Events recorded before
+            setting a lineup won't be attributed to a specific player.
+          </Text>
+
+          {roster.length === 0 ? (
+            <Text className="text-gray-500 text-sm py-4">
+              No players loaded. Sync the roster first.
+            </Text>
+          ) : (
+            <ScrollView className="max-h-96">
+              <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                Starting Pitcher
+              </Text>
+              <View className="gap-2 mb-4">
+                {roster.map((p) => (
+                  <TouchableOpacity
+                    key={`pitcher-${p.id}`}
+                    className={`rounded-xl px-4 py-3 border ${
+                      pitcherId === p.id
+                        ? 'bg-blue-600 border-blue-700'
+                        : 'bg-white border-gray-300'
+                    }`}
+                    onPress={() => setPitcherId(p.id)}
+                  >
+                    <Text className={pitcherId === p.id ? 'text-white font-semibold' : 'text-gray-900 font-semibold'}>
+                      {p.jerseyNumber !== undefined ? `#${p.jerseyNumber} ` : ''}
+                      {p.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                Leadoff Batter
+              </Text>
+              <View className="gap-2">
+                {roster.map((p) => (
+                  <TouchableOpacity
+                    key={`batter-${p.id}`}
+                    className={`rounded-xl px-4 py-3 border ${
+                      batterId === p.id
+                        ? 'bg-green-600 border-green-700'
+                        : 'bg-white border-gray-300'
+                    }`}
+                    onPress={() => setBatterId(p.id)}
+                  >
+                    <Text className={batterId === p.id ? 'text-white font-semibold' : 'text-gray-900 font-semibold'}>
+                      {p.jerseyNumber !== undefined ? `#${p.jerseyNumber} ` : ''}
+                      {p.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          )}
+
+          <View className="flex-row gap-3 mt-4">
+            <TouchableOpacity
+              className="flex-1 rounded-xl px-5 py-3 bg-gray-100 items-center"
+              onPress={onCancel}
+            >
+              <Text className="text-gray-700 font-semibold">Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className={`flex-1 rounded-xl px-5 py-3 items-center ${submittable ? 'bg-emerald-600' : 'bg-emerald-300'}`}
+              disabled={!submittable}
+              onPress={() => {
+                if (submittable && pitcherId && batterId) {
+                  onSubmit(pitcherId, batterId);
+                }
+              }}
+            >
+              <Text className="text-white font-semibold">Start Game</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
