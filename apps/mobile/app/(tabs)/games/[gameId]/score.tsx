@@ -131,6 +131,14 @@ export default function ScoringScreen() {
     });
   }
 
+  async function handleCatcherInterference() {
+    if (!gameState) return;
+    await recordEvent(EventType.CATCHER_INTERFERENCE, gameState.inning, gameState.isTopOfInning, {
+      batterId: currentBatterId,
+      pitcherId: currentPitcherId,
+    });
+  }
+
   async function handleSacrificeFly() {
     if (!gameState) return;
     await recordEvent(EventType.SACRIFICE_FLY, gameState.inning, gameState.isTopOfInning, {
@@ -425,6 +433,7 @@ export default function ScoringScreen() {
         onRecordWalk={handleWalk}
         onRecordStrikeout={handleStrikeout}
         onRecordError={handleError}
+        onRecordCatcherInterference={handleCatcherInterference}
         onRecordSacFly={handleSacrificeFly}
         onRecordSacBunt={handleSacrificeBunt}
         onRecordFieldersChoice={handleFieldersChoice}

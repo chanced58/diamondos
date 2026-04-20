@@ -286,6 +286,22 @@ export function deriveBattingStats(
         continue;
       }
 
+      // ── CATCHER_INTERFERENCE ───────────────────────────────────────────────
+      if (etype === EventType.CATCHER_INTERFERENCE) {
+        const batterId: string | undefined = payload?.batterId;
+        if (!batterId) continue;
+        markAppeared(batterId);
+        const s = getStats(batterId);
+        s.plateAppearances += 1;
+        // Per OBR 9.02(a)(4) CI does NOT count as an at-bat.
+        // Per OBR 9.04(a)(2), a bases-loaded CI forces a run and credits RBI.
+        const forcedRun = !!(r1 && r2 && r3);
+        forceAdvance(batterId);
+        const explicitRbis = payload?.rbis as number | undefined;
+        s.rbi += explicitRbis !== undefined ? explicitRbis : (forcedRun ? 1 : 0);
+        continue;
+      }
+
       // ── HIT_BY_PITCH ───────────────────────────────────────────────────────
       if (etype === EventType.HIT_BY_PITCH) {
         const batterId: string | undefined = payload?.batterId;

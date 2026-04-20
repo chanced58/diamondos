@@ -19,6 +19,7 @@ export enum EventType {
   SACRIFICE_BUNT = 'sacrifice_bunt',
   SACRIFICE_FLY = 'sacrifice_fly',
   FIELD_ERROR = 'field_error',
+  CATCHER_INTERFERENCE = 'catcher_interference',
   DOUBLE_PLAY = 'double_play',
   TRIPLE_PLAY = 'triple_play',
 

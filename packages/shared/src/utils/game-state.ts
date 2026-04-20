@@ -78,8 +78,11 @@ export function deriveGameState(
       }
 
       case EventType.WALK:
-      case EventType.HIT_BY_PITCH: {
-        // If bases are loaded, the runner on third is forced home — credit the run now.
+      case EventType.HIT_BY_PITCH:
+      case EventType.CATCHER_INTERFERENCE: {
+        // Per OBR 9.04(a)(2), bases-loaded walk / HBP / catcher interference
+        // force in a run. Same state transition in all three cases: batter
+        // reaches first, runners advance when forced.
         const walkBasesLoaded = !!(
           state.runnersOnBase.first &&
           state.runnersOnBase.second &&

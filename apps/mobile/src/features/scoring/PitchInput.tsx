@@ -27,6 +27,7 @@ interface PitchInputProps {
   onRecordWalk: () => void;
   onRecordStrikeout: () => void;
   onRecordError: (errorBy: number) => void;
+  onRecordCatcherInterference: () => void;
   onRecordSacFly: () => void;
   onRecordSacBunt: () => void;
   onRecordFieldersChoice: (runnerId: string, fromBase: Base) => void;
@@ -84,6 +85,7 @@ export function PitchInput({
   onRecordWalk,
   onRecordStrikeout,
   onRecordError,
+  onRecordCatcherInterference,
   onRecordSacFly,
   onRecordSacBunt,
   onRecordFieldersChoice,
@@ -204,6 +206,7 @@ export function PitchInput({
           <OutcomeButton label="Walk (BB)" emoji="🚶" onPress={onRecordWalk} color="bg-green-600" />
           <OutcomeButton label="Strikeout" emoji="K" onPress={onRecordStrikeout} color="bg-red-600" />
           <OutcomeButton label="Error" emoji="E" onPress={() => setShowErrorModal(true)} color="bg-orange-600" />
+          <OutcomeButton label="Catcher Int." emoji="CI" onPress={onRecordCatcherInterference} color="bg-rose-500" />
           <OutcomeButton label="Sac Fly" emoji="SF" onPress={onRecordSacFly} color="bg-teal-600" />
           <OutcomeButton label="Sac Bunt" emoji="SH" onPress={onRecordSacBunt} color="bg-teal-700" />
           {fcEligible && (

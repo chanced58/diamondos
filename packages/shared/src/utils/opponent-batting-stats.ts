@@ -205,6 +205,15 @@ export function computeOpponentBatting(
         forceAdvance(batterId);
         const explicitRbis = payload.rbis as number | undefined;
         s.rbi += explicitRbis !== undefined ? explicitRbis : (forcedRun ? 1 : 0);
+      } else if (etype === 'catcher_interference') {
+        const s = get(batterId);
+        s.pa++;
+        // OBR 9.02(a)(4): CI is not an at-bat.
+        // OBR 9.04(a)(2): bases-loaded CI forces in a run for 1 RBI.
+        const forcedRun = !!(r1 && r2 && r3);
+        forceAdvance(batterId);
+        const explicitRbis = payload.rbis as number | undefined;
+        s.rbi += explicitRbis !== undefined ? explicitRbis : (forcedRun ? 1 : 0);
       } else if (etype === 'hit_by_pitch') {
         const s = get(batterId);
         s.pa++; s.hbp++;

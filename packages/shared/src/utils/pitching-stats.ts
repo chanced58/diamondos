@@ -488,6 +488,16 @@ export function derivePitchingStats(
         forceAdvanceRunners(batterId ? { id: batterId, reachedOnError: false } : null);
       }
 
+      // ── CATCHER_INTERFERENCE ─────────────────────────────────────────────
+      // Batter reaches first without charging the pitcher; only the runner
+      // state is affected. Per OBR, catcher interference does not count as a
+      // walk, HBP, or hit for the pitcher. Update runner tracking so earned-
+      // run logic stays accurate if the forced runner later scores.
+      if (etype === EventType.CATCHER_INTERFERENCE) {
+        const batterId: string | undefined = payload?.batterId;
+        forceAdvanceRunners(batterId ? { id: batterId, reachedOnError: false } : null);
+      }
+
       // ── HIT_BY_PITCH (explicit event) ────────────────────────────────────
       if (etype === EventType.HIT_BY_PITCH) {
         const pitcherId: string | undefined = payload?.pitcherId;
