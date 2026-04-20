@@ -349,15 +349,18 @@ export function derivePitchingStats(
         const p = payload as HitPayload;
         const pitcherId = p.pitcherId ?? p.opponentPitcherId;
         const batterId = p.batterId ?? p.opponentBatterId;
+        const fieldersChoice = p.fieldersChoice === true;
         if (pitcherId) {
           const s = getStats(pitcherId);
-          s.hitsAllowed += 1;
+          if (!fieldersChoice) s.hitsAllowed += 1;
           const contact = batterId ? pendingContact.get(batterId) : undefined;
           if (contact && contact.pitcherId === pitcherId) {
             const cs = s.baByCount[contact.count];
             if (cs) {
               cs.atBats += 1;
-              cs.hits += 1;
+              if (!fieldersChoice) {
+                cs.hits += 1;
+              }
               cs.average = cs.hits / cs.atBats;
             }
             if (batterId) pendingContact.delete(batterId);

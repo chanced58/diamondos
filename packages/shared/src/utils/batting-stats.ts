@@ -154,23 +154,26 @@ export function deriveBattingStats(
       // ── HIT ────────────────────────────────────────────────────────────────
       if (etype === EventType.HIT) {
         const p = payload as HitPayload;
-        const { batterId, hitType, trajectory, rbis, sprayY } = p;
+        const { batterId, hitType, trajectory, rbis, sprayY, fieldersChoice } = p;
         if (!batterId) continue;
 
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
         s.atBats += 1;
-        s.hits += 1;
         s.battedBalls += 1;
 
-        if (isHardHit(hitType, trajectory, sprayY)) s.hardHitBalls += 1;
+        if (!fieldersChoice) {
+          s.hits += 1;
 
-        switch (hitType) {
-          case HitType.DOUBLE:    s.doubles += 1;   break;
-          case HitType.TRIPLE:    s.triples += 1;   break;
-          case HitType.HOME_RUN:  s.homeRuns += 1;  break;
-          default: break;  // single
+          if (isHardHit(hitType, trajectory, sprayY)) s.hardHitBalls += 1;
+
+          switch (hitType) {
+            case HitType.DOUBLE:    s.doubles += 1;   break;
+            case HitType.TRIPLE:    s.triples += 1;   break;
+            case HitType.HOME_RUN:  s.homeRuns += 1;  break;
+            default: break;  // single
+          }
         }
 
         // ── Advance runners, attribute runs, and auto-derive RBI (OBR 9.04) ──

@@ -128,6 +128,26 @@ export default function ScoringScreen() {
     await recordEvent(EventType.CAUGHT_STEALING, gameState.inning, gameState.isTopOfInning, payload);
   }
 
+  async function handleFieldersChoice(runnerId: string, fromBase: 1 | 2 | 3) {
+    if (!gameState) return;
+    // OBR: forced runner is retired first, then batter reaches 1st without
+    // being credited as a hit. deriveGameState and the stats modules
+    // handle the pair via BASERUNNER_OUT removing the runner and
+    // HIT(fieldersChoice=true) advancing any remaining runners.
+    await recordEvent(EventType.BASERUNNER_OUT, gameState.inning, gameState.isTopOfInning, {
+      runnerId,
+      fromBase,
+      pitcherId: currentPitcherId,
+    });
+    const hitPayload: HitPayload = {
+      batterId: currentBatterId,
+      pitcherId: currentPitcherId,
+      hitType: HitType.SINGLE,
+      fieldersChoice: true,
+    };
+    await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, hitPayload);
+  }
+
   async function handleRunnerAdvance(fromBase: 1 | 2 | 3, runnerId: string, reason: AdvanceReason) {
     if (!gameState) return;
     const toBase = (fromBase + 1) as 2 | 3 | 4;
@@ -161,6 +181,15 @@ export default function ScoringScreen() {
   const droppedThirdStrikeEligible = gameState
     ? gameState.outs === 2 || !gameState.runnersOnBase.first
     : false;
+
+  // Runners currently on base — passed to PitchInput for the FC picker.
+  const runnersOnBase: { base: 1 | 2 | 3; runnerId: string }[] = gameState
+    ? [
+        gameState.runnersOnBase.first ? { base: 1 as const, runnerId: gameState.runnersOnBase.first } : null,
+        gameState.runnersOnBase.second ? { base: 2 as const, runnerId: gameState.runnersOnBase.second } : null,
+        gameState.runnersOnBase.third ? { base: 3 as const, runnerId: gameState.runnersOnBase.third } : null,
+      ].filter((r): r is { base: 1 | 2 | 3; runnerId: string } => r !== null)
+    : [];
 
   if (loading || !gameState) {
     return <LoadingSpinner fullScreen />;
@@ -211,6 +240,8 @@ export default function ScoringScreen() {
         onRecordError={handleError}
         onRecordSacFly={handleSacrificeFly}
         onRecordSacBunt={handleSacrificeBunt}
+        onRecordFieldersChoice={handleFieldersChoice}
+        runnersOnBase={runnersOnBase}
         onRecordDroppedThirdStrike={handleDroppedThirdStrike}
         droppedThirdStrikeEligible={droppedThirdStrikeEligible}
       />

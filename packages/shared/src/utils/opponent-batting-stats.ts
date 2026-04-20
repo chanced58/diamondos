@@ -152,11 +152,15 @@ export function computeOpponentBatting(
 
       if (etype === 'hit') {
         const s = get(batterId);
-        s.pa++; s.ab++; s.h++;
+        const fieldersChoice = payload.fieldersChoice === true;
         const hitType = payload.hitType as string;
-        if (hitType === 'double') s.doubles++;
-        else if (hitType === 'triple') s.triples++;
-        else if (hitType === 'home_run') s.hr++;
+        s.pa++; s.ab++;
+        if (!fieldersChoice) {
+          s.h++;
+          if (hitType === 'double') s.doubles++;
+          else if (hitType === 'triple') s.triples++;
+          else if (hitType === 'home_run') s.hr++;
+        }
 
         const bases = hitType === 'home_run' ? 4
           : hitType === 'triple' ? 3

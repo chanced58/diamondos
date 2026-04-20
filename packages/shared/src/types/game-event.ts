@@ -138,6 +138,14 @@ export interface HitPayload {
   sprayX?: number;
   sprayY?: number;
   rbis?: number;
+  /**
+   * True when the batter reached base on a fielder's choice rather than
+   * a true safe hit. The PA + AB are still counted, but statisticians
+   * must not credit this as a hit (batting-stats, opponent-batting-stats)
+   * nor as a hit allowed (pitching-stats). The forced runner is removed
+   * via a preceding BASERUNNER_OUT event.
+   */
+  fieldersChoice?: boolean;
 }
 
 export interface OutPayload {

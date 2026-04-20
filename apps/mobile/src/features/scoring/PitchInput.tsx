@@ -10,6 +10,8 @@ interface DroppedThirdStrikeDetails {
   isWildPitch?: boolean;
 }
 
+type Base = 1 | 2 | 3;
+
 interface PitchInputProps {
   onRecordPitch: (outcome: PitchOutcome, pitchType?: PitchType) => void;
   onRecordHit: (hitType: HitType) => void;
@@ -19,6 +21,8 @@ interface PitchInputProps {
   onRecordError: () => void;
   onRecordSacFly: () => void;
   onRecordSacBunt: () => void;
+  onRecordFieldersChoice: (runnerId: string, fromBase: Base) => void;
+  runnersOnBase: { base: Base; runnerId: string }[];
   onRecordDroppedThirdStrike?: (details: DroppedThirdStrikeDetails) => void;
   droppedThirdStrikeEligible?: boolean;
 }
@@ -53,10 +57,19 @@ export function PitchInput({
   onRecordError,
   onRecordSacFly,
   onRecordSacBunt,
+  onRecordFieldersChoice,
+  runnersOnBase,
   onRecordDroppedThirdStrike,
   droppedThirdStrikeEligible = false,
 }: PitchInputProps) {
   const [showD3KModal, setShowD3KModal] = useState(false);
+  const [showFCModal, setShowFCModal] = useState(false);
+  const fcEligible = runnersOnBase.length > 0;
+
+  function handleFCPick(runnerId: string, fromBase: Base) {
+    setShowFCModal(false);
+    onRecordFieldersChoice(runnerId, fromBase);
+  }
 
   function handleD3KOutcome(details: DroppedThirdStrikeDetails) {
     setShowD3KModal(false);
@@ -113,6 +126,14 @@ export function PitchInput({
           <OutcomeButton label="Error" emoji="E" onPress={onRecordError} color="bg-orange-600" />
           <OutcomeButton label="Sac Fly" emoji="SF" onPress={onRecordSacFly} color="bg-teal-600" />
           <OutcomeButton label="Sac Bunt" emoji="SH" onPress={onRecordSacBunt} color="bg-teal-700" />
+          {fcEligible && (
+            <OutcomeButton
+              label="Fielder's Choice"
+              emoji="FC"
+              onPress={() => setShowFCModal(true)}
+              color="bg-purple-700"
+            />
+          )}
           {droppedThirdStrikeEligible && onRecordDroppedThirdStrike && (
             <OutcomeButton
               label="Dropped 3rd K"
@@ -203,8 +224,56 @@ export function PitchInput({
           </View>
         </View>
       </Modal>
+
+      {/* Fielder's choice: scorer picks which runner was forced out */}
+      <Modal
+        visible={showFCModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowFCModal(false)}
+      >
+        <View className="flex-1 justify-end bg-black/50">
+          <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
+            <Text className="text-lg font-bold text-gray-900 mb-1">
+              Fielder's Choice
+            </Text>
+            <Text className="text-sm text-gray-500 mb-4">
+              Which runner was retired? Batter reaches first base.
+            </Text>
+
+            <View className="gap-3">
+              {runnersOnBase.map(({ base, runnerId }) => (
+                <TouchableOpacity
+                  key={base}
+                  className="bg-purple-700 rounded-xl px-5 py-4"
+                  onPress={() => handleFCPick(runnerId, base)}
+                >
+                  <Text className="text-white font-semibold">
+                    Runner on {baseLabel(base)} retired
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              className="mt-4 py-3 items-center"
+              onPress={() => setShowFCModal(false)}
+            >
+              <Text className="text-gray-500 font-semibold">Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
+}
+
+function baseLabel(base: Base): string {
+  switch (base) {
+    case 1: return '1st';
+    case 2: return '2nd';
+    case 3: return '3rd';
+  }
 }
 
 function OutcomeButton({
