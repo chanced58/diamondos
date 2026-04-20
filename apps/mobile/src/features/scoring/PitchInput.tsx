@@ -29,6 +29,7 @@ interface PitchInputProps {
   onRecordBalk: () => void;
   onRecordDoublePlay: () => void;
   onRecordTriplePlay: () => void;
+  onUndoLastEvent: () => void;
   runnersOnBase: { base: Base; runnerId: string }[];
   onRecordDroppedThirdStrike?: (details: DroppedThirdStrikeDetails) => void;
   droppedThirdStrikeEligible?: boolean;
@@ -70,6 +71,7 @@ export function PitchInput({
   onRecordBalk,
   onRecordDoublePlay,
   onRecordTriplePlay,
+  onUndoLastEvent,
   runnersOnBase,
   onRecordDroppedThirdStrike,
   droppedThirdStrikeEligible = false,
@@ -96,6 +98,16 @@ export function PitchInput({
 
   return (
     <ScrollView className="flex-1 bg-gray-50">
+      {/* Undo — voids the most recent live event (EVENT_VOIDED) */}
+      <View className="px-4 pt-3 flex-row justify-end">
+        <TouchableOpacity
+          className="border border-gray-300 bg-white rounded-lg px-3 py-1.5"
+          onPress={onUndoLastEvent}
+        >
+          <Text className="text-xs font-semibold text-gray-700">↩ Undo</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Pitch-by-pitch section */}
       <View className="px-4 pt-4">
         <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">

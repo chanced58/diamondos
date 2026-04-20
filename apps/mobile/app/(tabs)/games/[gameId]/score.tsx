@@ -7,8 +7,11 @@ import { CountDisplay } from '../../../../src/features/scoring/CountDisplay';
 import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDisplay';
 import { PitchInput } from '../../../../src/features/scoring/PitchInput';
 import { LoadingSpinner } from '@baseball/ui';
+import { Q } from '@nozbe/watermelondb';
 import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason } from '@baseball/shared';
-import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload } from '@baseball/shared';
+import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload } from '@baseball/shared';
+import { database } from '../../../../src/db';
+import type { GameEvent as WdbGameEvent } from '../../../../src/db/models/GameEvent';
 import type { BattedOutType } from '../../../../src/features/scoring/PitchInput';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
 
@@ -209,6 +212,37 @@ export default function ScoringScreen() {
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, hitPayload);
   }
 
+  async function handleUndo() {
+    if (!gameState) return;
+    // Find the most recent live event (skip events already voided, and skip
+    // the correction events themselves) and emit EVENT_VOIDED targeting it.
+    const eventsCollection = database.get<WdbGameEvent>('game_events');
+    const all = await eventsCollection
+      .query(Q.where('game_remote_id', gameId), Q.sortBy('sequence_number', Q.asc))
+      .fetch();
+
+    const voidedIds = new Set<string>();
+    for (const e of all) {
+      if (e.eventType === EventType.EVENT_VOIDED) {
+        const payload = e.payload as { voidedEventId?: string };
+        if (payload.voidedEventId) voidedIds.add(payload.voidedEventId);
+      }
+    }
+
+    for (let i = all.length - 1; i >= 0; i--) {
+      const e = all[i];
+      if (e.eventType === EventType.EVENT_VOIDED) continue;
+      if (e.eventType === EventType.PITCH_REVERTED) continue;
+      if (voidedIds.has(e.remoteId)) continue;
+      const payload: EventVoidedPayload = {
+        voidedEventId: e.remoteId,
+        voidedSequenceNumber: e.sequenceNumber,
+      };
+      await recordEvent(EventType.EVENT_VOIDED, gameState.inning, gameState.isTopOfInning, payload);
+      return;
+    }
+  }
+
   async function handlePickoffOut(fromBase: 1 | 2 | 3, runnerId: string) {
     if (!gameState) return;
     const payload: PickoffPayload = {
@@ -354,6 +388,7 @@ export default function ScoringScreen() {
         onRecordBalk={handleBalk}
         onRecordDoublePlay={handleDoublePlay}
         onRecordTriplePlay={handleTriplePlay}
+        onUndoLastEvent={handleUndo}
         runnersOnBase={runnersOnBase}
         onRecordDroppedThirdStrike={handleDroppedThirdStrike}
         droppedThirdStrikeEligible={droppedThirdStrikeEligible}
