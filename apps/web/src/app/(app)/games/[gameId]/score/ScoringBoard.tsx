@@ -1102,7 +1102,10 @@ export function ScoringBoard({
     } else if (result === 'triple_play') {
       await recordEvent('triple_play', { batterId, pitcherId, trajectory, ...sprayExtra, ...seqExtra, ...assignExtra });
     } else {
-      await recordEvent('hit', { batterId, pitcherId, hitType: result, trajectory, rbis: 0, ...sprayExtra });
+      // Omit rbis so batting-stats / maxpreps-export auto-derive RBI from
+      // runners scoring on the hit (OBR 9.04). An explicit 0 here would
+      // suppress derivation and zero out the RBI column for every hit.
+      await recordEvent('hit', { batterId, pitcherId, hitType: result, trajectory, ...sprayExtra });
     }
   }
 
@@ -1135,8 +1138,11 @@ export function ScoringBoard({
     if (outRunnerId) {
       await recordEvent('baserunner_out', { runnerId: outRunnerId, pitcherId, ...seqExtra });
     }
-    // Batter reaches 1st; deriveGameState advances remaining runners and scores runner on 3rd
-    await recordEvent('hit', { batterId, pitcherId, hitType: 'single', trajectory, rbis: 0, ...sprayExtra });
+    // Batter reaches 1st; deriveGameState advances remaining runners and
+    // scores runner on 3rd. fieldersChoice:true makes the stats modules
+    // skip the hit increment — FC is a PA + AB but not a hit. RBI is
+    // still auto-derived from any runner who scored on the play.
+    await recordEvent('hit', { batterId, pitcherId, hitType: 'single', trajectory, fieldersChoice: true, ...sprayExtra });
   }
 
   async function handleError(errorPosition: string) {
