@@ -7,8 +7,8 @@ import { CountDisplay } from '../../../../src/features/scoring/CountDisplay';
 import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDisplay';
 import { PitchInput } from '../../../../src/features/scoring/PitchInput';
 import { LoadingSpinner } from '@baseball/ui';
-import { EventType, PitchOutcome, HitType } from '@baseball/shared';
-import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, AdvanceReason } from '@baseball/shared';
+import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, ScorePayload } from '@baseball/shared';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
 
 /**
@@ -110,6 +110,35 @@ export default function ScoringScreen() {
     });
   }
 
+  async function handleStolenBase(fromBase: 1 | 2 | 3, runnerId: string) {
+    if (!gameState) return;
+    const toBase = (fromBase + 1) as 2 | 3 | 4;
+    const payload: BaserunnerMovePayload = { runnerId, fromBase, toBase };
+    await recordEvent(EventType.STOLEN_BASE, gameState.inning, gameState.isTopOfInning, payload);
+    if (toBase === 4) {
+      const scorePayload: ScorePayload = { scoringPlayerId: runnerId, rbis: 0 };
+      await recordEvent(EventType.SCORE, gameState.inning, gameState.isTopOfInning, scorePayload);
+    }
+  }
+
+  async function handleCaughtStealing(fromBase: 1 | 2 | 3, runnerId: string) {
+    if (!gameState) return;
+    const toBase = (fromBase + 1) as 2 | 3 | 4;
+    const payload: BaserunnerMovePayload = { runnerId, fromBase, toBase };
+    await recordEvent(EventType.CAUGHT_STEALING, gameState.inning, gameState.isTopOfInning, payload);
+  }
+
+  async function handleRunnerAdvance(fromBase: 1 | 2 | 3, runnerId: string, reason: AdvanceReason) {
+    if (!gameState) return;
+    const toBase = (fromBase + 1) as 2 | 3 | 4;
+    const payload: BaserunnerMovePayload = { runnerId, fromBase, toBase, reason };
+    await recordEvent(EventType.BASERUNNER_ADVANCE, gameState.inning, gameState.isTopOfInning, payload);
+    if (toBase === 4) {
+      const scorePayload: ScorePayload = { scoringPlayerId: runnerId, rbis: 0 };
+      await recordEvent(EventType.SCORE, gameState.inning, gameState.isTopOfInning, scorePayload);
+    }
+  }
+
   async function handleDroppedThirdStrike(details: {
     outcome: DroppedThirdStrikeOutcome;
     fieldingSequence?: number[];
@@ -157,7 +186,12 @@ export default function ScoringScreen() {
             {gameState.currentPitcherPitchCount}
           </Text>
         </View>
-        <BaserunnerDisplay gameState={gameState} />
+        <BaserunnerDisplay
+          gameState={gameState}
+          onRecordStolenBase={handleStolenBase}
+          onRecordCaughtStealing={handleCaughtStealing}
+          onRecordAdvance={handleRunnerAdvance}
+        />
         {isSyncing ? (
           <Text className="text-xs text-blue-500">Syncing…</Text>
         ) : lastSyncError ? (
