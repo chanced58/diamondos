@@ -26,7 +26,7 @@ interface PitchInputProps {
   onRecordOut: (outType: BattedOutType) => void;
   onRecordWalk: () => void;
   onRecordStrikeout: () => void;
-  onRecordError: () => void;
+  onRecordError: (errorBy: number) => void;
   onRecordSacFly: () => void;
   onRecordSacBunt: () => void;
   onRecordFieldersChoice: (runnerId: string, fromBase: Base) => void;
@@ -43,6 +43,18 @@ interface PitchInputProps {
   onRecordDroppedThirdStrike?: (details: DroppedThirdStrikeDetails) => void;
   droppedThirdStrikeEligible?: boolean;
 }
+
+const FIELDER_POSITIONS: Array<{ label: string; position: number }> = [
+  { label: 'P',  position: 1 },
+  { label: 'C',  position: 2 },
+  { label: '1B', position: 3 },
+  { label: '2B', position: 4 },
+  { label: '3B', position: 5 },
+  { label: 'SS', position: 6 },
+  { label: 'LF', position: 7 },
+  { label: 'CF', position: 8 },
+  { label: 'RF', position: 9 },
+];
 
 const HIT_TYPES: Array<{ label: string; emoji: string; hitType: HitType; color: string }> = [
   { label: '1B', emoji: '⚾', hitType: HitType.SINGLE, color: 'bg-blue-600' },
@@ -91,8 +103,14 @@ export function PitchInput({
   const [showD3KModal, setShowD3KModal] = useState(false);
   const [showFCModal, setShowFCModal] = useState(false);
   const [showOutModal, setShowOutModal] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
   const [subModal, setSubModal] = useState<null | 'pinch_hitter' | 'pitching_change'>(null);
   const fcEligible = runnersOnBase.length > 0;
+
+  function handleErrorPick(errorBy: number) {
+    setShowErrorModal(false);
+    onRecordError(errorBy);
+  }
 
   function handleSubPick(playerId: string) {
     const mode = subModal;
@@ -185,7 +203,7 @@ export function PitchInput({
           <OutcomeButton label="Out" emoji="✋" onPress={() => setShowOutModal(true)} color="bg-gray-600" />
           <OutcomeButton label="Walk (BB)" emoji="🚶" onPress={onRecordWalk} color="bg-green-600" />
           <OutcomeButton label="Strikeout" emoji="K" onPress={onRecordStrikeout} color="bg-red-600" />
-          <OutcomeButton label="Error" emoji="E" onPress={onRecordError} color="bg-orange-600" />
+          <OutcomeButton label="Error" emoji="E" onPress={() => setShowErrorModal(true)} color="bg-orange-600" />
           <OutcomeButton label="Sac Fly" emoji="SF" onPress={onRecordSacFly} color="bg-teal-600" />
           <OutcomeButton label="Sac Bunt" emoji="SH" onPress={onRecordSacBunt} color="bg-teal-700" />
           {fcEligible && (
@@ -286,6 +304,39 @@ export function PitchInput({
               className="mt-4 py-3 items-center"
               onPress={() => setShowD3KModal(false)}
             >
+              <Text className="text-gray-500 font-semibold">Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Error fielder picker: OBR 9.12 — error must be charged to a position */}
+      <Modal
+        visible={showErrorModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowErrorModal(false)}
+      >
+        <View className="flex-1 justify-end bg-black/50">
+          <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
+            <Text className="text-lg font-bold text-gray-900 mb-1">Error</Text>
+            <Text className="text-sm text-gray-500 mb-4">
+              Which fielder committed the error?
+            </Text>
+            <View className="flex-row flex-wrap gap-2">
+              {FIELDER_POSITIONS.map(({ label, position }) => (
+                <TouchableOpacity
+                  key={position}
+                  className="bg-orange-600 rounded-xl px-4 py-3"
+                  onPress={() => handleErrorPick(position)}
+                >
+                  <Text className="text-white font-semibold">
+                    {position} — {label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity className="mt-4 py-3 items-center" onPress={() => setShowErrorModal(false)}>
               <Text className="text-gray-500 font-semibold">Cancel</Text>
             </TouchableOpacity>
           </View>

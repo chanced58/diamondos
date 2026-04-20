@@ -122,11 +122,12 @@ export default function ScoringScreen() {
     await recordEvent(EventType.STRIKEOUT, gameState.inning, gameState.isTopOfInning, payload);
   }
 
-  async function handleError() {
+  async function handleError(errorBy: number) {
     if (!gameState) return;
     await recordEvent(EventType.FIELD_ERROR, gameState.inning, gameState.isTopOfInning, {
       batterId: currentBatterId,
       pitcherId: currentPitcherId,
+      errorBy,
     });
   }
 
