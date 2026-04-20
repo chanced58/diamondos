@@ -86,6 +86,14 @@ export default function ScoringScreen() {
     await recordEvent(EventType.STRIKEOUT, gameState.inning, gameState.isTopOfInning, payload);
   }
 
+  async function handleError() {
+    if (!gameState) return;
+    await recordEvent(EventType.FIELD_ERROR, gameState.inning, gameState.isTopOfInning, {
+      batterId: currentBatterId,
+      pitcherId: currentPitcherId,
+    });
+  }
+
   async function handleDroppedThirdStrike(details: {
     outcome: DroppedThirdStrikeOutcome;
     fieldingSequence?: number[];
@@ -146,6 +154,7 @@ export default function ScoringScreen() {
         onRecordOut={handleOut}
         onRecordWalk={handleWalk}
         onRecordStrikeout={handleStrikeout}
+        onRecordError={handleError}
         onRecordDroppedThirdStrike={handleDroppedThirdStrike}
         droppedThirdStrikeEligible={droppedThirdStrikeEligible}
       />
