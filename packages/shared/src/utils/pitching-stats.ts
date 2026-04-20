@@ -547,6 +547,14 @@ export function derivePitchingStats(
           scoreRun(r3);
           r3 = null;
         }
+        // Double play: remove the named forced runner so earned-run
+        // classification stays accurate for the remaining runners.
+        if (etype === EventType.DOUBLE_PLAY) {
+          const runnerOutBase = payload?.runnerOutBase as 1 | 2 | 3 | undefined;
+          if (runnerOutBase === 1) r1 = null;
+          else if (runnerOutBase === 2) r2 = null;
+          else if (runnerOutBase === 3) r3 = null;
+        }
       }
 
       // ── FIELD_ERROR → batter reaches on error (unearned), force advance ─

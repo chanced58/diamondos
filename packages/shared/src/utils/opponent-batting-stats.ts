@@ -194,6 +194,12 @@ export function computeOpponentBatting(
       } else if (etype === 'out' || etype === 'double_play' || etype === 'triple_play') {
         const s = get(batterId);
         s.pa++; s.ab++;
+        if (etype === 'double_play') {
+          const runnerOutBase = payload.runnerOutBase as 1 | 2 | 3 | undefined;
+          if (runnerOutBase === 1) r1 = null;
+          else if (runnerOutBase === 2) r2 = null;
+          else if (runnerOutBase === 3) r3 = null;
+        }
       } else if (etype === 'strikeout') {
         const s = get(batterId);
         s.pa++; s.ab++; s.k++;

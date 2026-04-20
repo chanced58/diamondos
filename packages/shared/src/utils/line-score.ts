@@ -156,6 +156,10 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
       }
     } else if (etype === 'double_play') {
       outs += 2;
+      const runnerOutBase = payload.runnerOutBase as number | undefined;
+      if (runnerOutBase === 1) first = null;
+      else if (runnerOutBase === 2) second = null;
+      else if (runnerOutBase === 3) third = null;
     } else if (etype === 'triple_play') {
       outs += 3;
     } else if (etype === 'score') {

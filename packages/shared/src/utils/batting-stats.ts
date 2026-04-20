@@ -381,6 +381,13 @@ export function deriveBattingStats(
         const s = getStats(batterId);
         s.plateAppearances += 1;
         s.atBats += 1;
+        // Remove the forced runner from base tracking so stats that depend
+        // on runner state (RBI auto-derive on the next hit, etc.) stay
+        // consistent. The legacy "no runnerOutBase" case leaves state alone.
+        const runnerOutBase = payload?.runnerOutBase as 1 | 2 | 3 | undefined;
+        if (runnerOutBase === 1) r1 = null;
+        else if (runnerOutBase === 2) r2 = null;
+        else if (runnerOutBase === 3) r3 = null;
         continue;
       }
 

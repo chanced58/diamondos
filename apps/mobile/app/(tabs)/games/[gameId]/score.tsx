@@ -322,15 +322,12 @@ export default function ScoringScreen() {
     }
   }
 
-  async function handleDoublePlay() {
+  async function handleDoublePlay(runnerOut: { runnerId: string; base: 1 | 2 | 3 } | null) {
     if (!gameState) return;
-    // DOUBLE_PLAY credits batter PA+AB and bumps outs by two. The second
-    // runner-out is not attributed to a specific base in this UI yet —
-    // deriveGameState increments outs but leaves the forced runner on
-    // base in the replay state. Tracked as P1 #10 follow-up.
     await recordEvent(EventType.DOUBLE_PLAY, gameState.inning, gameState.isTopOfInning, {
       batterId: currentBatterId,
       pitcherId: currentPitcherId,
+      ...(runnerOut ? { runnerOutId: runnerOut.runnerId, runnerOutBase: runnerOut.base } : {}),
     });
   }
 

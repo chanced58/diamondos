@@ -214,8 +214,16 @@ export function deriveGameState(
       }
 
       case EventType.DOUBLE_PLAY: {
-        // The batter's PA is complete; the second out is recorded separately
+        // Batter is the first out and the forced runner (usually from 1st
+        // on a standard 6-4-3 GIDP) is the second. When the scorer has
+        // captured runnerOutBase on the payload, clear that specific
+        // runner from base state; otherwise just bump the out counter
+        // (legacy events may have no runner attribution).
         state.outs = Math.min(state.outs + 2, OUTS_PER_INNING);
+        const p = event.payload as { runnerOutBase?: 1 | 2 | 3 };
+        if (p.runnerOutBase === 1) state.runnersOnBase = { ...state.runnersOnBase, first: null };
+        else if (p.runnerOutBase === 2) state.runnersOnBase = { ...state.runnersOnBase, second: null };
+        else if (p.runnerOutBase === 3) state.runnersOnBase = { ...state.runnersOnBase, third: null };
         state.balls = 0;
         state.strikes = 0;
         incrementPA(state);

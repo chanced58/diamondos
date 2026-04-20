@@ -34,7 +34,7 @@ interface PitchInputProps {
   onRecordWildPitch: () => void;
   onRecordPassedBall: () => void;
   onRecordBalk: () => void;
-  onRecordDoublePlay: () => void;
+  onRecordDoublePlay: (runnerOut: { runnerId: string; base: Base } | null) => void;
   onRecordTriplePlay: () => void;
   onRecordPitchingChange: (newPitcherId: string) => void;
   onRecordPinchHitter: (newBatterId: string) => void;
@@ -106,12 +106,27 @@ export function PitchInput({
   const [showFCModal, setShowFCModal] = useState(false);
   const [showOutModal, setShowOutModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
+  const [showDPModal, setShowDPModal] = useState(false);
   const [subModal, setSubModal] = useState<null | 'pinch_hitter' | 'pitching_change'>(null);
   const fcEligible = runnersOnBase.length > 0;
 
   function handleErrorPick(errorBy: number) {
     setShowErrorModal(false);
     onRecordError(errorBy);
+  }
+
+  function handleDPTap() {
+    if (runnersOnBase.length === 0) {
+      // No runners to force out; fall through to ambiguous DP (legacy).
+      onRecordDoublePlay(null);
+    } else {
+      setShowDPModal(true);
+    }
+  }
+
+  function handleDPPick(runnerId: string, base: Base) {
+    setShowDPModal(false);
+    onRecordDoublePlay({ runnerId, base });
   }
 
   function handleSubPick(playerId: string) {
@@ -218,7 +233,7 @@ export function PitchInput({
             />
           )}
           <OutcomeButton label="Balk" emoji="BK" onPress={onRecordBalk} color="bg-pink-600" />
-          <OutcomeButton label="Double Play" emoji="DP" onPress={onRecordDoublePlay} color="bg-zinc-700" />
+          <OutcomeButton label="Double Play" emoji="DP" onPress={handleDPTap} color="bg-zinc-700" />
           <OutcomeButton label="Triple Play" emoji="TP" onPress={onRecordTriplePlay} color="bg-zinc-800" />
           <OutcomeButton label="Pinch Hitter" emoji="PH" onPress={() => setSubModal('pinch_hitter')} color="bg-sky-700" />
           <OutcomeButton label="Pitching Change" emoji="P" onPress={() => setSubModal('pitching_change')} color="bg-sky-800" />
@@ -307,6 +322,39 @@ export function PitchInput({
               className="mt-4 py-3 items-center"
               onPress={() => setShowD3KModal(false)}
             >
+              <Text className="text-gray-500 font-semibold">Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Double-play runner picker: which runner was also retired? */}
+      <Modal
+        visible={showDPModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowDPModal(false)}
+      >
+        <View className="flex-1 justify-end bg-black/50">
+          <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
+            <Text className="text-lg font-bold text-gray-900 mb-1">Double Play</Text>
+            <Text className="text-sm text-gray-500 mb-4">
+              Batter is out. Which runner was retired on the second out?
+            </Text>
+            <View className="gap-3">
+              {runnersOnBase.map(({ base, runnerId }) => (
+                <TouchableOpacity
+                  key={base}
+                  className="bg-zinc-700 rounded-xl px-5 py-4"
+                  onPress={() => handleDPPick(runnerId, base)}
+                >
+                  <Text className="text-white font-semibold">
+                    Runner on {base === 1 ? '1st' : base === 2 ? '2nd' : '3rd'} retired
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity className="mt-4 py-3 items-center" onPress={() => setShowDPModal(false)}>
               <Text className="text-gray-500 font-semibold">Cancel</Text>
             </TouchableOpacity>
           </View>
