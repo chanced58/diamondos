@@ -164,8 +164,6 @@ export function deriveBattingStats(
         s.hits += 1;
         s.battedBalls += 1;
 
-        if (rbis) s.rbi += rbis;
-
         if (isHardHit(hitType, trajectory, sprayY)) s.hardHitBalls += 1;
 
         switch (hitType) {
@@ -175,22 +173,27 @@ export function deriveBattingStats(
           default: break;  // single
         }
 
-        // ── Advance runners and attribute runs ──
+        // ── Advance runners, attribute runs, and auto-derive RBI (OBR 9.04) ──
         const bases = hitType === 'home_run' ? 4
           : hitType === 'triple' ? 3
           : hitType === 'double' ? 2
           : 1;
 
+        let runsScored = 0;
         if (bases === 4) {
           // Home run: all runners + batter score
+          if (r3) runsScored += 1;
+          if (r2) runsScored += 1;
+          if (r1) runsScored += 1;
+          runsScored += 1;
           scoreRunner(r3); scoreRunner(r2); scoreRunner(r1);
           scoreRunner(batterId);
           clearBases();
         } else {
           // Determine which runners score
-          if (r3) scoreRunner(r3);                      // 3rd always scores
-          if (r2 && 2 + bases >= 4) scoreRunner(r2);    // scores on double+
-          if (r1 && 1 + bases >= 4) scoreRunner(r1);    // scores on triple
+          if (r3) { scoreRunner(r3); runsScored += 1; }                      // 3rd always scores
+          if (r2 && 2 + bases >= 4) { scoreRunner(r2); runsScored += 1; }    // scores on double+
+          if (r1 && 1 + bases >= 4) { scoreRunner(r1); runsScored += 1; }    // scores on triple
 
           // Advance non-scoring runners
           if (bases === 1) {
@@ -207,6 +210,11 @@ export function deriveBattingStats(
             r1 = null;
           }
         }
+
+        // Explicit payload.rbis (including 0) overrides derivation — scorer
+        // may use this for OBR 9.04(b)(3) judgment calls where a run scored
+        // but only because of a fielding error.
+        s.rbi += rbis !== undefined ? rbis : runsScored;
         continue;
       }
 
@@ -266,7 +274,12 @@ export function deriveBattingStats(
         const s = getStats(batterId);
         s.plateAppearances += 1;
         s.walks += 1;
+        // Per OBR 9.04(a)(2): a base on balls with the bases loaded forces
+        // the runner on third home and credits the batter with 1 RBI.
+        const forcedRun = !!(r1 && r2 && r3);
         forceAdvance(batterId);
+        const explicitRbis = payload?.rbis as number | undefined;
+        s.rbi += explicitRbis !== undefined ? explicitRbis : (forcedRun ? 1 : 0);
         continue;
       }
 
@@ -278,7 +291,11 @@ export function deriveBattingStats(
         const s = getStats(batterId);
         s.plateAppearances += 1;
         s.hitByPitch += 1;
+        // Per OBR 9.04(a)(2): HBP with the bases loaded forces in a run.
+        const forcedRun = !!(r1 && r2 && r3);
         forceAdvance(batterId);
+        const explicitRbis = payload?.rbis as number | undefined;
+        s.rbi += explicitRbis !== undefined ? explicitRbis : (forcedRun ? 1 : 0);
         continue;
       }
 
@@ -291,9 +308,12 @@ export function deriveBattingStats(
         s.plateAppearances += 1;
         s.sacrificeFlies += 1;
         s.battedBalls += 1;
-        if (payload?.rbis) s.rbi += payload.rbis as number;
-        // Runner on 3rd scores on sac fly
+        // Per OBR 9.04(a)(1): a sacrifice fly that scores the runner from
+        // third credits the batter with 1 RBI.
+        const runScored = !!r3;
         if (r3) { scoreRunner(r3); r3 = null; }
+        const explicitRbis = payload?.rbis as number | undefined;
+        s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
         continue;
       }
 
