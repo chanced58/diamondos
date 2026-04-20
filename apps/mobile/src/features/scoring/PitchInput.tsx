@@ -45,6 +45,17 @@ interface PitchInputProps {
   droppedThirdStrikeEligible?: boolean;
 }
 
+const PITCH_TYPES: Array<{ label: string; value: PitchType }> = [
+  { label: 'FB', value: PitchType.FASTBALL },
+  { label: 'CB', value: PitchType.CURVEBALL },
+  { label: 'SL', value: PitchType.SLIDER },
+  { label: 'CH', value: PitchType.CHANGEUP },
+  { label: 'SI', value: PitchType.SINKER },
+  { label: 'CT', value: PitchType.CUTTER },
+  { label: 'SP', value: PitchType.SPLITTER },
+  { label: 'KN', value: PitchType.KNUCKLEBALL },
+];
+
 const FIELDER_POSITIONS: Array<{ label: string; position: number }> = [
   { label: 'P',  position: 1 },
   { label: 'C',  position: 2 },
@@ -108,7 +119,13 @@ export function PitchInput({
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showDPModal, setShowDPModal] = useState(false);
   const [subModal, setSubModal] = useState<null | 'pinch_hitter' | 'pitching_change'>(null);
+  const [selectedPitchType, setSelectedPitchType] = useState<PitchType | null>(null);
   const fcEligible = runnersOnBase.length > 0;
+
+  function handlePitchOutcome(outcome: PitchOutcome) {
+    onRecordPitch(outcome, selectedPitchType ?? undefined);
+    setSelectedPitchType(null);
+  }
 
   function handleErrorPick(errorBy: number) {
     setShowErrorModal(false);
@@ -163,6 +180,31 @@ export function PitchInput({
         </TouchableOpacity>
       </View>
 
+      {/* Pitch type picker — optional; latches until the next recorded pitch */}
+      <View className="px-4 pt-3">
+        <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+          Pitch type (optional)
+        </Text>
+        <View className="flex-row flex-wrap gap-1.5">
+          {PITCH_TYPES.map(({ label, value }) => {
+            const selected = selectedPitchType === value;
+            return (
+              <TouchableOpacity
+                key={value}
+                className={`rounded-lg px-3 py-1.5 border ${
+                  selected ? 'bg-slate-800 border-slate-900' : 'bg-white border-gray-300'
+                }`}
+                onPress={() => setSelectedPitchType(selected ? null : value)}
+              >
+                <Text className={`text-xs font-semibold ${selected ? 'text-white' : 'text-gray-700'}`}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
       {/* Pitch-by-pitch section */}
       <View className="px-4 pt-4">
         <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
@@ -173,7 +215,7 @@ export function PitchInput({
             <TouchableOpacity
               key={outcome}
               className={`border rounded-xl px-4 py-3 ${color}`}
-              onPress={() => onRecordPitch(outcome)}
+              onPress={() => handlePitchOutcome(outcome)}
             >
               <Text className="font-semibold text-sm">{label}</Text>
             </TouchableOpacity>

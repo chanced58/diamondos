@@ -9,7 +9,7 @@ import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDi
 import { PitchInput } from '../../../../src/features/scoring/PitchInput';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { database } from '../../../../src/db';
@@ -67,12 +67,13 @@ export default function ScoringScreen() {
   const currentBatterId = gameState?.currentBatterId ?? undefined;
   const [showLineupModal, setShowLineupModal] = useState(false);
 
-  async function handlePitch(outcome: PitchOutcome) {
+  async function handlePitch(outcome: PitchOutcome, pitchType?: PitchType) {
     if (!gameState) return;
     const payload: PitchThrownPayload = {
       pitcherId: currentPitcherId,
       batterId: currentBatterId,
       outcome,
+      ...(pitchType ? { pitchType } : {}),
     };
     await recordEvent(
       EventType.PITCH_THROWN,
