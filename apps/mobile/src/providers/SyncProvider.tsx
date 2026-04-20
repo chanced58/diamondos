@@ -67,10 +67,19 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   // Observe count of locally-created events not yet acked by Supabase.
   // A non-zero count means either a sync is pending or sync has failed —
   // in either case the scorer should be able to see it.
+  //
+  // We query WatermelonDB's internal _status field rather than our
+  // app-level synced_at column. synced_at is set to null at create time
+  // but nothing updates it after a successful push — only the pulled
+  // rows in sync-engine's mapGameEvent get synced_at populated. WDB's
+  // synchronize() flow, however, always transitions records from
+  // _status='created' to _status='synced' after pushChanges returns
+  // successfully, so this query accurately reflects "not yet acked
+  // by the server."
   useEffect(() => {
     const collection = database.get<GameEvent>('game_events');
     const subscription = collection
-      .query(Q.where('synced_at', null))
+      .query(Q.unsafeSqlExpr(`_status != 'synced'`))
       .observeCount()
       .subscribe(setPendingEventsCount);
     return () => subscription.unsubscribe();

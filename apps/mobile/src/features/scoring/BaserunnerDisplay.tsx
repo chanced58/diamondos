@@ -138,36 +138,46 @@ export function BaserunnerDisplay({
             </Text>
 
             <View className="gap-3">
-              <RunnerActionButton
-                label="Stolen Base"
-                sub={selected ? `Advances to ${baseLabel((selected.base + 1) as 2 | 3 | 4)}` : ''}
-                color="bg-blue-600"
-                onPress={handleSteal}
-              />
-              <RunnerActionButton
-                label="Caught Stealing"
-                sub="Runner is out"
-                color="bg-red-600"
-                onPress={handleCaughtStealing}
-              />
-              <RunnerActionButton
-                label="Advance on Wild Pitch"
-                sub={selected ? `Advances to ${baseLabel((selected.base + 1) as 2 | 3 | 4)}` : ''}
-                color="bg-amber-600"
-                onPress={() => handleAdvance(AdvanceReason.WILD_PITCH)}
-              />
-              <RunnerActionButton
-                label="Advance on Passed Ball"
-                sub={selected ? `Advances to ${baseLabel((selected.base + 1) as 2 | 3 | 4)}` : ''}
-                color="bg-yellow-600"
-                onPress={() => handleAdvance(AdvanceReason.PASSED_BALL)}
-              />
-              <RunnerActionButton
-                label="Picked Off"
-                sub="Runner is out on pickoff throw"
-                color="bg-gray-700"
-                onPress={handlePickoffOut}
-              />
+              {onRecordStolenBase && (
+                <RunnerActionButton
+                  label="Stolen Base"
+                  sub={selected ? `Advances to ${baseLabel((selected.base + 1) as 2 | 3 | 4)}` : ''}
+                  color="bg-blue-600"
+                  onPress={handleSteal}
+                />
+              )}
+              {onRecordCaughtStealing && (
+                <RunnerActionButton
+                  label="Caught Stealing"
+                  sub="Runner is out"
+                  color="bg-red-600"
+                  onPress={handleCaughtStealing}
+                />
+              )}
+              {onRecordAdvance && (
+                <>
+                  <RunnerActionButton
+                    label="Advance on Wild Pitch"
+                    sub={selected ? `Advances to ${baseLabel((selected.base + 1) as 2 | 3 | 4)}` : ''}
+                    color="bg-amber-600"
+                    onPress={() => handleAdvance(AdvanceReason.WILD_PITCH)}
+                  />
+                  <RunnerActionButton
+                    label="Advance on Passed Ball"
+                    sub={selected ? `Advances to ${baseLabel((selected.base + 1) as 2 | 3 | 4)}` : ''}
+                    color="bg-yellow-600"
+                    onPress={() => handleAdvance(AdvanceReason.PASSED_BALL)}
+                  />
+                </>
+              )}
+              {onRecordPickoffOut && (
+                <RunnerActionButton
+                  label="Picked Off"
+                  sub="Runner is out on pickoff throw"
+                  color="bg-gray-700"
+                  onPress={handlePickoffOut}
+                />
+              )}
               {onRecordPinchRunner && roster && roster.length > 0 && (
                 <RunnerActionButton
                   label="Pinch Runner"

@@ -147,6 +147,15 @@ export function computeOpponentBatting(
             if (r3 === outId) r3 = inId;
           }
         }
+        if (etype === 'balk') {
+          // Per OBR 6.02(a): all runners advance one base on a balk.
+          // r3 scores via the paired SCORE event; opponent-stats' SCORE
+          // handler credits the run regardless of whether r3 is still
+          // in base state when it processes.
+          r3 = r2;
+          r2 = r1;
+          r1 = null;
+        }
         continue;
       }
 
@@ -194,6 +203,12 @@ export function computeOpponentBatting(
       } else if (etype === 'out' || etype === 'double_play' || etype === 'triple_play') {
         const s = get(batterId);
         s.pa++; s.ab++;
+        // Some scorers emit strikeouts as OUT with outType='strikeout'
+        // rather than EventType.STRIKEOUT; count the k here to match
+        // batting-stats.ts behavior.
+        if (etype === 'out' && payload.outType === 'strikeout') {
+          s.k++;
+        }
         if (etype === 'double_play') {
           const runnerOutBase = payload.runnerOutBase as 1 | 2 | 3 | undefined;
           if (runnerOutBase === 1) r1 = null;

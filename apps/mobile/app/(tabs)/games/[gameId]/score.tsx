@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
 import { useGameState } from '../../../../src/features/scoring/use-game-state';
@@ -9,11 +9,12 @@ import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDi
 import { PitchInput } from '../../../../src/features/scoring/PitchInput';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { database } from '../../../../src/db';
 import type { GameEvent as WdbGameEvent } from '../../../../src/db/models/GameEvent';
+import type { Game } from '../../../../src/db/models/Game';
 import type { Player } from '../../../../src/db/models/Player';
 import type { BattedOutType, RosterPlayer } from '../../../../src/features/scoring/PitchInput';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
@@ -254,15 +255,26 @@ export default function ScoringScreen() {
 
   async function handleStartGame(pitcherId: string, batterId: string) {
     if (!gameState) return;
-    // Seed the lineup: our team is assumed to be the home team in this UI,
-    // so the selected pitcher is home's starter (current when we're in the
-    // field) and the selected batter is home's leadoff (current when we're
-    // batting). Opponent lineup remains undefined until explicitly set via
-    // a later substitution/pitching-change.
-    await recordEvent(EventType.GAME_START, gameState.inning, gameState.isTopOfInning, {
-      homeLineupPitcherId: pitcherId,
-      homeLeadoffBatterId: batterId,
-    });
+    // Which team are we scoring? Check the Game row's locationType /
+    // neutralHomeTeam fields so road games seed the away* lineup slots
+    // instead of misattributing to home*.
+    let isHome = true;
+    try {
+      const games = await database
+        .get<Game>('games')
+        .query(Q.where('remote_id', gameId))
+        .fetch();
+      const game = games[0];
+      if (game) {
+        isHome = weAreHome(game.locationType, game.neutralHomeTeam ?? null);
+      }
+    } catch (err) {
+      console.warn('handleStartGame: could not resolve home/away, assuming home', err);
+    }
+    const payload = isHome
+      ? { homeLineupPitcherId: pitcherId, homeLeadoffBatterId: batterId }
+      : { awayLineupPitcherId: pitcherId, awayLeadoffBatterId: batterId };
+    await recordEvent(EventType.GAME_START, gameState.inning, gameState.isTopOfInning, payload);
     setShowLineupModal(false);
   }
 
@@ -285,25 +297,42 @@ export default function ScoringScreen() {
     await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
   }
 
+  // Only scan this far back when searching for an event to void. Typical
+  // scorer Undo use lives within the last few events; a 64-event trailing
+  // window covers well over an inning of activity while keeping the query
+  // bounded. If no undoable event is found in the window, the button is a
+  // no-op (rather than scanning thousands of events from earlier innings).
+  const UNDO_WINDOW = 64;
+
   async function handleUndo() {
     if (!gameState) return;
-    // Find the most recent live event (skip events already voided, and skip
-    // the correction events themselves) and emit EVENT_VOIDED targeting it.
     const eventsCollection = database.get<WdbGameEvent>('game_events');
-    const all = await eventsCollection
-      .query(Q.where('game_remote_id', gameId), Q.sortBy('sequence_number', Q.asc))
+    const recent = await eventsCollection
+      .query(
+        Q.where('game_remote_id', gameId),
+        Q.sortBy('sequence_number', Q.desc),
+        Q.take(UNDO_WINDOW),
+      )
       .fetch();
 
+    // Build the set of event IDs targeted by any EVENT_VOIDED in the
+    // window so we skip already-voided events on the walk-back. We do
+    // NOT attempt to handle "un-undo" (voiding a void to restore the
+    // original) here because event-filters.ts doesn't add EVENT_VOIDED
+    // rows to the replay accumulator, so voiding a void is a no-op at
+    // replay time — treating it as a restore here would make the scorer
+    // see different state than the stats modules.
     const voidedIds = new Set<string>();
-    for (const e of all) {
+    for (const e of recent) {
       if (e.eventType === EventType.EVENT_VOIDED) {
         const payload = e.payload as { voidedEventId?: string };
         if (payload.voidedEventId) voidedIds.add(payload.voidedEventId);
       }
     }
 
-    for (let i = all.length - 1; i >= 0; i--) {
-      const e = all[i];
+    // Already sorted descending, so iterate forward to find the most
+    // recent non-correction, non-voided event.
+    for (const e of recent) {
       if (e.eventType === EventType.EVENT_VOIDED) continue;
       if (e.eventType === EventType.PITCH_REVERTED) continue;
       if (voidedIds.has(e.remoteId)) continue;
@@ -405,13 +434,19 @@ export default function ScoringScreen() {
     : false;
 
   // Runners currently on base — passed to PitchInput for the FC picker.
-  const runnersOnBase: { base: 1 | 2 | 3; runnerId: string }[] = gameState
-    ? [
-        gameState.runnersOnBase.first ? { base: 1 as const, runnerId: gameState.runnersOnBase.first } : null,
-        gameState.runnersOnBase.second ? { base: 2 as const, runnerId: gameState.runnersOnBase.second } : null,
-        gameState.runnersOnBase.third ? { base: 3 as const, runnerId: gameState.runnersOnBase.third } : null,
-      ].filter((r): r is { base: 1 | 2 | 3; runnerId: string } => r !== null)
-    : [];
+  // Memoised on the three runner IDs so a new array identity only
+  // propagates when the underlying state actually changes; otherwise
+  // PitchInput gets the same reference across re-renders.
+  const firstRunner = gameState?.runnersOnBase.first ?? null;
+  const secondRunner = gameState?.runnersOnBase.second ?? null;
+  const thirdRunner = gameState?.runnersOnBase.third ?? null;
+  const runnersOnBase = useMemo<{ base: 1 | 2 | 3; runnerId: string }[]>(() => {
+    const out: { base: 1 | 2 | 3; runnerId: string }[] = [];
+    if (firstRunner)  out.push({ base: 1, runnerId: firstRunner });
+    if (secondRunner) out.push({ base: 2, runnerId: secondRunner });
+    if (thirdRunner)  out.push({ base: 3, runnerId: thirdRunner });
+    return out;
+  }, [firstRunner, secondRunner, thirdRunner]);
 
   if (loading || !gameState) {
     return <LoadingSpinner fullScreen />;

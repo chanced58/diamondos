@@ -490,12 +490,13 @@ export function derivePitchingStats(
 
       // ── CATCHER_INTERFERENCE ─────────────────────────────────────────────
       // Batter reaches first without charging the pitcher; only the runner
-      // state is affected. Per OBR, catcher interference does not count as a
-      // walk, HBP, or hit for the pitcher. Update runner tracking so earned-
-      // run logic stays accurate if the forced runner later scores.
+      // state is affected. Per OBR 9.16, catcher interference is a
+      // defensive miscue — any run scored by a runner who reached on CI
+      // is unearned. Mark reachedOnError=true to match FIELD_ERROR
+      // treatment so subsequent scores are classified correctly.
       if (etype === EventType.CATCHER_INTERFERENCE) {
         const batterId: string | undefined = payload?.batterId;
-        forceAdvanceRunners(batterId ? { id: batterId, reachedOnError: false } : null);
+        forceAdvanceRunners(batterId ? { id: batterId, reachedOnError: true } : null);
       }
 
       // ── HIT_BY_PITCH (explicit event) ────────────────────────────────────
@@ -516,7 +517,9 @@ export function derivePitchingStats(
       if (etype === EventType.DOUBLE_PLAY || etype === EventType.SACRIFICE_BUNT || etype === EventType.SACRIFICE_FLY) {
         const pitcherId: string | undefined = payload?.pitcherId;
         const batterId: string | undefined = payload?.batterId;
-        const outsRecorded: number = payload?.outsRecorded ?? 1;
+        // DP retires 2 outs (batter + forced runner); SB/SF retire 1.
+        const defaultOuts = etype === EventType.DOUBLE_PLAY ? 2 : 1;
+        const outsRecorded: number = payload?.outsRecorded ?? defaultOuts;
         if (pitcherId) {
           const s = getStats(pitcherId);
           s.inningsPitchedOuts += outsRecorded;

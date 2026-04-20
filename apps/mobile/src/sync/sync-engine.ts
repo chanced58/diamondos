@@ -64,11 +64,18 @@ async function reconcileSequenceNumbers(
     let nextSeq = serverMax + 1;
     for (const e of events) {
       const currentSeq = e.sequence_number as number;
-      if (currentSeq <= serverMax) {
+      // Renumber whenever the event's current seq number would collide
+      // with a slot we've already planned to use. Using (currentSeq <
+      // nextSeq) rather than (currentSeq <= serverMax) handles the gap
+      // case: e.g. serverMax=10 with local events [9, 11] — under the
+      // old condition event 9 renumbered to 11 and event 11 kept 11,
+      // colliding again. Under the new condition event 9 → 11 and
+      // event 11 → 12.
+      if (currentSeq < nextSeq) {
         renumbers.push({ wdbId: e.id as string, newSeq: nextSeq });
         nextSeq += 1;
       } else {
-        nextSeq = Math.max(nextSeq, currentSeq + 1);
+        nextSeq = currentSeq + 1;
       }
     }
   }
@@ -170,10 +177,14 @@ export async function syncWithSupabase(): Promise<void> {
         // whole sync. Offenders stay in WatermelonDB with synced_at=null and
         // are surfaced by SyncProvider's pendingEventsCount so the scorer
         // knows something is stuck.
+        const skippedIds: string[] = [];
         const pushablePayloads = createdEvents
           .map((e) => {
             const payload = safeParsePayload(e.payload as string);
-            if (payload === null) return null;
+            if (payload === null) {
+              skippedIds.push(e.remote_id as string);
+              return null;
+            }
             return {
               id: e.remote_id as string,
               game_id: e.game_remote_id as string,
@@ -207,6 +218,18 @@ export async function syncWithSupabase(): Promise<void> {
             }
             throw error;
           }
+        }
+
+        // If any rows were skipped due to unparseable payloads, fail the
+        // sync cycle AFTER the successful upsert so WatermelonDB treats
+        // the cycle as incomplete and leaves those records unsynced.
+        // Otherwise WDB would mark the entire createdEvents batch as
+        // synced (including the skipped ones), silently dropping them.
+        if (skippedIds.length > 0) {
+          throw new Error(
+            `sync: ${skippedIds.length} event(s) skipped due to unparseable payloads; ` +
+              `records remain unsynced: ${skippedIds.slice(0, 3).join(', ')}${skippedIds.length > 3 ? '…' : ''}`,
+          );
         }
       }
 

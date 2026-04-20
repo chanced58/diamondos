@@ -156,11 +156,14 @@ function applyCorrections(events: RawEvent[]): RawEvent[] {
     const etype = event.event_type;
     if (etype === 'pitch_reverted') {
       const keepUntilSeq = (event.payload?.revertToSequenceNumber as number | undefined) ?? 0;
-      result.splice(
-        0,
-        result.length,
-        ...result.filter((r) => (r.sequence_number ?? 0) <= keepUntilSeq),
-      );
+      // Tail-pop instead of splice(0, len, ...result.filter(...)) so we
+      // don't spread a potentially large array through the argument list.
+      while (
+        result.length > 0 &&
+        (result[result.length - 1].sequence_number ?? 0) > keepUntilSeq
+      ) {
+        result.pop();
+      }
     } else if (etype === 'event_voided') {
       const voidedId = event.payload?.voidedEventId as string | undefined;
       if (!voidedId) continue;
@@ -173,7 +176,7 @@ function applyCorrections(events: RawEvent[]): RawEvent[] {
   return result;
 }
 
-function aggregateStats(events: Array<{ event_type: string; payload: Record<string, unknown>; is_top_of_inning: boolean }>): Map<string, PlayerStats> {
+function aggregateStats(events: RawEvent[]): Map<string, PlayerStats> {
   const stats = new Map<string, PlayerStats>();
 
   // Runner tracking for RBI auto-derive (OBR 9.04). Mirrors the logic in

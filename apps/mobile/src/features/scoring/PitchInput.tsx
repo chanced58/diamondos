@@ -83,8 +83,6 @@ const PITCH_OUTCOMES: Array<{ label: string; outcome: PitchOutcome; color: strin
   { label: 'HBP', outcome: PitchOutcome.HIT_BY_PITCH, color: 'bg-orange-100 border-orange-300 text-orange-700' },
 ];
 
-const PLATE_OUTCOMES: Array<{ label: string; onPress: () => void; color: string }> = [];
-
 /**
  * Primary pitch and plate-appearance input interface.
  * Records individual pitches (ball/strike/foul) and plate outcomes (hit/out/walk/K).
@@ -278,7 +276,7 @@ export function PitchInput({
           <OutcomeButton label="Double Play" emoji="DP" onPress={handleDPTap} color="bg-zinc-700" />
           <OutcomeButton label="Triple Play" emoji="TP" onPress={onRecordTriplePlay} color="bg-zinc-800" />
           <OutcomeButton label="Pinch Hitter" emoji="PH" onPress={() => setSubModal('pinch_hitter')} color="bg-sky-700" />
-          <OutcomeButton label="Pitching Change" emoji="P" onPress={() => setSubModal('pitching_change')} color="bg-sky-800" />
+          <OutcomeButton label="Pitching Change" emoji="🔄" onPress={() => setSubModal('pitching_change')} color="bg-sky-800" />
           {droppedThirdStrikeEligible && onRecordDroppedThirdStrike && (
             <OutcomeButton
               label="Dropped 3rd K"

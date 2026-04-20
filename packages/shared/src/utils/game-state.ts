@@ -93,12 +93,19 @@ export function deriveGameState(
         // Per OBR 9.04(a)(2), bases-loaded walk / HBP / catcher interference
         // force in a run. Same state transition in all three cases: batter
         // reaches first, runners advance when forced.
+        // Prefer the payload's batter/opponentBatter id over currentBatterId:
+        // currentBatterId is only updated by PITCH_THROWN, so between PAs it
+        // may still point at the previous batter if the scorer jumps
+        // straight to a walk/HBP/CI (or if events arrive out of order
+        // via corrections).
+        const p = event.payload as { batterId?: string; opponentBatterId?: string };
+        const batterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId;
         const walkBasesLoaded = !!(
           state.runnersOnBase.first &&
           state.runnersOnBase.second &&
           state.runnersOnBase.third
         );
-        state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, state.currentBatterId);
+        state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, batterId);
         if (walkBasesLoaded) addRuns(state, 1, state.isTopOfInning);
         state.balls = 0;
         state.strikes = 0;
@@ -275,14 +282,22 @@ export function deriveGameState(
 
       case EventType.SUBSTITUTION: {
         const p = event.payload as SubstitutionPayload;
-        if (state.currentBatterId === p.outPlayerId) {
+        if (p.outPlayerId !== undefined && state.currentBatterId === p.outPlayerId) {
           state.currentBatterId = p.inPlayerId;
         }
-        // Update runners if substituted player is on base
+        // Update runners if substituted player is on base. outPlayerId is
+        // optional (e.g. when replacing a not-yet-identified runner), in
+        // which case fall back to runnerBase to locate the slot to replace.
         const { runnersOnBase } = state;
-        if (runnersOnBase.first === p.outPlayerId) runnersOnBase.first = p.inPlayerId;
-        if (runnersOnBase.second === p.outPlayerId) runnersOnBase.second = p.inPlayerId;
-        if (runnersOnBase.third === p.outPlayerId) runnersOnBase.third = p.inPlayerId;
+        if (p.outPlayerId !== undefined) {
+          if (runnersOnBase.first === p.outPlayerId) runnersOnBase.first = p.inPlayerId;
+          if (runnersOnBase.second === p.outPlayerId) runnersOnBase.second = p.inPlayerId;
+          if (runnersOnBase.third === p.outPlayerId) runnersOnBase.third = p.inPlayerId;
+        } else if (p.runnerBase) {
+          if (p.runnerBase === 1) runnersOnBase.first = p.inPlayerId;
+          else if (p.runnerBase === 2) runnersOnBase.second = p.inPlayerId;
+          else if (p.runnerBase === 3) runnersOnBase.third = p.inPlayerId;
+        }
         break;
       }
 
