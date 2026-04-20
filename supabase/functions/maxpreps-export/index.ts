@@ -47,15 +47,19 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Fetch batting stats aggregated from game_events
+  // Fetch batting stats aggregated from game_events. Include id and
+  // sequence_number so correction events (EVENT_VOIDED / PITCH_REVERTED)
+  // can be applied before aggregation.
   const { data: events } = await supabase
     .from('game_events')
-    .select('event_type, payload, inning, is_top_of_inning')
+    .select('id, sequence_number, event_type, payload, inning, is_top_of_inning')
     .eq('game_id', gameId)
     .order('sequence_number');
 
+  const correctedEvents = applyCorrections(events ?? []);
+
   // Aggregate per-player stats from events
-  const playerStats = aggregateStats(events ?? []);
+  const playerStats = aggregateStats(correctedEvents);
 
   // Fetch player names
   const playerIds = [...playerStats.keys()];
@@ -129,6 +133,44 @@ interface PlayerStats {
   rbi: number;
   bb: number;
   so: number;
+}
+
+type RawEvent = {
+  id?: string;
+  sequence_number?: number;
+  event_type: string;
+  payload: Record<string, unknown>;
+  inning?: number;
+  is_top_of_inning: boolean;
+};
+
+/**
+ * Mirror of packages/shared/src/utils/event-filters.ts applyPitchReverted,
+ * inlined because Deno edge functions can't import from @baseball/shared
+ * at runtime. Removes events targeted by EVENT_VOIDED and trims the tail
+ * back to revertToSequenceNumber on PITCH_REVERTED.
+ */
+function applyCorrections(events: RawEvent[]): RawEvent[] {
+  const result: RawEvent[] = [];
+  for (const event of events) {
+    const etype = event.event_type;
+    if (etype === 'pitch_reverted') {
+      const keepUntilSeq = (event.payload?.revertToSequenceNumber as number | undefined) ?? 0;
+      result.splice(
+        0,
+        result.length,
+        ...result.filter((r) => (r.sequence_number ?? 0) <= keepUntilSeq),
+      );
+    } else if (etype === 'event_voided') {
+      const voidedId = event.payload?.voidedEventId as string | undefined;
+      if (!voidedId) continue;
+      const idx = result.findIndex((e) => e.id === voidedId);
+      if (idx !== -1) result.splice(idx, 1);
+    } else {
+      result.push(event);
+    }
+  }
+  return result;
 }
 
 function aggregateStats(events: Array<{ event_type: string; payload: Record<string, unknown>; is_top_of_inning: boolean }>): Map<string, PlayerStats> {
