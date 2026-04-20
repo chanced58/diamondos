@@ -14,6 +14,12 @@ type Base = 1 | 2 | 3;
 
 export type BattedOutType = 'groundout' | 'flyout' | 'lineout' | 'popout' | 'other';
 
+export type RosterPlayer = {
+  id: string;
+  name: string;
+  jerseyNumber?: number;
+};
+
 interface PitchInputProps {
   onRecordPitch: (outcome: PitchOutcome, pitchType?: PitchType) => void;
   onRecordHit: (hitType: HitType) => void;
@@ -29,6 +35,9 @@ interface PitchInputProps {
   onRecordBalk: () => void;
   onRecordDoublePlay: () => void;
   onRecordTriplePlay: () => void;
+  onRecordPitchingChange: (newPitcherId: string) => void;
+  onRecordPinchHitter: (newBatterId: string) => void;
+  roster: RosterPlayer[];
   onUndoLastEvent: () => void;
   runnersOnBase: { base: Base; runnerId: string }[];
   onRecordDroppedThirdStrike?: (details: DroppedThirdStrikeDetails) => void;
@@ -71,6 +80,9 @@ export function PitchInput({
   onRecordBalk,
   onRecordDoublePlay,
   onRecordTriplePlay,
+  onRecordPitchingChange,
+  onRecordPinchHitter,
+  roster,
   onUndoLastEvent,
   runnersOnBase,
   onRecordDroppedThirdStrike,
@@ -79,7 +91,15 @@ export function PitchInput({
   const [showD3KModal, setShowD3KModal] = useState(false);
   const [showFCModal, setShowFCModal] = useState(false);
   const [showOutModal, setShowOutModal] = useState(false);
+  const [subModal, setSubModal] = useState<null | 'pinch_hitter' | 'pitching_change'>(null);
   const fcEligible = runnersOnBase.length > 0;
+
+  function handleSubPick(playerId: string) {
+    const mode = subModal;
+    setSubModal(null);
+    if (mode === 'pinch_hitter') onRecordPinchHitter(playerId);
+    else if (mode === 'pitching_change') onRecordPitchingChange(playerId);
+  }
 
   function handleFCPick(runnerId: string, fromBase: Base) {
     setShowFCModal(false);
@@ -179,6 +199,8 @@ export function PitchInput({
           <OutcomeButton label="Balk" emoji="BK" onPress={onRecordBalk} color="bg-pink-600" />
           <OutcomeButton label="Double Play" emoji="DP" onPress={onRecordDoublePlay} color="bg-zinc-700" />
           <OutcomeButton label="Triple Play" emoji="TP" onPress={onRecordTriplePlay} color="bg-zinc-800" />
+          <OutcomeButton label="Pinch Hitter" emoji="PH" onPress={() => setSubModal('pinch_hitter')} color="bg-sky-700" />
+          <OutcomeButton label="Pitching Change" emoji="P" onPress={() => setSubModal('pitching_change')} color="bg-sky-800" />
           {droppedThirdStrikeEligible && onRecordDroppedThirdStrike && (
             <OutcomeButton
               label="Dropped 3rd K"
@@ -264,6 +286,54 @@ export function PitchInput({
               className="mt-4 py-3 items-center"
               onPress={() => setShowD3KModal(false)}
             >
+              <Text className="text-gray-500 font-semibold">Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Substitution / pitching change: scorer picks incoming player */}
+      <Modal
+        visible={subModal !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSubModal(null)}
+      >
+        <View className="flex-1 justify-end bg-black/50">
+          <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '75%' }}>
+            <Text className="text-lg font-bold text-gray-900 mb-1">
+              {subModal === 'pinch_hitter' ? 'Pinch Hitter' : 'Pitching Change'}
+            </Text>
+            <Text className="text-sm text-gray-500 mb-4">
+              {subModal === 'pinch_hitter'
+                ? 'Who is coming in to bat?'
+                : 'Who is coming in to pitch?'}
+            </Text>
+
+            {roster.length === 0 ? (
+              <Text className="text-gray-500 text-sm py-4">
+                No players loaded. Sync the roster first.
+              </Text>
+            ) : (
+              <ScrollView className="max-h-96">
+                <View className="gap-2">
+                  {roster.map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      className="bg-sky-700 rounded-xl px-4 py-3 flex-row items-center"
+                      onPress={() => handleSubPick(p.id)}
+                    >
+                      <Text className="text-white font-semibold text-base">
+                        {p.jerseyNumber !== undefined ? `#${p.jerseyNumber} ` : ''}
+                        {p.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            )}
+
+            <TouchableOpacity className="mt-4 py-3 items-center" onPress={() => setSubModal(null)}>
               <Text className="text-gray-500 font-semibold">Cancel</Text>
             </TouchableOpacity>
           </View>

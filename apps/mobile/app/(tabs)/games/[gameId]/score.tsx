@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
 import { useGameState } from '../../../../src/features/scoring/use-game-state';
@@ -9,10 +10,12 @@ import { PitchInput } from '../../../../src/features/scoring/PitchInput';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
 import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason } from '@baseball/shared';
-import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload } from '@baseball/shared';
+import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload } from '@baseball/shared';
+import { SubstitutionType } from '@baseball/shared';
 import { database } from '../../../../src/db';
 import type { GameEvent as WdbGameEvent } from '../../../../src/db/models/GameEvent';
-import type { BattedOutType } from '../../../../src/features/scoring/PitchInput';
+import type { Player } from '../../../../src/db/models/Player';
+import type { BattedOutType, RosterPlayer } from '../../../../src/features/scoring/PitchInput';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
 
 /**
@@ -32,6 +35,28 @@ export default function ScoringScreen() {
   const { gameState, loading } = useGameState(gameId, teamId);
   const { recordEvent } = useRecordEvent(gameId);
   const { isSyncing, lastSyncError, pendingEventsCount } = useSyncContext();
+
+  // Roster for substitution + pitching-change pickers.
+  const [roster, setRoster] = useState<RosterPlayer[]>([]);
+  useEffect(() => {
+    if (!teamId) return;
+    let cancelled = false;
+    (async () => {
+      const players = await database
+        .get<Player>('players')
+        .query(Q.where('team_id', teamId), Q.where('is_active', true), Q.sortBy('last_name', Q.asc))
+        .fetch();
+      if (cancelled) return;
+      setRoster(
+        players.map((p) => ({
+          id: p.remoteId,
+          name: p.fullName,
+          jerseyNumber: p.jerseyNumber,
+        })),
+      );
+    })();
+    return () => { cancelled = true; };
+  }, [teamId]);
 
   // Placeholder pitcher/batter IDs — in production these come from the lineup
   const currentPitcherId = gameState?.currentPitcherId ?? 'unknown-pitcher';
@@ -212,6 +237,25 @@ export default function ScoringScreen() {
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, hitPayload);
   }
 
+  async function handlePitchingChange(newPitcherId: string) {
+    if (!gameState) return;
+    const payload: PitchingChangePayload = {
+      newPitcherId,
+      outgoingPitcherId: currentPitcherId,
+    };
+    await recordEvent(EventType.PITCHING_CHANGE, gameState.inning, gameState.isTopOfInning, payload);
+  }
+
+  async function handlePinchHitter(newBatterId: string) {
+    if (!gameState) return;
+    const payload: SubstitutionPayload = {
+      inPlayerId: newBatterId,
+      outPlayerId: currentBatterId,
+      substitutionType: SubstitutionType.PINCH_HITTER,
+    };
+    await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
+  }
+
   async function handleUndo() {
     if (!gameState) return;
     // Find the most recent live event (skip events already voided, and skip
@@ -388,6 +432,9 @@ export default function ScoringScreen() {
         onRecordBalk={handleBalk}
         onRecordDoublePlay={handleDoublePlay}
         onRecordTriplePlay={handleTriplePlay}
+        onRecordPitchingChange={handlePitchingChange}
+        onRecordPinchHitter={handlePinchHitter}
+        roster={roster}
         onUndoLastEvent={handleUndo}
         runnersOnBase={runnersOnBase}
         onRecordDroppedThirdStrike={handleDroppedThirdStrike}
