@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
-import { PitchOutcome, PitchType } from '@baseball/shared';
+import { HitType, PitchOutcome, PitchType } from '@baseball/shared';
 import type { DroppedThirdStrikeOutcome } from '@baseball/shared';
 
 interface DroppedThirdStrikeDetails {
@@ -12,13 +12,20 @@ interface DroppedThirdStrikeDetails {
 
 interface PitchInputProps {
   onRecordPitch: (outcome: PitchOutcome, pitchType?: PitchType) => void;
-  onRecordHit: () => void;
+  onRecordHit: (hitType: HitType) => void;
   onRecordOut: () => void;
   onRecordWalk: () => void;
   onRecordStrikeout: () => void;
   onRecordDroppedThirdStrike?: (details: DroppedThirdStrikeDetails) => void;
   droppedThirdStrikeEligible?: boolean;
 }
+
+const HIT_TYPES: Array<{ label: string; emoji: string; hitType: HitType; color: string }> = [
+  { label: '1B', emoji: '⚾', hitType: HitType.SINGLE, color: 'bg-blue-600' },
+  { label: '2B', emoji: '⚾⚾', hitType: HitType.DOUBLE, color: 'bg-indigo-600' },
+  { label: '3B', emoji: '⚾⚾⚾', hitType: HitType.TRIPLE, color: 'bg-purple-600' },
+  { label: 'HR', emoji: '💥', hitType: HitType.HOME_RUN, color: 'bg-amber-600' },
+];
 
 const PITCH_OUTCOMES: Array<{ label: string; outcome: PitchOutcome; color: string }> = [
   { label: 'Called ⚾', outcome: PitchOutcome.CALLED_STRIKE, color: 'bg-red-100 border-red-300 text-red-700' },
@@ -70,13 +77,30 @@ export function PitchInput({
         </View>
       </View>
 
-      {/* Plate appearance outcomes */}
+      {/* Hit type — OBR 9.06 requires explicit 1B/2B/3B/HR */}
       <View className="px-4 pt-5">
         <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-          Plate appearance result
+          Hit
         </Text>
         <View className="flex-row flex-wrap gap-2">
-          <OutcomeButton label="Hit" emoji="⚾" onPress={onRecordHit} color="bg-blue-600" />
+          {HIT_TYPES.map(({ label, emoji, hitType, color }) => (
+            <OutcomeButton
+              key={hitType}
+              label={label}
+              emoji={emoji}
+              onPress={() => onRecordHit(hitType)}
+              color={color}
+            />
+          ))}
+        </View>
+      </View>
+
+      {/* Other plate appearance outcomes */}
+      <View className="px-4 pt-5">
+        <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+          Other plate appearance result
+        </Text>
+        <View className="flex-row flex-wrap gap-2">
           <OutcomeButton label="Out" emoji="✋" onPress={onRecordOut} color="bg-gray-600" />
           <OutcomeButton label="Walk (BB)" emoji="🚶" onPress={onRecordWalk} color="bg-green-600" />
           <OutcomeButton label="Strikeout" emoji="K" onPress={onRecordStrikeout} color="bg-red-600" />

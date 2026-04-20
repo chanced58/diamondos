@@ -48,12 +48,12 @@ export default function ScoringScreen() {
     );
   }
 
-  async function handleHit() {
+  async function handleHit(hitType: HitType) {
     if (!gameState) return;
     const payload: HitPayload = {
       batterId: currentBatterId,
       pitcherId: currentPitcherId,
-      hitType: HitType.SINGLE,
+      hitType,
     };
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, payload);
   }
