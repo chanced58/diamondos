@@ -156,6 +156,10 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
       }
     } else if (etype === 'double_play') {
       outs += 2;
+      const runnerOutBase = payload.runnerOutBase as number | undefined;
+      if (runnerOutBase === 1) first = null;
+      else if (runnerOutBase === 2) second = null;
+      else if (runnerOutBase === 3) third = null;
     } else if (etype === 'triple_play') {
       outs += 3;
     } else if (etype === 'score') {
@@ -167,6 +171,12 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
       if (etype === 'sacrifice_fly' && third && outs < 3) {
         scoreRun(1);
         third = null;
+      } else if (etype === 'sacrifice_bunt') {
+        // OBR 9.08(a): sac bunt advances runners one base.
+        if (third && outs < 3) scoreRun(1);
+        third = second;
+        second = first;
+        first = null;
       }
     } else if (etype === 'stolen_base') {
       const toBase = payload.toBase as number | undefined;

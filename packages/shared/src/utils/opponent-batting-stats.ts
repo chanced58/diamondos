@@ -147,31 +147,49 @@ export function computeOpponentBatting(
             if (r3 === outId) r3 = inId;
           }
         }
+        if (etype === 'balk') {
+          // Per OBR 6.02(a): all runners advance one base on a balk.
+          // r3 scores via the paired SCORE event; opponent-stats' SCORE
+          // handler credits the run regardless of whether r3 is still
+          // in base state when it processes.
+          r3 = r2;
+          r2 = r1;
+          r1 = null;
+        }
         continue;
       }
 
       if (etype === 'hit') {
         const s = get(batterId);
-        s.pa++; s.ab++; s.h++;
-        s.rbi += (payload.rbis as number) ?? 0;
+        const fieldersChoice = payload.fieldersChoice === true;
         const hitType = payload.hitType as string;
-        if (hitType === 'double') s.doubles++;
-        else if (hitType === 'triple') s.triples++;
-        else if (hitType === 'home_run') s.hr++;
+        s.pa++; s.ab++;
+        if (!fieldersChoice) {
+          s.h++;
+          if (hitType === 'double') s.doubles++;
+          else if (hitType === 'triple') s.triples++;
+          else if (hitType === 'home_run') s.hr++;
+        }
 
         const bases = hitType === 'home_run' ? 4
           : hitType === 'triple' ? 3
           : hitType === 'double' ? 2
           : 1;
 
+        // Count runs scored on this hit for auto-derived RBI (OBR 9.04).
+        let runsScored = 0;
         if (bases === 4) {
+          if (r3) runsScored++;
+          if (r2) runsScored++;
+          if (r1) runsScored++;
+          runsScored++;
           scoreRunner(r3); scoreRunner(r2); scoreRunner(r1);
           scoreRunner(batterId);
           clearBases();
         } else {
-          if (r3) scoreRunner(r3);
-          if (r2 && 2 + bases >= 4) scoreRunner(r2);
-          if (r1 && 1 + bases >= 4) scoreRunner(r1);
+          if (r3) { scoreRunner(r3); runsScored++; }
+          if (r2 && 2 + bases >= 4) { scoreRunner(r2); runsScored++; }
+          if (r1 && 1 + bases >= 4) { scoreRunner(r1); runsScored++; }
           if (bases === 1) {
             r3 = r2 ?? null; r2 = r1; r1 = batterId;
           } else if (bases === 2) {
@@ -180,27 +198,70 @@ export function computeOpponentBatting(
             r3 = batterId; r2 = null; r1 = null;
           }
         }
+        const explicitRbis = payload.rbis as number | undefined;
+        s.rbi += explicitRbis !== undefined ? explicitRbis : runsScored;
       } else if (etype === 'out' || etype === 'double_play' || etype === 'triple_play') {
         const s = get(batterId);
         s.pa++; s.ab++;
+        // Some scorers emit strikeouts as OUT with outType='strikeout'
+        // rather than EventType.STRIKEOUT; count the k here to match
+        // batting-stats.ts behavior.
+        if (etype === 'out' && payload.outType === 'strikeout') {
+          s.k++;
+        }
+        if (etype === 'double_play') {
+          const runnerOutBase = payload.runnerOutBase as 1 | 2 | 3 | undefined;
+          if (runnerOutBase === 1) r1 = null;
+          else if (runnerOutBase === 2) r2 = null;
+          else if (runnerOutBase === 3) r3 = null;
+        }
       } else if (etype === 'strikeout') {
         const s = get(batterId);
         s.pa++; s.ab++; s.k++;
       } else if (etype === 'walk') {
         const s = get(batterId);
         s.pa++; s.bb++;
+        // OBR 9.04(a)(2): bases-loaded walk forces in a run for 1 RBI.
+        const forcedRun = !!(r1 && r2 && r3);
         forceAdvance(batterId);
+        const explicitRbis = payload.rbis as number | undefined;
+        s.rbi += explicitRbis !== undefined ? explicitRbis : (forcedRun ? 1 : 0);
+      } else if (etype === 'catcher_interference') {
+        const s = get(batterId);
+        s.pa++;
+        // OBR 9.02(a)(4): CI is not an at-bat.
+        // OBR 9.04(a)(2): bases-loaded CI forces in a run for 1 RBI.
+        const forcedRun = !!(r1 && r2 && r3);
+        forceAdvance(batterId);
+        const explicitRbis = payload.rbis as number | undefined;
+        s.rbi += explicitRbis !== undefined ? explicitRbis : (forcedRun ? 1 : 0);
       } else if (etype === 'hit_by_pitch') {
         const s = get(batterId);
         s.pa++; s.hbp++;
+        // OBR 9.04(a)(2): bases-loaded HBP forces in a run for 1 RBI.
+        const forcedRun = !!(r1 && r2 && r3);
         forceAdvance(batterId);
+        const explicitRbis = payload.rbis as number | undefined;
+        s.rbi += explicitRbis !== undefined ? explicitRbis : (forcedRun ? 1 : 0);
       } else if (etype === 'sacrifice_fly') {
         const s = get(batterId);
         s.pa++; s.sf++;
+        // OBR 9.04(a)(1): sacrifice fly scoring a runner credits 1 RBI.
+        const runScored = !!r3;
         if (r3) { scoreRunner(r3); r3 = null; }
+        const explicitRbis = payload.rbis as number | undefined;
+        s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
       } else if (etype === 'sacrifice_bunt') {
+        // OBR 9.08(a): advances runners one base; squeeze scores r3 for 1 RBI.
         const s = get(batterId);
         s.pa++; s.sh++;
+        const runScored = !!r3;
+        if (r3) scoreRunner(r3);
+        r3 = r2 ?? null;
+        r2 = r1;
+        r1 = null;
+        const explicitRbis = payload.rbis as number | undefined;
+        s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
       } else if (etype === 'dropped_third_strike') {
         const s = get(batterId);
         s.pa++; s.ab++; s.k++;

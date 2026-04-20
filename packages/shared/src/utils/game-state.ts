@@ -34,10 +34,20 @@ export function deriveGameState(
   for (const event of events) {
     switch (event.eventType) {
       case EventType.GAME_START: {
-        const p = event.payload as { homeLineupPitcherId?: string; awayLineupPitcherId?: string };
+        const p = event.payload as {
+          homeLineupPitcherId?: string;
+          awayLineupPitcherId?: string;
+          homeLeadoffBatterId?: string;
+          awayLeadoffBatterId?: string;
+        };
         state.currentPitcherId = state.isTopOfInning
           ? p.homeLineupPitcherId ?? null
           : p.awayLineupPitcherId ?? null;
+        // Top of first: away team bats, so the away leadoff is current.
+        // Bottom of first (or when replay starts mid-inning): home leadoff.
+        state.currentBatterId = state.isTopOfInning
+          ? p.awayLeadoffBatterId ?? null
+          : p.homeLeadoffBatterId ?? null;
         break;
       }
 
@@ -78,14 +88,24 @@ export function deriveGameState(
       }
 
       case EventType.WALK:
-      case EventType.HIT_BY_PITCH: {
-        // If bases are loaded, the runner on third is forced home — credit the run now.
+      case EventType.HIT_BY_PITCH:
+      case EventType.CATCHER_INTERFERENCE: {
+        // Per OBR 9.04(a)(2), bases-loaded walk / HBP / catcher interference
+        // force in a run. Same state transition in all three cases: batter
+        // reaches first, runners advance when forced.
+        // Prefer the payload's batter/opponentBatter id over currentBatterId:
+        // currentBatterId is only updated by PITCH_THROWN, so between PAs it
+        // may still point at the previous batter if the scorer jumps
+        // straight to a walk/HBP/CI (or if events arrive out of order
+        // via corrections).
+        const p = event.payload as { batterId?: string; opponentBatterId?: string };
+        const batterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId;
         const walkBasesLoaded = !!(
           state.runnersOnBase.first &&
           state.runnersOnBase.second &&
           state.runnersOnBase.third
         );
-        state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, state.currentBatterId);
+        state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, batterId);
         if (walkBasesLoaded) addRuns(state, 1, state.isTopOfInning);
         state.balls = 0;
         state.strikes = 0;
@@ -177,7 +197,20 @@ export function deriveGameState(
       }
 
       case EventType.SACRIFICE_BUNT: {
+        // Per OBR 9.08(a): a sac bunt's purpose is to advance one or more
+        // runners at the cost of the batter's out. The common pattern is
+        // every runner advances one base (squeeze play scores the runner
+        // from third). Uncommon double-advances require manual
+        // BASERUNNER_ADVANCE events.
         state.outs++;
+        if (state.runnersOnBase.third && state.outs < OUTS_PER_INNING) {
+          addRuns(state, 1, state.isTopOfInning);
+        }
+        state.runnersOnBase = {
+          third: state.runnersOnBase.second,
+          second: state.runnersOnBase.first,
+          first: null,
+        };
         state.balls = 0;
         state.strikes = 0;
         incrementPA(state);
@@ -198,8 +231,16 @@ export function deriveGameState(
       }
 
       case EventType.DOUBLE_PLAY: {
-        // The batter's PA is complete; the second out is recorded separately
+        // Batter is the first out and the forced runner (usually from 1st
+        // on a standard 6-4-3 GIDP) is the second. When the scorer has
+        // captured runnerOutBase on the payload, clear that specific
+        // runner from base state; otherwise just bump the out counter
+        // (legacy events may have no runner attribution).
         state.outs = Math.min(state.outs + 2, OUTS_PER_INNING);
+        const p = event.payload as { runnerOutBase?: 1 | 2 | 3 };
+        if (p.runnerOutBase === 1) state.runnersOnBase = { ...state.runnersOnBase, first: null };
+        else if (p.runnerOutBase === 2) state.runnersOnBase = { ...state.runnersOnBase, second: null };
+        else if (p.runnerOutBase === 3) state.runnersOnBase = { ...state.runnersOnBase, third: null };
         state.balls = 0;
         state.strikes = 0;
         incrementPA(state);
@@ -241,14 +282,22 @@ export function deriveGameState(
 
       case EventType.SUBSTITUTION: {
         const p = event.payload as SubstitutionPayload;
-        if (state.currentBatterId === p.outPlayerId) {
+        if (p.outPlayerId !== undefined && state.currentBatterId === p.outPlayerId) {
           state.currentBatterId = p.inPlayerId;
         }
-        // Update runners if substituted player is on base
+        // Update runners if substituted player is on base. outPlayerId is
+        // optional (e.g. when replacing a not-yet-identified runner), in
+        // which case fall back to runnerBase to locate the slot to replace.
         const { runnersOnBase } = state;
-        if (runnersOnBase.first === p.outPlayerId) runnersOnBase.first = p.inPlayerId;
-        if (runnersOnBase.second === p.outPlayerId) runnersOnBase.second = p.inPlayerId;
-        if (runnersOnBase.third === p.outPlayerId) runnersOnBase.third = p.inPlayerId;
+        if (p.outPlayerId !== undefined) {
+          if (runnersOnBase.first === p.outPlayerId) runnersOnBase.first = p.inPlayerId;
+          if (runnersOnBase.second === p.outPlayerId) runnersOnBase.second = p.inPlayerId;
+          if (runnersOnBase.third === p.outPlayerId) runnersOnBase.third = p.inPlayerId;
+        } else if (p.runnerBase) {
+          if (p.runnerBase === 1) runnersOnBase.first = p.inPlayerId;
+          else if (p.runnerBase === 2) runnersOnBase.second = p.inPlayerId;
+          else if (p.runnerBase === 3) runnersOnBase.third = p.inPlayerId;
+        }
         break;
       }
 

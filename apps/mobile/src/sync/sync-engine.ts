@@ -1,6 +1,97 @@
 import { synchronize, type SyncPullArgs, type SyncPushArgs } from '@nozbe/watermelondb/sync';
 import { database } from '../db';
+import type { GameEvent } from '../db/models/GameEvent';
 import { getSupabaseClient } from '../lib/supabase';
+
+
+/**
+ * Safely parse a payload stored as JSON in WatermelonDB. If the column is
+ * corrupt (should not happen on records this client created, but may
+ * happen for records pulled from a malformed server row or hand-edited
+ * local DB), we return null so the caller can skip that row rather than
+ * abort the whole sync.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function safeParsePayload(raw: string): any {
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    console.warn('sync: skipping event with unparseable payload', err);
+    return null;
+  }
+}
+
+/**
+ * After a sequence-number collision (pg error 23505 on the game_events
+ * unique(game_id, sequence_number) constraint), shift the local WDB
+ * records' sequence numbers so they start above the server's current
+ * max. Next sync cycle will push them successfully.
+ *
+ * `failedEvents` comes from WatermelonDB's changes.created array — each
+ * entry is a raw record shape whose `id` field is the WDB internal id.
+ */
+async function reconcileSequenceNumbers(
+  failedEvents: ReadonlyArray<Record<string, unknown>>,
+  supabase: ReturnType<typeof getSupabaseClient>,
+): Promise<void> {
+  const byGame = new Map<string, Array<Record<string, unknown>>>();
+  for (const e of failedEvents) {
+    const gameRemoteId = e.game_remote_id as string | undefined;
+    if (!gameRemoteId) continue;
+    const list = byGame.get(gameRemoteId) ?? [];
+    list.push(e);
+    byGame.set(gameRemoteId, list);
+  }
+
+  const renumbers: Array<{ wdbId: string; newSeq: number }> = [];
+
+  for (const [gameRemoteId, events] of byGame) {
+    const { data, error } = await supabase
+      .from('game_events')
+      .select('sequence_number')
+      .eq('game_id', gameRemoteId)
+      .order('sequence_number', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.warn('sync: could not fetch server max seq for reconciliation', error);
+      continue;
+    }
+
+    const serverMax = (data?.[0]?.sequence_number as number | undefined) ?? 0;
+
+    events.sort((a, b) => (a.sequence_number as number) - (b.sequence_number as number));
+    let nextSeq = serverMax + 1;
+    for (const e of events) {
+      const currentSeq = e.sequence_number as number;
+      // Renumber whenever the event's current seq number would collide
+      // with a slot we've already planned to use. Using (currentSeq <
+      // nextSeq) rather than (currentSeq <= serverMax) handles the gap
+      // case: e.g. serverMax=10 with local events [9, 11] — under the
+      // old condition event 9 renumbered to 11 and event 11 kept 11,
+      // colliding again. Under the new condition event 9 → 11 and
+      // event 11 → 12.
+      if (currentSeq < nextSeq) {
+        renumbers.push({ wdbId: e.id as string, newSeq: nextSeq });
+        nextSeq += 1;
+      } else {
+        nextSeq = currentSeq + 1;
+      }
+    }
+  }
+
+  if (renumbers.length === 0) return;
+
+  await database.write(async () => {
+    const collection = database.get<GameEvent>('game_events');
+    for (const { wdbId, newSeq } of renumbers) {
+      const record = await collection.find(wdbId);
+      await record.update((r) => {
+        r.sequenceNumber = newSeq;
+      });
+    }
+  });
+}
 
 /**
  * Syncs the local WatermelonDB with Supabase.
@@ -74,32 +165,71 @@ export async function syncWithSupabase(): Promise<void> {
     },
 
     pushChanges: async ({ changes }: SyncPushArgs) => {
-      // Push locally-created game events (the main offline use case)
-      const createdEvents = changes.game_events?.created ?? [];
+      // Push locally-created game events (the main offline use case).
+      // SyncDatabaseChangeSet in this codebase's @nozbe/watermelondb types
+      // does not declare game_events / messages, so we cast through unknown.
+      const createdEvents = (
+        (changes as unknown as { game_events?: { created?: Array<Record<string, unknown>> } })
+          .game_events?.created ?? []
+      );
       if (createdEvents.length > 0) {
-        const { error } = await supabase.from('game_events').upsert(
-          createdEvents.map((e) => ({
-            id: e.remote_id as string,
-            game_id: e.game_remote_id as string,
-            sequence_number: e.sequence_number as number,
-            event_type: e.event_type as string,
-            inning: e.inning as number,
-            is_top_of_inning: e.is_top_of_inning as boolean,
-            payload: JSON.parse(e.payload as string),
-            occurred_at: new Date(e.occurred_at as number).toISOString(),
-            created_by: e.created_by as string,
-            device_id: e.device_id as string,
-          })),
-          { onConflict: 'id', ignoreDuplicates: true },
-        );
+        // Skip events whose payload can't be parsed rather than aborting the
+        // whole sync. Offenders stay in WatermelonDB with synced_at=null and
+        // are surfaced by SyncProvider's pendingEventsCount so the scorer
+        // knows something is stuck.
+        const skippedIds: string[] = [];
+        const pushablePayloads = createdEvents
+          .map((e) => {
+            const payload = safeParsePayload(e.payload as string);
+            if (payload === null) {
+              skippedIds.push(e.remote_id as string);
+              return null;
+            }
+            return {
+              id: e.remote_id as string,
+              game_id: e.game_remote_id as string,
+              sequence_number: e.sequence_number as number,
+              event_type: e.event_type as string,
+              inning: e.inning as number,
+              is_top_of_inning: e.is_top_of_inning as boolean,
+              payload,
+              occurred_at: new Date(e.occurred_at as number).toISOString(),
+              created_by: e.created_by as string,
+              device_id: e.device_id as string,
+            };
+          })
+          .filter((p) => p !== null);
 
-        if (error) {
-          // Sequence number conflict — the sync engine will retry on next sync
-          if (error.code === '23505') {
-            console.warn('Sequence number conflict detected; will retry on next sync');
-          } else {
+        if (pushablePayloads.length > 0) {
+          const { error } = await supabase.from('game_events').upsert(
+            pushablePayloads,
+            { onConflict: 'id', ignoreDuplicates: true },
+          );
+
+          if (error) {
+            // Sequence number collision — another device already used these
+            // sequence numbers for the same game. Renumber the local WDB
+            // records so they start above the server's current max, then
+            // throw so WatermelonDB leaves them in the unsynced queue; the
+            // next sync cycle will push the renumbered events.
+            if (error.code === '23505') {
+              await reconcileSequenceNumbers(createdEvents, supabase);
+              throw new Error('sync: seq-num collision; renumbered locally, will retry');
+            }
             throw error;
           }
+        }
+
+        // If any rows were skipped due to unparseable payloads, fail the
+        // sync cycle AFTER the successful upsert so WatermelonDB treats
+        // the cycle as incomplete and leaves those records unsynced.
+        // Otherwise WDB would mark the entire createdEvents batch as
+        // synced (including the skipped ones), silently dropping them.
+        if (skippedIds.length > 0) {
+          throw new Error(
+            `sync: ${skippedIds.length} event(s) skipped due to unparseable payloads; ` +
+              `records remain unsynced: ${skippedIds.slice(0, 3).join(', ')}${skippedIds.length > 3 ? '…' : ''}`,
+          );
         }
       }
 

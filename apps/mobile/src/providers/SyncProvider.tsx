@@ -1,17 +1,24 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import NetInfo from '@react-native-community/netinfo';
+import { Q } from '@nozbe/watermelondb';
 import { syncWithSupabase } from '../sync/sync-engine';
 import { getSupabaseClient } from '../lib/supabase';
+import { database } from '../db';
+import type { GameEvent } from '../db/models/GameEvent';
 
 interface SyncContextValue {
   isSyncing: boolean;
   lastSyncedAt: number | null;
+  lastSyncError: Error | null;
+  pendingEventsCount: number;
   triggerSync: () => Promise<void>;
 }
 
 const SyncContext = createContext<SyncContextValue>({
   isSyncing: false,
   lastSyncedAt: null,
+  lastSyncError: null,
+  pendingEventsCount: 0,
   triggerSync: async () => {},
 });
 
@@ -24,10 +31,14 @@ export function useSyncContext() {
  * - Triggers sync when network becomes available (was offline → online)
  * - Triggers sync every 30 seconds when online and a game is in progress
  * - Exposes a manual triggerSync() for use in the scoring screen after each event
+ * - Surfaces sync failures and pending-event counts so the UI can alert the
+ *   scorer when events have not yet reached Supabase.
  */
 export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  const [lastSyncError, setLastSyncError] = useState<Error | null>(null);
+  const [pendingEventsCount, setPendingEventsCount] = useState(0);
   const wasOfflineRef = useRef(false);
   const syncLockRef = useRef(false);
 
@@ -43,14 +54,36 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
       await syncWithSupabase();
       setLastSyncedAt(Date.now());
+      setLastSyncError(null);
     } catch (error) {
       console.warn('Sync failed:', error);
-      // Silent failure — will retry on next network event or interval
+      setLastSyncError(error instanceof Error ? error : new Error(String(error)));
     } finally {
       setIsSyncing(false);
       syncLockRef.current = false;
     }
   };
+
+  // Observe count of locally-created events not yet acked by Supabase.
+  // A non-zero count means either a sync is pending or sync has failed —
+  // in either case the scorer should be able to see it.
+  //
+  // We query WatermelonDB's internal _status field rather than our
+  // app-level synced_at column. synced_at is set to null at create time
+  // but nothing updates it after a successful push — only the pulled
+  // rows in sync-engine's mapGameEvent get synced_at populated. WDB's
+  // synchronize() flow, however, always transitions records from
+  // _status='created' to _status='synced' after pushChanges returns
+  // successfully, so this query accurately reflects "not yet acked
+  // by the server."
+  useEffect(() => {
+    const collection = database.get<GameEvent>('game_events');
+    const subscription = collection
+      .query(Q.unsafeSqlExpr(`_status != 'synced'`))
+      .observeCount()
+      .subscribe(setPendingEventsCount);
+    return () => subscription.unsubscribe();
+  }, []);
 
   // Sync when network is restored after being offline
   useEffect(() => {
@@ -83,7 +116,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <SyncContext.Provider value={{ isSyncing, lastSyncedAt, triggerSync }}>
+    <SyncContext.Provider value={{ isSyncing, lastSyncedAt, lastSyncError, pendingEventsCount, triggerSync }}>
       {children}
     </SyncContext.Provider>
   );

@@ -349,15 +349,18 @@ export function derivePitchingStats(
         const p = payload as HitPayload;
         const pitcherId = p.pitcherId ?? p.opponentPitcherId;
         const batterId = p.batterId ?? p.opponentBatterId;
+        const fieldersChoice = p.fieldersChoice === true;
         if (pitcherId) {
           const s = getStats(pitcherId);
-          s.hitsAllowed += 1;
+          if (!fieldersChoice) s.hitsAllowed += 1;
           const contact = batterId ? pendingContact.get(batterId) : undefined;
           if (contact && contact.pitcherId === pitcherId) {
             const cs = s.baByCount[contact.count];
             if (cs) {
               cs.atBats += 1;
-              cs.hits += 1;
+              if (!fieldersChoice) {
+                cs.hits += 1;
+              }
               cs.average = cs.hits / cs.atBats;
             }
             if (batterId) pendingContact.delete(batterId);
@@ -485,6 +488,17 @@ export function derivePitchingStats(
         forceAdvanceRunners(batterId ? { id: batterId, reachedOnError: false } : null);
       }
 
+      // ── CATCHER_INTERFERENCE ─────────────────────────────────────────────
+      // Batter reaches first without charging the pitcher; only the runner
+      // state is affected. Per OBR 9.16, catcher interference is a
+      // defensive miscue — any run scored by a runner who reached on CI
+      // is unearned. Mark reachedOnError=true to match FIELD_ERROR
+      // treatment so subsequent scores are classified correctly.
+      if (etype === EventType.CATCHER_INTERFERENCE) {
+        const batterId: string | undefined = payload?.batterId;
+        forceAdvanceRunners(batterId ? { id: batterId, reachedOnError: true } : null);
+      }
+
       // ── HIT_BY_PITCH (explicit event) ────────────────────────────────────
       if (etype === EventType.HIT_BY_PITCH) {
         const pitcherId: string | undefined = payload?.pitcherId;
@@ -503,7 +517,9 @@ export function derivePitchingStats(
       if (etype === EventType.DOUBLE_PLAY || etype === EventType.SACRIFICE_BUNT || etype === EventType.SACRIFICE_FLY) {
         const pitcherId: string | undefined = payload?.pitcherId;
         const batterId: string | undefined = payload?.batterId;
-        const outsRecorded: number = payload?.outsRecorded ?? 1;
+        // DP retires 2 outs (batter + forced runner); SB/SF retire 1.
+        const defaultOuts = etype === EventType.DOUBLE_PLAY ? 2 : 1;
+        const outsRecorded: number = payload?.outsRecorded ?? defaultOuts;
         if (pitcherId) {
           const s = getStats(pitcherId);
           s.inningsPitchedOuts += outsRecorded;
@@ -520,10 +536,27 @@ export function derivePitchingStats(
             resetAtBat(batterId);
           }
         }
+        // Sac bunt: runners advance one base (runner on 3rd scores).
+        if (etype === EventType.SACRIFICE_BUNT) {
+          if (r3) {
+            scoreRun(r3);
+          }
+          r3 = r2;
+          r2 = r1;
+          r1 = null;
+        }
         // Sac fly: runner on 3rd scores
         if (etype === EventType.SACRIFICE_FLY && r3) {
           scoreRun(r3);
           r3 = null;
+        }
+        // Double play: remove the named forced runner so earned-run
+        // classification stays accurate for the remaining runners.
+        if (etype === EventType.DOUBLE_PLAY) {
+          const runnerOutBase = payload?.runnerOutBase as 1 | 2 | 3 | undefined;
+          if (runnerOutBase === 1) r1 = null;
+          else if (runnerOutBase === 2) r2 = null;
+          else if (runnerOutBase === 3) r3 = null;
         }
       }
 

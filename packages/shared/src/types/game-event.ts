@@ -19,6 +19,7 @@ export enum EventType {
   SACRIFICE_BUNT = 'sacrifice_bunt',
   SACRIFICE_FLY = 'sacrifice_fly',
   FIELD_ERROR = 'field_error',
+  CATCHER_INTERFERENCE = 'catcher_interference',
   DOUBLE_PLAY = 'double_play',
   TRIPLE_PLAY = 'triple_play',
 
@@ -138,6 +139,14 @@ export interface HitPayload {
   sprayX?: number;
   sprayY?: number;
   rbis?: number;
+  /**
+   * True when the batter reached base on a fielder's choice rather than
+   * a true safe hit. The PA + AB are still counted, but statisticians
+   * must not credit this as a hit (batting-stats, opponent-batting-stats)
+   * nor as a hit allowed (pitching-stats). The forced runner is removed
+   * via a preceding BASERUNNER_OUT event.
+   */
+  fieldersChoice?: boolean;
 }
 
 export interface OutPayload {
@@ -156,7 +165,8 @@ export interface OutPayload {
 
 export interface SubstitutionPayload {
   inPlayerId: string;
-  outPlayerId: string;
+  /** Optional: the slot may have had no known occupant yet (initial lineup setup). */
+  outPlayerId?: string;
   /** Set when the substitution involves opponent_players. */
   isOpponentSubstitution?: boolean;
   substitutionType?: SubstitutionType;
@@ -168,7 +178,8 @@ export interface SubstitutionPayload {
 
 export interface PitchingChangePayload {
   newPitcherId: string;
-  outgoingPitcherId: string;
+  /** Optional: may be unset when replacing a not-yet-identified starter. */
+  outgoingPitcherId?: string;
   /** Set when the pitching change involves opponent_players. */
   isOpponentChange?: boolean;
 }
@@ -205,7 +216,8 @@ export interface PickoffPayload {
   /** Set when the runner is an opponent_player. */
   isOpponentRunner?: boolean;
   base: 1 | 2 | 3;
-  pitcherId: string;
+  /** Optional: the pitcher may not yet be identified (pre-lineup). */
+  pitcherId?: string;
   /** Defensive play sequence as position numbers, e.g. [1, 3] for P-to-1B. */
   fieldingSequence?: number[];
   outcome?: 'safe' | 'out';
