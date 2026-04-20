@@ -1,9 +1,15 @@
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { AdvanceReason } from '@baseball/shared';
 import type { LiveGameState } from '@baseball/shared';
 
 type Base = 1 | 2 | 3;
+
+interface RosterPlayer {
+  id: string;
+  name: string;
+  jerseyNumber?: number;
+}
 
 interface BaserunnerDisplayProps {
   gameState: LiveGameState;
@@ -11,6 +17,8 @@ interface BaserunnerDisplayProps {
   onRecordCaughtStealing?: (fromBase: Base, runnerId: string) => void;
   onRecordAdvance?: (fromBase: Base, runnerId: string, reason: AdvanceReason) => void;
   onRecordPickoffOut?: (fromBase: Base, runnerId: string) => void;
+  onRecordPinchRunner?: (fromBase: Base, outRunnerId: string, inRunnerId: string) => void;
+  roster?: RosterPlayer[];
 }
 
 const DIAMOND_SIZE = 100;
@@ -26,11 +34,14 @@ export function BaserunnerDisplay({
   onRecordCaughtStealing,
   onRecordAdvance,
   onRecordPickoffOut,
+  onRecordPinchRunner,
+  roster,
 }: BaserunnerDisplayProps) {
   const { first, second, third } = gameState.runnersOnBase;
   const [selected, setSelected] = useState<{ base: Base; runnerId: string } | null>(null);
+  const [pinchRunnerPicker, setPinchRunnerPicker] = useState<{ base: Base; runnerId: string } | null>(null);
 
-  const interactive = !!(onRecordStolenBase || onRecordCaughtStealing || onRecordAdvance || onRecordPickoffOut);
+  const interactive = !!(onRecordStolenBase || onRecordCaughtStealing || onRecordAdvance || onRecordPickoffOut || onRecordPinchRunner);
 
   function handleBaseTap(base: Base, runnerId: string | null) {
     if (!interactive || !runnerId) return;
@@ -63,6 +74,18 @@ export function BaserunnerDisplay({
     if (!selected) return;
     onRecordPickoffOut?.(selected.base, selected.runnerId);
     close();
+  }
+
+  function handlePinchRunnerStart() {
+    if (!selected) return;
+    setPinchRunnerPicker({ base: selected.base, runnerId: selected.runnerId });
+    close();
+  }
+
+  function handlePinchRunnerPick(inRunnerId: string) {
+    if (!pinchRunnerPicker) return;
+    onRecordPinchRunner?.(pinchRunnerPicker.base, pinchRunnerPicker.runnerId, inRunnerId);
+    setPinchRunnerPicker(null);
   }
 
   return (
@@ -145,9 +168,57 @@ export function BaserunnerDisplay({
                 color="bg-gray-700"
                 onPress={handlePickoffOut}
               />
+              {onRecordPinchRunner && roster && roster.length > 0 && (
+                <RunnerActionButton
+                  label="Pinch Runner"
+                  sub="Replace this runner with a new player"
+                  color="bg-sky-700"
+                  onPress={handlePinchRunnerStart}
+                />
+              )}
             </View>
 
             <TouchableOpacity className="mt-4 py-3 items-center" onPress={close}>
+              <Text className="text-gray-500 font-semibold">Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Pinch runner: pick incoming player from roster */}
+      <Modal
+        visible={!!pinchRunnerPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPinchRunnerPicker(null)}
+      >
+        <View className="flex-1 justify-end bg-black/50">
+          <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '75%' }}>
+            <Text className="text-lg font-bold text-gray-900 mb-1">Pinch Runner</Text>
+            <Text className="text-sm text-gray-500 mb-4">
+              Select the new runner for {pinchRunnerPicker ? baseLabel(pinchRunnerPicker.base) : ''}.
+            </Text>
+            {roster && roster.length > 0 ? (
+              <ScrollView className="max-h-96">
+                <View className="gap-2">
+                  {roster.map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      className="bg-sky-700 rounded-xl px-4 py-3"
+                      onPress={() => handlePinchRunnerPick(p.id)}
+                    >
+                      <Text className="text-white font-semibold text-base">
+                        {p.jerseyNumber !== undefined ? `#${p.jerseyNumber} ` : ''}
+                        {p.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            ) : (
+              <Text className="text-gray-500 text-sm py-4">No players loaded.</Text>
+            )}
+            <TouchableOpacity className="mt-4 py-3 items-center" onPress={() => setPinchRunnerPicker(null)}>
               <Text className="text-gray-500 font-semibold">Cancel</Text>
             </TouchableOpacity>
           </View>

@@ -296,6 +296,17 @@ export default function ScoringScreen() {
     }
   }
 
+  async function handlePinchRunner(fromBase: 1 | 2 | 3, outRunnerId: string, inRunnerId: string) {
+    if (!gameState) return;
+    const payload: SubstitutionPayload = {
+      inPlayerId: inRunnerId,
+      outPlayerId: outRunnerId,
+      substitutionType: SubstitutionType.PINCH_RUNNER,
+      runnerBase: fromBase,
+    };
+    await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
+  }
+
   async function handlePickoffOut(fromBase: 1 | 2 | 3, runnerId: string) {
     if (!gameState) return;
     const payload: PickoffPayload = {
@@ -412,6 +423,8 @@ export default function ScoringScreen() {
           onRecordCaughtStealing={handleCaughtStealing}
           onRecordAdvance={handleRunnerAdvance}
           onRecordPickoffOut={handlePickoffOut}
+          onRecordPinchRunner={handlePinchRunner}
+          roster={roster}
         />
         {isSyncing ? (
           <Text className="text-xs text-blue-500">Syncing…</Text>
