@@ -3,3 +3,6 @@ export * from './team';
 export * from './game';
 export * from './message';
 export * from './league';
+export * from './practice-drill';
+export * from './practice-template';
+export * from './practice';
