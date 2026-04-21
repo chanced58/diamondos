@@ -130,6 +130,27 @@ export default async function PracticeNotesPage({
     return (
       <div className="p-8 max-w-4xl">
         {header}
+        <div className="flex items-center gap-2 mb-6 flex-wrap">
+          <Link
+            href={`/practices/${params.practiceId}/plan`}
+            className="bg-brand-700 text-white font-semibold px-4 py-2 rounded-lg hover:bg-brand-800 text-sm"
+          >
+            🧱 Build practice plan
+          </Link>
+          <Link
+            href={`/practices/${params.practiceId}/run`}
+            className="bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-emerald-700 text-sm"
+          >
+            ▶ Run practice
+          </Link>
+          <Link
+            href={`/practices/${params.practiceId}/print`}
+            target="_blank"
+            className="bg-white border border-gray-300 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 text-sm"
+          >
+            🖨 Print card
+          </Link>
+        </div>
         <PracticePlanEditor
           practiceId={params.practiceId}
           initialPlan={practice.plan ?? ''}

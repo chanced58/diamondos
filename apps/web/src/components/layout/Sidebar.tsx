@@ -134,21 +134,38 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
           const isActive = isAdminPanel
             ? (item.href === '/admin' ? pathname === '/admin' : pathname.startsWith(item.href))
             : pathname.startsWith(item.href);
+          const isPracticesItem = item.href === '/practices';
+          const showPracticeSubnav =
+            !collapsed &&
+            !isAdminPanel &&
+            isPracticesItem &&
+            pathname.startsWith('/practices');
           return (
-            <Link
-              key={item.label}
-              href={item.href}
-              title={collapsed ? item.label : undefined}
-              className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                isActive
-                  ? 'text-white'
-                  : 'text-white/70 hover:bg-white/10 hover:text-white'
-              }`}
-              style={isActive ? { backgroundColor: active } : undefined}
-            >
-              <span>{item.icon}</span>
-              {!collapsed && item.label}
-            </Link>
+            <div key={item.label}>
+              <Link
+                href={item.href}
+                title={collapsed ? item.label : undefined}
+                className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'text-white'
+                    : 'text-white/70 hover:bg-white/10 hover:text-white'
+                }`}
+                style={isActive ? { backgroundColor: active } : undefined}
+              >
+                <span>{item.icon}</span>
+                {!collapsed && item.label}
+              </Link>
+              {showPracticeSubnav && (
+                <div className="mt-1 ml-7 mb-1 space-y-0.5">
+                  <PracticeSubLink href="/practices/drills" label="Drills" pathname={pathname} />
+                  <PracticeSubLink
+                    href="/practices/templates"
+                    label="Templates"
+                    pathname={pathname}
+                  />
+                </div>
+              )}
+            </div>
           );
         })}
 
@@ -181,7 +198,7 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
         )}
       </nav>
 
-      <div className={`${collapsed ? 'p-2' : 'p-4'} border-t border-white/10 space-y-1`}>
+      <div className={`${collapsed ? 'p-2' : 'p-4'} border-t border-white/10 space-y-1`}>{/* footer */}
         <button
           onClick={toggleCollapsed}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -200,5 +217,27 @@ export function Sidebar({ teamName, teamOrg, teamId, logoUrl, primaryColor, seco
         </button>
       </div>
     </aside>
+  );
+}
+
+function PracticeSubLink({
+  href,
+  label,
+  pathname,
+}: {
+  href: string;
+  label: string;
+  pathname: string;
+}): JSX.Element {
+  const isActive = pathname.startsWith(href);
+  return (
+    <Link
+      href={href}
+      className={`block text-xs px-3 py-1.5 rounded-md transition-colors ${
+        isActive ? 'text-white bg-white/15' : 'text-white/60 hover:text-white hover:bg-white/10'
+      }`}
+    >
+      {label}
+    </Link>
   );
 }
