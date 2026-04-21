@@ -66,10 +66,14 @@ describe('buildStationRotation', () => {
       const ss = stations(sCount, rotCount);
       const out = buildStationRotation(players, ss);
       expect(validateRotation(out).ok).toBe(true);
-      // every player appears in every rotation
+      // Every player appears in every rotation — check completeness as well
+      // as uniqueness.
+      const expectedPlayers = new Set(players);
       for (let r = 0; r < rotCount; r++) {
         const atR = out.filter((a) => a.rotationIndex === r).map((a) => a.playerId);
         expect(new Set(atR).size).toBe(atR.length); // no dup within rotation
+        expect(atR.length).toBe(pCount);
+        expect(new Set(atR)).toEqual(expectedPlayers);
       }
     }
   });

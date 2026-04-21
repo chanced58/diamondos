@@ -137,6 +137,28 @@ describe('compressRemaining', () => {
     );
     expect(out.map((b) => b.plannedDurationMinutes)).toEqual([10, 20, 30, 40]);
   });
+
+  it('noop when currentIndex is past the end', () => {
+    const out = compressRemaining(
+      blocks,
+      blocks.length,
+      '2026-04-21T20:00:00.000Z',
+      '2026-04-21T19:00:00.000Z',
+    );
+    expect(out.map((b) => b.plannedDurationMinutes)).toEqual([10, 20, 30, 40]);
+  });
+
+  it('with currentIndex = -1 compresses all blocks to fit the window', () => {
+    // nextIdx = 0, so every block is rescaled.
+    const out = compressRemaining(
+      blocks,
+      -1,
+      '2026-04-21T19:00:00.000Z',
+      '2026-04-21T18:00:00.000Z',
+    );
+    const sum = out.reduce((s, b) => s + b.plannedDurationMinutes, 0);
+    expect(sum).toBe(60);
+  });
 });
 
 describe('projectedOverrun', () => {
@@ -164,5 +186,53 @@ describe('projectedOverrun', () => {
       '2026-04-21T18:00:00.000Z',
     );
     expect(over).toBe(-15);
+  });
+
+  it('accounts for pending work after now > plannedEnd', () => {
+    // now (19:00) is already past the planned end (18:45), and there's still
+    // one 30-min pending block left — overrun should include both the
+    // elapsed excess AND the remaining planned work.
+    const blocks: ScheduleInputBlock[] = [
+      {
+        id: 'a',
+        position: 0,
+        plannedDurationMinutes: 60,
+        status: PracticeBlockStatus.ACTIVE,
+        startedAt: '2026-04-21T18:00:00.000Z',
+      },
+      { id: 'b', position: 1, plannedDurationMinutes: 30, status: PracticeBlockStatus.PENDING },
+    ];
+    const over = projectedOverrun(
+      blocks,
+      '2026-04-21T18:00:00.000Z',
+      '2026-04-21T18:45:00.000Z',
+      '2026-04-21T19:00:00.000Z',
+    );
+    // end = 19:00 (active finishes at elapsed) + 30 pending = 19:30; planned
+    // end is 18:45; overrun = 45 min.
+    expect(over).toBe(45);
+  });
+});
+
+describe('computeBlockSchedule ACTIVE edge cases', () => {
+  it('uses elapsed time when active block has run past its planned duration', () => {
+    const blocks: ScheduleInputBlock[] = [
+      {
+        id: 'a',
+        position: 0,
+        plannedDurationMinutes: 10,
+        status: PracticeBlockStatus.ACTIVE,
+        startedAt: '2026-04-21T18:00:00.000Z',
+      },
+      { id: 'b', position: 1, plannedDurationMinutes: 5, status: PracticeBlockStatus.PENDING },
+    ];
+    const sched = computeBlockSchedule(
+      blocks,
+      '2026-04-21T18:00:00.000Z',
+      '2026-04-21T18:15:00.000Z', // 15 min elapsed into a 10 min block
+    );
+    // active block should end at now (15 min in), not at the original +10.
+    expect(sched[0].endsAt).toBe('2026-04-21T18:15:00.000Z');
+    expect(sched[1].startsAt).toBe('2026-04-21T18:15:00.000Z');
   });
 });

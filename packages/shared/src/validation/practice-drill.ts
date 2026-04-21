@@ -7,6 +7,24 @@ import {
   PracticeSkillCategory,
 } from '../types/practice-drill';
 
+/**
+ * Shared refinement: maxPlayers must be >= minPlayers when both are set.
+ * Used by createDrillSchema, updateDrillSchema, and drillFiltersSchema so
+ * the rule is defined once.
+ */
+const playerRangeRefine = (d: {
+  minPlayers?: number;
+  maxPlayers?: number;
+}) =>
+  d.minPlayers === undefined ||
+  d.maxPlayers === undefined ||
+  d.maxPlayers >= d.minPlayers;
+
+const playerRangeMessage: { message: string; path: Array<string | number> } = {
+  message: 'maxPlayers must be >= minPlayers',
+  path: ['maxPlayers'],
+};
+
 export const createDrillSchema = z
   .object({
     name: z.string().min(1, 'Name is required').max(120),
@@ -35,13 +53,7 @@ export const createDrillSchema = z
     diagramUrl: z.string().url().optional().or(z.literal('')),
     videoUrl: z.string().url().optional().or(z.literal('')),
   })
-  .refine(
-    (d) =>
-      d.minPlayers === undefined ||
-      d.maxPlayers === undefined ||
-      d.maxPlayers >= d.minPlayers,
-    { message: 'maxPlayers must be >= minPlayers', path: ['maxPlayers'] },
-  );
+  .refine(playerRangeRefine, playerRangeMessage);
 
 export const updateDrillSchema = z
   .object({
@@ -61,26 +73,22 @@ export const updateDrillSchema = z
     diagramUrl: z.string().url().optional().or(z.literal('')),
     videoUrl: z.string().url().optional().or(z.literal('')),
   })
-  .refine(
-    (d) =>
-      d.minPlayers === undefined ||
-      d.maxPlayers === undefined ||
-      d.maxPlayers >= d.minPlayers,
-    { message: 'maxPlayers must be >= minPlayers', path: ['maxPlayers'] },
-  );
+  .refine(playerRangeRefine, playerRangeMessage);
 
-export const drillFiltersSchema = z.object({
-  skillCategories: z.array(z.nativeEnum(PracticeSkillCategory)).optional(),
-  positions: z.array(z.string().max(4)).optional(),
-  ageLevels: z.array(z.nativeEnum(PracticeAgeLevel)).optional(),
-  equipment: z.array(z.nativeEnum(PracticeEquipment)).optional(),
-  fieldSpaces: z.array(z.nativeEnum(PracticeFieldSpace)).optional(),
-  search: z.string().max(100).optional(),
-  minPlayers: z.number().int().min(1).optional(),
-  maxPlayers: z.number().int().min(1).optional(),
-  durationMax: z.number().int().min(1).max(600).optional(),
-  visibility: z.enum(['system', 'team', 'all']).optional(),
-});
+export const drillFiltersSchema = z
+  .object({
+    skillCategories: z.array(z.nativeEnum(PracticeSkillCategory)).optional(),
+    positions: z.array(z.string().max(4)).optional(),
+    ageLevels: z.array(z.nativeEnum(PracticeAgeLevel)).optional(),
+    equipment: z.array(z.nativeEnum(PracticeEquipment)).optional(),
+    fieldSpaces: z.array(z.nativeEnum(PracticeFieldSpace)).optional(),
+    search: z.string().max(100).optional(),
+    minPlayers: z.number().int().min(1).optional(),
+    maxPlayers: z.number().int().min(1).optional(),
+    durationMax: z.number().int().min(1).max(600).optional(),
+    visibility: z.enum(['system', 'team', 'all']).optional(),
+  })
+  .refine(playerRangeRefine, playerRangeMessage);
 
 export const drillAttachmentSchema = z.object({
   drillId: z.string().uuid(),

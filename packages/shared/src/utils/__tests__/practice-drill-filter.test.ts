@@ -58,7 +58,7 @@ describe('filterDrills', () => {
     }),
   ];
 
-  it('AND across keys, OR within', () => {
+  it('filters drills using AND across filter keys and OR within value arrays', () => {
     const out = filterDrills(library, {
       skillCategories: [PracticeSkillCategory.HITTING, PracticeSkillCategory.PITCHING],
       fieldSpaces: [PracticeFieldSpace.CAGE_1],
@@ -66,9 +66,24 @@ describe('filterDrills', () => {
     expect(out.map((d) => d.id)).toEqual(['a']);
   });
 
-  it('search is case-insensitive across name, tags, description', () => {
+  it('search is case-insensitive across name and tags', () => {
+    // Fixture only exercises name + tags; description/source coverage is added
+    // separately below.
     expect(filterDrills(library, { search: 'TEE' }).map((d) => d.id)).toEqual(['a']);
     expect(filterDrills(library, { search: 'fundamentals' }).map((d) => d.id)).toEqual(['a']);
+  });
+
+  it('search matches description and source fields too', () => {
+    const withText: PracticeDrill[] = [
+      drill({ id: 'd1', name: 'Anon', description: 'Quick footwork routine' }),
+      drill({ id: 'd2', name: 'Anon2', source: 'Coach smith manual' }),
+    ];
+    expect(
+      filterDrills(withText, { search: 'footwork' }).map((d) => d.id),
+    ).toEqual(['d1']);
+    expect(
+      filterDrills(withText, { search: 'smith' }).map((d) => d.id),
+    ).toEqual(['d2']);
   });
 
   it('durationMax excludes longer drills but keeps flexible (no duration) ones', () => {
@@ -78,15 +93,34 @@ describe('filterDrills', () => {
     expect(out.map((d) => d.id).sort()).toEqual(['a', 'c', 'x']);
   });
 
-  it('ageLevels: drills marked all_age match any requested filter', () => {
-    expect(
-      filterDrills(library, { ageLevels: [PracticeAgeLevel.U10] }).map((d) => d.id),
-    ).toContain('a');
+  it('ageLevels: drills marked all_age match any requested filter but non-matching are excluded', () => {
+    const varsityOnly = drill({
+      id: 'v',
+      name: 'Varsity only',
+      ageLevels: [PracticeAgeLevel.HIGH_SCHOOL_VARSITY],
+    });
+    const out = filterDrills([...library, varsityOnly], {
+      ageLevels: [PracticeAgeLevel.U10],
+    });
+    const ids = out.map((d) => d.id);
+    // 'a' and 'b' are all-ages, so they match U10; 'c' advertises only varsity
+    // and 'v' advertises only varsity so both must be excluded.
+    expect(ids).toContain('a');
+    expect(ids).not.toContain('c');
+    expect(ids).not.toContain('v');
   });
 
-  it('positions empty array on drill means any position', () => {
-    const out = filterDrills(library, { positions: ['SS'] });
-    expect(out.map((d) => d.id).sort()).toEqual(['a', 'b', 'c']);
+  it('positions empty array on drill means any position, but non-matching positions are excluded', () => {
+    const pitcherOnly = drill({
+      id: 'p',
+      name: 'Pitcher only',
+      positions: ['P'],
+    });
+    const out = filterDrills([...library, pitcherOnly], { positions: ['SS'] });
+    const ids = out.map((d) => d.id);
+    // library entries have empty positions → match; pitcherOnly has ['P'] → excluded.
+    expect(ids.sort()).toEqual(['a', 'b', 'c']);
+    expect(ids).not.toContain('p');
   });
 
   it('visibility=team excludes system drills', () => {

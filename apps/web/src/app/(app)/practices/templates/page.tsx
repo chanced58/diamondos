@@ -62,11 +62,19 @@ export default async function TemplatesPage(): Promise<JSX.Element> {
   const templates = await listTemplates(supabase, activeTeam.id);
   const groups = groupByKind(templates);
 
-  const kindOrder = [
+  const preferredOrder = [
     PracticeTemplateKind.WEEKLY_RECURRING,
     PracticeTemplateKind.SEASONAL,
     PracticeTemplateKind.QUICK_90,
     PracticeTemplateKind.CUSTOM,
+  ];
+  // Append any future PracticeTemplateKind values that aren't yet in the
+  // preferred list so new enum members still render instead of vanishing.
+  const kindOrder: PracticeTemplateKind[] = [
+    ...preferredOrder,
+    ...Object.values(PracticeTemplateKind).filter(
+      (k) => !preferredOrder.includes(k),
+    ),
   ];
 
   return (
