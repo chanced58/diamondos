@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type JSX } from 'react';
+import { useEffect, useId, useMemo, useState, type JSX } from 'react';
 import {
   PracticeDrill,
   SKILL_CATEGORY_LABELS,
@@ -19,18 +19,37 @@ export function DrillPicker({ drills, onPick, onClose }: Props): JSX.Element {
     () => filterDrills(drills, { search: search || undefined }).slice(0, 100),
     [drills, search],
   );
+  const headingId = useId();
+
+  // Escape key closes the modal for keyboard users.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
 
   return (
     <div
       className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-      onClick={onClose}
+      onMouseDown={(e) => {
+        // Only dismiss when the backdrop itself is clicked, not when a
+        // mousedown that started inside the modal bubbles up.
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={headingId}
         className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[80vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="p-4 border-b border-gray-200">
-          <h2 className="font-semibold text-gray-900 mb-2">Pick a drill</h2>
+          <h2 id={headingId} className="font-semibold text-gray-900 mb-2">
+            Pick a drill
+          </h2>
           <input
             autoFocus
             type="search"

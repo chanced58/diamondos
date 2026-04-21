@@ -9,7 +9,7 @@ import {
   PracticeBlockStatus,
 } from '@baseball/shared';
 import {
-  getDrillById,
+  getDrillsByIds,
   getPracticeWithBlocks,
 } from '@baseball/database';
 import { createPracticeServiceClient } from '@/lib/practices/authz';
@@ -43,8 +43,8 @@ export default async function PrintPracticePage({ params }: Props): Promise<JSX.
         .filter((id): id is string => Boolean(id)),
     ),
   );
-  const drills = (await Promise.all(drillIds.map((id) => getDrillById(supabase, id))))
-    .filter((d): d is NonNullable<typeof d> => d !== null);
+  // Single batched fetch — the previous per-id loop was O(N) round-trips.
+  const drills = await getDrillsByIds(supabase, drillIds);
   const drillMap = new Map(drills.map((d) => [d.id, d]));
 
   const playerIds = Array.from(
@@ -76,7 +76,10 @@ export default async function PrintPracticePage({ params }: Props): Promise<JSX.
     }
   }
 
-  const scheduleStart = practice.startedAt ?? practice.scheduledAt;
+  // Fallback to "now" if the practice somehow has neither — the card still
+  // needs to render with sensible relative times.
+  const scheduleStart =
+    practice.startedAt ?? practice.scheduledAt ?? new Date().toISOString();
   const schedule = computeBlockSchedule(
     practice.blocks.map((b) => ({
       id: b.id,

@@ -56,7 +56,9 @@ export function DrillFiltersPanel({ filters, onChange }: Props): JSX.Element {
     (filters.ageLevels?.length ?? 0) > 0 ||
     (filters.equipment?.length ?? 0) > 0 ||
     (filters.fieldSpaces?.length ?? 0) > 0 ||
-    filters.visibility !== undefined ||
+    // 'all' is the default source — don't count it as an active filter so
+    // the Clear button stays hidden on a fresh page.
+    (filters.visibility !== undefined && filters.visibility !== 'all') ||
     filters.durationMax !== undefined ||
     !!filters.search;
 

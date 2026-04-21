@@ -109,8 +109,8 @@ export function PrintCoachCard({
                   {r.notes && <div className="text-[11px] font-normal text-gray-700">{r.notes}</div>}
                   {r.stations.length > 0 && (
                     <div className="mt-1 text-[11px] font-normal text-gray-700">
-                      {r.stations.map((s) => (
-                        <div key={s.name}>
+                      {r.stations.map((s, i) => (
+                        <div key={`${s.name}-${i}`}>
                           · <strong>{s.name}</strong>
                           {s.drillName ? `: ${s.drillName}` : ''}
                           {s.fieldSpace ? ` — ${s.fieldSpace}` : ''}

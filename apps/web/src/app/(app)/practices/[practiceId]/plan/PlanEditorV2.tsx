@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type JSX } from 'react';
+import { useEffect, useMemo, useState, type JSX } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   DndContext,
@@ -68,7 +68,12 @@ export function PlanEditorV2({ practice, drills, templates }: Props): JSX.Elemen
 
   function run(fn: () => Promise<void>) {
     setPending(true);
-    fn().finally(() => setPending(false));
+    setError(null);
+    fn()
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Request failed.');
+      })
+      .finally(() => setPending(false));
   }
 
   const initialBlocks = useMemo<BlockRowData[]>(
@@ -90,6 +95,13 @@ export function PlanEditorV2({ practice, drills, templates }: Props): JSX.Elemen
   );
 
   const [blocks, setBlocks] = useState<BlockRowData[]>(initialBlocks);
+
+  // After a server mutation + router.refresh(), practice.blocks arrives with
+  // fresh ids/positions. Re-seed local state when the input materially
+  // changes so we don't strand stale optimistic state.
+  useEffect(() => {
+    setBlocks(initialBlocks);
+  }, [initialBlocks]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
 
   const drillsById = useMemo(() => {
@@ -160,23 +172,22 @@ export function PlanEditorV2({ practice, drills, templates }: Props): JSX.Elemen
   function handleDragEnd(e: DragEndEvent) {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
-    setBlocks((arr) => {
-      const oldIdx = arr.findIndex((b) => b.id === active.id);
-      const newIdx = arr.findIndex((b) => b.id === over.id);
-      if (oldIdx < 0 || newIdx < 0) return arr;
-      const next = arrayMove(arr, oldIdx, newIdx).map((b, i) => ({
-        ...b,
-        position: i,
-      }));
-      run(async () => {
-        const res = await reorderBlocksAction({
-          practiceId: practice.id,
-          orderedBlockIds: next.map((b) => b.id),
-        });
-        if (res.error) setError(res.error);
-        router.refresh();
+    const oldIdx = blocks.findIndex((b) => b.id === active.id);
+    const newIdx = blocks.findIndex((b) => b.id === over.id);
+    if (oldIdx < 0 || newIdx < 0) return;
+    const next = arrayMove(blocks, oldIdx, newIdx).map((b, i) => ({
+      ...b,
+      position: i,
+    }));
+    // Pure state update first — no side effects inside the updater.
+    setBlocks(next);
+    run(async () => {
+      const res = await reorderBlocksAction({
+        practiceId: practice.id,
+        orderedBlockIds: next.map((b) => b.id),
       });
-      return next;
+      if (res.error) setError(res.error);
+      router.refresh();
     });
   }
 
@@ -217,18 +228,27 @@ export function PlanEditorV2({ practice, drills, templates }: Props): JSX.Elemen
     setBlocks((arr) => arr.map((b) => (b.id === id ? { ...b, ...patch } : b)));
   }
 
-  function saveBlock(b: BlockRowData) {
+  /**
+   * Merge patch + current row and persist in a single call. Previously the
+   * row component did onChange(patch) then onCommit(), but onCommit captured
+   * a stale `blocks` reference and saved the pre-patch values. Merging the
+   * patch against the latest-known row here fixes it.
+   */
+  function saveBlockWithPatch(id: string, patch: Partial<BlockRowData>) {
+    const current = blocks.find((x) => x.id === id);
+    if (!current) return;
+    const merged = { ...current, ...patch };
     run(async () => {
       const res = await upsertBlockAction({
-        id: b.id,
+        id: merged.id,
         practiceId: practice.id,
-        position: b.position,
-        blockType: b.blockType,
-        title: b.title,
-        plannedDurationMinutes: b.plannedDurationMinutes,
-        drillId: b.drillId,
-        fieldSpaces: b.fieldSpaces,
-        notes: b.notes || undefined,
+        position: merged.position,
+        blockType: merged.blockType,
+        title: merged.title,
+        plannedDurationMinutes: merged.plannedDurationMinutes,
+        drillId: merged.drillId,
+        fieldSpaces: merged.fieldSpaces,
+        notes: merged.notes || undefined,
       });
       if (res.error) setError(res.error);
     });
@@ -273,11 +293,14 @@ export function PlanEditorV2({ practice, drills, templates }: Props): JSX.Elemen
     );
     if (!endInput) return;
     const [h, m] = endInput.split(':').map(Number);
-    if (!Number.isFinite(h) || !Number.isFinite(m)) {
-      setError('Invalid time.');
+    if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) {
+      setError('Invalid time. Use HH:MM (24-hour).');
       return;
     }
-    const target = new Date();
+    // Anchor the date to the practice day (started or scheduled) rather than
+    // "now" — otherwise a coach running a practice at 9pm who targets 10pm
+    // would land a date on tomorrow if they kept the modal open past midnight.
+    const target = new Date(practice.startedAt ?? practice.scheduledAt);
     target.setHours(h, m, 0, 0);
     const activeIdx = blocks.findIndex(
       (b) =>
@@ -437,9 +460,9 @@ export function PlanEditorV2({ practice, drills, templates }: Props): JSX.Elemen
                   drills={drills}
                   drillsById={drillsById}
                   onChange={(patch) => patchBlock(b.id, patch)}
-                  onCommit={() => {
-                    const current = blocks.find((x) => x.id === b.id);
-                    if (current) saveBlock(current);
+                  onChangeAndCommit={(patch) => {
+                    patchBlock(b.id, patch);
+                    saveBlockWithPatch(b.id, patch);
                   }}
                   onRemove={() => removeBlock(b.id)}
                 />
@@ -504,8 +527,11 @@ interface RowProps {
   conflict: boolean;
   drills: PracticeDrill[];
   drillsById: Map<string, PracticeDrill>;
+  /** Update local state only (for "user is still typing"). */
   onChange: (patch: Partial<BlockRowData>) => void;
-  onCommit: () => void;
+  /** Update local state AND persist — merges the patch against the latest
+   * parent state so no stale commit can occur. */
+  onChangeAndCommit: (patch: Partial<BlockRowData>) => void;
   onRemove: () => void;
 }
 
@@ -516,7 +542,7 @@ function SortableBlock({
   drills,
   drillsById,
   onChange,
-  onCommit,
+  onChangeAndCommit,
   onRemove,
 }: RowProps): JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -568,15 +594,14 @@ function SortableBlock({
             <input
               value={block.title}
               onChange={(e) => onChange({ title: e.target.value })}
-              onBlur={onCommit}
+              onBlur={(e) => onChangeAndCommit({ title: e.target.value })}
               className="border border-gray-300 rounded-lg px-3 py-1.5 font-medium"
             />
             <select
               value={block.blockType}
-              onChange={(e) => {
-                onChange({ blockType: e.target.value as PracticeBlockType });
-                onCommit();
-              }}
+              onChange={(e) =>
+                onChangeAndCommit({ blockType: e.target.value as PracticeBlockType })
+              }
               className="border border-gray-300 rounded-lg px-3 py-1.5 bg-white text-sm"
             >
               {Object.values(PracticeBlockType).map((t) => (
@@ -594,7 +619,11 @@ function SortableBlock({
                 onChange={(e) =>
                   onChange({ plannedDurationMinutes: Number(e.target.value) || 0 })
                 }
-                onBlur={onCommit}
+                onBlur={(e) =>
+                  onChangeAndCommit({
+                    plannedDurationMinutes: Number(e.target.value) || 0,
+                  })
+                }
                 className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right"
               />
               <span className="text-sm text-gray-500">min</span>
@@ -612,10 +641,7 @@ function SortableBlock({
             {drill && (
               <button
                 type="button"
-                onClick={() => {
-                  onChange({ drillId: null });
-                  onCommit();
-                }}
+                onClick={() => onChangeAndCommit({ drillId: null })}
                 className="text-gray-400 hover:text-red-500"
               >
                 Remove drill
@@ -625,17 +651,14 @@ function SortableBlock({
 
           <FieldSpacesChipInput
             value={block.fieldSpaces}
-            onChange={(fs) => {
-              onChange({ fieldSpaces: fs });
-              onCommit();
-            }}
+            onChange={(fs) => onChangeAndCommit({ fieldSpaces: fs })}
           />
 
           <textarea
             placeholder="Notes (optional)"
             value={block.notes}
             onChange={(e) => onChange({ notes: e.target.value })}
-            onBlur={onCommit}
+            onBlur={(e) => onChangeAndCommit({ notes: e.target.value })}
             rows={1}
             className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm resize-y"
           />
@@ -655,8 +678,7 @@ function SortableBlock({
         <DrillPicker
           drills={drills}
           onPick={(d) => {
-            onChange({ drillId: d.id });
-            setTimeout(onCommit, 0);
+            onChangeAndCommit({ drillId: d.id });
             setPickerOpen(false);
           }}
           onClose={() => setPickerOpen(false)}

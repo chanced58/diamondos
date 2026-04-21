@@ -66,6 +66,8 @@ export default async function PracticePlanPage({ params }: Props): Promise<JSX.E
             </Link>
             <Link
               href={`/practices/${practiceId}/print`}
+              target="_blank"
+              rel="noopener noreferrer"
               className="bg-white border border-gray-300 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 text-sm"
             >
               🖨 Print card

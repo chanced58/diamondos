@@ -8,10 +8,9 @@ import {
 
 interface Props {
   drill: PracticeDrill;
-  canEdit: boolean;
 }
 
-export function DrillCard({ drill, canEdit: _canEdit }: Props): JSX.Element {
+export function DrillCard({ drill }: Props): JSX.Element {
   const isSystem = drill.visibility === PracticeDrillVisibility.SYSTEM;
   return (
     <div className="bg-white rounded-xl border border-gray-200 hover:border-brand-400 hover:shadow-sm transition-all p-4 h-full flex flex-col">

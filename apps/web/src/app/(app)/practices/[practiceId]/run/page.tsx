@@ -43,6 +43,7 @@ export default async function RunPracticePage({ params }: Props): Promise<JSX.El
           href={`/practices/${practiceId}/print`}
           className="text-sm text-brand-700 hover:underline"
           target="_blank"
+          rel="noopener noreferrer"
         >
           Print card →
         </Link>

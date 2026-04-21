@@ -90,8 +90,10 @@ export function TemplateBuilderForm({
   const [seasonPhase, setSeasonPhase] = useState<PracticeSeasonPhase>(
     template?.seasonPhase ?? PracticeSeasonPhase.ANY,
   );
-  const [defaultDurationMinutes, setDefaultDurationMinutes] = useState(
-    template?.defaultDurationMinutes ?? 90,
+  // Keep as string while the user types so we don't clobber "" → 90 on every
+  // keystroke. Parsed on save (validation enforces 15..600).
+  const [defaultDurationMinutes, setDefaultDurationMinutes] = useState<string>(
+    String(template?.defaultDurationMinutes ?? 90),
   );
   const [isIndoorFallback, setIsIndoorFallback] = useState(template?.isIndoorFallback ?? false);
   const [pairedTemplateId, setPairedTemplateId] = useState<string | null>(
@@ -181,7 +183,7 @@ export function TemplateBuilderForm({
         description: description || undefined,
         kind,
         seasonPhase,
-        defaultDurationMinutes,
+        defaultDurationMinutes: Number(defaultDurationMinutes) || 90,
         isIndoorFallback,
         pairedTemplateId: pairedTemplateId ?? undefined,
         blocks: blocks.map((b, i) => ({
@@ -301,7 +303,7 @@ export function TemplateBuilderForm({
               min={15}
               max={600}
               value={defaultDurationMinutes}
-              onChange={(e) => setDefaultDurationMinutes(Number(e.target.value) || 90)}
+              onChange={(e) => setDefaultDurationMinutes(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2"
             />
           </div>

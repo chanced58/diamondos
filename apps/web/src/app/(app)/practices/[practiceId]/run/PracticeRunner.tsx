@@ -67,7 +67,12 @@ export function PracticeRunner({ practice }: Props): JSX.Element {
 
   function run(fn: () => Promise<void>) {
     setPending(true);
-    fn().finally(() => setPending(false));
+    setError(null);
+    fn()
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Request failed.');
+      })
+      .finally(() => setPending(false));
   }
 
   function handleStartPractice() {

@@ -1,6 +1,7 @@
 import type { JSX } from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getUserAccess } from '@/lib/user-access';
@@ -27,12 +28,12 @@ function groupByKind(templates: PracticeTemplate[]): Record<string, PracticeTemp
   return groups;
 }
 
-export default async function TemplatesPage(): Promise<JSX.Element | null> {
+export default async function TemplatesPage(): Promise<JSX.Element> {
   const auth = createServerClient();
   const {
     data: { user },
   } = await auth.auth.getUser();
-  if (!user) return null;
+  if (!user) redirect('/sign-in');
 
   const activeTeam = await getActiveTeam(auth, user.id);
   if (!activeTeam) {

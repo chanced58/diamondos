@@ -95,7 +95,7 @@ export default async function DrillsPage(): Promise<JSX.Element | null> {
         )}
       </div>
 
-      <DrillLibraryClient drills={drills} canEdit={isCoach} teamId={activeTeam.id} />
+      <DrillLibraryClient drills={drills} />
     </div>
   );
 }

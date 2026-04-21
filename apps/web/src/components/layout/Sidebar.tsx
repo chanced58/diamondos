@@ -229,7 +229,9 @@ function PracticeSubLink({
   label: string;
   pathname: string;
 }): JSX.Element {
-  const isActive = pathname.startsWith(href);
+  // Exact match or a nested segment — `startsWith(href)` alone would make
+  // `/practices/drills` light up when the pathname is `/practices/drills2`.
+  const isActive = pathname === href || pathname.startsWith(href + '/');
   return (
     <Link
       href={href}

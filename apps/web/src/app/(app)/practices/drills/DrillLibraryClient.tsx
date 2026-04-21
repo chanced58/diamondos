@@ -14,11 +14,9 @@ import { DrillFiltersPanel } from './DrillFilters';
 
 interface Props {
   drills: PracticeDrill[];
-  canEdit: boolean;
-  teamId: string;
 }
 
-export function DrillLibraryClient({ drills, canEdit, teamId: _teamId }: Props): JSX.Element {
+export function DrillLibraryClient({ drills }: Props): JSX.Element {
   const [filters, setFilters] = useState<DrillFilters>({});
   const [sort, setSort] = useState<DrillSort>('name');
 
@@ -66,7 +64,7 @@ export function DrillLibraryClient({ drills, canEdit, teamId: _teamId }: Props):
             {visible.map((d) => (
               <li key={d.id}>
                 <Link href={`/practices/drills/${d.id}`} className="block h-full">
-                  <DrillCard drill={d} canEdit={canEdit} />
+                  <DrillCard drill={d} />
                 </Link>
               </li>
             ))}
