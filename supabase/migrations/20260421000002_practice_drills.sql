@@ -19,7 +19,7 @@ create table public.practice_drills (
   equipment                 public.practice_equipment[] not null default '{}',
   field_spaces              public.practice_field_space[] not null default '{}',
   min_players               int check (min_players is null or min_players >= 1),
-  max_players               int,
+  max_players               int check (max_players is null or max_players >= 1),
   coaching_points           text,
   tags                      text[] not null default '{}',
   diagram_url               text,

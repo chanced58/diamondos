@@ -15,6 +15,7 @@ create policy "drill_attachments_team_members_read"
   on storage.objects for select
   using (
     bucket_id = 'drill-attachments'
+    and (string_to_array(name, '/'))[1] ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
     and exists (
       select 1 from public.team_members tm
       where tm.team_id = (string_to_array(name, '/'))[1]::uuid
@@ -28,6 +29,7 @@ create policy "drill_attachments_coach_insert"
   on storage.objects for insert
   with check (
     bucket_id = 'drill-attachments'
+    and (string_to_array(name, '/'))[1] ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
     and public.is_coach((string_to_array(name, '/'))[1]::uuid, auth.uid())
   );
 
@@ -35,10 +37,12 @@ create policy "drill_attachments_coach_update"
   on storage.objects for update
   using (
     bucket_id = 'drill-attachments'
+    and (string_to_array(name, '/'))[1] ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
     and public.is_coach((string_to_array(name, '/'))[1]::uuid, auth.uid())
   )
   with check (
     bucket_id = 'drill-attachments'
+    and (string_to_array(name, '/'))[1] ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
     and public.is_coach((string_to_array(name, '/'))[1]::uuid, auth.uid())
   );
 
@@ -46,5 +50,6 @@ create policy "drill_attachments_coach_delete"
   on storage.objects for delete
   using (
     bucket_id = 'drill-attachments'
+    and (string_to_array(name, '/'))[1] ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
     and public.is_coach((string_to_array(name, '/'))[1]::uuid, auth.uid())
   );

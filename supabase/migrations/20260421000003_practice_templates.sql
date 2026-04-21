@@ -77,6 +77,46 @@ create trigger trg_practice_template_blocks_touch_updated_at
   before update on public.practice_template_blocks
   for each row execute function public.touch_practice_template_blocks_updated_at();
 
+-- ─── Paired template validator ───────────────────────────────────────────────
+-- If paired_template_id is set, it must point at an indoor_fallback template
+-- on the SAME team and must not self-reference. Enforced at DB level so a
+-- crafted request cannot pair across teams.
+create or replace function public.validate_practice_template_pairing()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_team_id uuid;
+  v_is_indoor boolean;
+begin
+  if new.paired_template_id is null then
+    return new;
+  end if;
+  if new.paired_template_id = new.id then
+    raise exception 'paired_template_id cannot reference the template itself';
+  end if;
+  select team_id, is_indoor_fallback
+    into v_team_id, v_is_indoor
+    from public.practice_templates
+   where id = new.paired_template_id;
+  if not found then
+    raise exception 'paired_template_id % not found', new.paired_template_id;
+  end if;
+  if v_team_id is distinct from new.team_id then
+    raise exception 'paired_template_id must belong to the same team';
+  end if;
+  if v_is_indoor is not true then
+    raise exception 'paired_template_id must point at an indoor fallback template';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger trg_practice_templates_validate_pairing
+  before insert or update of paired_template_id, team_id
+  on public.practice_templates
+  for each row execute function public.validate_practice_template_pairing();
+
 -- ─── RLS ─────────────────────────────────────────────────────────────────────
 alter table public.practice_templates       enable row level security;
 alter table public.practice_template_blocks enable row level security;

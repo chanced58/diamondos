@@ -15,6 +15,14 @@ do $$
 declare
   ns constant uuid := '7a6b5c1d-2e3f-4a5b-8c7d-6e5f4a3b2c1d';
 begin
+  -- Ensure the uuid-ossp extension is reachable regardless of the caller's
+  -- search_path. Supabase installs it into the `extensions` schema by default.
+  perform set_config(
+    'search_path',
+    'public, extensions, pg_temp',
+    true
+  );
+
   insert into public.practice_drills (
     id, team_id, visibility, name, description, default_duration_minutes,
     skill_categories, positions, age_levels, equipment, field_spaces,

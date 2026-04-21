@@ -55,9 +55,18 @@ create table public.practice_block_players (
 comment on table public.practice_block_players is
   'Players assigned to a block. rotation_group optionally partitions the block for station rotations.';
 
--- Now that practice_blocks exists, link practices.active_block_id.
+-- A composite unique on (id, practice_id) lets us add a composite FK from
+-- practices.active_block_id so the active block is guaranteed to belong to
+-- the same practice — plain FK on id alone would allow cross-practice pointers.
+alter table public.practice_blocks
+  add constraint practice_blocks_id_practice_unique unique (id, practice_id);
+
 alter table public.practices
-  add column active_block_id uuid references public.practice_blocks(id) on delete set null;
+  add column active_block_id uuid,
+  add constraint practices_active_block_in_practice_fkey
+    foreign key (active_block_id, id)
+    references public.practice_blocks(id, practice_id)
+    on delete set null;
 
 -- ─── Indexes ─────────────────────────────────────────────────────────────────
 create index idx_practice_blocks_practice_position on public.practice_blocks(practice_id, position);
@@ -113,6 +122,7 @@ create or replace function public.practice_reorder_blocks(
 returns void
 language plpgsql
 security definer
+set search_path = public, pg_temp
 as $$
 declare
   is_coach_on_team boolean;
