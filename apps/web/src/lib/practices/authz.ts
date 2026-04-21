@@ -58,3 +58,68 @@ export async function assertCoachOnTeam(
     throw new Error('Only coaches on this team can perform this action.');
   }
 }
+
+/**
+ * Throws if the user is not a head coach or athletic director on the team.
+ * Used by actions that change structural fields (create / delete blocks,
+ * reorder, reassign coaches, compose rosters).
+ */
+export async function assertHeadCoachOrAD(
+  supabase: SupabaseClient,
+  userId: string,
+  teamId: string,
+): Promise<void> {
+  const check = await checkCoachOnTeam(supabase, userId, teamId);
+  if (check.role !== 'head_coach' && check.role !== 'athletic_director') {
+    throw new Error(
+      'Only head coaches or athletic directors can perform this action.',
+    );
+  }
+}
+
+/**
+ * Throws if the user cannot edit content fields on the given block — i.e. they
+ * are not HC/AD on the team AND they are not the block's assigned coach. Used
+ * by actions that change content fields (notes, status, actual duration,
+ * field_spaces, title) on an existing block.
+ *
+ * Assumes `blockId` has already been verified to live within the expected
+ * practice via the cross-scope guards in server-action callers.
+ */
+export async function assertCanEditBlock(
+  supabase: SupabaseClient,
+  userId: string,
+  blockId: string,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('practice_blocks')
+    .select('assigned_coach_id, practices!inner(team_id)')
+    .eq('id', blockId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to load block: ${error.message}`);
+  if (!data) throw new Error('Block not found.');
+
+  const assignedCoachId = (data as unknown as { assigned_coach_id: string | null })
+    .assigned_coach_id;
+  const teamId = (
+    data as unknown as { practices: { team_id: string } | { team_id: string }[] }
+  ).practices;
+  const teamIdValue = Array.isArray(teamId) ? teamId[0]?.team_id : teamId?.team_id;
+  if (!teamIdValue) throw new Error('Block has no associated team.');
+
+  const check = await checkCoachOnTeam(supabase, userId, teamIdValue);
+  if (!check.isCoach) {
+    throw new Error('You are not a coach on this team.');
+  }
+
+  const isHcOrAd =
+    check.role === 'head_coach' || check.role === 'athletic_director';
+  if (isHcOrAd) return;
+
+  // Assistant coach path — must be the assigned owner of this block.
+  if (assignedCoachId !== userId) {
+    throw new Error(
+      'Only the block owner or a head coach can modify this block.',
+    );
+  }
+}

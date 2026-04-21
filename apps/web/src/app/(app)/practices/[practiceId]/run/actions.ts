@@ -11,13 +11,28 @@ import {
   startBlock,
 } from '@baseball/database';
 import {
-  assertCoachOnTeam,
+  assertCanEditBlock,
+  assertHeadCoachOrAD,
   createPracticeServiceClient,
 } from '@/lib/practices/authz';
 
 type Result = { error?: string };
 
-async function verifyCoach(practiceId: string) {
+type ServiceClient = ReturnType<typeof createPracticeServiceClient>;
+
+type AuthorizeResult =
+  | { error: string; supabase?: undefined; userId?: undefined; teamId?: undefined }
+  | { error?: undefined; supabase: ServiceClient; userId: string; teamId: string };
+
+/**
+ * Authenticates the caller and resolves the practice's team id. Practice-level
+ * state transitions (start/complete the whole practice) additionally require
+ * HC/AD; per-block transitions use the block-owner guard instead.
+ */
+async function authorize(
+  practiceId: string,
+  requireHeadCoachOrAD: boolean,
+): Promise<AuthorizeResult> {
   const auth = createServerClient();
   const {
     data: { user },
@@ -30,12 +45,15 @@ async function verifyCoach(practiceId: string) {
     .eq('id', practiceId)
     .maybeSingle();
   if (!data) return { error: 'Practice not found.' };
+  const teamId = data.team_id as string;
   try {
-    await assertCoachOnTeam(supabase, user.id, data.team_id as string);
+    if (requireHeadCoachOrAD) {
+      await assertHeadCoachOrAD(supabase, user.id, teamId);
+    }
   } catch (e) {
     return { error: e instanceof Error ? e.message : 'Not authorized.' };
   }
-  return { supabase };
+  return { supabase, userId: user.id, teamId };
 }
 
 /**
@@ -45,7 +63,7 @@ async function verifyCoach(practiceId: string) {
  * block belonging to practice B by substituting its id.
  */
 async function assertBlockBelongsToPractice(
-  supabase: ReturnType<typeof createPracticeServiceClient>,
+  supabase: ServiceClient,
   practiceId: string,
   blockId: string,
 ): Promise<string | null> {
@@ -58,11 +76,41 @@ async function assertBlockBelongsToPractice(
   return data ? null : 'Block is not part of this practice.';
 }
 
+type AuthorizeBlockResult =
+  | { error: string; supabase?: undefined }
+  | { error?: undefined; supabase: ServiceClient };
+
+/**
+ * Block-level authorization preamble shared by start / complete / skip.
+ * Runs: authenticate → verify block belongs to practice → verify caller can
+ * edit the block (HC/AD or the block's assigned coach). Returns a service-
+ * role client on success.
+ */
+async function authorizeBlock(
+  practiceId: string,
+  blockId: string,
+): Promise<AuthorizeBlockResult> {
+  const check = await authorize(practiceId, false);
+  if (check.error !== undefined) return { error: check.error };
+  const scopeErr = await assertBlockBelongsToPractice(
+    check.supabase,
+    practiceId,
+    blockId,
+  );
+  if (scopeErr) return { error: scopeErr };
+  try {
+    await assertCanEditBlock(check.supabase, check.userId, blockId);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Not authorized.' };
+  }
+  return { supabase: check.supabase };
+}
+
 export async function startPracticeAction(args: {
   practiceId: string;
 }): Promise<Result> {
-  const check = await verifyCoach(args.practiceId);
-  if (check.error || !check.supabase) return { error: check.error };
+  const check = await authorize(args.practiceId, true);
+  if (check.error !== undefined) return { error: check.error };
   try {
     await markPracticeStarted(check.supabase, args.practiceId, new Date().toISOString());
     revalidatePath(`/practices/${args.practiceId}/run`);
@@ -76,14 +124,8 @@ export async function startBlockAction(args: {
   practiceId: string;
   blockId: string;
 }): Promise<Result> {
-  const check = await verifyCoach(args.practiceId);
-  if (check.error || !check.supabase) return { error: check.error };
-  const scopeErr = await assertBlockBelongsToPractice(
-    check.supabase,
-    args.practiceId,
-    args.blockId,
-  );
-  if (scopeErr) return { error: scopeErr };
+  const check = await authorizeBlock(args.practiceId, args.blockId);
+  if (check.error !== undefined) return { error: check.error };
   try {
     const now = new Date().toISOString();
     const updated = await startBlock(check.supabase, args.blockId, now);
@@ -103,14 +145,8 @@ export async function completeBlockAction(args: {
   blockId: string;
   actualDurationMinutes: number;
 }): Promise<Result> {
-  const check = await verifyCoach(args.practiceId);
-  if (check.error || !check.supabase) return { error: check.error };
-  const scopeErr = await assertBlockBelongsToPractice(
-    check.supabase,
-    args.practiceId,
-    args.blockId,
-  );
-  if (scopeErr) return { error: scopeErr };
+  const check = await authorizeBlock(args.practiceId, args.blockId);
+  if (check.error !== undefined) return { error: check.error };
   try {
     await completeBlock(
       check.supabase,
@@ -129,14 +165,8 @@ export async function skipBlockAction(args: {
   practiceId: string;
   blockId: string;
 }): Promise<Result> {
-  const check = await verifyCoach(args.practiceId);
-  if (check.error || !check.supabase) return { error: check.error };
-  const scopeErr = await assertBlockBelongsToPractice(
-    check.supabase,
-    args.practiceId,
-    args.blockId,
-  );
-  if (scopeErr) return { error: scopeErr };
+  const check = await authorizeBlock(args.practiceId, args.blockId);
+  if (check.error !== undefined) return { error: check.error };
   try {
     await skipBlock(check.supabase, args.blockId);
     revalidatePath(`/practices/${args.practiceId}/run`);
@@ -149,8 +179,8 @@ export async function skipBlockAction(args: {
 export async function completePracticeAction(args: {
   practiceId: string;
 }): Promise<Result> {
-  const check = await verifyCoach(args.practiceId);
-  if (check.error || !check.supabase) return { error: check.error };
+  const check = await authorize(args.practiceId, true);
+  if (check.error !== undefined) return { error: check.error };
   try {
     await markPracticeCompleted(
       check.supabase,

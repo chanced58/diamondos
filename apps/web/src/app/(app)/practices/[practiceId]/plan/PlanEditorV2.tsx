@@ -34,6 +34,7 @@ import {
   compressRemaining,
   detectFieldSpaceConflicts,
 } from '@baseball/shared';
+import type { TeamCoach } from '@baseball/database';
 import { DrillPicker } from '../../templates/DrillPicker';
 import {
   applyWeatherSwapAction,
@@ -41,6 +42,7 @@ import {
   deleteBlockAction,
   instantiateFromTemplateAction,
   reorderBlocksAction,
+  setBlockAssignedCoachAction,
   upsertBlockAction,
 } from './actions';
 
@@ -48,6 +50,12 @@ interface Props {
   practice: PracticeWithBlocks;
   drills: PracticeDrill[];
   templates: PracticeTemplate[];
+  coaches: TeamCoach[];
+  currentUserId: string;
+  /** True for head_coach / athletic_director / platform admin — may edit any
+   * structural field, create/delete blocks, reorder, reassign. Assistant coaches
+   * may only edit content on blocks they own. */
+  canChangeStructure: boolean;
 }
 
 interface BlockRowData {
@@ -57,11 +65,19 @@ interface BlockRowData {
   title: string;
   plannedDurationMinutes: number;
   drillId: string | null;
+  assignedCoachId: string | null;
   fieldSpaces: PracticeFieldSpace[];
   notes: string;
 }
 
-export function PlanEditorV2({ practice, drills, templates }: Props): JSX.Element {
+export function PlanEditorV2({
+  practice,
+  drills,
+  templates,
+  coaches,
+  currentUserId,
+  canChangeStructure,
+}: Props): JSX.Element {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,11 +104,18 @@ export function PlanEditorV2({ practice, drills, templates }: Props): JSX.Elemen
           title: b.title,
           plannedDurationMinutes: b.plannedDurationMinutes,
           drillId: b.drillId ?? null,
+          assignedCoachId: b.assignedCoachId ?? null,
           fieldSpaces: b.fieldSpaces,
           notes: b.notes ?? '',
         })),
     [practice.blocks],
   );
+
+  const coachesById = useMemo(() => {
+    const m = new Map<string, TeamCoach>();
+    for (const c of coaches) m.set(c.userId, c);
+    return m;
+  }, [coaches]);
 
   const [blocks, setBlocks] = useState<BlockRowData[]>(initialBlocks);
 
@@ -247,10 +270,33 @@ export function PlanEditorV2({ practice, drills, templates }: Props): JSX.Elemen
         title: merged.title,
         plannedDurationMinutes: merged.plannedDurationMinutes,
         drillId: merged.drillId,
+        // Explicitly thread the owner so content-only saves don't wipe the
+        // assignment on the server. Owner reassignment goes through
+        // setBlockAssignedCoachAction instead.
+        assignedCoachId: merged.assignedCoachId,
         fieldSpaces: merged.fieldSpaces,
         notes: merged.notes || undefined,
       });
       if (res.error) setError(res.error);
+    });
+  }
+
+  function assignCoach(id: string, coachUserId: string | null) {
+    const current = blocks.find((x) => x.id === id);
+    if (!current) return;
+    patchBlock(id, { assignedCoachId: coachUserId });
+    run(async () => {
+      const res = await setBlockAssignedCoachAction({
+        practiceId: practice.id,
+        blockId: id,
+        coachUserId,
+      });
+      if (res.error) {
+        setError(res.error);
+        patchBlock(id, { assignedCoachId: current.assignedCoachId });
+      } else {
+        router.refresh();
+      }
     });
   }
 
@@ -332,8 +378,8 @@ export function PlanEditorV2({ practice, drills, templates }: Props): JSX.Elemen
           <select
             value={selectedTemplate}
             onChange={(e) => setSelectedTemplate(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-1.5 bg-white text-sm"
-            disabled={pending}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 bg-white text-sm disabled:opacity-60"
+            disabled={pending || !canChangeStructure}
           >
             <option value="">— choose —</option>
             {templates.map((t) => (
@@ -345,7 +391,7 @@ export function PlanEditorV2({ practice, drills, templates }: Props): JSX.Elemen
           <button
             type="button"
             onClick={handleInstantiate}
-            disabled={!selectedTemplate || pending}
+            disabled={!selectedTemplate || pending || !canChangeStructure}
             className="bg-brand-700 text-white text-sm font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60"
           >
             Apply
@@ -356,14 +402,15 @@ export function PlanEditorV2({ practice, drills, templates }: Props): JSX.Elemen
           <button
             type="button"
             onClick={() => setWeatherOpen((v) => !v)}
-            className="bg-white border border-gray-300 text-sm font-semibold px-3 py-1.5 rounded-lg hover:bg-gray-50"
+            disabled={!canChangeStructure}
+            className="bg-white border border-gray-300 text-sm font-semibold px-3 py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-60"
           >
             Weather swap
           </button>
           <button
             type="button"
             onClick={handleCompress}
-            disabled={blocks.length === 0 || pending}
+            disabled={blocks.length === 0 || pending || !canChangeStructure}
             className="bg-white border border-gray-300 text-sm font-semibold px-3 py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-60"
           >
             We&apos;re behind — compress
@@ -431,14 +478,20 @@ export function PlanEditorV2({ practice, drills, templates }: Props): JSX.Elemen
           <h2 className="text-sm font-semibold text-gray-900">
             Blocks · {blocks.length} · total {totalMinutes} min
           </h2>
-          <button
-            type="button"
-            onClick={addBlankBlock}
-            disabled={pending}
-            className="text-sm bg-white border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50"
-          >
-            + Add block
-          </button>
+          {canChangeStructure ? (
+            <button
+              type="button"
+              onClick={addBlankBlock}
+              disabled={pending}
+              className="text-sm bg-white border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50 disabled:opacity-60"
+            >
+              + Add block
+            </button>
+          ) : (
+            <span className="text-xs text-gray-500">
+              You can edit blocks you own. Ask your head coach to reassign or add blocks.
+            </span>
+          )}
         </div>
 
         <DndContext
@@ -451,22 +504,32 @@ export function PlanEditorV2({ practice, drills, templates }: Props): JSX.Elemen
             strategy={verticalListSortingStrategy}
           >
             <ul className="space-y-2">
-              {blocks.map((b) => (
-                <SortableBlock
-                  key={b.id}
-                  block={b}
-                  conflict={conflictBlockIds.has(b.id)}
-                  slot={scheduleById.get(b.id)}
-                  drills={drills}
-                  drillsById={drillsById}
-                  onChange={(patch) => patchBlock(b.id, patch)}
-                  onChangeAndCommit={(patch) => {
-                    patchBlock(b.id, patch);
-                    saveBlockWithPatch(b.id, patch);
-                  }}
-                  onRemove={() => removeBlock(b.id)}
-                />
-              ))}
+              {blocks.map((b) => {
+                const canEdit =
+                  canChangeStructure || b.assignedCoachId === currentUserId;
+                return (
+                  <SortableBlock
+                    key={b.id}
+                    block={b}
+                    conflict={conflictBlockIds.has(b.id)}
+                    slot={scheduleById.get(b.id)}
+                    drills={drills}
+                    drillsById={drillsById}
+                    coaches={coaches}
+                    coachesById={coachesById}
+                    canChangeStructure={canChangeStructure}
+                    canEdit={canEdit}
+                    pending={pending}
+                    onChange={(patch) => patchBlock(b.id, patch)}
+                    onChangeAndCommit={(patch) => {
+                      patchBlock(b.id, patch);
+                      saveBlockWithPatch(b.id, patch);
+                    }}
+                    onAssignCoach={(coachId) => assignCoach(b.id, coachId)}
+                    onRemove={() => removeBlock(b.id)}
+                  />
+                );
+              })}
             </ul>
           </SortableContext>
         </DndContext>
@@ -527,11 +590,22 @@ interface RowProps {
   conflict: boolean;
   drills: PracticeDrill[];
   drillsById: Map<string, PracticeDrill>;
+  coaches: TeamCoach[];
+  coachesById: Map<string, TeamCoach>;
+  /** Viewer can change structural fields (HC/AD). */
+  canChangeStructure: boolean;
+  /** Viewer can edit this specific block's content (HC/AD or block owner). */
+  canEdit: boolean;
+  /** An editor-scoped mutation is in flight. Disables controls that would
+   * race against it (notably the owner select + structural inputs, where
+   * overlapping clicks could enqueue conflicting writes). */
+  pending: boolean;
   /** Update local state only (for "user is still typing"). */
   onChange: (patch: Partial<BlockRowData>) => void;
   /** Update local state AND persist — merges the patch against the latest
    * parent state so no stale commit can occur. */
   onChangeAndCommit: (patch: Partial<BlockRowData>) => void;
+  onAssignCoach: (coachUserId: string | null) => void;
   onRemove: () => void;
 }
 
@@ -541,12 +615,18 @@ function SortableBlock({
   slot,
   drills,
   drillsById,
+  coaches,
+  coachesById,
+  canChangeStructure,
+  canEdit,
+  pending,
   onChange,
   onChangeAndCommit,
+  onAssignCoach,
   onRemove,
 }: RowProps): JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: block.id });
+    useSortable({ id: block.id, disabled: !canChangeStructure });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -557,27 +637,38 @@ function SortableBlock({
   const startsAt = slot ? new Date(slot.startsAt) : null;
   const endsAt = slot ? new Date(slot.endsAt) : null;
 
+  const owner = block.assignedCoachId ? coachesById.get(block.assignedCoachId) : undefined;
+  const ownerLabel = owner?.displayName ?? (block.assignedCoachId ? 'Unknown coach' : null);
+
   return (
     <li
       ref={setNodeRef}
       style={style}
       className={`bg-white rounded-xl border p-4 transition-shadow ${
         isDragging ? 'shadow-lg' : ''
-      } ${conflict ? 'border-red-300 ring-1 ring-red-200' : 'border-gray-200'}`}
+      } ${conflict ? 'border-red-300 ring-1 ring-red-200' : 'border-gray-200'} ${
+        !canEdit ? 'opacity-80' : ''
+      }`}
     >
       <div className="flex items-start gap-3">
-        <button
-          type="button"
-          aria-label="Drag"
-          className="text-gray-400 cursor-grab active:cursor-grabbing select-none pt-1"
-          {...attributes}
-          {...listeners}
-        >
-          ⋮⋮
-        </button>
+        {canChangeStructure ? (
+          <button
+            type="button"
+            aria-label="Drag"
+            className="text-gray-400 cursor-grab active:cursor-grabbing select-none pt-1"
+            {...attributes}
+            {...listeners}
+          >
+            ⋮⋮
+          </button>
+        ) : (
+          <span className="text-gray-200 select-none pt-1" aria-hidden="true">
+            ⋮⋮
+          </span>
+        )}
 
         <div className="flex-1 space-y-2">
-          <div className="flex items-center gap-3 text-xs text-gray-500">
+          <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
             {startsAt && endsAt && (
               <span>
                 {startsAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -588,6 +679,31 @@ function SortableBlock({
             {conflict && (
               <span className="text-red-600 font-semibold">⚠ Field conflict</span>
             )}
+            {!canEdit && (
+              <span className="text-gray-400 italic">read-only</span>
+            )}
+            <span className="ml-auto flex items-center gap-1.5">
+              <span className="text-gray-400">Owner:</span>
+              {canChangeStructure ? (
+                <select
+                  value={block.assignedCoachId ?? ''}
+                  onChange={(e) => onAssignCoach(e.target.value || null)}
+                  disabled={pending}
+                  className="border border-gray-300 rounded-md px-2 py-0.5 bg-white text-xs disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
+                >
+                  <option value="">Unassigned</option>
+                  {coaches.map((c) => (
+                    <option key={c.userId} value={c.userId}>
+                      {c.displayName}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="font-medium text-gray-700">
+                  {ownerLabel ?? 'Unassigned'}
+                </span>
+              )}
+            </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-[1fr_170px_110px] gap-2">
@@ -595,14 +711,16 @@ function SortableBlock({
               value={block.title}
               onChange={(e) => onChange({ title: e.target.value })}
               onBlur={(e) => onChangeAndCommit({ title: e.target.value })}
-              className="border border-gray-300 rounded-lg px-3 py-1.5 font-medium"
+              disabled={!canEdit}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 font-medium disabled:bg-gray-50 disabled:text-gray-500"
             />
             <select
               value={block.blockType}
               onChange={(e) =>
                 onChangeAndCommit({ blockType: e.target.value as PracticeBlockType })
               }
-              className="border border-gray-300 rounded-lg px-3 py-1.5 bg-white text-sm"
+              disabled={!canChangeStructure || pending}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 bg-white text-sm disabled:bg-gray-50 disabled:text-gray-500"
             >
               {Object.values(PracticeBlockType).map((t) => (
                 <option key={t} value={t}>
@@ -624,7 +742,8 @@ function SortableBlock({
                     plannedDurationMinutes: Number(e.target.value) || 0,
                   })
                 }
-                className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right"
+                disabled={!canChangeStructure || pending}
+                className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right disabled:bg-gray-50 disabled:text-gray-500"
               />
               <span className="text-sm text-gray-500">min</span>
             </div>
@@ -634,11 +753,12 @@ function SortableBlock({
             <button
               type="button"
               onClick={() => setPickerOpen(true)}
-              className="text-brand-700 hover:underline"
+              disabled={!canChangeStructure || pending}
+              className="text-brand-700 hover:underline disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed"
             >
               {drill ? `🎯 ${drill.name}` : '+ Pick drill'}
             </button>
-            {drill && (
+            {drill && canChangeStructure && (
               <button
                 type="button"
                 onClick={() => onChangeAndCommit({ drillId: null })}
@@ -652,6 +772,7 @@ function SortableBlock({
           <FieldSpacesChipInput
             value={block.fieldSpaces}
             onChange={(fs) => onChangeAndCommit({ fieldSpaces: fs })}
+            disabled={!canEdit}
           />
 
           <textarea
@@ -659,19 +780,22 @@ function SortableBlock({
             value={block.notes}
             onChange={(e) => onChange({ notes: e.target.value })}
             onBlur={(e) => onChangeAndCommit({ notes: e.target.value })}
+            disabled={!canEdit}
             rows={1}
-            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm resize-y"
+            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm resize-y disabled:bg-gray-50 disabled:text-gray-500"
           />
         </div>
 
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label="Remove block"
-          className="text-gray-400 hover:text-red-500 pt-1"
-        >
-          ✕
-        </button>
+        {canChangeStructure && (
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label="Remove block"
+            className="text-gray-400 hover:text-red-500 pt-1"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {pickerOpen && (
@@ -691,9 +815,11 @@ function SortableBlock({
 function FieldSpacesChipInput({
   value,
   onChange,
+  disabled = false,
 }: {
   value: PracticeFieldSpace[];
   onChange: (next: PracticeFieldSpace[]) => void;
+  disabled?: boolean;
 }): JSX.Element {
   function toggle(fs: PracticeFieldSpace) {
     if (value.includes(fs)) onChange(value.filter((x) => x !== fs));
@@ -711,7 +837,8 @@ function FieldSpacesChipInput({
             key={fs}
             type="button"
             onClick={() => toggle(fs)}
-            className={`text-xs px-2 py-0.5 rounded-full border ${
+            disabled={disabled}
+            className={`text-xs px-2 py-0.5 rounded-full border disabled:cursor-not-allowed disabled:opacity-60 ${
               on
                 ? 'bg-brand-50 border-brand-500 text-brand-700'
                 : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'

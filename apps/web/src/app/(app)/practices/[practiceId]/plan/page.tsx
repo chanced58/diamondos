@@ -2,11 +2,13 @@ import type { JSX } from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import { isHeadCoachOrAdRole } from '@baseball/shared';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
 import {
   getPracticeWithBlocks,
   listDrills,
+  listTeamCoaches,
   listTemplates,
 } from '@baseball/database';
 import { createPracticeServiceClient } from '@/lib/practices/authz';
@@ -30,13 +32,22 @@ export default async function PracticePlanPage({ params }: Props): Promise<JSX.E
   const practice = await getPracticeWithBlocks(supabase, practiceId);
   if (!practice) notFound();
 
-  const { isCoach } = await getUserAccess(practice.teamId, user.id);
+  const { isCoach, isPlatformAdmin, role } = await getUserAccess(
+    practice.teamId,
+    user.id,
+  );
   if (!isCoach) redirect(`/practices/${practiceId}`);
 
-  const [drills, templates] = await Promise.all([
+  const [drills, templates, coaches] = await Promise.all([
     listDrills(supabase, practice.teamId),
     listTemplates(supabase, practice.teamId),
+    listTeamCoaches(supabase, practice.teamId),
   ]);
+
+  // Platform admins get full-structure privileges without needing a
+  // team_members row; otherwise check the user's team role via the shared
+  // helper so this stays in lockstep with the DB `is_head_coach_or_ad`.
+  const canChangeStructure = isPlatformAdmin ? true : isHeadCoachOrAdRole(role);
 
   return (
     <div className="p-8">
@@ -75,7 +86,14 @@ export default async function PracticePlanPage({ params }: Props): Promise<JSX.E
           </div>
         </div>
 
-        <PlanEditorV2 practice={practice} drills={drills} templates={templates} />
+        <PlanEditorV2
+          practice={practice}
+          drills={drills}
+          templates={templates}
+          coaches={coaches}
+          currentUserId={user.id}
+          canChangeStructure={canChangeStructure}
+        />
       </div>
     </div>
   );
