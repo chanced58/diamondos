@@ -2679,6 +2679,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_edit_block: { Args: { p_block_id: string }; Returns: boolean }
       find_auth_user_id_by_email: { Args: { p_email: string }; Returns: string }
       get_league_role: {
         Args: { p_league_id: string; p_user_id: string }
@@ -2694,6 +2695,10 @@ export type Database = {
         Returns: boolean
       }
       is_coach: {
+        Args: { p_team_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      is_head_coach_or_ad: {
         Args: { p_team_id: string; p_user_id: string }
         Returns: boolean
       }
