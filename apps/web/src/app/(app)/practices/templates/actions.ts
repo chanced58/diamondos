@@ -53,8 +53,24 @@ export async function saveTemplateAction(input: SaveTemplateInput): Promise<Save
   if (!user) return { error: 'Not authenticated.' };
 
   const supabase = createPracticeServiceClient();
+
+  // For edits, authorize against the template's ACTUAL team_id — not
+  // input.teamId, which a malicious caller could fabricate. This prevents
+  // a coach on team A from mutating a template owned by team B.
+  let effectiveTeamId = input.teamId;
+  if (input.mode === 'edit') {
+    if (!input.id) return { error: 'Missing template id.' };
+    const { data: tplRow } = await supabase
+      .from('practice_templates')
+      .select('team_id')
+      .eq('id', input.id)
+      .maybeSingle();
+    if (!tplRow) return { error: 'Template not found.' };
+    effectiveTeamId = tplRow.team_id as string;
+  }
+
   try {
-    await assertCoachOnTeam(supabase, user.id, input.teamId);
+    await assertCoachOnTeam(supabase, user.id, effectiveTeamId);
   } catch (e) {
     return { error: e instanceof Error ? e.message : 'Not authorized.' };
   }
@@ -87,7 +103,7 @@ export async function saveTemplateAction(input: SaveTemplateInput): Promise<Save
     if (input.mode === 'create') {
       const created = await createTemplateWithBlocks(supabase, {
         template: {
-          teamId: input.teamId,
+          teamId: effectiveTeamId,
           name: parsed.data.name,
           description: parsed.data.description,
           kind: parsed.data.kind,
@@ -102,6 +118,7 @@ export async function saveTemplateAction(input: SaveTemplateInput): Promise<Save
       return { templateId: created.id };
     }
 
+    // input.id already validated above for edit mode.
     if (!input.id) return { error: 'Missing template id.' };
     await updateTemplate(supabase, input.id, {
       name: parsed.data.name,
@@ -131,8 +148,19 @@ export async function duplicateTemplateAction(args: {
   if (!user) return { error: 'Not authenticated.' };
 
   const supabase = createPracticeServiceClient();
+
+  // Authorize against the source template's real team_id, not the caller's
+  // claimed teamId.
+  const { data: src } = await supabase
+    .from('practice_templates')
+    .select('team_id')
+    .eq('id', args.sourceTemplateId)
+    .maybeSingle();
+  if (!src) return { error: 'Template not found.' };
+  const srcTeamId = src.team_id as string;
+
   try {
-    await assertCoachOnTeam(supabase, user.id, args.teamId);
+    await assertCoachOnTeam(supabase, user.id, srcTeamId);
   } catch (e) {
     return { error: e instanceof Error ? e.message : 'Not authorized.' };
   }
@@ -161,8 +189,18 @@ export async function archiveTemplateAction(args: {
   if (!user) return { error: 'Not authenticated.' };
 
   const supabase = createPracticeServiceClient();
+
+  // Authorize against the template's real team_id.
+  const { data: tpl } = await supabase
+    .from('practice_templates')
+    .select('team_id')
+    .eq('id', args.id)
+    .maybeSingle();
+  if (!tpl) return { error: 'Template not found.' };
+  const tplTeamId = tpl.team_id as string;
+
   try {
-    await assertCoachOnTeam(supabase, user.id, args.teamId);
+    await assertCoachOnTeam(supabase, user.id, tplTeamId);
   } catch (e) {
     return { error: e instanceof Error ? e.message : 'Not authorized.' };
   }

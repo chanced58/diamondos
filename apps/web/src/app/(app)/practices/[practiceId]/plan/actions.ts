@@ -50,12 +50,87 @@ async function verifyCoach(practiceId: string): Promise<{
   return { supabase, userId: user.id, teamId: data.team_id as string };
 }
 
+/**
+ * Cross-scope guards. The service-role client bypasses RLS, so after
+ * verifyCoach confirms the caller is a coach on the target practice's team,
+ * we must still verify that every resource id the caller *passes in* lives
+ * inside that practice's scope. Otherwise a coach on team A could mutate a
+ * block owned by a practice on team B by substituting its id.
+ */
+async function assertBlockInPractice(
+  supabase: ReturnType<typeof createPracticeServiceClient>,
+  practiceId: string,
+  blockId: string,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from('practice_blocks')
+    .select('id')
+    .eq('id', blockId)
+    .eq('practice_id', practiceId)
+    .maybeSingle();
+  return data ? null : `Block ${blockId} is not part of this practice.`;
+}
+
+async function assertBlocksInPractice(
+  supabase: ReturnType<typeof createPracticeServiceClient>,
+  practiceId: string,
+  blockIds: string[],
+): Promise<string | null> {
+  if (blockIds.length === 0) return null;
+  const unique = Array.from(new Set(blockIds));
+  const { data } = await supabase
+    .from('practice_blocks')
+    .select('id')
+    .eq('practice_id', practiceId)
+    .in('id', unique);
+  const found = new Set(((data ?? []) as Array<{ id: string }>).map((r) => r.id));
+  const missing = unique.filter((id) => !found.has(id));
+  return missing.length > 0
+    ? `Block(s) not part of this practice: ${missing.join(', ')}`
+    : null;
+}
+
+async function assertTemplateInTeam(
+  supabase: ReturnType<typeof createPracticeServiceClient>,
+  teamId: string,
+  templateId: string,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from('practice_templates')
+    .select('id')
+    .eq('id', templateId)
+    .eq('team_id', teamId)
+    .maybeSingle();
+  return data ? null : `Template ${templateId} is not on this team.`;
+}
+
+async function assertPlayersOnTeam(
+  supabase: ReturnType<typeof createPracticeServiceClient>,
+  teamId: string,
+  playerIds: string[],
+): Promise<string | null> {
+  if (playerIds.length === 0) return null;
+  const unique = Array.from(new Set(playerIds));
+  const { data } = await supabase
+    .from('players')
+    .select('id')
+    .eq('team_id', teamId)
+    .in('id', unique);
+  const found = new Set(((data ?? []) as Array<{ id: string }>).map((r) => r.id));
+  const missing = unique.filter((id) => !found.has(id));
+  return missing.length > 0
+    ? `Player(s) not on this team: ${missing.join(', ')}`
+    : null;
+}
+
 export async function instantiateFromTemplateAction(args: {
   practiceId: string;
   templateId: string;
 }): Promise<Result> {
   const check = await verifyCoach(args.practiceId);
-  if (check.error || !check.supabase) return { error: check.error };
+  if (check.error || !check.supabase || !check.teamId) return { error: check.error };
+  const scopeErr = await assertTemplateInTeam(check.supabase, check.teamId, args.templateId);
+  if (scopeErr) return { error: scopeErr };
   try {
     await instantiatePracticeFromTemplate(check.supabase, args);
     revalidatePath(`/practices/${args.practiceId}/plan`);
@@ -79,6 +154,11 @@ export async function upsertBlockAction(args: {
 }): Promise<Result & { blockId?: string }> {
   const check = await verifyCoach(args.practiceId);
   if (check.error || !check.supabase) return { error: check.error };
+  // On an update (id provided) make sure the block belongs to this practice.
+  if (args.id) {
+    const scopeErr = await assertBlockInPractice(check.supabase, args.practiceId, args.id);
+    if (scopeErr) return { error: scopeErr };
+  }
   try {
     const block = await upsertBlock(check.supabase, args);
     revalidatePath(`/practices/${args.practiceId}/plan`);
@@ -94,6 +174,8 @@ export async function deleteBlockAction(args: {
 }): Promise<Result> {
   const check = await verifyCoach(args.practiceId);
   if (check.error || !check.supabase) return { error: check.error };
+  const scopeErr = await assertBlockInPractice(check.supabase, args.practiceId, args.blockId);
+  if (scopeErr) return { error: scopeErr };
   try {
     await deleteBlock(check.supabase, args.blockId);
     revalidatePath(`/practices/${args.practiceId}/plan`);
@@ -109,6 +191,12 @@ export async function reorderBlocksAction(args: {
 }): Promise<Result> {
   const check = await verifyCoach(args.practiceId);
   if (check.error || !check.supabase) return { error: check.error };
+  const scopeErr = await assertBlocksInPractice(
+    check.supabase,
+    args.practiceId,
+    args.orderedBlockIds,
+  );
+  if (scopeErr) return { error: scopeErr };
   try {
     await reorderBlocks(check.supabase, args.practiceId, args.orderedBlockIds);
     revalidatePath(`/practices/${args.practiceId}/plan`);
@@ -124,7 +212,11 @@ export async function assignPlayersAction(args: {
   playerIds: string[];
 }): Promise<Result> {
   const check = await verifyCoach(args.practiceId);
-  if (check.error || !check.supabase) return { error: check.error };
+  if (check.error || !check.supabase || !check.teamId) return { error: check.error };
+  const blockErr = await assertBlockInPractice(check.supabase, args.practiceId, args.blockId);
+  if (blockErr) return { error: blockErr };
+  const playersErr = await assertPlayersOnTeam(check.supabase, check.teamId, args.playerIds);
+  if (playersErr) return { error: playersErr };
   try {
     await assignPlayersToBlock(check.supabase, args.blockId, args.playerIds);
     revalidatePath(`/practices/${args.practiceId}/plan`);
@@ -140,7 +232,15 @@ export async function applyWeatherSwapAction(args: {
   indoorTemplateId?: string;
 }): Promise<Result> {
   const check = await verifyCoach(args.practiceId);
-  if (check.error || !check.supabase) return { error: check.error };
+  if (check.error || !check.supabase || !check.teamId) return { error: check.error };
+  if (args.indoorTemplateId) {
+    const scopeErr = await assertTemplateInTeam(
+      check.supabase,
+      check.teamId,
+      args.indoorTemplateId,
+    );
+    if (scopeErr) return { error: scopeErr };
+  }
   try {
     await applyWeatherSwap(check.supabase, args);
     revalidatePath(`/practices/${args.practiceId}/plan`);
@@ -156,6 +256,12 @@ export async function compressRemainingAction(args: {
 }): Promise<Result> {
   const check = await verifyCoach(args.practiceId);
   if (check.error || !check.supabase) return { error: check.error };
+  const scopeErr = await assertBlocksInPractice(
+    check.supabase,
+    args.practiceId,
+    args.updates.map((u) => u.id),
+  );
+  if (scopeErr) return { error: scopeErr };
   try {
     await persistCompressedBlocks(check.supabase, args.updates);
     revalidatePath(`/practices/${args.practiceId}/plan`);

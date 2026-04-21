@@ -50,6 +50,15 @@ export async function updateDrillAction(
     return e instanceof Error ? e.message : 'Not authorized.';
   }
 
+  // Coach-on-team-A must not be able to modify drill-owned-by-team-B by
+  // passing that drill's id. Verify ownership by loading the row via the
+  // service client (RLS is bypassed) and comparing team_id.
+  const existing = await getDrillById(supabase, id);
+  if (!existing) return 'Drill not found.';
+  if (existing.visibility === 'system' || existing.teamId !== teamId) {
+    return 'Not authorized.';
+  }
+
   const raw = {
     id,
     name: stringOrUndef(formData.get('name')),
@@ -93,12 +102,12 @@ export async function updateDrillAction(
       diagramUrl: parsed.data.diagramUrl || undefined,
       videoUrl: parsed.data.videoUrl || undefined,
     });
-    redirect(`/practices/drills/${id}`);
   } catch (e) {
-    if (e instanceof Error && /NEXT_REDIRECT/.test(e.message)) throw e;
     return e instanceof Error ? e.message : 'Failed to update drill.';
   }
-  return null;
+  // redirect() throws a NEXT_REDIRECT sentinel by design — keep it outside
+  // the try/catch so we don't have to sniff the error message.
+  redirect(`/practices/drills/${id}`);
 }
 
 export async function deleteDrillAction(formData: FormData): Promise<void> {

@@ -38,6 +38,26 @@ async function verifyCoach(practiceId: string) {
   return { supabase };
 }
 
+/**
+ * Runner mutations target a single block, so each block id passed from the
+ * client must be verified to belong to the practice the caller authorized
+ * against — otherwise a coach on practice A could start/complete/skip a
+ * block belonging to practice B by substituting its id.
+ */
+async function assertBlockBelongsToPractice(
+  supabase: ReturnType<typeof createPracticeServiceClient>,
+  practiceId: string,
+  blockId: string,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from('practice_blocks')
+    .select('id')
+    .eq('id', blockId)
+    .eq('practice_id', practiceId)
+    .maybeSingle();
+  return data ? null : 'Block is not part of this practice.';
+}
+
 export async function startPracticeAction(args: {
   practiceId: string;
 }): Promise<Result> {
@@ -58,10 +78,19 @@ export async function startBlockAction(args: {
 }): Promise<Result> {
   const check = await verifyCoach(args.practiceId);
   if (check.error || !check.supabase) return { error: check.error };
+  const scopeErr = await assertBlockBelongsToPractice(
+    check.supabase,
+    args.practiceId,
+    args.blockId,
+  );
+  if (scopeErr) return { error: scopeErr };
   try {
     const now = new Date().toISOString();
-    await startBlock(check.supabase, args.blockId, now);
-    await setActiveBlock(check.supabase, args.practiceId, args.blockId);
+    const updated = await startBlock(check.supabase, args.blockId, now);
+    // Only move the active-block pointer if we actually won the start race.
+    if (updated) {
+      await setActiveBlock(check.supabase, args.practiceId, args.blockId);
+    }
     revalidatePath(`/practices/${args.practiceId}/run`);
     return {};
   } catch (e) {
@@ -76,6 +105,12 @@ export async function completeBlockAction(args: {
 }): Promise<Result> {
   const check = await verifyCoach(args.practiceId);
   if (check.error || !check.supabase) return { error: check.error };
+  const scopeErr = await assertBlockBelongsToPractice(
+    check.supabase,
+    args.practiceId,
+    args.blockId,
+  );
+  if (scopeErr) return { error: scopeErr };
   try {
     await completeBlock(
       check.supabase,
@@ -96,6 +131,12 @@ export async function skipBlockAction(args: {
 }): Promise<Result> {
   const check = await verifyCoach(args.practiceId);
   if (check.error || !check.supabase) return { error: check.error };
+  const scopeErr = await assertBlockBelongsToPractice(
+    check.supabase,
+    args.practiceId,
+    args.blockId,
+  );
+  if (scopeErr) return { error: scopeErr };
   try {
     await skipBlock(check.supabase, args.blockId);
     revalidatePath(`/practices/${args.practiceId}/run`);

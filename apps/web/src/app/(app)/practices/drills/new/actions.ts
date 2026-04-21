@@ -75,6 +75,7 @@ export async function createDrillAction(
   }
   const input = parsed.data;
 
+  let createdId: string;
   try {
     const created = await createDrill(supabase, {
       teamId,
@@ -94,10 +95,11 @@ export async function createDrillAction(
       videoUrl: input.videoUrl || undefined,
       createdBy: user.id,
     });
-    redirect(`/practices/drills/${created.id}`);
+    createdId = created.id;
   } catch (e) {
-    if (e instanceof Error && /NEXT_REDIRECT/.test(e.message)) throw e;
     return e instanceof Error ? e.message : 'Failed to create drill.';
   }
-  return null;
+  // redirect() throws a NEXT_REDIRECT sentinel by design — keep it outside
+  // the try/catch.
+  redirect(`/practices/drills/${createdId}`);
 }

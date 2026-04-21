@@ -42,6 +42,8 @@ export default async function DrillDetailPage({ params }: Props): Promise<JSX.El
   if (!drill) notFound();
 
   const isSystem = drill.visibility === PracticeDrillVisibility.SYSTEM;
+  // Non-system drills are only visible to members of their owning team.
+  if (!isSystem && drill.teamId !== activeTeam.id) notFound();
   const canEdit = isCoach && !isSystem && drill.teamId === activeTeam.id;
 
   const attachments = isSystem ? [] : await listDrillAttachments(supabase, drill.id);
