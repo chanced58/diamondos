@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       channel_members: {
@@ -828,30 +853,42 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string
+          current_season: string | null
           description: string | null
           id: string
+          league_type: string | null
+          level: string | null
           logo_url: string | null
           name: string
+          setup_completed_at: string | null
           state_code: string | null
           updated_at: string
         }
         Insert: {
           created_at?: string
           created_by: string
+          current_season?: string | null
           description?: string | null
           id?: string
+          league_type?: string | null
+          level?: string | null
           logo_url?: string | null
           name: string
+          setup_completed_at?: string | null
           state_code?: string | null
           updated_at?: string
         }
         Update: {
           created_at?: string
           created_by?: string
+          current_season?: string | null
           description?: string | null
           id?: string
+          league_type?: string | null
+          level?: string | null
           logo_url?: string | null
           name?: string
+          setup_completed_at?: string | null
           state_code?: string | null
           updated_at?: string
         }
@@ -1070,11 +1107,14 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          league_id: string | null
+          linked_team_id: string | null
           logo_url: string | null
           name: string
           notes: string | null
           state_code: string | null
-          team_id: string
+          stats_visible: boolean
+          team_id: string | null
           updated_at: string
         }
         Insert: {
@@ -1083,11 +1123,14 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          league_id?: string | null
+          linked_team_id?: string | null
           logo_url?: string | null
           name: string
           notes?: string | null
           state_code?: string | null
-          team_id: string
+          stats_visible?: boolean
+          team_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -1096,14 +1139,31 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          league_id?: string | null
+          linked_team_id?: string | null
           logo_url?: string | null
           name?: string
           notes?: string | null
           state_code?: string | null
-          team_id?: string
+          stats_visible?: boolean
+          team_id?: string | null
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "opponent_teams_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opponent_teams_linked_team_id_fkey"
+            columns: ["linked_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "opponent_teams_team_id_fkey"
             columns: ["team_id"]
@@ -1370,6 +1430,8 @@ export type Database = {
           bats: Database["public"]["Enums"]["bats_throws"] | null
           created_at: string
           date_of_birth: string | null
+          disabled_at: string | null
+          disabled_by: string | null
           email: string | null
           first_name: string
           graduation_year: number | null
@@ -1392,6 +1454,8 @@ export type Database = {
           bats?: Database["public"]["Enums"]["bats_throws"] | null
           created_at?: string
           date_of_birth?: string | null
+          disabled_at?: string | null
+          disabled_by?: string | null
           email?: string | null
           first_name: string
           graduation_year?: number | null
@@ -1414,6 +1478,8 @@ export type Database = {
           bats?: Database["public"]["Enums"]["bats_throws"] | null
           created_at?: string
           date_of_birth?: string | null
+          disabled_at?: string | null
+          disabled_by?: string | null
           email?: string | null
           first_name?: string
           graduation_year?: number | null
@@ -1435,6 +1501,238 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "players_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_block_players: {
+        Row: {
+          block_id: string
+          created_at: string
+          id: string
+          player_id: string
+          rotation_group: number | null
+        }
+        Insert: {
+          block_id: string
+          created_at?: string
+          id?: string
+          player_id: string
+          rotation_group?: number | null
+        }
+        Update: {
+          block_id?: string
+          created_at?: string
+          id?: string
+          player_id?: string
+          rotation_group?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_block_players_block_id_fkey"
+            columns: ["block_id"]
+            isOneToOne: false
+            referencedRelation: "practice_blocks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_block_players_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_blocks: {
+        Row: {
+          actual_duration_minutes: number | null
+          assigned_coach_id: string | null
+          block_type: Database["public"]["Enums"]["practice_block_type"]
+          completed_at: string | null
+          created_at: string
+          drill_id: string | null
+          field_spaces: Database["public"]["Enums"]["practice_field_space"][]
+          id: string
+          notes: string | null
+          planned_duration_minutes: number
+          position: number
+          practice_id: string
+          started_at: string | null
+          status: Database["public"]["Enums"]["practice_block_status"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          actual_duration_minutes?: number | null
+          assigned_coach_id?: string | null
+          block_type: Database["public"]["Enums"]["practice_block_type"]
+          completed_at?: string | null
+          created_at?: string
+          drill_id?: string | null
+          field_spaces?: Database["public"]["Enums"]["practice_field_space"][]
+          id?: string
+          notes?: string | null
+          planned_duration_minutes: number
+          position: number
+          practice_id: string
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["practice_block_status"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          actual_duration_minutes?: number | null
+          assigned_coach_id?: string | null
+          block_type?: Database["public"]["Enums"]["practice_block_type"]
+          completed_at?: string | null
+          created_at?: string
+          drill_id?: string | null
+          field_spaces?: Database["public"]["Enums"]["practice_field_space"][]
+          id?: string
+          notes?: string | null
+          planned_duration_minutes?: number
+          position?: number
+          practice_id?: string
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["practice_block_status"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_blocks_drill_id_fkey"
+            columns: ["drill_id"]
+            isOneToOne: false
+            referencedRelation: "practice_drills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_blocks_practice_id_fkey"
+            columns: ["practice_id"]
+            isOneToOne: false
+            referencedRelation: "practices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_drill_attachments: {
+        Row: {
+          created_at: string
+          drill_id: string
+          id: string
+          kind: string
+          mime_type: string
+          size_bytes: number | null
+          storage_path: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          drill_id: string
+          id?: string
+          kind: string
+          mime_type: string
+          size_bytes?: number | null
+          storage_path: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          drill_id?: string
+          id?: string
+          kind?: string
+          mime_type?: string
+          size_bytes?: number | null
+          storage_path?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_drill_attachments_drill_id_fkey"
+            columns: ["drill_id"]
+            isOneToOne: false
+            referencedRelation: "practice_drills"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_drills: {
+        Row: {
+          age_levels: Database["public"]["Enums"]["practice_age_level"][]
+          coaching_points: string | null
+          created_at: string
+          created_by: string | null
+          default_duration_minutes: number | null
+          description: string | null
+          diagram_url: string | null
+          equipment: Database["public"]["Enums"]["practice_equipment"][]
+          field_spaces: Database["public"]["Enums"]["practice_field_space"][]
+          id: string
+          max_players: number | null
+          min_players: number | null
+          name: string
+          positions: string[]
+          skill_categories: Database["public"]["Enums"]["practice_skill_category"][]
+          source: string | null
+          tags: string[]
+          team_id: string | null
+          updated_at: string
+          video_url: string | null
+          visibility: Database["public"]["Enums"]["practice_drill_visibility"]
+        }
+        Insert: {
+          age_levels?: Database["public"]["Enums"]["practice_age_level"][]
+          coaching_points?: string | null
+          created_at?: string
+          created_by?: string | null
+          default_duration_minutes?: number | null
+          description?: string | null
+          diagram_url?: string | null
+          equipment?: Database["public"]["Enums"]["practice_equipment"][]
+          field_spaces?: Database["public"]["Enums"]["practice_field_space"][]
+          id?: string
+          max_players?: number | null
+          min_players?: number | null
+          name: string
+          positions?: string[]
+          skill_categories?: Database["public"]["Enums"]["practice_skill_category"][]
+          source?: string | null
+          tags?: string[]
+          team_id?: string | null
+          updated_at?: string
+          video_url?: string | null
+          visibility?: Database["public"]["Enums"]["practice_drill_visibility"]
+        }
+        Update: {
+          age_levels?: Database["public"]["Enums"]["practice_age_level"][]
+          coaching_points?: string | null
+          created_at?: string
+          created_by?: string | null
+          default_duration_minutes?: number | null
+          description?: string | null
+          diagram_url?: string | null
+          equipment?: Database["public"]["Enums"]["practice_equipment"][]
+          field_spaces?: Database["public"]["Enums"]["practice_field_space"][]
+          id?: string
+          max_players?: number | null
+          min_players?: number | null
+          name?: string
+          positions?: string[]
+          skill_categories?: Database["public"]["Enums"]["practice_skill_category"][]
+          source?: string | null
+          tags?: string[]
+          team_id?: string | null
+          updated_at?: string
+          video_url?: string | null
+          visibility?: Database["public"]["Enums"]["practice_drill_visibility"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_drills_team_id_fkey"
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
@@ -1543,61 +1841,344 @@ export type Database = {
           },
         ]
       }
-      practices: {
+      practice_station_assignments: {
         Row: {
-          address: string | null
+          block_id: string
           created_at: string
-          created_by: string | null
-          duration_minutes: number | null
           id: string
-          latitude: number | null
-          location: string | null
-          longitude: number | null
-          place_id: string | null
-          plan: string | null
-          scheduled_at: string
-          status: string
+          player_id: string
+          rotation_index: number
+          station_id: string
+        }
+        Insert: {
+          block_id: string
+          created_at?: string
+          id?: string
+          player_id: string
+          rotation_index: number
+          station_id: string
+        }
+        Update: {
+          block_id?: string
+          created_at?: string
+          id?: string
+          player_id?: string
+          rotation_index?: number
+          station_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_station_assignments_block_id_fkey"
+            columns: ["block_id"]
+            isOneToOne: false
+            referencedRelation: "practice_blocks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_station_assignments_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_station_assignments_station_id_fkey"
+            columns: ["station_id"]
+            isOneToOne: false
+            referencedRelation: "practice_stations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_stations: {
+        Row: {
+          block_id: string
+          coach_id: string | null
+          created_at: string
+          drill_id: string | null
+          field_space:
+            | Database["public"]["Enums"]["practice_field_space"]
+            | null
+          id: string
+          name: string
+          notes: string | null
+          position: number
+          rotation_count: number
+          rotation_duration_minutes: number
+          updated_at: string
+        }
+        Insert: {
+          block_id: string
+          coach_id?: string | null
+          created_at?: string
+          drill_id?: string | null
+          field_space?:
+            | Database["public"]["Enums"]["practice_field_space"]
+            | null
+          id?: string
+          name: string
+          notes?: string | null
+          position: number
+          rotation_count?: number
+          rotation_duration_minutes: number
+          updated_at?: string
+        }
+        Update: {
+          block_id?: string
+          coach_id?: string | null
+          created_at?: string
+          drill_id?: string | null
+          field_space?:
+            | Database["public"]["Enums"]["practice_field_space"]
+            | null
+          id?: string
+          name?: string
+          notes?: string | null
+          position?: number
+          rotation_count?: number
+          rotation_duration_minutes?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_stations_block_id_fkey"
+            columns: ["block_id"]
+            isOneToOne: false
+            referencedRelation: "practice_blocks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_stations_drill_id_fkey"
+            columns: ["drill_id"]
+            isOneToOne: false
+            referencedRelation: "practice_drills"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_template_blocks: {
+        Row: {
+          block_type: Database["public"]["Enums"]["practice_block_type"]
+          created_at: string
+          drill_id: string | null
+          duration_minutes: number
+          field_spaces: Database["public"]["Enums"]["practice_field_space"][]
+          id: string
+          notes: string | null
+          position: number
+          template_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          block_type: Database["public"]["Enums"]["practice_block_type"]
+          created_at?: string
+          drill_id?: string | null
+          duration_minutes: number
+          field_spaces?: Database["public"]["Enums"]["practice_field_space"][]
+          id?: string
+          notes?: string | null
+          position: number
+          template_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          block_type?: Database["public"]["Enums"]["practice_block_type"]
+          created_at?: string
+          drill_id?: string | null
+          duration_minutes?: number
+          field_spaces?: Database["public"]["Enums"]["practice_field_space"][]
+          id?: string
+          notes?: string | null
+          position?: number
+          template_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_template_blocks_drill_id_fkey"
+            columns: ["drill_id"]
+            isOneToOne: false
+            referencedRelation: "practice_drills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_template_blocks_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "practice_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_templates: {
+        Row: {
+          archived_at: string | null
+          created_at: string
+          created_by: string
+          default_duration_minutes: number
+          description: string | null
+          id: string
+          is_indoor_fallback: boolean
+          kind: Database["public"]["Enums"]["practice_template_kind"]
+          name: string
+          paired_template_id: string | null
+          season_phase: Database["public"]["Enums"]["practice_season_phase"]
           team_id: string
           updated_at: string
         }
         Insert: {
-          address?: string | null
+          archived_at?: string | null
           created_at?: string
-          created_by?: string | null
-          duration_minutes?: number | null
+          created_by: string
+          default_duration_minutes?: number
+          description?: string | null
           id?: string
-          latitude?: number | null
-          location?: string | null
-          longitude?: number | null
-          place_id?: string | null
-          plan?: string | null
-          scheduled_at: string
-          status?: string
+          is_indoor_fallback?: boolean
+          kind?: Database["public"]["Enums"]["practice_template_kind"]
+          name: string
+          paired_template_id?: string | null
+          season_phase?: Database["public"]["Enums"]["practice_season_phase"]
           team_id: string
           updated_at?: string
         }
         Update: {
-          address?: string | null
+          archived_at?: string | null
           created_at?: string
-          created_by?: string | null
-          duration_minutes?: number | null
+          created_by?: string
+          default_duration_minutes?: number
+          description?: string | null
           id?: string
-          latitude?: number | null
-          location?: string | null
-          longitude?: number | null
-          place_id?: string | null
-          plan?: string | null
-          scheduled_at?: string
-          status?: string
+          is_indoor_fallback?: boolean
+          kind?: Database["public"]["Enums"]["practice_template_kind"]
+          name?: string
+          paired_template_id?: string | null
+          season_phase?: Database["public"]["Enums"]["practice_season_phase"]
           team_id?: string
           updated_at?: string
         }
         Relationships: [
           {
+            foreignKeyName: "practice_templates_paired_template_id_fkey"
+            columns: ["paired_template_id"]
+            isOneToOne: false
+            referencedRelation: "practice_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_templates_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practices: {
+        Row: {
+          active_block_id: string | null
+          address: string | null
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          duration_minutes: number | null
+          id: string
+          indoor_template_id: string | null
+          is_quick_practice: boolean
+          latitude: number | null
+          location: string | null
+          longitude: number | null
+          place_id: string | null
+          plan: string | null
+          run_status: Database["public"]["Enums"]["practice_run_status"]
+          scheduled_at: string
+          started_at: string | null
+          status: string
+          team_id: string
+          template_id: string | null
+          total_planned_minutes: number
+          updated_at: string
+          weather_mode: Database["public"]["Enums"]["practice_weather_mode"]
+        }
+        Insert: {
+          active_block_id?: string | null
+          address?: string | null
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          duration_minutes?: number | null
+          id?: string
+          indoor_template_id?: string | null
+          is_quick_practice?: boolean
+          latitude?: number | null
+          location?: string | null
+          longitude?: number | null
+          place_id?: string | null
+          plan?: string | null
+          run_status?: Database["public"]["Enums"]["practice_run_status"]
+          scheduled_at: string
+          started_at?: string | null
+          status?: string
+          team_id: string
+          template_id?: string | null
+          total_planned_minutes?: number
+          updated_at?: string
+          weather_mode?: Database["public"]["Enums"]["practice_weather_mode"]
+        }
+        Update: {
+          active_block_id?: string | null
+          address?: string | null
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          duration_minutes?: number | null
+          id?: string
+          indoor_template_id?: string | null
+          is_quick_practice?: boolean
+          latitude?: number | null
+          location?: string | null
+          longitude?: number | null
+          place_id?: string | null
+          plan?: string | null
+          run_status?: Database["public"]["Enums"]["practice_run_status"]
+          scheduled_at?: string
+          started_at?: string | null
+          status?: string
+          team_id?: string
+          template_id?: string | null
+          total_planned_minutes?: number
+          updated_at?: string
+          weather_mode?: Database["public"]["Enums"]["practice_weather_mode"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practices_active_block_in_practice_fkey"
+            columns: ["active_block_id", "id"]
+            isOneToOne: false
+            referencedRelation: "practice_blocks"
+            referencedColumns: ["id", "practice_id"]
+          },
+          {
+            foreignKeyName: "practices_indoor_template_id_fkey"
+            columns: ["indoor_template_id"]
+            isOneToOne: false
+            referencedRelation: "practice_templates"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "practices_team_id_fkey"
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practices_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "practice_templates"
             referencedColumns: ["id"]
           },
         ]
@@ -1777,6 +2358,87 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      subscriptions: {
+        Row: {
+          billing_contact_email: string | null
+          billing_contact_name: string | null
+          created_at: string
+          ends_at: string | null
+          entity_type: Database["public"]["Enums"]["billable_entity_type"]
+          id: string
+          league_id: string | null
+          monthly_price_cents: number | null
+          notes: string | null
+          starts_at: string | null
+          status: Database["public"]["Enums"]["subscription_status"]
+          team_id: string | null
+          tier: Database["public"]["Enums"]["subscription_tier"]
+          trial_ends_at: string | null
+          trial_starts_at: string | null
+          updated_at: string
+          zoho_account_id: string | null
+          zoho_contact_id: string | null
+          zoho_deal_id: string | null
+        }
+        Insert: {
+          billing_contact_email?: string | null
+          billing_contact_name?: string | null
+          created_at?: string
+          ends_at?: string | null
+          entity_type: Database["public"]["Enums"]["billable_entity_type"]
+          id?: string
+          league_id?: string | null
+          monthly_price_cents?: number | null
+          notes?: string | null
+          starts_at?: string | null
+          status?: Database["public"]["Enums"]["subscription_status"]
+          team_id?: string | null
+          tier?: Database["public"]["Enums"]["subscription_tier"]
+          trial_ends_at?: string | null
+          trial_starts_at?: string | null
+          updated_at?: string
+          zoho_account_id?: string | null
+          zoho_contact_id?: string | null
+          zoho_deal_id?: string | null
+        }
+        Update: {
+          billing_contact_email?: string | null
+          billing_contact_name?: string | null
+          created_at?: string
+          ends_at?: string | null
+          entity_type?: Database["public"]["Enums"]["billable_entity_type"]
+          id?: string
+          league_id?: string | null
+          monthly_price_cents?: number | null
+          notes?: string | null
+          starts_at?: string | null
+          status?: Database["public"]["Enums"]["subscription_status"]
+          team_id?: string | null
+          tier?: Database["public"]["Enums"]["subscription_tier"]
+          trial_ends_at?: string | null
+          trial_starts_at?: string | null
+          updated_at?: string
+          zoho_account_id?: string | null
+          zoho_contact_id?: string | null
+          zoho_deal_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscriptions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscriptions_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       team_events: {
         Row: {
@@ -2035,6 +2697,14 @@ export type Database = {
         Args: { p_team_id: string; p_user_id: string }
         Returns: boolean
       }
+      is_league_admin: {
+        Args: { p_league_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      is_league_admin_for_team: {
+        Args: { p_team_id: string; p_user_id: string }
+        Returns: boolean
+      }
       is_league_member: {
         Args: { p_league_id: string; p_user_id: string }
         Returns: boolean
@@ -2048,11 +2718,16 @@ export type Database = {
         Args: { p_player_id: string; p_user_id: string }
         Returns: boolean
       }
+      practice_reorder_blocks: {
+        Args: { p_order: string[]; p_practice_id: string }
+        Returns: undefined
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
       bats_throws: "right" | "left" | "switch"
+      billable_entity_type: "team" | "league"
       channel_type: "announcement" | "topic" | "direct"
       game_location_type: "home" | "away" | "neutral"
       game_status:
@@ -2076,7 +2751,91 @@ export type Database = {
         | "utility"
         | "infield"
         | "outfield"
+      practice_age_level:
+        | "8u"
+        | "10u"
+        | "12u"
+        | "14u"
+        | "high_school_jv"
+        | "high_school_varsity"
+        | "college"
+        | "adult"
+        | "all"
+      practice_block_status: "pending" | "active" | "completed" | "skipped"
+      practice_block_type:
+        | "warmup"
+        | "individual_skill"
+        | "team_defense"
+        | "situational"
+        | "conditioning"
+        | "bullpen"
+        | "scrimmage"
+        | "stretch"
+        | "meeting"
+        | "water_break"
+        | "custom"
+      practice_drill_visibility: "system" | "team"
+      practice_equipment:
+        | "baseballs"
+        | "tees"
+        | "nets"
+        | "cones"
+        | "bases"
+        | "catchers_gear"
+        | "radar_gun"
+        | "pitching_machine"
+        | "l_screen"
+        | "weights"
+        | "agility_ladder"
+        | "medicine_ball"
+        | "bat"
+        | "helmet"
+        | "none"
+      practice_field_space:
+        | "full_field"
+        | "infield"
+        | "outfield"
+        | "cage_1"
+        | "cage_2"
+        | "bullpen_1"
+        | "bullpen_2"
+        | "gym"
+        | "classroom"
+        | "open_space"
+      practice_run_status: "not_started" | "running" | "completed"
+      practice_season_phase:
+        | "preseason"
+        | "in_season"
+        | "playoff"
+        | "offseason"
+        | "any"
+      practice_skill_category:
+        | "hitting"
+        | "pitching"
+        | "fielding"
+        | "baserunning"
+        | "team_defense"
+        | "conditioning"
+        | "agility"
+        | "mental"
+      practice_template_kind:
+        | "weekly_recurring"
+        | "seasonal"
+        | "quick_90"
+        | "custom"
+      practice_weather_mode:
+        | "outdoor"
+        | "indoor_gym"
+        | "classroom"
+        | "cancelled"
       rsvp_status: "attending" | "not_attending" | "maybe"
+      subscription_status:
+        | "active"
+        | "trial"
+        | "past_due"
+        | "cancelled"
+        | "expired"
+      subscription_tier: "free" | "starter" | "pro" | "enterprise"
       team_event_type: "meeting" | "scrimmage" | "travel" | "other"
       team_role:
         | "head_coach"
@@ -2211,9 +2970,13 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       bats_throws: ["right", "left", "switch"],
+      billable_entity_type: ["team", "league"],
       channel_type: ["announcement", "topic", "direct"],
       game_location_type: ["home", "away", "neutral"],
       game_status: [
@@ -2239,7 +3002,100 @@ export const Constants = {
         "infield",
         "outfield",
       ],
+      practice_age_level: [
+        "8u",
+        "10u",
+        "12u",
+        "14u",
+        "high_school_jv",
+        "high_school_varsity",
+        "college",
+        "adult",
+        "all",
+      ],
+      practice_block_status: ["pending", "active", "completed", "skipped"],
+      practice_block_type: [
+        "warmup",
+        "individual_skill",
+        "team_defense",
+        "situational",
+        "conditioning",
+        "bullpen",
+        "scrimmage",
+        "stretch",
+        "meeting",
+        "water_break",
+        "custom",
+      ],
+      practice_drill_visibility: ["system", "team"],
+      practice_equipment: [
+        "baseballs",
+        "tees",
+        "nets",
+        "cones",
+        "bases",
+        "catchers_gear",
+        "radar_gun",
+        "pitching_machine",
+        "l_screen",
+        "weights",
+        "agility_ladder",
+        "medicine_ball",
+        "bat",
+        "helmet",
+        "none",
+      ],
+      practice_field_space: [
+        "full_field",
+        "infield",
+        "outfield",
+        "cage_1",
+        "cage_2",
+        "bullpen_1",
+        "bullpen_2",
+        "gym",
+        "classroom",
+        "open_space",
+      ],
+      practice_run_status: ["not_started", "running", "completed"],
+      practice_season_phase: [
+        "preseason",
+        "in_season",
+        "playoff",
+        "offseason",
+        "any",
+      ],
+      practice_skill_category: [
+        "hitting",
+        "pitching",
+        "fielding",
+        "baserunning",
+        "team_defense",
+        "conditioning",
+        "agility",
+        "mental",
+      ],
+      practice_template_kind: [
+        "weekly_recurring",
+        "seasonal",
+        "quick_90",
+        "custom",
+      ],
+      practice_weather_mode: [
+        "outdoor",
+        "indoor_gym",
+        "classroom",
+        "cancelled",
+      ],
       rsvp_status: ["attending", "not_attending", "maybe"],
+      subscription_status: [
+        "active",
+        "trial",
+        "past_due",
+        "cancelled",
+        "expired",
+      ],
+      subscription_tier: ["free", "starter", "pro", "enterprise"],
       team_event_type: ["meeting", "scrimmage", "travel", "other"],
       team_role: [
         "head_coach",
