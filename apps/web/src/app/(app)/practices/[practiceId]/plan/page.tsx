@@ -2,6 +2,7 @@ import type { JSX } from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import { isHeadCoachOrAdRole } from '@baseball/shared';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
 import {
@@ -43,9 +44,10 @@ export default async function PracticePlanPage({ params }: Props): Promise<JSX.E
     listTeamCoaches(supabase, practice.teamId),
   ]);
 
-  const effectiveRole = isPlatformAdmin ? 'head_coach' : (role ?? '');
-  const canChangeStructure =
-    effectiveRole === 'head_coach' || effectiveRole === 'athletic_director';
+  // Platform admins get full-structure privileges without needing a
+  // team_members row; otherwise check the user's team role via the shared
+  // helper so this stays in lockstep with the DB `is_head_coach_or_ad`.
+  const canChangeStructure = isPlatformAdmin ? true : isHeadCoachOrAdRole(role);
 
   return (
     <div className="p-8">

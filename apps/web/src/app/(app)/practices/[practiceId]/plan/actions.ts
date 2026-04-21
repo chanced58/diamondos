@@ -24,6 +24,12 @@ import {
 
 type Result = { error?: string };
 
+type ServiceClient = ReturnType<typeof createPracticeServiceClient>;
+
+type AuthorizeResult =
+  | { error: string; supabase?: undefined; userId?: undefined; teamId?: undefined }
+  | { error?: undefined; supabase: ServiceClient; userId: string; teamId: string };
+
 /**
  * Authorization primitive for plan-editor actions. Loads the practice, confirms
  * the caller is authenticated, and (if requireHeadCoachOrAD) gates on HC/AD.
@@ -33,12 +39,7 @@ type Result = { error?: string };
 async function authorize(
   practiceId: string,
   requireHeadCoachOrAD: boolean,
-): Promise<{
-  error?: string;
-  supabase?: ReturnType<typeof createPracticeServiceClient>;
-  userId?: string;
-  teamId?: string;
-}> {
+): Promise<AuthorizeResult> {
   const auth = createServerClient();
   const {
     data: { user },
@@ -65,6 +66,26 @@ async function authorize(
 }
 
 /**
+ * Columns on practice_blocks that the BEFORE UPDATE trigger
+ * `trg_practice_blocks_enforce_owner_update` (migration
+ * 20260421000008_practice_blocks_ownership_rls.sql) rejects when an assistant
+ * coach changes them. Kept in this single place so the client-facing structural
+ * diff and the UI-level gating stay in lockstep with the database trigger;
+ * if you add/remove a column in the trigger, update this list too.
+ *
+ * `practice_id` is included for strict parity with the trigger even though the
+ * current UI flow never moves a block between practices.
+ */
+export const STRUCTURAL_BLOCK_COLUMNS = [
+  'position',
+  'block_type',
+  'planned_duration_minutes',
+  'drill_id',
+  'assigned_coach_id',
+  'practice_id',
+] as const;
+
+/**
  * Cross-scope guards. The service-role client bypasses RLS, so after
  * authorization confirms the caller's role on the target practice's team,
  * we must still verify that every resource id the caller *passes in* lives
@@ -72,7 +93,7 @@ async function authorize(
  * block owned by a practice on team B by substituting its id.
  */
 async function assertBlockInPractice(
-  supabase: ReturnType<typeof createPracticeServiceClient>,
+  supabase: ServiceClient,
   practiceId: string,
   blockId: string,
 ): Promise<string | null> {
@@ -86,7 +107,7 @@ async function assertBlockInPractice(
 }
 
 async function assertBlocksInPractice(
-  supabase: ReturnType<typeof createPracticeServiceClient>,
+  supabase: ServiceClient,
   practiceId: string,
   blockIds: string[],
 ): Promise<string | null> {
@@ -105,7 +126,7 @@ async function assertBlocksInPractice(
 }
 
 async function assertTemplateInTeam(
-  supabase: ReturnType<typeof createPracticeServiceClient>,
+  supabase: ServiceClient,
   teamId: string,
   templateId: string,
 ): Promise<string | null> {
@@ -119,7 +140,7 @@ async function assertTemplateInTeam(
 }
 
 async function assertPlayersOnTeam(
-  supabase: ReturnType<typeof createPracticeServiceClient>,
+  supabase: ServiceClient,
   teamId: string,
   playerIds: string[],
 ): Promise<string | null> {
@@ -138,7 +159,7 @@ async function assertPlayersOnTeam(
 }
 
 async function assertCoachOnTeamActive(
-  supabase: ReturnType<typeof createPracticeServiceClient>,
+  supabase: ServiceClient,
   teamId: string,
   userId: string,
 ): Promise<string | null> {
@@ -160,11 +181,22 @@ async function assertCoachOnTeamActive(
 
 /**
  * Diff-structural helper: given an UpsertBlock call with an existing id, load
- * the current row and decide whether the patch touches any structural field.
- * Used to route between HC/AD-only and block-owner guards.
+ * the current row and decide whether the patch touches any structural field
+ * (see STRUCTURAL_BLOCK_COLUMNS and the DB trigger it mirrors). Used to route
+ * between HC/AD-only and block-owner guards.
+ *
+ * The column list here MUST stay in sync with the
+ * `trg_practice_blocks_enforce_owner_update` trigger in
+ * 20260421000008_practice_blocks_ownership_rls.sql — if the trigger adds or
+ * removes a structural column, update STRUCTURAL_BLOCK_COLUMNS and the
+ * comparisons below together.
+ *
+ * `practice_id` is enforced by the cross-scope guard (assertBlockInPractice)
+ * rather than compared here, so a block cannot move between practices via
+ * this path; if we ever accept that field in UpsertBlockInput, add it below.
  */
 async function detectStructuralChange(
-  supabase: ReturnType<typeof createPracticeServiceClient>,
+  supabase: ServiceClient,
   blockId: string,
   patch: {
     position: number;
@@ -208,7 +240,7 @@ export async function instantiateFromTemplateAction(args: {
   templateId: string;
 }): Promise<Result> {
   const check = await authorize(args.practiceId, true);
-  if (check.error || !check.supabase || !check.teamId) return { error: check.error };
+  if (check.error !== undefined) return { error: check.error };
   const scopeErr = await assertTemplateInTeam(check.supabase, check.teamId, args.templateId);
   if (scopeErr) return { error: scopeErr };
   try {
@@ -236,7 +268,7 @@ export async function upsertBlockAction(args: {
   const isCreate = !args.id;
   // Start with authn only; role is determined per-path below.
   const check = await authorize(args.practiceId, isCreate);
-  if (check.error || !check.supabase || !check.userId) return { error: check.error };
+  if (check.error !== undefined) return { error: check.error };
 
   if (args.id) {
     const scopeErr = await assertBlockInPractice(
@@ -257,7 +289,7 @@ export async function upsertBlockAction(args: {
 
     try {
       if (diff.structural) {
-        await assertHeadCoachOrAD(check.supabase, check.userId, check.teamId!);
+        await assertHeadCoachOrAD(check.supabase, check.userId, check.teamId);
       } else {
         await assertCanEditBlock(check.supabase, check.userId, args.id);
       }
@@ -300,7 +332,7 @@ export async function setBlockAssignedCoachAction(args: {
   coachUserId: string | null;
 }): Promise<Result> {
   const check = await authorize(args.practiceId, true);
-  if (check.error || !check.supabase || !check.teamId) return { error: check.error };
+  if (check.error !== undefined) return { error: check.error };
   const scopeErr = await assertBlockInPractice(
     check.supabase,
     args.practiceId,
@@ -333,7 +365,7 @@ export async function deleteBlockAction(args: {
   blockId: string;
 }): Promise<Result> {
   const check = await authorize(args.practiceId, true);
-  if (check.error || !check.supabase) return { error: check.error };
+  if (check.error !== undefined) return { error: check.error };
   const scopeErr = await assertBlockInPractice(check.supabase, args.practiceId, args.blockId);
   if (scopeErr) return { error: scopeErr };
   try {
@@ -350,7 +382,7 @@ export async function reorderBlocksAction(args: {
   orderedBlockIds: string[];
 }): Promise<Result> {
   const check = await authorize(args.practiceId, true);
-  if (check.error || !check.supabase) return { error: check.error };
+  if (check.error !== undefined) return { error: check.error };
   const scopeErr = await assertBlocksInPractice(
     check.supabase,
     args.practiceId,
@@ -372,7 +404,7 @@ export async function assignPlayersAction(args: {
   playerIds: string[];
 }): Promise<Result> {
   const check = await authorize(args.practiceId, true);
-  if (check.error || !check.supabase || !check.teamId) return { error: check.error };
+  if (check.error !== undefined) return { error: check.error };
   const blockErr = await assertBlockInPractice(check.supabase, args.practiceId, args.blockId);
   if (blockErr) return { error: blockErr };
   const playersErr = await assertPlayersOnTeam(check.supabase, check.teamId, args.playerIds);
@@ -392,7 +424,7 @@ export async function applyWeatherSwapAction(args: {
   indoorTemplateId?: string;
 }): Promise<Result> {
   const check = await authorize(args.practiceId, true);
-  if (check.error || !check.supabase || !check.teamId) return { error: check.error };
+  if (check.error !== undefined) return { error: check.error };
   if (args.indoorTemplateId) {
     const scopeErr = await assertTemplateInTeam(
       check.supabase,
@@ -415,7 +447,7 @@ export async function compressRemainingAction(args: {
   updates: Array<{ id: string; plannedDurationMinutes: number }>;
 }): Promise<Result> {
   const check = await authorize(args.practiceId, true);
-  if (check.error || !check.supabase) return { error: check.error };
+  if (check.error !== undefined) return { error: check.error };
   const scopeErr = await assertBlocksInPractice(
     check.supabase,
     args.practiceId,

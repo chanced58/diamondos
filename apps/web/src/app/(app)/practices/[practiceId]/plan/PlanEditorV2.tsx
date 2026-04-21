@@ -519,6 +519,7 @@ export function PlanEditorV2({
                     coachesById={coachesById}
                     canChangeStructure={canChangeStructure}
                     canEdit={canEdit}
+                    pending={pending}
                     onChange={(patch) => patchBlock(b.id, patch)}
                     onChangeAndCommit={(patch) => {
                       patchBlock(b.id, patch);
@@ -595,6 +596,10 @@ interface RowProps {
   canChangeStructure: boolean;
   /** Viewer can edit this specific block's content (HC/AD or block owner). */
   canEdit: boolean;
+  /** An editor-scoped mutation is in flight. Disables controls that would
+   * race against it (notably the owner select + structural inputs, where
+   * overlapping clicks could enqueue conflicting writes). */
+  pending: boolean;
   /** Update local state only (for "user is still typing"). */
   onChange: (patch: Partial<BlockRowData>) => void;
   /** Update local state AND persist — merges the patch against the latest
@@ -614,6 +619,7 @@ function SortableBlock({
   coachesById,
   canChangeStructure,
   canEdit,
+  pending,
   onChange,
   onChangeAndCommit,
   onAssignCoach,
@@ -682,7 +688,8 @@ function SortableBlock({
                 <select
                   value={block.assignedCoachId ?? ''}
                   onChange={(e) => onAssignCoach(e.target.value || null)}
-                  className="border border-gray-300 rounded-md px-2 py-0.5 bg-white text-xs"
+                  disabled={pending}
+                  className="border border-gray-300 rounded-md px-2 py-0.5 bg-white text-xs disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
                 >
                   <option value="">Unassigned</option>
                   {coaches.map((c) => (
@@ -712,7 +719,7 @@ function SortableBlock({
               onChange={(e) =>
                 onChangeAndCommit({ blockType: e.target.value as PracticeBlockType })
               }
-              disabled={!canChangeStructure}
+              disabled={!canChangeStructure || pending}
               className="border border-gray-300 rounded-lg px-3 py-1.5 bg-white text-sm disabled:bg-gray-50 disabled:text-gray-500"
             >
               {Object.values(PracticeBlockType).map((t) => (
@@ -735,7 +742,7 @@ function SortableBlock({
                     plannedDurationMinutes: Number(e.target.value) || 0,
                   })
                 }
-                disabled={!canChangeStructure}
+                disabled={!canChangeStructure || pending}
                 className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right disabled:bg-gray-50 disabled:text-gray-500"
               />
               <span className="text-sm text-gray-500">min</span>
@@ -746,7 +753,7 @@ function SortableBlock({
             <button
               type="button"
               onClick={() => setPickerOpen(true)}
-              disabled={!canChangeStructure}
+              disabled={!canChangeStructure || pending}
               className="text-brand-700 hover:underline disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed"
             >
               {drill ? `🎯 ${drill.name}` : '+ Pick drill'}
