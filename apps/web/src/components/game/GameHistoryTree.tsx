@@ -170,6 +170,73 @@ function ReplaceEventPanel({
   const isInPlayFlow = isPitchEvent && (step === 'in-play-result' || (step !== 'type' && pendingResult !== null));
   const submit = isInPlayFlow ? insertAfterOriginal : submitReplacement;
 
+  // Runner / between-pitch events use a dedicated edit form. The runner's
+  // identity (runnerId) stays fixed; only base / reason / outcome /
+  // fielding-sequence fields are editable. If the coach got the runner
+  // wrong they delete and re-add.
+  if (RUNNER_EVENT_TYPES.has(originalEvent.eventType)) {
+    return (
+      <RunnerEventEditForm
+        originalEvent={originalEvent}
+        isPending={isPending}
+        error={error}
+        onSubmit={(eventType, payload) => submitReplacement(eventType, payload)}
+        onDelete={handleDelete}
+        onCancel={onDone}
+      />
+    );
+  }
+
+  // Events whose only edit is delete (or a single numeric field). Balk,
+  // pitching change, and catcher interference carry no per-event fields
+  // worth correcting — if the coach needs to change the event, the
+  // right workflow is delete + re-add.
+  if (
+    originalEvent.eventType === 'balk' ||
+    originalEvent.eventType === 'pitching_change' ||
+    originalEvent.eventType === 'catcher_interference'
+  ) {
+    return (
+      <SimpleDeleteForm
+        eventType={originalEvent.eventType}
+        isPending={isPending}
+        error={error}
+        onDelete={handleDelete}
+        onCancel={onDone}
+      />
+    );
+  }
+
+  // Score events only have an editable RBI count (OBR 9.04(b) override).
+  if (originalEvent.eventType === 'score') {
+    return (
+      <ScoreEventEditForm
+        originalEvent={originalEvent}
+        isPending={isPending}
+        error={error}
+        onSubmit={(payload) => submitReplacement('score', payload)}
+        onDelete={handleDelete}
+        onCancel={onDone}
+      />
+    );
+  }
+
+  // Substitution lets the coach correct the substitution category
+  // (pinch hitter / runner / defensive / position change); incoming
+  // and outgoing player IDs stay fixed.
+  if (originalEvent.eventType === 'substitution') {
+    return (
+      <SubstitutionEventEditForm
+        originalEvent={originalEvent}
+        isPending={isPending}
+        error={error}
+        onSubmit={(payload) => submitReplacement('substitution', payload)}
+        onDelete={handleDelete}
+        onCancel={onDone}
+      />
+    );
+  }
+
   function handleDirectResult(eventType: string, extra: Record<string, unknown> = {}) {
     submit(eventType, { ...buildBatterPitcher(), ...extra });
   }
@@ -493,14 +560,449 @@ function ReplaceEventPanel({
   );
 }
 
+// ── Runner Event Edit Form ─────────────────────────────────────────────────
+//
+// Rendered inside ReplaceEventPanel for stolen_base / caught_stealing /
+// baserunner_advance / baserunner_out / pickoff_attempt / rundown.
+// The runner's identity (runnerId) is carried over from the original
+// payload unchanged; this form only exposes the base / reason / outcome
+// fields the coach can correct.
+function RunnerEventEditForm({
+  originalEvent,
+  isPending,
+  error,
+  onSubmit,
+  onDelete,
+  onCancel,
+}: {
+  originalEvent: GameEvent;
+  isPending: boolean;
+  error: string | null;
+  onSubmit: (eventType: string, payload: Record<string, unknown>) => void;
+  onDelete: () => void;
+  onCancel: () => void;
+}) {
+  const etype = originalEvent.eventType;
+  const p = originalEvent.payload as Record<string, unknown>;
+  const runnerId = (p.runnerId as string | undefined) ?? '';
+  const isOpponentRunner = p.isOpponentRunner === true;
+  const pitcherId = (p.pitcherId as string | undefined) ?? '';
+
+  // Preserve fields that this form does not expose for editing.
+  const runnerIdFields: Record<string, unknown> = { runnerId };
+  if (isOpponentRunner) runnerIdFields.isOpponentRunner = true;
+
+  const [fromBase, setFromBase] = useState<number>((p.fromBase as number | undefined) ?? 1);
+  const [reason, setReason] = useState<string>((p.reason as string | undefined) ?? '');
+  const [errorBy, setErrorBy] = useState<number | null>((p.errorBy as number | undefined) ?? null);
+  const [pickoffBase, setPickoffBase] = useState<number>((p.base as number | undefined) ?? 1);
+  const [pickoffOutcome, setPickoffOutcome] = useState<string>((p.outcome as string | undefined) ?? 'safe');
+  const [rundownOutcome, setRundownOutcome] = useState<string>((p.outcome as string | undefined) ?? 'out');
+  const [rundownSafeBase, setRundownSafeBase] = useState<number>((p.safeAtBase as number | undefined) ?? 1);
+
+  function submitSteal(retireType: 'stolen_base' | 'caught_stealing') {
+    const toBase = fromBase + 1;
+    onSubmit(retireType, { ...runnerIdFields, fromBase, toBase });
+  }
+
+  function submitAdvance() {
+    const toBase = fromBase + 1;
+    const payload: Record<string, unknown> = { ...runnerIdFields, fromBase, toBase };
+    if (reason) payload.reason = reason;
+    if ((reason === 'error' || reason === 'overthrow') && errorBy !== null) {
+      payload.errorBy = errorBy;
+    }
+    onSubmit('baserunner_advance', payload);
+  }
+
+  function submitBaserunnerOut() {
+    onSubmit('baserunner_out', { ...runnerIdFields, fromBase });
+  }
+
+  function submitPickoff() {
+    const payload: Record<string, unknown> = {
+      ...runnerIdFields,
+      base: pickoffBase,
+      outcome: pickoffOutcome,
+    };
+    if (pitcherId) payload.pitcherId = pitcherId;
+    onSubmit('pickoff_attempt', payload);
+  }
+
+  function submitRundown() {
+    const throwSequence = (p.throwSequence as number[] | undefined) ?? [];
+    const payload: Record<string, unknown> = {
+      ...runnerIdFields,
+      startBase: (p.startBase as number | undefined) ?? fromBase,
+      throwSequence,
+      outcome: rundownOutcome,
+    };
+    if (rundownOutcome === 'safe') payload.safeAtBase = rundownSafeBase;
+    onSubmit('rundown', payload);
+  }
+
+  return (
+    <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        Edit {etype.replace(/_/g, ' ')}
+      </p>
+
+      {(etype === 'stolen_base' || etype === 'caught_stealing' || etype === 'baserunner_advance' || etype === 'baserunner_out') && (
+        <BasePicker label="From base" value={fromBase} onChange={setFromBase} />
+      )}
+
+      {etype === 'baserunner_advance' && (
+        <>
+          <div>
+            <p className="text-xs text-gray-500 mb-1">Reason</p>
+            <div className="grid grid-cols-4 gap-1.5">
+              {ADVANCE_REASONS.map(({ label, value }) => (
+                <button
+                  key={value}
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => setReason(value)}
+                  className={`py-1.5 text-xs font-medium rounded-md border transition-colors ${
+                    reason === value
+                      ? 'border-brand-500 bg-brand-50 text-brand-800'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >{label}</button>
+              ))}
+            </div>
+          </div>
+          {(reason === 'error' || reason === 'overthrow') && (
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Charged to fielder</p>
+              <div className="grid grid-cols-9 gap-1.5">
+                {POSITIONS.map(({ positionNumber, label }) => (
+                  <button
+                    key={positionNumber}
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => setErrorBy(positionNumber)}
+                    className={`py-1 text-xs font-medium rounded-md border transition-colors ${
+                      errorBy === positionNumber
+                        ? 'border-red-500 bg-red-50 text-red-800'
+                        : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >{label}</button>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {etype === 'pickoff_attempt' && (
+        <>
+          <BasePicker label="Picked off at" value={pickoffBase} onChange={setPickoffBase} />
+          <div>
+            <p className="text-xs text-gray-500 mb-1">Outcome</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(['safe', 'out'] as const).map((o) => (
+                <button
+                  key={o}
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => setPickoffOutcome(o)}
+                  className={`py-2 text-sm font-medium rounded-md border transition-colors ${
+                    pickoffOutcome === o
+                      ? 'border-brand-500 bg-brand-50 text-brand-800'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >{o === 'out' ? 'Out' : 'Safe'}</button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {etype === 'rundown' && (
+        <>
+          <div>
+            <p className="text-xs text-gray-500 mb-1">Outcome</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(['out', 'safe'] as const).map((o) => (
+                <button
+                  key={o}
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => setRundownOutcome(o)}
+                  className={`py-2 text-sm font-medium rounded-md border transition-colors ${
+                    rundownOutcome === o
+                      ? 'border-brand-500 bg-brand-50 text-brand-800'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >{o === 'out' ? 'Runner out' : 'Runner safe'}</button>
+              ))}
+            </div>
+          </div>
+          {rundownOutcome === 'safe' && (
+            <BasePicker label="Safe at" value={rundownSafeBase} onChange={setRundownSafeBase} />
+          )}
+        </>
+      )}
+
+      {error && <p className="text-xs text-red-600">{error}</p>}
+
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={onCancel} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+        <button type="button" disabled={isPending} onClick={onDelete} className="text-xs text-red-500 hover:text-red-700">Delete</button>
+        <div className="ml-auto">
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => {
+              if (etype === 'stolen_base') submitSteal('stolen_base');
+              else if (etype === 'caught_stealing') submitSteal('caught_stealing');
+              else if (etype === 'baserunner_advance') submitAdvance();
+              else if (etype === 'baserunner_out') submitBaserunnerOut();
+              else if (etype === 'pickoff_attempt') submitPickoff();
+              else if (etype === 'rundown') submitRundown();
+            }}
+            className="px-4 py-1.5 text-sm font-semibold rounded-lg bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 transition-colors"
+          >Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BasePicker({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <div>
+      <p className="text-xs text-gray-500 mb-1">{label}</p>
+      <div className="grid grid-cols-3 gap-2">
+        {[1, 2, 3].map((b) => (
+          <button
+            key={b}
+            type="button"
+            onClick={() => onChange(b)}
+            className={`py-2 text-sm font-medium rounded-md border transition-colors ${
+              value === b
+                ? 'border-brand-500 bg-brand-50 text-brand-800'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            {b === 1 ? '1st' : b === 2 ? '2nd' : '3rd'}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Simple delete-only panel for events whose per-event payload is not
+// worth surfacing (balk, pitching_change, catcher_interference). The
+// coach can still correct these by deleting and re-adding.
+function SimpleDeleteForm({
+  eventType,
+  isPending,
+  error,
+  onDelete,
+  onCancel,
+}: {
+  eventType: string;
+  isPending: boolean;
+  error: string | null;
+  onDelete: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-2">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        {eventType.replace(/_/g, ' ')}
+      </p>
+      <p className="text-xs text-gray-500">
+        This event has no editable fields. Delete it and add a new one to correct.
+      </p>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={onCancel} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+        <button type="button" disabled={isPending} onClick={onDelete} className="text-xs text-red-500 hover:text-red-700">Delete</button>
+      </div>
+    </div>
+  );
+}
+
+function ScoreEventEditForm({
+  originalEvent,
+  isPending,
+  error,
+  onSubmit,
+  onDelete,
+  onCancel,
+}: {
+  originalEvent: GameEvent;
+  isPending: boolean;
+  error: string | null;
+  onSubmit: (payload: Record<string, unknown>) => void;
+  onDelete: () => void;
+  onCancel: () => void;
+}) {
+  const p = originalEvent.payload as Record<string, unknown>;
+  const scoringPlayerId = (p.scoringPlayerId as string | undefined) ?? '';
+  const isOpponentScore = p.isOpponentScore === true;
+  const [rbis, setRbis] = useState<number>((p.rbis as number | undefined) ?? 0);
+
+  function submit() {
+    const payload: Record<string, unknown> = { scoringPlayerId, rbis };
+    if (isOpponentScore) payload.isOpponentScore = true;
+    onSubmit(payload);
+  }
+
+  return (
+    <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Edit run scored</p>
+      <div>
+        <p className="text-xs text-gray-500 mb-1">RBI credit</p>
+        <div className="grid grid-cols-5 gap-2">
+          {[0, 1, 2, 3, 4].map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setRbis(n)}
+              className={`py-2 text-sm font-medium rounded-md border transition-colors ${
+                rbis === n
+                  ? 'border-brand-500 bg-brand-50 text-brand-800'
+                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >{n}</button>
+          ))}
+        </div>
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={onCancel} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+        <button type="button" disabled={isPending} onClick={onDelete} className="text-xs text-red-500 hover:text-red-700">Delete</button>
+        <div className="ml-auto">
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={submit}
+            className="px-4 py-1.5 text-sm font-semibold rounded-lg bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 transition-colors"
+          >Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SubstitutionEventEditForm({
+  originalEvent,
+  isPending,
+  error,
+  onSubmit,
+  onDelete,
+  onCancel,
+}: {
+  originalEvent: GameEvent;
+  isPending: boolean;
+  error: string | null;
+  onSubmit: (payload: Record<string, unknown>) => void;
+  onDelete: () => void;
+  onCancel: () => void;
+}) {
+  const p = originalEvent.payload as Record<string, unknown>;
+  const inPlayerId = (p.inPlayerId as string | undefined) ?? '';
+  const outPlayerId = p.outPlayerId as string | undefined;
+  const isOpponentSubstitution = p.isOpponentSubstitution === true;
+  const runnerBase = p.runnerBase as 1 | 2 | 3 | undefined;
+  const [subType, setSubType] = useState<string>((p.substitutionType as string | undefined) ?? 'pinch_hitter');
+
+  function submit() {
+    const payload: Record<string, unknown> = {
+      inPlayerId,
+      substitutionType: subType,
+    };
+    if (outPlayerId !== undefined) payload.outPlayerId = outPlayerId;
+    if (isOpponentSubstitution) payload.isOpponentSubstitution = true;
+    if (runnerBase !== undefined) payload.runnerBase = runnerBase;
+    onSubmit(payload);
+  }
+
+  return (
+    <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Edit substitution</p>
+      <div>
+        <p className="text-xs text-gray-500 mb-1">Substitution type</p>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { value: 'pinch_hitter', label: 'Pinch Hitter' },
+            { value: 'pinch_runner', label: 'Pinch Runner' },
+            { value: 'defensive', label: 'Defensive' },
+            { value: 'position_change', label: 'Position Change' },
+          ].map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setSubType(value)}
+              className={`py-2 text-sm font-medium rounded-md border transition-colors ${
+                subType === value
+                  ? 'border-brand-500 bg-brand-50 text-brand-800'
+                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >{label}</button>
+          ))}
+        </div>
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={onCancel} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+        <button type="button" disabled={isPending} onClick={onDelete} className="text-xs text-red-500 hover:text-red-700">Delete</button>
+        <div className="ml-auto">
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={submit}
+            className="px-4 py-1.5 text-sm font-semibold rounded-lg bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 transition-colors"
+          >Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Edit Event Button ──────────────────────────────────────────────────────
 
 const EDITABLE_EVENT_TYPES = new Set([
+  // Pitch + plate-appearance outcomes
   'pitch_thrown',
   'hit', 'out', 'walk', 'hit_by_pitch', 'strikeout',
   'sacrifice_bunt', 'sacrifice_fly', 'field_error',
   'double_play', 'triple_play',
+  // Runner + between-pitch events
+  'stolen_base', 'caught_stealing', 'baserunner_advance', 'baserunner_out',
+  'pickoff_attempt', 'rundown', 'balk', 'score',
+  'substitution', 'pitching_change', 'catcher_interference',
 ]);
+
+// Runner-family events all carry a runnerId that the edit panel keeps
+// fixed; the coach can only correct base / reason / outcome, per spec
+// docs/superpowers/specs/2026-04-20-editable-runner-events-design.md.
+const RUNNER_EVENT_TYPES = new Set([
+  'stolen_base', 'caught_stealing', 'baserunner_advance', 'baserunner_out',
+  'pickoff_attempt', 'rundown',
+]);
+
+const ADVANCE_REASONS = [
+  { label: 'Wild Pitch', value: 'wild_pitch' },
+  { label: 'Passed Ball', value: 'passed_ball' },
+  { label: 'Error', value: 'error' },
+  { label: 'Overthrow', value: 'overthrow' },
+  { label: 'Balk', value: 'balk' },
+  { label: 'Voluntary', value: 'voluntary' },
+  { label: 'On Play', value: 'on_play' },
+] as const;
 
 function EditEventButton({ event, gameId, children }: { event: GameEvent; gameId: string; children?: React.ReactNode }) {
   if (!EDITABLE_EVENT_TYPES.has(event.eventType)) return <>{children}</>;
@@ -886,6 +1388,463 @@ function AddPlayButton({
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
       </svg>
       {label ?? 'Add Play'}
+    </button>
+  );
+}
+
+// ── Add Runner / Between-Pitch Event Panel ─────────────────────────────────
+//
+// Parallel to AddEventPanel but emits runner and between-pitch events
+// (stolen base, pickoff, balk, pitching change, substitution, catcher
+// interference, etc.). Rendered via AddRunnerEventButton which gates
+// the open/closed state.
+function AddRunnerEventPanel({
+  gameId,
+  inning,
+  isTopOfInning,
+  teamPlayers,
+  opponentPlayers,
+  insertAfterSequence,
+  onDone,
+}: {
+  gameId: string;
+  inning: number;
+  isTopOfInning: boolean;
+  teamPlayers: PlayerEntry[];
+  opponentPlayers: PlayerEntry[];
+  insertAfterSequence?: number;
+  onDone: () => void;
+}) {
+  const router = useRouter();
+  const [step, setStep] = useState<'type' | 'runner' | 'reason' | 'error-fielder' | 'in-player' | 'out-player'>('type');
+  const [eventType, setEventType] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [runnerId, setRunnerId] = useState('');
+  const [isOpponentRunner, setIsOpponentRunner] = useState(false);
+  const [fromBase, setFromBase] = useState<number>(1);
+  const [pickoffOutcome, setPickoffOutcome] = useState<'safe' | 'out'>('out');
+  const [advanceReason, setAdvanceReason] = useState<string>('wild_pitch');
+  const [errorBy, setErrorBy] = useState<number | null>(null);
+  const [scoreRbis, setScoreRbis] = useState<number>(0);
+  const [subType, setSubType] = useState<string>('pinch_hitter');
+  const [inPlayerId, setInPlayerId] = useState('');
+  const [isOpponentInPlayer, setIsOpponentInPlayer] = useState(false);
+  const [outPlayerId, setOutPlayerId] = useState('');
+  const [isOpponentOutPlayer, setIsOpponentOutPlayer] = useState(false);
+
+  const allPlayers = [
+    ...teamPlayers.map((p) => ({ ...p, isOpponent: false })),
+    ...opponentPlayers.map((p) => ({ ...p, isOpponent: true })),
+  ];
+
+  async function submitEvent(evType: string, payload: Record<string, unknown>) {
+    if (isPending) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      const finalPayload = insertAfterSequence != null
+        ? { ...payload, insertAfterSequence }
+        : payload;
+      const formData = new FormData();
+      formData.set('gameId', gameId);
+      formData.set('eventType', evType);
+      formData.set('inning', String(inning));
+      formData.set('isTopOfInning', String(isTopOfInning));
+      formData.set('payload', JSON.stringify(finalPayload));
+      const err = await insertCorrectionEventAction(null, formData);
+      if (err) { setError(err); return; }
+      onDone();
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to add event.');
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  function buildRunnerIdFields(): Record<string, unknown> {
+    const f: Record<string, unknown> = { runnerId };
+    if (isOpponentRunner) f.isOpponentRunner = true;
+    return f;
+  }
+
+  function pickEventType(t: string) {
+    setEventType(t);
+    setError(null);
+    if (t === 'stolen_base' || t === 'caught_stealing' || t === 'baserunner_advance' ||
+        t === 'baserunner_out' || t === 'pickoff_attempt') {
+      setStep('runner');
+    } else if (t === 'substitution') {
+      setStep('in-player');
+    } else if (t === 'pitching_change') {
+      setStep('in-player');
+    } else if (t === 'score') {
+      setStep('runner');
+    } else if (t === 'balk') {
+      // Balk has no required inputs beyond inning; emit immediately.
+      submitEvent('balk', {});
+    } else if (t === 'catcher_interference') {
+      setStep('in-player');
+    }
+  }
+
+  function pickRunner(playerId: string, opponent: boolean) {
+    setRunnerId(playerId);
+    setIsOpponentRunner(opponent);
+    if (eventType === 'baserunner_advance') {
+      setStep('reason');
+    } else {
+      // For steal/CS/pickoff/baserunner_out/score — ready to submit after base pick
+      setStep('reason'); // reuses the reason step UI to show the base picker + submit
+    }
+  }
+
+  function submitRunnerEvent() {
+    const t = eventType!;
+    const toBase = fromBase + 1;
+    if (t === 'stolen_base' || t === 'caught_stealing') {
+      submitEvent(t, { ...buildRunnerIdFields(), fromBase, toBase });
+    } else if (t === 'baserunner_out') {
+      submitEvent(t, { ...buildRunnerIdFields(), fromBase });
+    } else if (t === 'pickoff_attempt') {
+      submitEvent(t, { ...buildRunnerIdFields(), base: fromBase, outcome: pickoffOutcome });
+    } else if (t === 'baserunner_advance') {
+      const payload: Record<string, unknown> = { ...buildRunnerIdFields(), fromBase, toBase, reason: advanceReason };
+      if ((advanceReason === 'error' || advanceReason === 'overthrow') && errorBy !== null) {
+        payload.errorBy = errorBy;
+      }
+      submitEvent(t, payload);
+    } else if (t === 'score') {
+      submitEvent(t, {
+        scoringPlayerId: runnerId,
+        ...(isOpponentRunner ? { isOpponentScore: true } : {}),
+        rbis: scoreRbis,
+      });
+    }
+  }
+
+  function submitInOutSubstitution() {
+    const t = eventType!;
+    if (t === 'pitching_change') {
+      submitEvent('pitching_change', {
+        newPitcherId: inPlayerId,
+        ...(isOpponentInPlayer ? { isOpponentChange: true } : {}),
+      });
+    } else if (t === 'catcher_interference') {
+      // CI is a PA-level event; in-player is the batter, pitcher optional.
+      submitEvent('catcher_interference', {
+        ...(isOpponentInPlayer ? { opponentBatterId: inPlayerId } : { batterId: inPlayerId }),
+      });
+    } else if (t === 'substitution') {
+      const payload: Record<string, unknown> = {
+        inPlayerId,
+        substitutionType: subType,
+      };
+      if (outPlayerId) payload.outPlayerId = outPlayerId;
+      if (isOpponentInPlayer || isOpponentOutPlayer) payload.isOpponentSubstitution = true;
+      submitEvent('substitution', payload);
+    }
+  }
+
+  // ── Render ──
+
+  if (step === 'type') {
+    return (
+      <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Add runner / between-pitch event</p>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Baserunning</p>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { label: 'Stolen Base', value: 'stolen_base' },
+              { label: 'Caught Stealing', value: 'caught_stealing' },
+              { label: 'Advance', value: 'baserunner_advance' },
+              { label: 'Pickoff', value: 'pickoff_attempt' },
+              { label: 'Runner Out', value: 'baserunner_out' },
+              { label: 'Score', value: 'score' },
+            ] as const).map(({ label, value }) => (
+              <button key={value} type="button" disabled={isPending}
+                onClick={() => pickEventType(value)}
+                className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+              >{label}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Pitcher / battery</p>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { label: 'Balk', value: 'balk' },
+              { label: 'Pitching Change', value: 'pitching_change' },
+              { label: 'Catcher Interf.', value: 'catcher_interference' },
+            ] as const).map(({ label, value }) => (
+              <button key={value} type="button" disabled={isPending}
+                onClick={() => pickEventType(value)}
+                className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+              >{label}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Lineup</p>
+          <div className="grid grid-cols-1 gap-2">
+            <button type="button" disabled={isPending}
+              onClick={() => pickEventType('substitution')}
+              className="py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+            >Substitution (pinch / defensive)</button>
+          </div>
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="button" onClick={onDone} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+      </div>
+    );
+  }
+
+  // Shared player picker for runner / score / CI / pitching change / substitution (in & out).
+  if (step === 'runner' || step === 'in-player' || step === 'out-player') {
+    const who =
+      step === 'runner' ? 'runner'
+      : step === 'out-player' ? 'player coming out'
+      : eventType === 'pitching_change' ? 'incoming pitcher'
+      : eventType === 'catcher_interference' ? 'batter'
+      : eventType === 'score' ? 'scoring player'
+      : 'incoming player';
+    const onPick = (pid: string, opp: boolean) => {
+      if (step === 'runner') {
+        pickRunner(pid, opp);
+      } else if (step === 'in-player') {
+        setInPlayerId(pid);
+        setIsOpponentInPlayer(opp);
+        if (eventType === 'substitution') {
+          setStep('out-player');
+        } else {
+          submitEvent(
+            eventType === 'pitching_change' ? 'pitching_change' :
+            eventType === 'catcher_interference' ? 'catcher_interference' :
+            eventType!,
+            eventType === 'pitching_change'
+              ? { newPitcherId: pid, ...(opp ? { isOpponentChange: true } : {}) }
+              : eventType === 'catcher_interference'
+                ? { ...(opp ? { opponentBatterId: pid } : { batterId: pid }) }
+                : {},
+          );
+        }
+      } else if (step === 'out-player') {
+        setOutPlayerId(pid);
+        setIsOpponentOutPlayer(opp);
+        // Move on to the sub-type picker
+        setStep('reason');
+      }
+    };
+    return (
+      <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Pick {who}</p>
+        <div className="max-h-48 overflow-y-auto space-y-1">
+          {allPlayers.map((p) => (
+            <button key={`${p.isOpponent ? 'opp' : 'us'}-${p.id}`} type="button"
+              onClick={() => onPick(p.id, p.isOpponent)}
+              disabled={isPending}
+              className="w-full text-left py-1.5 px-2 rounded-md text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+            >
+              <span className={p.isOpponent ? 'text-orange-600' : 'text-brand-600'}>
+                {p.isOpponent ? 'Opp ' : 'Us '}
+              </span>
+              {p.name}
+            </button>
+          ))}
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="button" onClick={() => setStep('type')} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+      </div>
+    );
+  }
+
+  // Step 'reason' is shared between runner-event submit (base + reason/outcome)
+  // and the substitution type picker (for substitution flow).
+  if (step === 'reason') {
+    const isSubFlow = eventType === 'substitution';
+    if (isSubFlow) {
+      return (
+        <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Substitution type</p>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { value: 'pinch_hitter', label: 'Pinch Hitter' },
+              { value: 'pinch_runner', label: 'Pinch Runner' },
+              { value: 'defensive', label: 'Defensive' },
+              { value: 'position_change', label: 'Position Change' },
+            ].map(({ value, label }) => (
+              <button key={value} type="button" disabled={isPending}
+                onClick={() => setSubType(value)}
+                className={`py-2 text-sm font-medium rounded-lg border transition-colors ${
+                  subType === value
+                    ? 'border-brand-500 bg-brand-50 text-brand-800'
+                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >{label}</button>
+            ))}
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => setStep('out-player')} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+            <div className="ml-auto">
+              <button type="button" disabled={isPending} onClick={submitInOutSubstitution}
+                className="px-4 py-1.5 text-sm font-semibold rounded-lg bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 transition-colors"
+              >Save</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    // Runner-event: ask for base + any type-specific params
+    return (
+      <div className="mt-2 p-3 bg-white rounded-lg border border-brand-200 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          {eventType?.replace(/_/g, ' ')}
+        </p>
+        {eventType !== 'score' && (
+          <BasePicker
+            label={
+              eventType === 'pickoff_attempt' ? 'Picked off at'
+              : eventType === 'baserunner_out' ? 'Out at'
+              : 'From base'
+            }
+            value={fromBase}
+            onChange={setFromBase}
+          />
+        )}
+
+        {eventType === 'baserunner_advance' && (
+          <>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Reason</p>
+              <div className="grid grid-cols-4 gap-1.5">
+                {ADVANCE_REASONS.map(({ label, value }) => (
+                  <button key={value} type="button" disabled={isPending}
+                    onClick={() => setAdvanceReason(value)}
+                    className={`py-1.5 text-xs font-medium rounded-md border transition-colors ${
+                      advanceReason === value
+                        ? 'border-brand-500 bg-brand-50 text-brand-800'
+                        : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >{label}</button>
+                ))}
+              </div>
+            </div>
+            {(advanceReason === 'error' || advanceReason === 'overthrow') && (
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Charged to fielder</p>
+                <div className="grid grid-cols-9 gap-1.5">
+                  {POSITIONS.map(({ positionNumber, label }) => (
+                    <button key={positionNumber} type="button" disabled={isPending}
+                      onClick={() => setErrorBy(positionNumber)}
+                      className={`py-1 text-xs font-medium rounded-md border transition-colors ${
+                        errorBy === positionNumber
+                          ? 'border-red-500 bg-red-50 text-red-800'
+                          : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >{label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {eventType === 'pickoff_attempt' && (
+          <div>
+            <p className="text-xs text-gray-500 mb-1">Outcome</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(['safe', 'out'] as const).map((o) => (
+                <button key={o} type="button" disabled={isPending}
+                  onClick={() => setPickoffOutcome(o)}
+                  className={`py-2 text-sm font-medium rounded-md border transition-colors ${
+                    pickoffOutcome === o
+                      ? 'border-brand-500 bg-brand-50 text-brand-800'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >{o === 'out' ? 'Out' : 'Safe'}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {eventType === 'score' && (
+          <div>
+            <p className="text-xs text-gray-500 mb-1">RBI credit</p>
+            <div className="grid grid-cols-5 gap-2">
+              {[0, 1, 2, 3, 4].map((n) => (
+                <button key={n} type="button" disabled={isPending}
+                  onClick={() => setScoreRbis(n)}
+                  className={`py-2 text-sm font-medium rounded-md border transition-colors ${
+                    scoreRbis === n
+                      ? 'border-brand-500 bg-brand-50 text-brand-800'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >{n}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => setStep('runner')} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+          <div className="ml-auto">
+            <button type="button" disabled={isPending} onClick={submitRunnerEvent}
+              className="px-4 py-1.5 text-sm font-semibold rounded-lg bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 transition-colors"
+            >Save</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function AddRunnerEventButton({
+  gameId,
+  inning,
+  isTopOfInning,
+  teamPlayers,
+  opponentPlayers,
+  insertAfterSequence,
+  label,
+}: {
+  gameId: string;
+  inning: number;
+  isTopOfInning: boolean;
+  teamPlayers: PlayerEntry[];
+  opponentPlayers: PlayerEntry[];
+  insertAfterSequence?: number;
+  label?: string;
+}) {
+  const [adding, setAdding] = useState(false);
+  if (adding) {
+    return (
+      <AddRunnerEventPanel
+        gameId={gameId}
+        inning={inning}
+        isTopOfInning={isTopOfInning}
+        teamPlayers={teamPlayers}
+        opponentPlayers={opponentPlayers}
+        insertAfterSequence={insertAfterSequence}
+        onDone={() => setAdding(false)}
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setAdding(true)}
+      className="mt-1 mb-1 flex items-center gap-1.5 text-xs text-sky-600 hover:text-sky-800 font-medium transition-colors"
+    >
+      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+      </svg>
+      {label ?? 'Add Runner Event'}
     </button>
   );
 }
@@ -1673,6 +2632,8 @@ function AtBatSection({
   inning,
   isTopOfInning,
   precedingSequence,
+  teamPlayers,
+  opponentPlayers,
 }: {
   atBat: AtBatNode;
   nodeKey: string;
@@ -1684,6 +2645,8 @@ function AtBatSection({
   inning?: number;
   isTopOfInning?: boolean;
   precedingSequence?: number;
+  teamPlayers?: PlayerEntry[];
+  opponentPlayers?: PlayerEntry[];
 }) {
   // Interleave pitches and mid-at-bat events by sequence number
   const pitchItems = atBat.pitches.map((p) => ({ type: 'pitch' as const, data: p, seq: p.event.sequenceNumber }));
@@ -1747,37 +2710,64 @@ function AtBatSection({
 
       {expanded && (
         <div className="ml-6 pl-4 border-l-2 border-gray-200 mt-1 mb-2">
-          {merged.map((item, i) => (
-            <React.Fragment key={i}>
-              {canAddPitch && (
-                <AddPitchButton
+          {merged.map((item, i) => {
+            const insertAfter = i === 0 ? (precedingSequence ?? 0) : merged[i - 1].seq;
+            return (
+              <React.Fragment key={i}>
+                {canAddPitch && (
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <AddPitchButton
+                      gameId={gameId}
+                      inning={inning}
+                      isTopOfInning={isTopOfInning}
+                      insertAfterSequence={insertAfter}
+                      batterId={atBat.batterId}
+                      pitcherId={atBat.pitcherId}
+                      isOpponentBatter={isOpponentBatter}
+                      isOpponentPitcher={isOpponentPitcher}
+                    />
+                    {teamPlayers && opponentPlayers && (
+                      <AddRunnerEventButton
+                        gameId={gameId}
+                        inning={inning}
+                        isTopOfInning={isTopOfInning}
+                        teamPlayers={teamPlayers}
+                        opponentPlayers={opponentPlayers}
+                        insertAfterSequence={insertAfter}
+                      />
+                    )}
+                  </div>
+                )}
+                {item.type === 'pitch'
+                  ? <PitchRow pitch={item.data as PitchNode} isCoach={isCoach} gameId={gameId} />
+                  : <MidAtBatRow node={item.data as HistoryEventNode} isCoach={isCoach} gameId={gameId} />
+                }
+              </React.Fragment>
+            );
+          })}
+          {canAddPitch && merged.length > 0 && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <AddPitchButton
+                gameId={gameId}
+                inning={inning}
+                isTopOfInning={isTopOfInning}
+                insertAfterSequence={merged[merged.length - 1].seq}
+                batterId={atBat.batterId}
+                pitcherId={atBat.pitcherId}
+                isOpponentBatter={isOpponentBatter}
+                isOpponentPitcher={isOpponentPitcher}
+              />
+              {teamPlayers && opponentPlayers && (
+                <AddRunnerEventButton
                   gameId={gameId}
                   inning={inning}
                   isTopOfInning={isTopOfInning}
-                  insertAfterSequence={i === 0 ? (precedingSequence ?? 0) : merged[i - 1].seq}
-                  batterId={atBat.batterId}
-                  pitcherId={atBat.pitcherId}
-                  isOpponentBatter={isOpponentBatter}
-                  isOpponentPitcher={isOpponentPitcher}
+                  teamPlayers={teamPlayers}
+                  opponentPlayers={opponentPlayers}
+                  insertAfterSequence={merged[merged.length - 1].seq}
                 />
               )}
-              {item.type === 'pitch'
-                ? <PitchRow pitch={item.data as PitchNode} isCoach={isCoach} gameId={gameId} />
-                : <MidAtBatRow node={item.data as HistoryEventNode} isCoach={isCoach} gameId={gameId} />
-              }
-            </React.Fragment>
-          ))}
-          {canAddPitch && merged.length > 0 && (
-            <AddPitchButton
-              gameId={gameId}
-              inning={inning}
-              isTopOfInning={isTopOfInning}
-              insertAfterSequence={merged[merged.length - 1].seq}
-              batterId={atBat.batterId}
-              pitcherId={atBat.pitcherId}
-              isOpponentBatter={isOpponentBatter}
-              isOpponentPitcher={isOpponentPitcher}
-            />
+            </div>
           )}
           {atBat.result && (
             <div className="py-1.5">
@@ -1859,17 +2849,28 @@ function HalfInningSection({
         <div className="ml-4 mt-1">
           {half.items.map((item, i) => {
             const canInsert = isCoach && gameId && teamPlayers && opponentPlayers;
+            const insertAfter = i > 0 ? getItemLastSequence(half.items[i - 1]) : 0;
             const insertButton = canInsert ? (
-              <AddPlayButton
-                key={`insert-${i}`}
-                gameId={gameId}
-                inning={inningNumber}
-                isTopOfInning={half.isTop}
-                teamPlayers={teamPlayers}
-                opponentPlayers={opponentPlayers}
-                insertAfterSequence={i > 0 ? getItemLastSequence(half.items[i - 1]) : 0}
-                label="Insert Play Here"
-              />
+              <div key={`insert-${i}`} className="flex items-center gap-3 flex-wrap">
+                <AddPlayButton
+                  gameId={gameId}
+                  inning={inningNumber}
+                  isTopOfInning={half.isTop}
+                  teamPlayers={teamPlayers}
+                  opponentPlayers={opponentPlayers}
+                  insertAfterSequence={insertAfter}
+                  label="Insert Play Here"
+                />
+                <AddRunnerEventButton
+                  gameId={gameId}
+                  inning={inningNumber}
+                  isTopOfInning={half.isTop}
+                  teamPlayers={teamPlayers}
+                  opponentPlayers={opponentPlayers}
+                  insertAfterSequence={insertAfter}
+                  label="Insert Runner Event Here"
+                />
+              </div>
             ) : null;
 
             if (item.type === 'at-bat') {
@@ -1888,6 +2889,8 @@ function HalfInningSection({
                     inning={inningNumber}
                     isTopOfInning={half.isTop}
                     precedingSequence={i > 0 ? getItemLastSequence(half.items[i - 1]) : 0}
+                    teamPlayers={teamPlayers}
+                    opponentPlayers={opponentPlayers}
                   />
                 </React.Fragment>
               );
@@ -1900,15 +2903,25 @@ function HalfInningSection({
             );
           })}
           {isCoach && gameId && teamPlayers && opponentPlayers && (
-            <AddPlayButton
-              gameId={gameId}
-              inning={inningNumber}
-              isTopOfInning={half.isTop}
-              teamPlayers={teamPlayers}
-              opponentPlayers={opponentPlayers}
-              insertAfterSequence={half.items.length > 0 ? getItemLastSequence(half.items[half.items.length - 1]) : 0}
-              label="Add Play"
-            />
+            <div className="flex items-center gap-3 flex-wrap">
+              <AddPlayButton
+                gameId={gameId}
+                inning={inningNumber}
+                isTopOfInning={half.isTop}
+                teamPlayers={teamPlayers}
+                opponentPlayers={opponentPlayers}
+                insertAfterSequence={half.items.length > 0 ? getItemLastSequence(half.items[half.items.length - 1]) : 0}
+                label="Add Play"
+              />
+              <AddRunnerEventButton
+                gameId={gameId}
+                inning={inningNumber}
+                isTopOfInning={half.isTop}
+                teamPlayers={teamPlayers}
+                opponentPlayers={opponentPlayers}
+                insertAfterSequence={half.items.length > 0 ? getItemLastSequence(half.items[half.items.length - 1]) : 0}
+              />
+            </div>
           )}
         </div>
       )}
