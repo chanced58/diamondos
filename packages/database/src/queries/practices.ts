@@ -1,14 +1,15 @@
-import type {
-  PracticeBlock,
-  PracticeBlockPlayer,
-  PracticeBlockStatus,
-  PracticeBlockType,
-  PracticeFieldSpace,
-  PracticeRunStatus,
-  PracticeStation,
-  PracticeStationAssignment,
-  PracticeWeatherMode,
-  PracticeWithBlocks,
+import {
+  COACH_ROLES,
+  type PracticeBlock,
+  type PracticeBlockPlayer,
+  type PracticeBlockStatus,
+  type PracticeBlockType,
+  type PracticeFieldSpace,
+  type PracticeRunStatus,
+  type PracticeStation,
+  type PracticeStationAssignment,
+  type PracticeWeatherMode,
+  type PracticeWithBlocks,
 } from '@baseball/shared';
 import type { TypedSupabaseClient } from '../client';
 
@@ -18,6 +19,7 @@ const BLOCK_PLAYERS_TABLE = 'practice_block_players' as never;
 const STATIONS_TABLE = 'practice_stations' as never;
 const STATION_ASSIGNMENTS_TABLE = 'practice_station_assignments' as never;
 const TEMPLATE_BLOCKS_TABLE = 'practice_template_blocks' as never;
+const TEAM_MEMBERS_TABLE = 'team_members' as never;
 
 interface RawPracticeRow {
   id: string;
@@ -552,6 +554,55 @@ export async function markPracticeCompleted(
     .maybeSingle();
   if (error) throw error;
   return data != null;
+}
+
+export interface TeamCoach {
+  userId: string;
+  role: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+}
+
+interface RawTeamCoachRow {
+  user_id: string;
+  role: string;
+  user_profiles: {
+    first_name: string | null;
+    last_name: string | null;
+  } | null;
+}
+
+/**
+ * List active coaches on a team, joined to their user_profiles for display.
+ * Used by the block-owner dropdown in the practice plan editor.
+ */
+export async function listTeamCoaches(
+  supabase: TypedSupabaseClient,
+  teamId: string,
+): Promise<TeamCoach[]> {
+  const { data, error } = await supabase
+    .from(TEAM_MEMBERS_TABLE)
+    .select('user_id, role, user_profiles(first_name, last_name)')
+    .eq('team_id', teamId)
+    .eq('is_active', true)
+    .in('role', COACH_ROLES as unknown as string[]);
+  if (error) throw error;
+  const rows = (data as unknown as RawTeamCoachRow[]) ?? [];
+  return rows
+    .map((r) => {
+      const first = r.user_profiles?.first_name?.trim() ?? '';
+      const last = r.user_profiles?.last_name?.trim() ?? '';
+      const display = `${first} ${last}`.trim() || 'Unnamed coach';
+      return {
+        userId: r.user_id,
+        role: r.role,
+        firstName: first,
+        lastName: last,
+        displayName: display,
+      };
+    })
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
 export async function setActiveBlock(

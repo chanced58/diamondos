@@ -7,6 +7,7 @@ import { getUserAccess } from '@/lib/user-access';
 import {
   getPracticeWithBlocks,
   listDrills,
+  listTeamCoaches,
   listTemplates,
 } from '@baseball/database';
 import { createPracticeServiceClient } from '@/lib/practices/authz';
@@ -30,13 +31,21 @@ export default async function PracticePlanPage({ params }: Props): Promise<JSX.E
   const practice = await getPracticeWithBlocks(supabase, practiceId);
   if (!practice) notFound();
 
-  const { isCoach } = await getUserAccess(practice.teamId, user.id);
+  const { isCoach, isPlatformAdmin, role } = await getUserAccess(
+    practice.teamId,
+    user.id,
+  );
   if (!isCoach) redirect(`/practices/${practiceId}`);
 
-  const [drills, templates] = await Promise.all([
+  const [drills, templates, coaches] = await Promise.all([
     listDrills(supabase, practice.teamId),
     listTemplates(supabase, practice.teamId),
+    listTeamCoaches(supabase, practice.teamId),
   ]);
+
+  const effectiveRole = isPlatformAdmin ? 'head_coach' : (role ?? '');
+  const canChangeStructure =
+    effectiveRole === 'head_coach' || effectiveRole === 'athletic_director';
 
   return (
     <div className="p-8">
@@ -75,7 +84,14 @@ export default async function PracticePlanPage({ params }: Props): Promise<JSX.E
           </div>
         </div>
 
-        <PlanEditorV2 practice={practice} drills={drills} templates={templates} />
+        <PlanEditorV2
+          practice={practice}
+          drills={drills}
+          templates={templates}
+          coaches={coaches}
+          currentUserId={user.id}
+          canChangeStructure={canChangeStructure}
+        />
       </div>
     </div>
   );
