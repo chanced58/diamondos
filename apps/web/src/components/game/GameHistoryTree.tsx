@@ -593,6 +593,13 @@ function RunnerEventEditForm({
   if (isOpponentRunner) runnerIdFields.isOpponentRunner = true;
 
   const [fromBase, setFromBase] = useState<number>((p.fromBase as number | undefined) ?? 1);
+  // baserunner_advance carries a separate toBase because advances can
+  // cover multiple bases (1→3 on an overthrow, 2→home on a WP, etc.).
+  // Seed from the original payload so round-tripping preserves the
+  // existing advance distance unless the coach explicitly changes it.
+  const [advanceToBase, setAdvanceToBase] = useState<number>(
+    (p.toBase as number | undefined) ?? (((p.fromBase as number | undefined) ?? 1) + 1),
+  );
   const [reason, setReason] = useState<string>((p.reason as string | undefined) ?? '');
   const [errorBy, setErrorBy] = useState<number | null>((p.errorBy as number | undefined) ?? null);
   const [pickoffBase, setPickoffBase] = useState<number>((p.base as number | undefined) ?? 1);
@@ -601,13 +608,19 @@ function RunnerEventEditForm({
   const [rundownSafeBase, setRundownSafeBase] = useState<number>((p.safeAtBase as number | undefined) ?? 1);
 
   function submitSteal(retireType: 'stolen_base' | 'caught_stealing') {
+    // Per OBR, a single stolen_base / caught_stealing event always
+    // advances exactly one base — multi-base steals are recorded as
+    // separate events. toBase is therefore always fromBase + 1.
     const toBase = fromBase + 1;
     onSubmit(retireType, { ...runnerIdFields, fromBase, toBase });
   }
 
   function submitAdvance() {
-    const toBase = fromBase + 1;
-    const payload: Record<string, unknown> = { ...runnerIdFields, fromBase, toBase };
+    const payload: Record<string, unknown> = {
+      ...runnerIdFields,
+      fromBase,
+      toBase: advanceToBase,
+    };
     if (reason) payload.reason = reason;
     if ((reason === 'error' || reason === 'overthrow') && errorBy !== null) {
       payload.errorBy = errorBy;
@@ -620,12 +633,17 @@ function RunnerEventEditForm({
   }
 
   function submitPickoff() {
+    // Preserve the original fieldingSequence (e.g. [1, 3] for P-to-1B)
+    // so a pickoff edit that only touches base/outcome doesn't drop
+    // the putout chain.
+    const fieldingSequence = (p.fieldingSequence as number[] | undefined) ?? [];
     const payload: Record<string, unknown> = {
       ...runnerIdFields,
       base: pickoffBase,
       outcome: pickoffOutcome,
     };
     if (pitcherId) payload.pitcherId = pitcherId;
+    if (fieldingSequence.length > 0) payload.fieldingSequence = fieldingSequence;
     onSubmit('pickoff_attempt', payload);
   }
 
@@ -653,6 +671,12 @@ function RunnerEventEditForm({
 
       {etype === 'baserunner_advance' && (
         <>
+          <ToBasePicker
+            label="To base"
+            fromBase={fromBase}
+            value={advanceToBase}
+            onChange={setAdvanceToBase}
+          />
           <div>
             <p className="text-xs text-gray-500 mb-1">Reason</p>
             <div className="grid grid-cols-4 gap-1.5">
@@ -801,6 +825,49 @@ function BasePicker({
   );
 }
 
+/**
+ * Destination-base picker for baserunner_advance events. Options are
+ * restricted to bases strictly greater than fromBase (runners only
+ * advance forward); value 4 represents home plate (the runner scored).
+ */
+function ToBasePicker({
+  label,
+  fromBase,
+  value,
+  onChange,
+}: {
+  label: string;
+  fromBase: number;
+  value: number;
+  onChange: (n: number) => void;
+}) {
+  const options: Array<{ base: number; label: string }> = [];
+  if (fromBase < 2) options.push({ base: 2, label: '2nd' });
+  if (fromBase < 3) options.push({ base: 3, label: '3rd' });
+  options.push({ base: 4, label: 'Home' });
+  return (
+    <div>
+      <p className="text-xs text-gray-500 mb-1">{label}</p>
+      <div className={`grid gap-2 ${options.length === 3 ? 'grid-cols-3' : options.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        {options.map(({ base, label: optLabel }) => (
+          <button
+            key={base}
+            type="button"
+            onClick={() => onChange(base)}
+            className={`py-2 text-sm font-medium rounded-md border transition-colors ${
+              value === base
+                ? 'border-brand-500 bg-brand-50 text-brand-800'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            {optLabel}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Simple delete-only panel for events whose per-event payload is not
 // worth surfacing (balk, pitching_change, catcher_interference). The
 // coach can still correct these by deleting and re-adding.
@@ -917,6 +984,12 @@ function SubstitutionEventEditForm({
   const outPlayerId = p.outPlayerId as string | undefined;
   const isOpponentSubstitution = p.isOpponentSubstitution === true;
   const runnerBase = p.runnerBase as 1 | 2 | 3 | undefined;
+  // Preserved-but-not-edited fields. Per the spec, only substitutionType
+  // is editable from this form; newPosition and battingOrderPosition
+  // round-trip unchanged so defensive / position_change substitutions
+  // retain their position / batting-order metadata after an edit.
+  const newPosition = p.newPosition as string | undefined;
+  const battingOrderPosition = p.battingOrderPosition as number | undefined;
   const [subType, setSubType] = useState<string>((p.substitutionType as string | undefined) ?? 'pinch_hitter');
 
   function submit() {
@@ -927,6 +1000,8 @@ function SubstitutionEventEditForm({
     if (outPlayerId !== undefined) payload.outPlayerId = outPlayerId;
     if (isOpponentSubstitution) payload.isOpponentSubstitution = true;
     if (runnerBase !== undefined) payload.runnerBase = runnerBase;
+    if (newPosition !== undefined) payload.newPosition = newPosition;
+    if (battingOrderPosition !== undefined) payload.battingOrderPosition = battingOrderPosition;
     onSubmit(payload);
   }
 
@@ -1423,9 +1498,14 @@ function AddRunnerEventPanel({
   const [runnerId, setRunnerId] = useState('');
   const [isOpponentRunner, setIsOpponentRunner] = useState(false);
   const [fromBase, setFromBase] = useState<number>(1);
+  // Destination base for baserunner_advance — defaults to fromBase + 1
+  // but can be bumped to 3 or home for multi-base advances.
+  const [advanceToBase, setAdvanceToBase] = useState<number>(2);
   const [pickoffOutcome, setPickoffOutcome] = useState<'safe' | 'out'>('out');
   const [advanceReason, setAdvanceReason] = useState<string>('wild_pitch');
   const [errorBy, setErrorBy] = useState<number | null>(null);
+  const [rundownOutcome, setRundownOutcome] = useState<'safe' | 'out'>('out');
+  const [rundownSafeBase, setRundownSafeBase] = useState<number>(1);
   const [scoreRbis, setScoreRbis] = useState<number>(0);
   const [subType, setSubType] = useState<string>('pinch_hitter');
   const [inPlayerId, setInPlayerId] = useState('');
@@ -1473,7 +1553,7 @@ function AddRunnerEventPanel({
     setEventType(t);
     setError(null);
     if (t === 'stolen_base' || t === 'caught_stealing' || t === 'baserunner_advance' ||
-        t === 'baserunner_out' || t === 'pickoff_attempt') {
+        t === 'baserunner_out' || t === 'pickoff_attempt' || t === 'rundown') {
       setStep('runner');
     } else if (t === 'substitution') {
       setStep('in-player');
@@ -1502,15 +1582,32 @@ function AddRunnerEventPanel({
 
   function submitRunnerEvent() {
     const t = eventType!;
-    const toBase = fromBase + 1;
     if (t === 'stolen_base' || t === 'caught_stealing') {
-      submitEvent(t, { ...buildRunnerIdFields(), fromBase, toBase });
+      // SB/CS always advances exactly one base per OBR.
+      submitEvent(t, { ...buildRunnerIdFields(), fromBase, toBase: fromBase + 1 });
     } else if (t === 'baserunner_out') {
       submitEvent(t, { ...buildRunnerIdFields(), fromBase });
     } else if (t === 'pickoff_attempt') {
       submitEvent(t, { ...buildRunnerIdFields(), base: fromBase, outcome: pickoffOutcome });
+    } else if (t === 'rundown') {
+      const payload: Record<string, unknown> = {
+        ...buildRunnerIdFields(),
+        startBase: fromBase,
+        throwSequence: [],
+        outcome: rundownOutcome,
+      };
+      if (rundownOutcome === 'safe') payload.safeAtBase = rundownSafeBase;
+      submitEvent('rundown', payload);
     } else if (t === 'baserunner_advance') {
-      const payload: Record<string, unknown> = { ...buildRunnerIdFields(), fromBase, toBase, reason: advanceReason };
+      // Allow multi-base advances (e.g. 1→3 on an overthrow, 2→home on
+      // a WP). advanceToBase is a separate state so single-base is the
+      // default but not the only option.
+      const payload: Record<string, unknown> = {
+        ...buildRunnerIdFields(),
+        fromBase,
+        toBase: advanceToBase,
+        reason: advanceReason,
+      };
       if ((advanceReason === 'error' || advanceReason === 'overthrow') && errorBy !== null) {
         payload.errorBy = errorBy;
       }
@@ -1562,6 +1659,7 @@ function AddRunnerEventPanel({
               { label: 'Advance', value: 'baserunner_advance' },
               { label: 'Pickoff', value: 'pickoff_attempt' },
               { label: 'Runner Out', value: 'baserunner_out' },
+              { label: 'Rundown', value: 'rundown' },
               { label: 'Score', value: 'score' },
             ] as const).map(({ label, value }) => (
               <button key={value} type="button" disabled={isPending}
@@ -1708,6 +1806,7 @@ function AddRunnerEventPanel({
             label={
               eventType === 'pickoff_attempt' ? 'Picked off at'
               : eventType === 'baserunner_out' ? 'Out at'
+              : eventType === 'rundown' ? 'Starts at'
               : 'From base'
             }
             value={fromBase}
@@ -1717,6 +1816,12 @@ function AddRunnerEventPanel({
 
         {eventType === 'baserunner_advance' && (
           <>
+            <ToBasePicker
+              label="To base"
+              fromBase={fromBase}
+              value={advanceToBase < fromBase + 1 ? fromBase + 1 : advanceToBase}
+              onChange={setAdvanceToBase}
+            />
             <div>
               <p className="text-xs text-gray-500 mb-1">Reason</p>
               <div className="grid grid-cols-4 gap-1.5">
@@ -1748,6 +1853,29 @@ function AddRunnerEventPanel({
                   ))}
                 </div>
               </div>
+            )}
+          </>
+        )}
+
+        {eventType === 'rundown' && (
+          <>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Outcome</p>
+              <div className="grid grid-cols-2 gap-2">
+                {(['out', 'safe'] as const).map((o) => (
+                  <button key={o} type="button" disabled={isPending}
+                    onClick={() => setRundownOutcome(o)}
+                    className={`py-2 text-sm font-medium rounded-md border transition-colors ${
+                      rundownOutcome === o
+                        ? 'border-brand-500 bg-brand-50 text-brand-800'
+                        : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >{o === 'out' ? 'Runner out' : 'Runner safe'}</button>
+                ))}
+              </div>
+            </div>
+            {rundownOutcome === 'safe' && (
+              <BasePicker label="Safe at" value={rundownSafeBase} onChange={setRundownSafeBase} />
             )}
           </>
         )}

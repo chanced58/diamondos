@@ -79,7 +79,7 @@ UI branches by `originalEvent.eventType`:
 | `rundown` | `outcome` (safe / out) + `safeAtBase` when safe |
 | `balk` | no editable fields — delete + re-add if the balk needs to move |
 | `score` | `rbis` (OBR 9.04(b) judgment call override) |
-| `substitution` | `substitutionType`, `newPosition`, `battingOrderPosition` |
+| `substitution` | `substitutionType` (editable). `newPosition` and `battingOrderPosition` round-trip unchanged from the original payload — editing those fields requires delete + re-add for now. |
 | `pitching_change` | no editable fields — incoming pitcher changes are rare enough that re-add is fine |
 | `catcher_interference` | no editable fields (PA-level event with only batter/pitcher IDs) |
 
