@@ -44,17 +44,30 @@ export async function replaceStationsForBlock(
   if (error) throw error;
 }
 
+/**
+ * Replaces the assignments for a set of stations. Accepts a second parameter
+ * `stationIdsToClear` so callers can clear stale rows even when they want to
+ * write zero new assignments (e.g. a coach wiping the rotation matrix).
+ */
 export async function writeStationAssignments(
   supabase: TypedSupabaseClient,
   assignments: Array<{ stationId: string; playerId: string; rotationIndex: number }>,
+  stationIdsToClear?: string[],
 ): Promise<void> {
+  const idsToClear = Array.from(
+    new Set([
+      ...(stationIdsToClear ?? []),
+      ...assignments.map((a) => a.stationId),
+    ]),
+  );
+  if (idsToClear.length > 0) {
+    const { error: delErr } = await supabase
+      .from(ASSIGNMENTS_TABLE)
+      .delete()
+      .in('station_id', idsToClear);
+    if (delErr) throw delErr;
+  }
   if (assignments.length === 0) return;
-  const stationIds = Array.from(new Set(assignments.map((a) => a.stationId)));
-  const { error: delErr } = await supabase
-    .from(ASSIGNMENTS_TABLE)
-    .delete()
-    .in('station_id', stationIds);
-  if (delErr) throw delErr;
 
   const payload = assignments.map((a) => ({
     station_id: a.stationId,

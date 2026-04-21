@@ -192,8 +192,17 @@ export async function getPracticeWithBlocks(
 
   if (blockIds.length > 0) {
     const [playerRes, stationRes] = await Promise.all([
-      supabase.from(BLOCK_PLAYERS_TABLE).select('*').in('block_id', blockIds),
-      supabase.from(STATIONS_TABLE).select('*').in('block_id', blockIds),
+      // Stable ordering so the UI renders the same way across refetches.
+      supabase
+        .from(BLOCK_PLAYERS_TABLE)
+        .select('*')
+        .in('block_id', blockIds)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from(STATIONS_TABLE)
+        .select('*')
+        .in('block_id', blockIds)
+        .order('position', { ascending: true }),
     ]);
     if (playerRes.error) throw playerRes.error;
     if (stationRes.error) throw stationRes.error;
@@ -205,7 +214,9 @@ export async function getPracticeWithBlocks(
       const { data: assignRows, error: assignErr } = await supabase
         .from(STATION_ASSIGNMENTS_TABLE)
         .select('*')
-        .in('station_id', stationIds);
+        .in('station_id', stationIds)
+        .order('rotation_index', { ascending: true })
+        .order('created_at', { ascending: true });
       if (assignErr) throw assignErr;
       stationAssignments = ((assignRows as unknown as RawStationAssignmentRow[]) ?? []).map(
         mapStationAssignment,
@@ -375,13 +386,15 @@ export async function assignPlayersToBlock(
   blockId: string,
   playerIds: string[],
 ): Promise<void> {
+  // Dedupe to avoid tripping the (block_id, player_id) unique constraint.
+  const unique = Array.from(new Set(playerIds));
   const { error: delErr } = await supabase
     .from(BLOCK_PLAYERS_TABLE)
     .delete()
     .eq('block_id', blockId);
   if (delErr) throw delErr;
-  if (playerIds.length === 0) return;
-  const rows = playerIds.map((playerId) => ({ block_id: blockId, player_id: playerId }));
+  if (unique.length === 0) return;
+  const rows = unique.map((playerId) => ({ block_id: blockId, player_id: playerId }));
   const { error } = await supabase.from(BLOCK_PLAYERS_TABLE).insert(rows as never);
   if (error) throw error;
 }
@@ -439,28 +452,36 @@ export async function persistCompressedBlocks(
   supabase: TypedSupabaseClient,
   updates: Array<{ id: string; plannedDurationMinutes: number }>,
 ): Promise<void> {
-  for (const u of updates) {
-    const { error } = await supabase
-      .from(BLOCKS_TABLE)
-      .update({ planned_duration_minutes: u.plannedDurationMinutes } as never)
-      .eq('id', u.id);
-    if (error) throw error;
-  }
+  if (updates.length === 0) return;
+  // Single round-trip bulk upsert (onConflict=id) rather than N updates in
+  // a loop — the prior loop could partially commit on error.
+  const payload = updates.map((u) => ({
+    id: u.id,
+    planned_duration_minutes: u.plannedDurationMinutes,
+  }));
+  const { error } = await supabase
+    .from(BLOCKS_TABLE)
+    .upsert(payload as never, { onConflict: 'id' });
+  if (error) throw error;
 }
 
 // First-writer-wins: guard with .is('started_at', null) so a second writer
-// (e.g. phone + web at the same time) is silently ignored.
+// (e.g. phone + web at the same time) is silently ignored. The caller can
+// inspect the returned boolean to detect that "silent" case and rerender.
 export async function startBlock(
   supabase: TypedSupabaseClient,
   blockId: string,
   startedAt: string,
-): Promise<void> {
-  const { error } = await supabase
+): Promise<boolean> {
+  const { data, error } = await supabase
     .from(BLOCKS_TABLE)
     .update({ started_at: startedAt, status: 'active' } as never)
     .eq('id', blockId)
-    .is('started_at', null);
+    .is('started_at', null)
+    .select('id')
+    .maybeSingle();
   if (error) throw error;
+  return data != null;
 }
 
 export async function completeBlock(
@@ -468,8 +489,8 @@ export async function completeBlock(
   blockId: string,
   completedAt: string,
   actualDurationMinutes: number,
-): Promise<void> {
-  const { error } = await supabase
+): Promise<boolean> {
+  const { data, error } = await supabase
     .from(BLOCKS_TABLE)
     .update({
       completed_at: completedAt,
@@ -477,45 +498,60 @@ export async function completeBlock(
       status: 'completed',
     } as never)
     .eq('id', blockId)
-    .is('completed_at', null);
+    .is('completed_at', null)
+    .select('id')
+    .maybeSingle();
   if (error) throw error;
+  return data != null;
 }
 
+// Terminal-state guard: refuse to overwrite a completed block with a late
+// skip. Previously a delayed "skip" could clobber actual_duration_minutes.
 export async function skipBlock(
   supabase: TypedSupabaseClient,
   blockId: string,
-): Promise<void> {
-  const { error } = await supabase
+): Promise<boolean> {
+  const { data, error } = await supabase
     .from(BLOCKS_TABLE)
     .update({ status: 'skipped' } as never)
-    .eq('id', blockId);
+    .eq('id', blockId)
+    .is('completed_at', null)
+    .select('id')
+    .maybeSingle();
   if (error) throw error;
+  return data != null;
 }
 
 export async function markPracticeStarted(
   supabase: TypedSupabaseClient,
   practiceId: string,
   startedAt: string,
-): Promise<void> {
-  const { error } = await supabase
+): Promise<boolean> {
+  const { data, error } = await supabase
     .from(PRACTICES_TABLE)
     .update({ started_at: startedAt, run_status: 'running' } as never)
     .eq('id', practiceId)
-    .is('started_at', null);
+    .is('started_at', null)
+    .select('id')
+    .maybeSingle();
   if (error) throw error;
+  return data != null;
 }
 
 export async function markPracticeCompleted(
   supabase: TypedSupabaseClient,
   practiceId: string,
   completedAt: string,
-): Promise<void> {
-  const { error } = await supabase
+): Promise<boolean> {
+  const { data, error } = await supabase
     .from(PRACTICES_TABLE)
     .update({ completed_at: completedAt, run_status: 'completed' } as never)
     .eq('id', practiceId)
-    .is('completed_at', null);
+    .is('completed_at', null)
+    .select('id')
+    .maybeSingle();
   if (error) throw error;
+  return data != null;
 }
 
 export async function setActiveBlock(

@@ -125,6 +125,23 @@ export async function getDrillById(
   return mapDrill(data as unknown as RawDrillRow);
 }
 
+/**
+ * Batch fetch to avoid N+1 on routes that render a set of drills (e.g. the
+ * printable coach card loading every referenced drill + station drill).
+ */
+export async function getDrillsByIds(
+  supabase: TypedSupabaseClient,
+  drillIds: string[],
+): Promise<PracticeDrill[]> {
+  if (drillIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from(DRILLS_TABLE)
+    .select('*')
+    .in('id', drillIds);
+  if (error) throw error;
+  return ((data as unknown as RawDrillRow[]) ?? []).map(mapDrill);
+}
+
 export interface CreateDrillInsert {
   teamId: string;
   name: string;
@@ -185,21 +202,27 @@ export async function updateDrill(
   drillId: string,
   patch: UpdateDrillPatch,
 ): Promise<PracticeDrill> {
+  // For nullable fields an explicit null means "clear this". Using `in patch`
+  // lets callers distinguish "leave unchanged" (key absent) from "clear to
+  // null" (key present with null).
   const payload: Record<string, unknown> = {};
-  if (patch.name !== undefined) payload.name = patch.name;
-  if (patch.description !== undefined) payload.description = patch.description;
-  if (patch.defaultDurationMinutes !== undefined) payload.default_duration_minutes = patch.defaultDurationMinutes;
-  if (patch.skillCategories !== undefined) payload.skill_categories = patch.skillCategories;
-  if (patch.positions !== undefined) payload.positions = patch.positions;
-  if (patch.ageLevels !== undefined) payload.age_levels = patch.ageLevels;
-  if (patch.equipment !== undefined) payload.equipment = patch.equipment;
-  if (patch.fieldSpaces !== undefined) payload.field_spaces = patch.fieldSpaces;
-  if (patch.minPlayers !== undefined) payload.min_players = patch.minPlayers;
-  if (patch.maxPlayers !== undefined) payload.max_players = patch.maxPlayers;
-  if (patch.coachingPoints !== undefined) payload.coaching_points = patch.coachingPoints;
-  if (patch.tags !== undefined) payload.tags = patch.tags;
-  if (patch.diagramUrl !== undefined) payload.diagram_url = patch.diagramUrl;
-  if (patch.videoUrl !== undefined) payload.video_url = patch.videoUrl;
+  const has = (k: keyof UpdateDrillPatch) =>
+    Object.prototype.hasOwnProperty.call(patch, k);
+  if (has('name')) payload.name = patch.name;
+  if (has('description')) payload.description = patch.description ?? null;
+  if (has('defaultDurationMinutes'))
+    payload.default_duration_minutes = patch.defaultDurationMinutes ?? null;
+  if (has('skillCategories')) payload.skill_categories = patch.skillCategories;
+  if (has('positions')) payload.positions = patch.positions;
+  if (has('ageLevels')) payload.age_levels = patch.ageLevels;
+  if (has('equipment')) payload.equipment = patch.equipment;
+  if (has('fieldSpaces')) payload.field_spaces = patch.fieldSpaces;
+  if (has('minPlayers')) payload.min_players = patch.minPlayers ?? null;
+  if (has('maxPlayers')) payload.max_players = patch.maxPlayers ?? null;
+  if (has('coachingPoints')) payload.coaching_points = patch.coachingPoints ?? null;
+  if (has('tags')) payload.tags = patch.tags;
+  if (has('diagramUrl')) payload.diagram_url = patch.diagramUrl ?? null;
+  if (has('videoUrl')) payload.video_url = patch.videoUrl ?? null;
 
   const { data, error } = await supabase
     .from(DRILLS_TABLE)
