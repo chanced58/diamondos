@@ -7,7 +7,10 @@ import { AuthProvider, useAuth } from '../src/providers/AuthProvider';
 import { RoleProvider } from '../src/providers/RoleProvider';
 import { SyncProvider } from '../src/providers/SyncProvider';
 import { database } from '../src/db';
-import { registerForPushNotifications } from '../src/lib/notifications';
+import {
+  registerForPushNotifications,
+  setupNotificationDeepLinks,
+} from '../src/lib/notifications';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -18,6 +21,7 @@ function RootLayoutNav() {
     if (!loading) {
       SplashScreen.hideAsync();
       registerForPushNotifications().catch(console.warn);
+      setupNotificationDeepLinks();
     }
   }, [loading]);
 
