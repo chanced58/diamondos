@@ -115,4 +115,8 @@ export interface DrillFilters {
   maxPlayers?: number;
   durationMax?: number;
   visibility?: 'system' | 'team' | 'all';
+  /** OR-match: drill passes if it has a tag for ANY of these deficit ids. */
+  deficitIds?: string[];
+  /** 'primary' requires matching tags to be priority='primary'; default 'any'. */
+  deficitPriority?: 'primary' | 'any';
 }

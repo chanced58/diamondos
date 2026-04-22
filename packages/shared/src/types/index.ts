@@ -13,3 +13,4 @@ export * from './practice-drill';
 export * from './practice-template';
 export * from './practice';
 export * from './practice-attendance';
+export * from './practice-deficit';
