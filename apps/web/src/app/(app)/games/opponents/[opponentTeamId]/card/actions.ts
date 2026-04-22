@@ -16,6 +16,8 @@ import { getActiveTeam } from '@/lib/active-team';
 import { getUserAccess } from '@/lib/user-access';
 import { generateScoutingCard } from '@/lib/ai/scouting-card';
 import { computeOpponentPitcherStats } from '@/lib/ai/opponent-pitcher-stats';
+import { logAiGeneration } from '@/lib/ai/log-generation';
+import { AI_MODELS } from '@/lib/ai/client';
 
 type SupabaseUntyped = SupabaseClient;
 
@@ -54,6 +56,7 @@ export async function generateScoutingCardAction(
     return 'No prior games recorded against this opponent. Play them first, then come back.';
   }
 
+  const start = Date.now();
   try {
     const result = await generateScoutingCard({
       opponentName: oppTeam.name as string,
@@ -76,9 +79,29 @@ export async function generateScoutingCardAction(
       model: result.model,
       generatedBy: user.id,
     });
+
+    await logAiGeneration({
+      feature: 'scouting_card',
+      teamId: activeTeam.id,
+      userId: user.id,
+      model: result.model,
+      usage: result.usage,
+      latencyMs: Date.now() - start,
+      status: 'success',
+    });
+
     return persisted;
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
+    await logAiGeneration({
+      feature: 'scouting_card',
+      teamId: activeTeam.id,
+      userId: user.id,
+      model: AI_MODELS.opus,
+      latencyMs: Date.now() - start,
+      status: 'error',
+      errorMessage: msg,
+    });
     return `Scouting card generation failed: ${msg}`;
   }
 }

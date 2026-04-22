@@ -19,6 +19,8 @@ import {
   type PracticeSummaryPlayer,
   type PracticeSummaryRep,
 } from '@/lib/ai/practice-summary';
+import { logAiGeneration } from '@/lib/ai/log-generation';
+import { AI_MODELS } from '@/lib/ai/client';
 
 type SupabaseUntyped = SupabaseClient;
 
@@ -50,6 +52,7 @@ export async function generatePracticeSummaryAction(
   const { isCoach } = await getUserAccess(teamId, user.id);
   if (!isCoach) return 'Only coaches can generate summaries.';
 
+  const start = Date.now();
   try {
     const ctx = await loadSummaryContext(db, practiceId, teamId);
     const result = await summarizePractice({
@@ -91,9 +94,28 @@ export async function generatePracticeSummaryAction(
       generatedBy: user.id,
     });
 
+    await logAiGeneration({
+      feature: 'practice_summary',
+      teamId,
+      userId: user.id,
+      model: result.model,
+      usage: result.usage,
+      latencyMs: Date.now() - start,
+      status: 'success',
+    });
+
     return persisted;
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
+    await logAiGeneration({
+      feature: 'practice_summary',
+      teamId,
+      userId: user.id,
+      model: AI_MODELS.sonnet,
+      latencyMs: Date.now() - start,
+      status: 'error',
+      errorMessage: msg,
+    });
     return `AI summary failed: ${msg}`;
   }
 }

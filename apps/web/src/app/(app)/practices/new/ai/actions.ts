@@ -11,6 +11,8 @@ import { createAiPractice } from '@baseball/database';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
 import { generatePractice } from '@/lib/ai/practice-generator';
+import { logAiGeneration } from '@/lib/ai/log-generation';
+import { AI_MODELS } from '@/lib/ai/client';
 
 type SupabaseUntyped = SupabaseClient;
 
@@ -57,6 +59,7 @@ export async function generateAiPracticeAction(
 
   const drills = await loadDrills(db, input.teamId);
 
+  const start = Date.now();
   try {
     const result = await generatePractice({
       coachPrompt: input.coachPrompt,
@@ -74,6 +77,16 @@ export async function generateAiPracticeAction(
       });
     }
 
+    await logAiGeneration({
+      feature: 'practice_generator',
+      teamId: input.teamId,
+      userId: user.id,
+      model: AI_MODELS.opus,
+      usage: result.usage,
+      latencyMs: Date.now() - start,
+      status: 'success',
+    });
+
     return {
       plan: result.plan,
       drillsById: Object.fromEntries(drills.map((d) => [d.id, d.name])),
@@ -81,6 +94,15 @@ export async function generateAiPracticeAction(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
+    await logAiGeneration({
+      feature: 'practice_generator',
+      teamId: input.teamId,
+      userId: user.id,
+      model: AI_MODELS.opus,
+      latencyMs: Date.now() - start,
+      status: 'error',
+      errorMessage: msg,
+    });
     return `AI generation failed: ${msg}`;
   }
 }

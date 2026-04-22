@@ -15,6 +15,8 @@ import {
   rankDrillsForPlayer,
   type PlayerFocusSignal,
 } from '@/lib/ai/drill-ranker';
+import { logAiGeneration } from '@/lib/ai/log-generation';
+import { AI_MODELS } from '@/lib/ai/client';
 
 type SupabaseUntyped = SupabaseClient;
 
@@ -54,6 +56,7 @@ export async function rankDrillsForPlayerAction(
   const ctx = await loadPlayerContext(db, teamId, player);
   const drills = await loadFilteredDrills(db, teamId, player.primary_position as string | null);
 
+  const start = Date.now();
   try {
     const result = await rankDrillsForPlayer({
       player: {
@@ -94,6 +97,16 @@ export async function rankDrillsForPlayerAction(
       };
     }
 
+    await logAiGeneration({
+      feature: 'drill_recommendation',
+      teamId,
+      userId: user.id,
+      model: result.model,
+      usage: result.usage,
+      latencyMs: Date.now() - start,
+      status: 'success',
+    });
+
     return {
       recommendations: sanitized,
       drillsById,
@@ -101,6 +114,15 @@ export async function rankDrillsForPlayerAction(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
+    await logAiGeneration({
+      feature: 'drill_recommendation',
+      teamId,
+      userId: user.id,
+      model: AI_MODELS.sonnet,
+      latencyMs: Date.now() - start,
+      status: 'error',
+      errorMessage: msg,
+    });
     return `Drill ranking failed: ${msg}`;
   }
 }
