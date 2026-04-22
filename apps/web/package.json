@@ -10,6 +10,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "@baseball/database": "workspace:*",
     "@baseball/shared": "workspace:*",
     "@baseball/ui": "workspace:*",
