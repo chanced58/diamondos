@@ -10,6 +10,7 @@ type ComplianceInfo = {
   requiredRestDays: number | null;
   canPitchNextDay: boolean | null;
   lastGameDate: string | null;
+  pitches7d?: number | null;
 };
 
 type Props = {

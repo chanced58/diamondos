@@ -70,6 +70,61 @@ export type Database = {
           },
         ]
       }
+      catcher_innings: {
+        Row: {
+          created_at: string
+          game_date: string
+          game_id: string
+          id: string
+          innings_caught: number
+          player_id: string
+          season_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          game_date: string
+          game_id: string
+          id?: string
+          innings_caught?: number
+          player_id: string
+          season_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          game_date?: string
+          game_id?: string
+          id?: string
+          innings_caught?: number
+          player_id?: string
+          season_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catcher_innings_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catcher_innings_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catcher_innings_season_id_fkey"
+            columns: ["season_id"]
+            isOneToOne: false
+            referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       channel_members: {
         Row: {
           can_post: boolean
@@ -1350,6 +1405,7 @@ export type Database = {
           id: string
           is_active: boolean
           max_pitches_per_day: number
+          max_pitches_per_week: number | null
           rest_day_thresholds: Json
           rule_name: string
           team_id: string | null
@@ -1363,6 +1419,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           max_pitches_per_day: number
+          max_pitches_per_week?: number | null
           rest_day_thresholds: Json
           rule_name: string
           team_id?: string | null
@@ -1376,6 +1433,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           max_pitches_per_day?: number
+          max_pitches_per_week?: number | null
           rest_day_thresholds?: Json
           rule_name?: string
           team_id?: string | null
@@ -1447,6 +1505,48 @@ export type Database = {
             columns: ["season_id"]
             isOneToOne: false
             referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_compliance_rule_overrides: {
+        Row: {
+          compliance_rule_id: string
+          created_at: string
+          created_by: string | null
+          player_id: string
+          reason: string | null
+          updated_at: string
+        }
+        Insert: {
+          compliance_rule_id: string
+          created_at?: string
+          created_by?: string | null
+          player_id: string
+          reason?: string | null
+          updated_at?: string
+        }
+        Update: {
+          compliance_rule_id?: string
+          created_at?: string
+          created_by?: string | null
+          player_id?: string
+          reason?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_compliance_rule_overrides_compliance_rule_id_fkey"
+            columns: ["compliance_rule_id"]
+            isOneToOne: false
+            referencedRelation: "pitch_compliance_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_compliance_rule_overrides_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: true
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]
@@ -3288,7 +3388,31 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      v_pitcher_rolling_7d: {
+        Row: {
+          game_date: string | null
+          games_7d: number | null
+          pitches_7d: number | null
+          player_id: string | null
+          season_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pitch_counts_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pitch_counts_season_id_fkey"
+            columns: ["season_id"]
+            isOneToOne: false
+            referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       can_edit_block: { Args: { p_block_id: string }; Returns: boolean }
@@ -3342,6 +3466,14 @@ export type Database = {
       practice_reorder_blocks: {
         Args: { p_order: string[]; p_practice_id: string }
         Returns: undefined
+      }
+      recompute_catcher_innings_for_game: {
+        Args: { p_game_id: string }
+        Returns: undefined
+      }
+      resolve_compliance_rule_for_player: {
+        Args: { p_game_date?: string; p_player_id: string }
+        Returns: string
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }

@@ -124,25 +124,26 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // 5. Fetch compliance rule for this season
-  const { data: seasonRule } = await supabase
-    .from('season_compliance_rules')
-    .select('pitch_compliance_rules(*)')
-    .eq('season_id', game.season_id)
-    .maybeSingle();
+  // 5. Resolve compliance rule: per-player override → DOB auto-match → season default.
+  //    Tier 8 F1 replaces the season-only lookup so travel / mixed-age rosters work.
+  const { data: ruleIdResult } = await supabase.rpc('resolve_compliance_rule_for_player', {
+    p_player_id: pitcherId,
+    p_game_date: gameDate,
+  });
+  const ruleId = ruleIdResult as string | null;
 
-  if (seasonRule?.pitch_compliance_rules) {
-    const rule = seasonRule.pitch_compliance_rules as { max_pitches_per_day: number };
-    const max = rule.max_pitches_per_day;
-    const warningThreshold = Math.floor(max * 0.75);
-    const dangerThreshold = Math.floor(max * 0.90);
+  let rule: { max_pitches_per_day: number; max_pitches_per_week: number | null } | null = null;
+  if (ruleId) {
+    const { data: ruleRow } = await supabase
+      .from('pitch_compliance_rules')
+      .select('max_pitches_per_day, max_pitches_per_week')
+      .eq('id', ruleId)
+      .maybeSingle();
+    rule = ruleRow ?? null;
+  }
 
-    // Dispatch push notification at warning/danger thresholds
-    if (pitchCount === warningThreshold || pitchCount === dangerThreshold) {
-      const severity = pitchCount >= dangerThreshold ? 'danger' : 'warning';
-      const emoji = severity === 'danger' ? '🔴' : '🟡';
-
-      // Fetch coach user IDs for this team
+  if (rule) {
+    const dispatchAlert = async (title: string, body: string, alertType: string) => {
       const { data: coaches } = await supabase
         .from('team_members')
         .select('user_id')
@@ -150,16 +151,56 @@ Deno.serve(async (req: Request) => {
         .in('role', ['head_coach', 'assistant_coach'])
         .eq('is_active', true);
 
-      if (coaches && coaches.length > 0) {
-        // Call push-notifications function
-        await supabase.functions.invoke('push-notifications', {
-          body: {
-            userIds: coaches.map((c: { user_id: string }) => c.user_id),
-            title: `${emoji} Pitch Count Alert`,
-            body: `Pitcher has thrown ${pitchCount} pitches (limit: ${max})`,
-            data: { gameId, pitcherId, pitchCount, type: 'pitch_count_alert' },
-          },
-        });
+      if (!coaches || coaches.length === 0) return;
+      await supabase.functions.invoke('push-notifications', {
+        body: {
+          userIds: coaches.map((c: { user_id: string }) => c.user_id),
+          title,
+          body,
+          data: { gameId, pitcherId, pitchCount, type: alertType },
+        },
+      });
+    };
+
+    // Daily threshold alerts (75% / 90%)
+    const max = rule.max_pitches_per_day;
+    const warningThreshold = Math.floor(max * 0.75);
+    const dangerThreshold = Math.floor(max * 0.9);
+
+    if (pitchCount === warningThreshold || pitchCount === dangerThreshold) {
+      const severity = pitchCount >= dangerThreshold ? 'danger' : 'warning';
+      const emoji = severity === 'danger' ? '🔴' : '🟡';
+      await dispatchAlert(
+        `${emoji} Pitch Count Alert`,
+        `Pitcher has thrown ${pitchCount} pitches today (limit: ${max})`,
+        'pitch_count_alert',
+      );
+    }
+
+    // Weekly rolling-7d threshold alerts (only when the rule has a weekly cap)
+    if (rule.max_pitches_per_week) {
+      const { data: rolling } = await supabase
+        .from('v_pitcher_rolling_7d')
+        .select('pitches_7d')
+        .eq('player_id', pitcherId)
+        .eq('game_date', gameDate)
+        .maybeSingle();
+
+      const pitches7d = (rolling?.pitches_7d as number | null) ?? pitchCount;
+      const weeklyMax = rule.max_pitches_per_week;
+      const weeklyWarn = Math.floor(weeklyMax * 0.75);
+      const weeklyDanger = Math.floor(weeklyMax * 0.9);
+
+      // Mirror the daily pattern: fire exactly when the rolling total lands on
+      // the threshold. One alert per threshold crossing.
+      if (pitches7d === weeklyWarn || pitches7d === weeklyDanger) {
+        const severity = pitches7d >= weeklyDanger ? 'danger' : 'warning';
+        const emoji = severity === 'danger' ? '🔴' : '🟡';
+        await dispatchAlert(
+          `${emoji} Weekly Pitch Limit Alert`,
+          `Pitcher at ${pitches7d} pitches over the last 7 days (weekly limit: ${weeklyMax})`,
+          'pitch_count_weekly_alert',
+        );
       }
     }
   }
