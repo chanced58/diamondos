@@ -14,12 +14,12 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md}\""
   },
   "devDependencies": {
-    "turbo": "^2.0.0",
-    "typescript": "~5.7.0",
-    "prettier": "^3.3.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
-    "eslint": "^8.57.0"
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.0",
+    "turbo": "^2.0.0",
+    "typescript": "~5.7.0"
   },
   "engines": {
     "node": ">=20.0.0",

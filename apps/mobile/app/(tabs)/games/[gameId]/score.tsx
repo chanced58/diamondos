@@ -574,8 +574,10 @@ function LineupSetupModal({
         <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '85%' }}>
           <Text className="text-lg font-bold text-gray-900 mb-1">Starting Lineup</Text>
           <Text className="text-sm text-gray-500 mb-4">
-            Pick your starting pitcher and leadoff batter. Events recorded before
-            setting a lineup won't be attributed to a specific player.
+            Pick your starting pitcher and leadoff batter. The opponent's
+            leadoff is filled in from the web pre-game setup (or left blank
+            if not entered) — this prevents opponent at-bats from being
+            mis-credited to one of your players.
           </Text>
 
           {roster.length === 0 ? (
@@ -585,7 +587,7 @@ function LineupSetupModal({
           ) : (
             <ScrollView className="max-h-96">
               <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                Starting Pitcher
+                Your Starting Pitcher
               </Text>
               <View className="gap-2 mb-4">
                 {roster.map((p) => (
@@ -607,7 +609,7 @@ function LineupSetupModal({
               </View>
 
               <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                Leadoff Batter
+                Your Leadoff Batter
               </Text>
               <View className="gap-2">
                 {roster.map((p) => (

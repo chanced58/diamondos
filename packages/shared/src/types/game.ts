@@ -86,4 +86,7 @@ export interface LiveGameState {
   completedTopHalfPAs: number;
   /** Total completed plate appearances in bottom-half innings (cumulative across all innings). */
   completedBottomHalfPAs: number;
+  /** Cached from GAME_START so INNING_CHANGE can restore the leadoff when a half-inning starts with no batter set. */
+  homeLeadoffBatterId: string | null;
+  awayLeadoffBatterId: string | null;
 }

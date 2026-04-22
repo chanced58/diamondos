@@ -227,6 +227,10 @@ export async function startGameAction(_prevState: string | null | undefined, for
 
   const startingPitcher = lineupRows?.find((r) => r.starting_position === 'pitcher') ?? lineupRows?.[0];
 
+  // Leadoff hitter — first row in batting order. nullsFirst: false above pushes
+  // unordered rows to the end so [0] is the lowest non-null batting_order.
+  const ourLeadoff = lineupRows?.find((r) => r.batting_order !== null) ?? null;
+
   // Get opponent's starting pitcher from opponent_game_lineups if available.
   const { data: opponentLineupRows } = await supabase
     .from('opponent_game_lineups')
@@ -238,6 +242,20 @@ export async function startGameAction(_prevState: string | null | undefined, for
     opponentLineupRows?.find((r) => r.starting_position === 'pitcher') ??
     opponentLineupRows?.find((r) => r.batting_order !== null) ??
     null;
+
+  const opponentLeadoff = opponentLineupRows?.find((r) => r.batting_order !== null) ?? null;
+
+  // Guard against the degenerate case where lineup rows exist but none have
+  // an assigned batting order (e.g. a coach who saved only pitchers via the
+  // DH-lineup flow in lineup/actions.ts:67-74). Without a leadoff in the
+  // GAME_START payload, deriveGameState can't restore currentBatterId on
+  // INNING_CHANGE, which is exactly the bug this code was added to prevent.
+  if (lineupRows && lineupRows.length > 0 && !ourLeadoff) {
+    return 'No batter is assigned to a batting order. Set batting orders 1–9 on the lineup screen before starting the game.';
+  }
+  if (opponentLineupRows && opponentLineupRows.length > 0 && !opponentLeadoff) {
+    return 'No opponent batter is assigned to a batting order. Set the opponent batting order before starting the game.';
+  }
 
   const now = new Date().toISOString();
 
@@ -261,16 +279,24 @@ export async function startGameAction(_prevState: string | null | undefined, for
     is_top_of_inning: true,
     payload: {
       // Home team pitches in the TOP; away team pitches in the BOTTOM.
-      // Store both our pitcher and the opponent's pitcher in the correct fields
-      // so game-state can resolve the active pitcher for each half-inning.
+      // Store both pitchers AND both leadoffs in the correct home/away slots
+      // so game-state.deriveGameState can restore currentBatterId on every
+      // half-inning transition. Without the leadoffs, replays leave
+      // currentBatterId null after INNING_CHANGE and any consumer that reads
+      // it (e.g. mobile score.tsx) emits subsequent events without a
+      // batterId, which makes per-player batting stats unattributable.
       ...(weAreHome(game.location_type, game.neutral_home_team)
         ? {
             homeLineupPitcherId: startingPitcher?.player_id ?? null,
             awayLineupPitcherId: opponentStartingPitcher?.opponent_player_id ?? null,
+            homeLeadoffBatterId: ourLeadoff?.player_id ?? null,
+            awayLeadoffBatterId: opponentLeadoff?.opponent_player_id ?? null,
           }
         : {
             awayLineupPitcherId: startingPitcher?.player_id ?? null,
             homeLineupPitcherId: opponentStartingPitcher?.opponent_player_id ?? null,
+            awayLeadoffBatterId: ourLeadoff?.player_id ?? null,
+            homeLeadoffBatterId: opponentLeadoff?.opponent_player_id ?? null,
           }),
       pitchTypeEnabled,
       pitchLocationEnabled,
