@@ -65,7 +65,15 @@ export default async function OpponentTeamDetailPage({
         <Link href="/games/opponents" className="text-sm text-brand-700 hover:underline">
           &larr; Back to opponent teams
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900 mt-2">{team.name}</h1>
+        <div className="flex items-baseline justify-between mt-2 gap-3 flex-wrap">
+          <h1 className="text-2xl font-bold text-gray-900">{team.name}</h1>
+          <Link
+            href={`/games/opponents/${opponentTeamId}/card`}
+            className="text-sm bg-brand-700 text-white font-semibold px-3 py-1.5 rounded-md hover:bg-brand-800"
+          >
+            Scouting card
+          </Link>
+        </div>
         <p className="text-gray-500 text-sm">
           Opponent team roster
           {team.city && <> &middot; {team.city}{team.state_code ? `, ${team.state_code}` : ''}</>}
