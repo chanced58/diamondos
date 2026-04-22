@@ -17,3 +17,4 @@ export * from './game-prep';
 export * from './game-weaknesses';
 export * from './pitcher-availability';
 export * from './practice-reps';
+export * from './ai-practice';

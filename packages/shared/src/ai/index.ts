@@ -1,1 +1,1 @@
-export {};
+export * from './practice-plan-schema';
