@@ -27,6 +27,8 @@ export function deriveGameState(
     currentPitcherPitchCount: 0,
     completedTopHalfPAs: 0,
     completedBottomHalfPAs: 0,
+    homeLeadoffBatterId: null,
+    awayLeadoffBatterId: null,
   };
 
   const pitcherCounts: Record<string, number> = {};
@@ -43,11 +45,16 @@ export function deriveGameState(
         state.currentPitcherId = state.isTopOfInning
           ? p.homeLineupPitcherId ?? null
           : p.awayLineupPitcherId ?? null;
+        // Cache both leadoffs so INNING_CHANGE can restore the right one when
+        // a half-inning starts with no current batter (e.g. home-team scorer
+        // entered only the home leadoff via the LineupSetupModal).
+        state.homeLeadoffBatterId = p.homeLeadoffBatterId ?? null;
+        state.awayLeadoffBatterId = p.awayLeadoffBatterId ?? null;
         // Top of first: away team bats, so the away leadoff is current.
         // Bottom of first (or when replay starts mid-inning): home leadoff.
         state.currentBatterId = state.isTopOfInning
-          ? p.awayLeadoffBatterId ?? null
-          : p.homeLeadoffBatterId ?? null;
+          ? state.awayLeadoffBatterId
+          : state.homeLeadoffBatterId;
         break;
       }
 
@@ -270,6 +277,19 @@ export function deriveGameState(
           state.isTopOfInning = true;
           state.inning++;
         }
+        // Reset the current batter to the new offensive team's cached
+        // leadoff (may be null if that team's leadoff was never recorded —
+        // e.g. mobile home-team scorer who didn't enter the opponent's
+        // lineup). This both fixes the original bug (Huskies-at-home stats
+        // blank because home leadoff never reaches currentBatterId) and
+        // prevents the prior half-inning's last batter from leaking into
+        // the next half-inning, which would mis-attribute opponent
+        // at-bats to a real player on the other team. The scorer is
+        // expected to advance the lineup mid-inning via the Pinch Hitter
+        // flow until a real batting-order screen exists.
+        state.currentBatterId = state.isTopOfInning
+          ? state.awayLeadoffBatterId
+          : state.homeLeadoffBatterId;
         break;
       }
 
