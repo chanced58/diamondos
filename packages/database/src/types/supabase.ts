@@ -14,6 +14,62 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_generations: {
+        Row: {
+          cache_creation_tokens: number
+          cache_read_tokens: number
+          created_at: string
+          error_message: string | null
+          feature: Database["public"]["Enums"]["ai_generation_feature"]
+          id: string
+          input_tokens: number
+          latency_ms: number | null
+          model: string
+          output_tokens: number
+          status: Database["public"]["Enums"]["ai_generation_status"]
+          team_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          cache_creation_tokens?: number
+          cache_read_tokens?: number
+          created_at?: string
+          error_message?: string | null
+          feature: Database["public"]["Enums"]["ai_generation_feature"]
+          id?: string
+          input_tokens?: number
+          latency_ms?: number | null
+          model: string
+          output_tokens?: number
+          status: Database["public"]["Enums"]["ai_generation_status"]
+          team_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          cache_creation_tokens?: number
+          cache_read_tokens?: number
+          created_at?: string
+          error_message?: string | null
+          feature?: Database["public"]["Enums"]["ai_generation_feature"]
+          id?: string
+          input_tokens?: number
+          latency_ms?: number | null
+          model?: string
+          output_tokens?: number
+          status?: Database["public"]["Enums"]["ai_generation_status"]
+          team_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_generations_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       channel_members: {
         Row: {
           can_post: boolean
@@ -1071,6 +1127,60 @@ export type Database = {
             columns: ["opponent_team_id"]
             isOneToOne: false
             referencedRelation: "opponent_teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      opponent_scouting_cards: {
+        Row: {
+          ai_card: Json
+          game_sample_count: number
+          generated_at: string
+          generated_by: string | null
+          hitter_stats: Json
+          id: string
+          model: string
+          opponent_team_id: string
+          pitcher_stats: Json
+          team_id: string
+        }
+        Insert: {
+          ai_card: Json
+          game_sample_count?: number
+          generated_at?: string
+          generated_by?: string | null
+          hitter_stats?: Json
+          id?: string
+          model: string
+          opponent_team_id: string
+          pitcher_stats?: Json
+          team_id: string
+        }
+        Update: {
+          ai_card?: Json
+          game_sample_count?: number
+          generated_at?: string
+          generated_by?: string | null
+          hitter_stats?: Json
+          id?: string
+          model?: string
+          opponent_team_id?: string
+          pitcher_stats?: Json
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opponent_scouting_cards_opponent_team_id_fkey"
+            columns: ["opponent_team_id"]
+            isOneToOne: false
+            referencedRelation: "opponent_teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opponent_scouting_cards_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
             referencedColumns: ["id"]
           },
         ]
@@ -2137,11 +2247,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "practice_reps_block_id_fkey"
-            columns: ["block_id"]
+            foreignKeyName: "practice_reps_block_in_practice_fkey"
+            columns: ["block_id", "practice_id"]
             isOneToOne: false
             referencedRelation: "practice_blocks"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "practice_id"]
           },
           {
             foreignKeyName: "practice_reps_drill_id_fkey"
@@ -2277,6 +2387,60 @@ export type Database = {
             columns: ["drill_id"]
             isOneToOne: false
             referencedRelation: "practice_drills"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_summaries: {
+        Row: {
+          coach_recap: string
+          concerns: Json
+          generated_at: string
+          generated_by: string | null
+          id: string
+          model: string
+          player_summaries: Json
+          practice_id: string
+          standout_players: Json
+          team_id: string
+        }
+        Insert: {
+          coach_recap: string
+          concerns?: Json
+          generated_at?: string
+          generated_by?: string | null
+          id?: string
+          model: string
+          player_summaries?: Json
+          practice_id: string
+          standout_players?: Json
+          team_id: string
+        }
+        Update: {
+          coach_recap?: string
+          concerns?: Json
+          generated_at?: string
+          generated_by?: string | null
+          id?: string
+          model?: string
+          player_summaries?: Json
+          practice_id?: string
+          standout_players?: Json
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_summaries_practice_id_fkey"
+            columns: ["practice_id"]
+            isOneToOne: true
+            referencedRelation: "practices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_summaries_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
             referencedColumns: ["id"]
           },
         ]
@@ -2499,11 +2663,11 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "practices_linked_game_id_fkey"
-            columns: ["linked_game_id"]
+            foreignKeyName: "practices_linked_game_in_team_fkey"
+            columns: ["linked_game_id", "team_id"]
             isOneToOne: false
             referencedRelation: "games"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "team_id"]
           },
           {
             foreignKeyName: "practices_team_id_fkey"
@@ -3183,6 +3347,12 @@ export type Database = {
       show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
+      ai_generation_feature:
+        | "practice_generator"
+        | "practice_summary"
+        | "scouting_card"
+        | "drill_recommendation"
+      ai_generation_status: "success" | "error"
       bats_throws: "right" | "left" | "switch"
       billable_entity_type: "team" | "league"
       channel_type: "announcement" | "topic" | "direct"
@@ -3442,6 +3612,13 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      ai_generation_feature: [
+        "practice_generator",
+        "practice_summary",
+        "scouting_card",
+        "drill_recommendation",
+      ],
+      ai_generation_status: ["success", "error"],
       bats_throws: ["right", "left", "switch"],
       billable_entity_type: ["team", "league"],
       channel_type: ["announcement", "topic", "direct"],
