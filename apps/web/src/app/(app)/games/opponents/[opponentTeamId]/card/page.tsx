@@ -50,7 +50,11 @@ export default async function ScoutingCardPage({
     .eq('team_id', activeTeam.id)
     .eq('opponent_team_id', opponentTeamId);
 
-  const existingCard = await getLatestScoutingCard(db as never, opponentTeamId);
+  const existingCard = await getLatestScoutingCard(
+    db as never,
+    opponentTeamId,
+    activeTeam.id,
+  );
 
   return (
     <div className="p-8 max-w-4xl">

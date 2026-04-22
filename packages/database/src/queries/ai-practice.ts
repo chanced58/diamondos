@@ -58,7 +58,17 @@ export async function createAiPractice(
       .insert(blockRows as never);
 
     if (blocksErr) {
-      await supabase.from('practices').delete().eq('id', practiceId);
+      // Best-effort rollback. If this fails, the parent practice row is orphaned
+      // — we surface the details in the thrown error so the caller can trace it.
+      const { error: rollbackErr } = await supabase
+        .from('practices')
+        .delete()
+        .eq('id', practiceId);
+      if (rollbackErr) {
+        throw new Error(
+          `practice_blocks insert failed (${blocksErr.message}) and rollback failed for practice ${practiceId}: ${rollbackErr.message}`,
+        );
+      }
       throw blocksErr;
     }
   }

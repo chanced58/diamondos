@@ -240,16 +240,7 @@ export default async function PracticeNotesPage({
           <div className="mt-6">
             <SummarySection
               practiceId={params.practiceId}
-              players={Object.fromEntries(
-                players.map((p) => [
-                  p.id,
-                  {
-                    firstName: p.first_name,
-                    lastName: p.last_name,
-                    jerseyNumber: p.jersey_number,
-                  },
-                ]),
-              )}
+              players={playerLookup}
             />
           </div>
         )}

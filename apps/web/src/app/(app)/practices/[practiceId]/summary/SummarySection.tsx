@@ -26,15 +26,21 @@ export function SummarySection({ practiceId, players }: Props): JSX.Element {
 
   useEffect(() => {
     let cancelled = false;
-    loadPracticeSummaryAction(practiceId).then((result) => {
-      if (cancelled) return;
-      if (typeof result === 'string') {
-        setError(result);
-      } else {
-        setSummary(result);
-      }
-      setLoading(false);
-    });
+    loadPracticeSummaryAction(practiceId)
+      .then((result) => {
+        if (cancelled) return;
+        if (typeof result === 'string') setError(result);
+        else setSummary(result);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(
+          `Failed to load summary: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -51,6 +57,10 @@ export function SummarySection({ practiceId, players }: Props): JSX.Element {
         return;
       }
       setSummary(result);
+    } catch (err) {
+      setError(
+        `Summary generation failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
       setGenerating(false);
     }
@@ -59,7 +69,7 @@ export function SummarySection({ practiceId, players }: Props): JSX.Element {
   function formatPlayerName(id: string): string {
     const p = players[id];
     if (!p) return '(unknown player)';
-    const jersey = p.jerseyNumber ? ` #${p.jerseyNumber}` : '';
+    const jersey = p.jerseyNumber != null ? ` #${p.jerseyNumber}` : '';
     return `${p.firstName} ${p.lastName}${jersey}`;
   }
 

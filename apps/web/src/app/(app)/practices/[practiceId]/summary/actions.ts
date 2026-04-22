@@ -134,6 +134,28 @@ export async function loadPracticeSummaryAction(
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
+  // Authorize: verify the requesting user is a member of the practice's team
+  // BEFORE hitting the summary table. The service-role client bypasses RLS so
+  // we must enforce team membership explicitly.
+  const { data: practice, error: practiceErr } = await db
+    .from('practices')
+    .select('team_id')
+    .eq('id', practiceId)
+    .maybeSingle();
+  if (practiceErr) return `Failed to load practice: ${practiceErr.message}`;
+  if (!practice) return null;
+
+  const teamId = practice.team_id as string;
+  const { data: membership, error: membershipErr } = await db
+    .from('team_members')
+    .select('user_id')
+    .eq('team_id', teamId)
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (membershipErr) return `Failed to verify membership: ${membershipErr.message}`;
+  if (!membership) return 'Not authorized for this practice.';
+
   try {
     return await getPracticeSummary(db as never, practiceId);
   } catch (err) {
@@ -236,6 +258,7 @@ async function loadSummaryContext(
     outcome: string;
     coach_tag: string | null;
     drill_id: string | null;
+    recorded_at: string;
   }>;
   const reps: PracticeSummaryRep[] = (rawReps ?? []).map((r) => ({
     playerId: r.player_id,
@@ -243,6 +266,7 @@ async function loadSummaryContext(
     outcome: r.outcome,
     coachTag: r.coach_tag,
     drillName: r.drill_id ? drillNameById.get(r.drill_id) ?? null : null,
+    recordedAt: r.recorded_at,
   }));
 
   const playerRows = (playersResult.data ?? []) as Array<{
@@ -297,7 +321,8 @@ async function loadSummaryContext(
 
   return {
     blocks,
-    reps: reps.slice(0, 200), // cap to keep context bounded
+    // Pass the full rep set — the summarizer prioritizes and caps internally.
+    reps,
     players,
     attendedPlayerIds: attendedOrFallback,
     overallNotes: (notes?.overall_notes as string | null) ?? null,

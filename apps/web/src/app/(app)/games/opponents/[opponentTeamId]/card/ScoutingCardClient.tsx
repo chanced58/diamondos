@@ -38,6 +38,9 @@ export function ScoutingCardClient({
         return;
       }
       setCard(result);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Scouting card generation failed: ${msg}`);
     } finally {
       setGenerating(false);
     }

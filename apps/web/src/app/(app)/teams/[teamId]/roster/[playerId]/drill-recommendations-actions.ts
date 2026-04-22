@@ -53,11 +53,14 @@ export async function rankDrillsForPlayerAction(
   if (playerErr) return `Failed to load player: ${playerErr.message}`;
   if (!player) return 'Player not found on this team.';
 
-  const ctx = await loadPlayerContext(db, teamId, player);
-  const drills = await loadFilteredDrills(db, teamId, player.primary_position as string | null);
-
   const start = Date.now();
   try {
+    const ctx = await loadPlayerContext(db, teamId, player);
+    const drills = await loadFilteredDrills(
+      db,
+      teamId,
+      player.primary_position as string | null,
+    );
     const result = await rankDrillsForPlayer({
       player: {
         firstName: player.first_name as string,

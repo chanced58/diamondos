@@ -99,8 +99,10 @@ export function computeOpponentPitcherStats(
       inPa = true;
 
       byPitcher.set(pid, running);
-    } else if (ev.event_type !== 'pitch_thrown') {
-      // Anything other than a pitch ends the current PA; the next pitch restarts.
+    } else {
+      // Non-opponent-pitch events (our pitcher throwing, or non-pitch events
+      // like hit/out/substitution) end the current opponent-pitch PA. The next
+      // opponent pitch we see should be treated as a new PA's first pitch.
       inPa = false;
       lastBatterId = null;
       lastPitcherId = null;

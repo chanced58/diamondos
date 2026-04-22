@@ -38,18 +38,24 @@ export default async function ScoutingCardPrintPage({
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const [{ data: oppTeam }, card] = await Promise.all([
-    db
-      .from('opponent_teams')
-      .select('id, name, city, state_code, team_id')
-      .eq('id', opponentTeamId)
-      .maybeSingle(),
-    getLatestScoutingCard(db as never, opponentTeamId),
-  ]);
+  // Verify the opponent belongs to the active team BEFORE loading the card
+  // (defense-in-depth; RLS already filters on team_id, but we don't rely on
+  // it alone when using the service-role client).
+  const { data: oppTeam } = await db
+    .from('opponent_teams')
+    .select('id, name, city, state_code, team_id')
+    .eq('id', opponentTeamId)
+    .maybeSingle();
 
   if (!oppTeam || oppTeam.team_id !== activeTeam.id) {
     redirect('/games/opponents');
   }
+
+  const card = await getLatestScoutingCard(
+    db as never,
+    opponentTeamId,
+    activeTeam.id,
+  );
 
   if (!card) {
     return (

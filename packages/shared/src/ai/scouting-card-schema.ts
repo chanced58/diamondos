@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 const RiskLevel = z.enum(['low', 'medium', 'high']);
 
+const uniqueZones = (arr: number[]): boolean => new Set(arr).size === arr.length;
+
 export const AiHitterProfileSchema = z.object({
   opponentPlayerId: z.string().uuid(),
   approach: z.string().min(1).max(500),
@@ -9,9 +11,15 @@ export const AiHitterProfileSchema = z.object({
   stealRisk: RiskLevel,
   buntRisk: RiskLevel,
   /** 1–9 Strike-zone cells where this hitter has shown success. */
-  hotZones: z.array(z.number().int().min(1).max(9)).max(9),
+  hotZones: z
+    .array(z.number().int().min(1).max(9))
+    .max(9)
+    .refine(uniqueZones, { message: 'duplicate zone values not allowed' }),
   /** 1–9 Strike-zone cells where this hitter struggles. */
-  coldZones: z.array(z.number().int().min(1).max(9)).max(9),
+  coldZones: z
+    .array(z.number().int().min(1).max(9))
+    .max(9)
+    .refine(uniqueZones, { message: 'duplicate zone values not allowed' }),
 });
 
 export const AiPitcherTendencySchema = z.object({

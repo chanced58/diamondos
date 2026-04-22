@@ -20,6 +20,8 @@ export interface GeneratePracticeInput {
 export interface GeneratePracticeResult {
   plan: AiPracticePlan;
   unknownDrillIds: string[];
+  /** Non-null when plan.blocks[].plannedDurationMinutes sums outside ±5 of the requested total. UI can show this; we don't retry. */
+  durationMismatchWarning: string | null;
   usage: {
     inputTokens: number;
     outputTokens: number;
@@ -89,9 +91,20 @@ export async function generatePractice(
     ),
   );
 
+  const totalPlanned = plan.blocks.reduce(
+    (n, b) => n + b.plannedDurationMinutes,
+    0,
+  );
+  const delta = totalPlanned - input.durationMinutes;
+  const durationMismatchWarning =
+    Math.abs(delta) > 5
+      ? `Plan totals ${totalPlanned} min vs. the ${input.durationMinutes} min requested (${delta > 0 ? '+' : ''}${delta}).`
+      : null;
+
   return {
     plan,
     unknownDrillIds,
+    durationMismatchWarning,
     usage: {
       inputTokens: response.usage.input_tokens,
       outputTokens: response.usage.output_tokens,

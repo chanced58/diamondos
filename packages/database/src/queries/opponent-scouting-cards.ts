@@ -24,11 +24,13 @@ interface ScoutingCardRow {
 export async function getLatestScoutingCard(
   supabase: TypedSupabaseClient,
   opponentTeamId: string,
+  teamId: string,
 ): Promise<PersistedScoutingCard | null> {
   const { data, error } = await supabase
     .from(TABLE)
     .select('*')
     .eq('opponent_team_id', opponentTeamId)
+    .eq('team_id', teamId)
     .order('generated_at', { ascending: false })
     .limit(1)
     .maybeSingle();

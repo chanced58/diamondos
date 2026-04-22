@@ -29,6 +29,8 @@ export interface PracticeSummaryRep {
   outcome: string;
   coachTag?: string | null;
   drillName?: string | null;
+  /** ISO timestamp — used to order reps newest-first before summarization. */
+  recordedAt: string;
 }
 
 export interface SummarizePracticeInput {
@@ -108,6 +110,13 @@ export async function summarizePractice(
   };
 }
 
+function repPriority(r: PracticeSummaryRep): number {
+  // Coach tags carry the most signal; negative outcomes next; neutral/positive last.
+  if (r.coachTag) return 3;
+  if (r.outcomeCategory === 'negative') return 2;
+  return 1;
+}
+
 function formatPracticeContext(input: SummarizePracticeInput): string {
   const lines: string[] = [];
   lines.push(
@@ -144,17 +153,29 @@ function formatPracticeContext(input: SummarizePracticeInput): string {
   }
   lines.push('');
 
-  lines.push('REPS (per-player rep outcomes):');
+  lines.push('REPS (per-player rep outcomes, newest first):');
   if (input.reps.length === 0) lines.push('(no reps logged)');
-  for (const r of input.reps.slice(0, 200)) {
+  // Rank reps by (a) priority — coach-tagged or negative outcomes first — then
+  // by recency. The summarizer only sees the top 200 after this sort, so we
+  // surface the most signal-rich reps even if the total is deep.
+  const prioritized = [...input.reps].sort((a, b) => {
+    const priorityA = repPriority(a);
+    const priorityB = repPriority(b);
+    if (priorityA !== priorityB) return priorityB - priorityA;
+    return b.recordedAt.localeCompare(a.recordedAt);
+  });
+  const TOP = 200;
+  for (const r of prioritized.slice(0, TOP)) {
     const tag = r.coachTag ? ` [${r.coachTag}]` : '';
     const drill = r.drillName ? ` in ${r.drillName}` : '';
     lines.push(
       `- player=${r.playerId ?? 'unknown'} · ${r.outcomeCategory}: ${r.outcome}${tag}${drill}`,
     );
   }
-  if (input.reps.length > 200) {
-    lines.push(`  (${input.reps.length - 200} older reps omitted)`);
+  if (prioritized.length > TOP) {
+    lines.push(
+      `  (${prioritized.length - TOP} lower-signal reps omitted — coach-tagged and negative-outcome reps kept first, then most-recent)`,
+    );
   }
   lines.push('');
 

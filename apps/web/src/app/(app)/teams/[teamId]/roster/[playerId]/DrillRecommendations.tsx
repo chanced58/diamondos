@@ -34,6 +34,10 @@ export function DrillRecommendations({ teamId, playerId }: Props): JSX.Element {
         return;
       }
       setResult(res);
+    } catch (err) {
+      setError(
+        `Drill ranking failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
       setLoading(false);
     }
@@ -95,7 +99,7 @@ export function DrillRecommendations({ teamId, playerId }: Props): JSX.Element {
                       >
                         {drill.name}
                       </Link>
-                      {drill.durationMinutes && (
+                      {drill.durationMinutes != null && (
                         <span className="text-xs text-gray-400">
                           {drill.durationMinutes}m
                         </span>

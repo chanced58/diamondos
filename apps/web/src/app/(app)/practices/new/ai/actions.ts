@@ -2,6 +2,7 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
+  AiPracticePlanSchema,
   PracticeFieldSpace,
   type AiPracticePlan,
   type PracticeDrill,
@@ -28,6 +29,7 @@ export interface GenerateSuccess {
   plan: AiPracticePlan;
   drillsById: Record<string, string>;
   unknownDrillIds: string[];
+  durationMismatchWarning: string | null;
 }
 
 export async function generateAiPracticeAction(
@@ -57,10 +59,9 @@ export async function generateAiPracticeAction(
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const drills = await loadDrills(db, input.teamId);
-
   const start = Date.now();
   try {
+    const drills = await loadDrills(db, input.teamId);
     const result = await generatePractice({
       coachPrompt: input.coachPrompt,
       durationMinutes: input.durationMinutes,
@@ -91,6 +92,7 @@ export async function generateAiPracticeAction(
       plan: result.plan,
       drillsById: Object.fromEntries(drills.map((d) => [d.id, d.name])),
       unknownDrillIds: result.unknownDrillIds,
+      durationMismatchWarning: result.durationMismatchWarning,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -126,6 +128,35 @@ export async function createPracticeFromAiPlanAction(
   const { isCoach } = await getUserAccess(input.teamId, user.id);
   if (!isCoach) return 'Only coaches can create practices.';
 
+  // Re-validate the client-supplied payload server-side. The browser could
+  // have mutated plan shape between generate and save, so we never trust the
+  // in-memory object on the client.
+  const parsed = AiPracticePlanSchema.safeParse(input.plan);
+  if (!parsed.success) {
+    return `Invalid practice plan: ${parsed.error.issues[0]?.message ?? 'schema mismatch'}`;
+  }
+
+  const scheduledAtDate = new Date(input.scheduledAt);
+  if (Number.isNaN(scheduledAtDate.getTime())) {
+    return 'Practice date is invalid.';
+  }
+  const oneYear = 365 * 24 * 3600 * 1000;
+  const now = Date.now();
+  if (
+    scheduledAtDate.getTime() < now - oneYear ||
+    scheduledAtDate.getTime() > now + oneYear
+  ) {
+    return 'Practice date must be within ±1 year of today.';
+  }
+
+  if (
+    !Number.isInteger(input.durationMinutes) ||
+    input.durationMinutes < 15 ||
+    input.durationMinutes > 240
+  ) {
+    return 'Duration must be an integer between 15 and 240 minutes.';
+  }
+
   const db = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -138,8 +169,8 @@ export async function createPracticeFromAiPlanAction(
   const drills = await loadDrills(db, input.teamId);
   const allowedIds = new Set(drills.map((d) => d.id));
   const sanitizedPlan: AiPracticePlan = {
-    ...input.plan,
-    blocks: input.plan.blocks.map((b) => ({
+    ...parsed.data,
+    blocks: parsed.data.blocks.map((b) => ({
       ...b,
       drillId: b.drillId && allowedIds.has(b.drillId) ? b.drillId : null,
     })),
@@ -148,7 +179,7 @@ export async function createPracticeFromAiPlanAction(
   try {
     const result = await createAiPractice(db as never, {
       teamId: input.teamId,
-      scheduledAt: input.scheduledAt,
+      scheduledAt: scheduledAtDate.toISOString(),
       durationMinutes: input.durationMinutes,
       plan: sanitizedPlan,
       createdBy: user.id,

@@ -115,13 +115,27 @@ export async function loadLatestScoutingCardAction(
   } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated.';
 
+  const activeTeam = await getActiveTeam(authClient, user.id);
+  if (!activeTeam) return 'No active team.';
+
   const db = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
+  // Defense-in-depth: verify the opponent belongs to the active team before
+  // hitting the card table (RLS is the primary gate).
+  const { data: oppTeam } = await db
+    .from('opponent_teams')
+    .select('team_id')
+    .eq('id', opponentTeamId)
+    .maybeSingle();
+  if (!oppTeam || oppTeam.team_id !== activeTeam.id) {
+    return 'Opponent team not found for this team.';
+  }
+
   try {
-    return await getLatestScoutingCard(db as never, opponentTeamId);
+    return await getLatestScoutingCard(db as never, opponentTeamId, activeTeam.id);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return `Failed to load scouting card: ${msg}`;
@@ -192,13 +206,23 @@ async function loadScoutingContext(
     });
   }
 
-  const { data: events, error: eventsErr } = await db
-    .from('game_events')
-    .select('*')
-    .in('game_id', gameIds);
-  if (eventsErr) throw new Error(eventsErr.message);
-
-  const rawEvents = (events ?? []) as Array<Record<string, unknown>>;
+  // Paginate game_events to avoid Supabase's default 1000-row cap and only
+  // pull the columns the compute functions actually read.
+  const BATCH_SIZE = 1000;
+  const rawEvents: Array<Record<string, unknown>> = [];
+  for (let offset = 0; ; offset += BATCH_SIZE) {
+    const { data: page, error: pageErr } = await db
+      .from('game_events')
+      .select('event_type, payload, game_id, sequence_number')
+      .in('game_id', gameIds)
+      .order('game_id')
+      .order('sequence_number')
+      .range(offset, offset + BATCH_SIZE - 1);
+    if (pageErr) throw new Error(pageErr.message);
+    const rows = (page ?? []) as Array<Record<string, unknown>>;
+    rawEvents.push(...rows);
+    if (rows.length < BATCH_SIZE) break;
+  }
 
   // Hitter stats
   const battingRows = computeOpponentBatting(rawEvents, oppPlayerNameMap);

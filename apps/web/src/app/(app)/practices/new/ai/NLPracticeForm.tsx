@@ -66,6 +66,11 @@ export function NLPracticeForm({ teamId }: Props): JSX.Element {
         return;
       }
       setGenerated(result);
+    } catch (err) {
+      setError(
+        `Generation failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      setGenerated(null);
     } finally {
       setIsGenerating(false);
     }
@@ -73,6 +78,18 @@ export function NLPracticeForm({ teamId }: Props): JSX.Element {
 
   async function runSave() {
     if (!generated || isSaving) return;
+    if (
+      !Number.isInteger(durationMinutes) ||
+      durationMinutes < 15 ||
+      durationMinutes > 240
+    ) {
+      setError('Duration must be an integer between 15 and 240 minutes.');
+      return;
+    }
+    if (!Number.isInteger(playerCount) || playerCount < 1 || playerCount > 50) {
+      setError('Player count must be between 1 and 50.');
+      return;
+    }
     setError(null);
     setIsSaving(true);
     try {
@@ -88,6 +105,10 @@ export function NLPracticeForm({ teamId }: Props): JSX.Element {
       }
       router.push(`/practices/${result.practiceId}`);
       router.refresh();
+    } catch (err) {
+      setError(
+        `Save failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
       setIsSaving(false);
     }
@@ -125,7 +146,11 @@ export function NLPracticeForm({ teamId }: Props): JSX.Element {
               max={240}
               step={5}
               value={durationMinutes}
-              onChange={(e) => setDurationMinutes(parseInt(e.target.value, 10) || 0)}
+              onChange={(e) => {
+                const parsed = parseInt(e.target.value, 10);
+                if (Number.isNaN(parsed)) return;
+                setDurationMinutes(Math.max(15, Math.min(240, parsed)));
+              }}
               required
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-500 focus:ring-brand-500 text-sm"
             />
@@ -138,7 +163,11 @@ export function NLPracticeForm({ teamId }: Props): JSX.Element {
               min={1}
               max={50}
               value={playerCount}
-              onChange={(e) => setPlayerCount(parseInt(e.target.value, 10) || 0)}
+              onChange={(e) => {
+                const parsed = parseInt(e.target.value, 10);
+                if (Number.isNaN(parsed)) return;
+                setPlayerCount(Math.max(1, Math.min(50, parsed)));
+              }}
               required
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-500 focus:ring-brand-500 text-sm"
             />
@@ -207,6 +236,11 @@ export function NLPracticeForm({ teamId }: Props): JSX.Element {
             {generated.unknownDrillIds.length > 0 && (
               <p className="mt-2 text-xs text-amber-800/80">
                 {generated.unknownDrillIds.length} drill reference(s) were unrecognized and dropped to &quot;no drill&quot; blocks.
+              </p>
+            )}
+            {generated.durationMismatchWarning && (
+              <p className="mt-2 text-xs text-amber-800/80">
+                {generated.durationMismatchWarning} You can edit block durations after saving.
               </p>
             )}
           </div>
