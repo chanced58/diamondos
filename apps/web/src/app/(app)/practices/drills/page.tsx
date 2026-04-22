@@ -8,11 +8,13 @@ import { getTeamTier } from '@/lib/team-tier';
 import {
   Feature,
   hasFeature,
+  PracticeDeficit,
   PracticeDrill,
+  PracticeDrillDeficitTag,
   PracticeDrillVisibility,
 } from '@baseball/shared';
 import { createPracticeServiceClient } from '@/lib/practices/authz';
-import { listDrills } from '@baseball/database';
+import { listDeficitsForTeam, listDrills, listTagsForTeam } from '@baseball/database';
 import { DrillLibraryClient } from './DrillLibraryClient';
 
 export const metadata: Metadata = { title: 'Drill library' };
@@ -65,7 +67,15 @@ export default async function DrillsPage(): Promise<JSX.Element | null> {
   }
 
   const supabase = createPracticeServiceClient();
-  const drills: PracticeDrill[] = await listDrills(supabase, activeTeam.id);
+  const [drills, deficits, tags]: [
+    PracticeDrill[],
+    PracticeDeficit[],
+    PracticeDrillDeficitTag[],
+  ] = await Promise.all([
+    listDrills(supabase, activeTeam.id),
+    listDeficitsForTeam(supabase, activeTeam.id),
+    listTagsForTeam(supabase, activeTeam.id),
+  ]);
 
   const systemCount = drills.filter(
     (d) => d.visibility === PracticeDrillVisibility.SYSTEM,
@@ -95,7 +105,7 @@ export default async function DrillsPage(): Promise<JSX.Element | null> {
         )}
       </div>
 
-      <DrillLibraryClient drills={drills} />
+      <DrillLibraryClient drills={drills} deficits={deficits} tags={tags} />
     </div>
   );
 }

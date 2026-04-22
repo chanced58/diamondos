@@ -98,12 +98,42 @@ export async function listDrills(
   teamId: string,
   filters: DrillFilters = {},
 ): Promise<PracticeDrill[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from(DRILLS_TABLE)
     .select('*')
     .or(`team_id.eq.${teamId},visibility.eq.system`)
     .order('name', { ascending: true });
 
+  if (filters.deficitIds && filters.deficitIds.length > 0) {
+    // Two round-trips: fetch matching drill_ids from the tag table, then
+    // IN-filter the drill query. Tag-table team scoping is applied explicitly
+    // here because callers may hit this with a service-role client that
+    // bypasses RLS; relying on RLS alone would leak tags from other teams.
+    // Not read-consistent — a concurrent tag insert/delete between the two
+    // queries can cause the drill list and tag index to disagree. Acceptable
+    // at current scale; revisit with a single-round-trip embed once PostgREST
+    // typing for it settles.
+    const tagQuery = supabase
+      .from('practice_drill_deficit_tags' as never)
+      .select('drill_id')
+      .in('deficit_id', filters.deficitIds)
+      .or(`team_id.is.null,team_id.eq.${teamId}`);
+
+    const { data: tagRows, error: tagError } =
+      filters.deficitPriority === 'primary'
+        ? await tagQuery.eq('priority', 'primary')
+        : await tagQuery;
+    if (tagError) throw tagError;
+    const drillIds = Array.from(
+      new Set(
+        ((tagRows as unknown as { drill_id: string }[]) ?? []).map((r) => r.drill_id),
+      ),
+    );
+    if (drillIds.length === 0) return [];
+    query = query.in('id', drillIds);
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
   const rows = (data as unknown as RawDrillRow[]) ?? [];
   const mapped = rows.map(mapDrill);

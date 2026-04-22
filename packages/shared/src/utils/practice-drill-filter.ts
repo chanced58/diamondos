@@ -1,4 +1,8 @@
 import { DrillFilters, PracticeDrill } from '../types/practice-drill';
+import {
+  PracticeDrillDeficitPriority,
+  type PracticeDrillDeficitTag,
+} from '../types/practice-deficit';
 
 function haystack(drill: PracticeDrill): string {
   return [
@@ -92,4 +96,32 @@ export function sortDrills(drills: PracticeDrill[], sort: DrillSort): PracticeDr
     case 'recent':
       return copy.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
+}
+
+/** Drill-id-keyed index of tag rows. */
+export type DeficitTagIndex = Map<string, PracticeDrillDeficitTag[]>;
+
+/**
+ * Pure-data predicate used both for client-side filtering and for tests.
+ * Callers that fetch from the DB typically push the same filter down via the
+ * `listDrills` subquery; this helper stays pure for test coverage.
+ */
+export function matchesDeficits(
+  drill: PracticeDrill,
+  tagsByDrill: DeficitTagIndex,
+  filters: Pick<DrillFilters, 'deficitIds' | 'deficitPriority'>,
+): boolean {
+  if (!filters.deficitIds || filters.deficitIds.length === 0) return true;
+
+  const tags = tagsByDrill.get(drill.id) ?? [];
+  if (tags.length === 0) return false;
+
+  const wantedIds = new Set(filters.deficitIds);
+  const requirePrimary = filters.deficitPriority === 'primary';
+
+  return tags.some(
+    (t) =>
+      wantedIds.has(t.deficitId) &&
+      (!requirePrimary || t.priority === PracticeDrillDeficitPriority.PRIMARY),
+  );
 }

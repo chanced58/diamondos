@@ -4,8 +4,11 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
   AGE_LEVEL_LABELS,
+  DEFICIT_PRIORITY_LABELS,
+  DrillDeficitTagHydrated,
   EQUIPMENT_LABELS,
   FIELD_SPACE_LABELS,
+  PracticeDrillDeficitPriority,
   PracticeDrillVisibility,
   SKILL_CATEGORY_LABELS,
 } from '@baseball/shared';
@@ -13,6 +16,7 @@ import {
   getDrillAttachmentSignedUrl,
   getDrillById,
   listDrillAttachments,
+  listDrillDeficitTags,
 } from '@baseball/database';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
@@ -52,6 +56,18 @@ export default async function DrillDetailPage({ params }: Props): Promise<JSX.El
       ...a,
       signedUrl: await getDrillAttachmentSignedUrl(supabase, a.storagePath),
     })),
+  );
+
+  const hydratedTags: DrillDeficitTagHydrated[] = await listDrillDeficitTags(
+    supabase,
+    drill.id,
+    activeTeam.id,
+  );
+  const primaryDeficits = hydratedTags.filter(
+    (t) => t.priority === PracticeDrillDeficitPriority.PRIMARY,
+  );
+  const secondaryDeficits = hydratedTags.filter(
+    (t) => t.priority === PracticeDrillDeficitPriority.SECONDARY,
   );
 
   return (
@@ -109,6 +125,22 @@ export default async function DrillDetailPage({ params }: Props): Promise<JSX.El
           <Tag key={sc}>{SKILL_CATEGORY_LABELS[sc] ?? sc}</Tag>
         ))}
       </TagSection>
+
+      {(primaryDeficits.length > 0 || secondaryDeficits.length > 0) && (
+        <section className="mt-6 bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="text-sm font-semibold text-gray-900 mb-3">Fixes</h2>
+          <DeficitPillRow
+            priority={PracticeDrillDeficitPriority.PRIMARY}
+            deficits={primaryDeficits}
+            pillClass="bg-amber-50 text-amber-800"
+          />
+          <DeficitPillRow
+            priority={PracticeDrillDeficitPriority.SECONDARY}
+            deficits={secondaryDeficits}
+            pillClass="bg-gray-50 text-gray-700"
+          />
+        </section>
+      )}
 
       {drill.equipment.length > 0 && (
         <TagSection title="Equipment">
@@ -189,6 +221,36 @@ export default async function DrillDetailPage({ params }: Props): Promise<JSX.El
         <p className="mt-6 text-xs text-gray-400">Source: {drill.source}</p>
       )}
     </div>
+  );
+}
+
+function DeficitPillRow({
+  priority,
+  deficits,
+  pillClass,
+}: {
+  priority: PracticeDrillDeficitPriority;
+  deficits: DrillDeficitTagHydrated[];
+  pillClass: string;
+}) {
+  if (deficits.length === 0) return null;
+  return (
+    <>
+      <h3 className="text-xs uppercase tracking-wide font-semibold text-gray-500 mb-1">
+        {DEFICIT_PRIORITY_LABELS[priority]}
+      </h3>
+      <div className="flex flex-wrap gap-1.5 mb-3 last:mb-0">
+        {deficits.map((t) => (
+          <span
+            key={t.tagId}
+            className={`text-xs font-medium px-2 py-0.5 rounded-full ${pillClass}`}
+            title={t.deficit.description ?? t.deficit.name}
+          >
+            {t.deficit.name}
+          </span>
+        ))}
+      </div>
+    </>
   );
 }
 

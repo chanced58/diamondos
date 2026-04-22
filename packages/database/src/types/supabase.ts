@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       channel_members: {
@@ -1508,6 +1483,57 @@ export type Database = {
           },
         ]
       }
+      practice_attendance: {
+        Row: {
+          checked_in_at: string | null
+          checked_in_by: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          player_id: string
+          practice_id: string
+          status: Database["public"]["Enums"]["practice_attendance_status"]
+          updated_at: string
+        }
+        Insert: {
+          checked_in_at?: string | null
+          checked_in_by?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          player_id: string
+          practice_id: string
+          status: Database["public"]["Enums"]["practice_attendance_status"]
+          updated_at?: string
+        }
+        Update: {
+          checked_in_at?: string | null
+          checked_in_by?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          player_id?: string
+          practice_id?: string
+          status?: Database["public"]["Enums"]["practice_attendance_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_attendance_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_attendance_practice_id_fkey"
+            columns: ["practice_id"]
+            isOneToOne: false
+            referencedRelation: "practices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       practice_block_players: {
         Row: {
           block_id: string
@@ -1619,6 +1645,53 @@ export type Database = {
           },
         ]
       }
+      practice_deficits: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          name: string
+          skill_categories: Database["public"]["Enums"]["practice_skill_category"][]
+          slug: string
+          team_id: string | null
+          updated_at: string
+          visibility: Database["public"]["Enums"]["practice_drill_visibility"]
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          skill_categories?: Database["public"]["Enums"]["practice_skill_category"][]
+          slug: string
+          team_id?: string | null
+          updated_at?: string
+          visibility?: Database["public"]["Enums"]["practice_drill_visibility"]
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          skill_categories?: Database["public"]["Enums"]["practice_skill_category"][]
+          slug?: string
+          team_id?: string | null
+          updated_at?: string
+          visibility?: Database["public"]["Enums"]["practice_drill_visibility"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_deficits_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       practice_drill_attachments: {
         Row: {
           created_at: string
@@ -1656,6 +1729,58 @@ export type Database = {
             columns: ["drill_id"]
             isOneToOne: false
             referencedRelation: "practice_drills"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_drill_deficit_tags: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          deficit_id: string
+          drill_id: string
+          id: string
+          priority: Database["public"]["Enums"]["practice_drill_deficit_priority"]
+          team_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          deficit_id: string
+          drill_id: string
+          id?: string
+          priority?: Database["public"]["Enums"]["practice_drill_deficit_priority"]
+          team_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          deficit_id?: string
+          drill_id?: string
+          id?: string
+          priority?: Database["public"]["Enums"]["practice_drill_deficit_priority"]
+          team_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_drill_deficit_tags_deficit_id_fkey"
+            columns: ["deficit_id"]
+            isOneToOne: false
+            referencedRelation: "practice_deficits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_drill_deficit_tags_drill_id_fkey"
+            columns: ["drill_id"]
+            isOneToOne: false
+            referencedRelation: "practice_drills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_drill_deficit_tags_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
             referencedColumns: ["id"]
           },
         ]
@@ -1773,6 +1898,38 @@ export type Database = {
             foreignKeyName: "practice_notes_practice_id_fkey"
             columns: ["practice_id"]
             isOneToOne: true
+            referencedRelation: "practices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_notifications_sent: {
+        Row: {
+          id: string
+          kind: Database["public"]["Enums"]["practice_notification_kind"]
+          practice_id: string
+          sent_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          kind: Database["public"]["Enums"]["practice_notification_kind"]
+          practice_id: string
+          sent_at?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          kind?: Database["public"]["Enums"]["practice_notification_kind"]
+          practice_id?: string
+          sent_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_notifications_sent_practice_id_fkey"
+            columns: ["practice_id"]
+            isOneToOne: false
             referencedRelation: "practices"
             referencedColumns: ["id"]
           },
@@ -2602,6 +2759,7 @@ export type Database = {
           logo_url: string | null
           name: string
           organization: string | null
+          practice_notification_lead_minutes: number
           primary_color: string | null
           secondary_color: string | null
           state_code: string | null
@@ -2615,6 +2773,7 @@ export type Database = {
           logo_url?: string | null
           name: string
           organization?: string | null
+          practice_notification_lead_minutes?: number
           primary_color?: string | null
           secondary_color?: string | null
           state_code?: string | null
@@ -2628,6 +2787,7 @@ export type Database = {
           logo_url?: string | null
           name?: string
           organization?: string | null
+          practice_notification_lead_minutes?: number
           primary_color?: string | null
           secondary_color?: string | null
           state_code?: string | null
@@ -2766,6 +2926,7 @@ export type Database = {
         | "college"
         | "adult"
         | "all"
+      practice_attendance_status: "present" | "absent" | "late" | "excused"
       practice_block_status: "pending" | "active" | "completed" | "skipped"
       practice_block_type:
         | "warmup"
@@ -2779,6 +2940,7 @@ export type Database = {
         | "meeting"
         | "water_break"
         | "custom"
+      practice_drill_deficit_priority: "primary" | "secondary"
       practice_drill_visibility: "system" | "team"
       practice_equipment:
         | "baseballs"
@@ -2807,6 +2969,7 @@ export type Database = {
         | "gym"
         | "classroom"
         | "open_space"
+      practice_notification_kind: "pre_practice"
       practice_run_status: "not_started" | "running" | "completed"
       practice_season_phase:
         | "preseason"
@@ -2975,9 +3138,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       bats_throws: ["right", "left", "switch"],
@@ -3018,6 +3178,7 @@ export const Constants = {
         "adult",
         "all",
       ],
+      practice_attendance_status: ["present", "absent", "late", "excused"],
       practice_block_status: ["pending", "active", "completed", "skipped"],
       practice_block_type: [
         "warmup",
@@ -3032,6 +3193,7 @@ export const Constants = {
         "water_break",
         "custom",
       ],
+      practice_drill_deficit_priority: ["primary", "secondary"],
       practice_drill_visibility: ["system", "team"],
       practice_equipment: [
         "baseballs",
@@ -3062,6 +3224,7 @@ export const Constants = {
         "classroom",
         "open_space",
       ],
+      practice_notification_kind: ["pre_practice"],
       practice_run_status: ["not_started", "running", "completed"],
       practice_season_phase: [
         "preseason",
@@ -3114,3 +3277,4 @@ export const Constants = {
     },
   },
 } as const
+

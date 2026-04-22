@@ -4,8 +4,11 @@ import { useMemo, useState, type JSX } from 'react';
 import Link from 'next/link';
 import {
   DrillFilters,
+  PracticeDeficit,
   PracticeDrill,
+  PracticeDrillDeficitTag,
   filterDrills,
+  matchesDeficits,
   sortDrills,
   type DrillSort,
 } from '@baseball/shared';
@@ -14,21 +17,40 @@ import { DrillFiltersPanel } from './DrillFilters';
 
 interface Props {
   drills: PracticeDrill[];
+  deficits: PracticeDeficit[];
+  tags: PracticeDrillDeficitTag[];
 }
 
-export function DrillLibraryClient({ drills }: Props): JSX.Element {
+export function DrillLibraryClient({ drills, deficits, tags }: Props): JSX.Element {
   const [filters, setFilters] = useState<DrillFilters>({});
   const [sort, setSort] = useState<DrillSort>('name');
 
+  const tagIndex = useMemo(() => {
+    const map = new Map<string, PracticeDrillDeficitTag[]>();
+    for (const tag of tags) {
+      const list = map.get(tag.drillId);
+      if (list) list.push(tag);
+      else map.set(tag.drillId, [tag]);
+    }
+    return map;
+  }, [tags]);
+
+  const deficitById = useMemo(() => {
+    const m = new Map<string, PracticeDeficit>();
+    for (const d of deficits) m.set(d.id, d);
+    return m;
+  }, [deficits]);
+
   const visible = useMemo(() => {
-    const filtered = filterDrills(drills, filters);
+    const filtered = filterDrills(drills, filters)
+      .filter((d) => matchesDeficits(d, tagIndex, filters));
     return sortDrills(filtered, sort);
-  }, [drills, filters, sort]);
+  }, [drills, filters, sort, tagIndex]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[260px,1fr] gap-6">
       <aside className="lg:sticky lg:top-6 lg:self-start">
-        <DrillFiltersPanel filters={filters} onChange={setFilters} />
+        <DrillFiltersPanel deficits={deficits} filters={filters} onChange={setFilters} />
       </aside>
 
       <div>
@@ -64,7 +86,11 @@ export function DrillLibraryClient({ drills }: Props): JSX.Element {
             {visible.map((d) => (
               <li key={d.id}>
                 <Link href={`/practices/drills/${d.id}`} className="block h-full">
-                  <DrillCard drill={d} />
+                  <DrillCard
+                    drill={d}
+                    tags={tagIndex.get(d.id) ?? []}
+                    deficitById={deficitById}
+                  />
                 </Link>
               </li>
             ))}
