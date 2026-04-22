@@ -13,6 +13,7 @@ import { PracticePlanEditor } from './PracticePlanEditor';
 import { LocationMap } from '@/components/maps/LocationMap';
 import { RepCaptureForm } from './RepCaptureForm';
 import { HotHittersPanel } from './HotHittersPanel';
+import { SummarySection } from './summary/SummarySection';
 import { identifyColdHitters, rankHotHitters } from '@baseball/shared';
 import { listTeamPracticeReps } from '@baseball/database';
 
@@ -233,6 +234,25 @@ export default async function PracticeNotesPage({
           players={players}
           playerNotesMap={playerNotesMap}
         />
+
+        {/* ── Tier 7 F2 — AI post-practice summary ──────────────────── */}
+        {practice.status !== 'cancelled' && (
+          <div className="mt-6">
+            <SummarySection
+              practiceId={params.practiceId}
+              players={Object.fromEntries(
+                players.map((p) => [
+                  p.id,
+                  {
+                    firstName: p.first_name,
+                    lastName: p.last_name,
+                    jerseyNumber: p.jersey_number,
+                  },
+                ]),
+              )}
+            />
+          </div>
+        )}
 
         {/* ── Cancel practice (coaches only) ──────────────────────────── */}
         {practice.status !== 'cancelled' && (
