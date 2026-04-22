@@ -208,6 +208,54 @@ export type Database = {
           },
         ]
       }
+      drill_focus_catalog: {
+        Row: {
+          created_at: string
+          description: string | null
+          name: string
+          parent_slug: string | null
+          slug: string
+          sort_order: number
+          team_id: string | null
+          visibility: Database["public"]["Enums"]["drill_focus_visibility"]
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          name: string
+          parent_slug?: string | null
+          slug: string
+          sort_order?: number
+          team_id?: string | null
+          visibility?: Database["public"]["Enums"]["drill_focus_visibility"]
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          name?: string
+          parent_slug?: string | null
+          slug?: string
+          sort_order?: number
+          team_id?: string | null
+          visibility?: Database["public"]["Enums"]["drill_focus_visibility"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "drill_focus_catalog_parent_slug_fkey"
+            columns: ["parent_slug"]
+            isOneToOne: false
+            referencedRelation: "drill_focus_catalog"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "drill_focus_catalog_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       drill_injury_contraindications: {
         Row: {
           created_at: string
@@ -2338,6 +2386,55 @@ export type Database = {
           },
         ]
       }
+      practice_drill_focus_tags: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          drill_id: string
+          focus_slug: string
+          id: string
+          team_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          drill_id: string
+          focus_slug: string
+          id?: string
+          team_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          drill_id?: string
+          focus_slug?: string
+          id?: string
+          team_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_drill_focus_tags_drill_id_fkey"
+            columns: ["drill_id"]
+            isOneToOne: false
+            referencedRelation: "practice_drills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_drill_focus_tags_focus_slug_fkey"
+            columns: ["focus_slug"]
+            isOneToOne: false
+            referencedRelation: "drill_focus_catalog"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "practice_drill_focus_tags_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       practice_drills: {
         Row: {
           age_levels: Database["public"]["Enums"]["practice_age_level"][]
@@ -3668,6 +3765,33 @@ export type Database = {
           },
         ]
       }
+      v_practice_volume_by_focus: {
+        Row: {
+          first_worked_at: string | null
+          focus_slug: string | null
+          last_worked_at: string | null
+          session_count: number | null
+          team_id: string | null
+          total_actual_minutes: number | null
+          total_planned_minutes: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_drill_focus_tags_focus_slug_fkey"
+            columns: ["focus_slug"]
+            isOneToOne: false
+            referencedRelation: "drill_focus_catalog"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "practices_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       can_edit_block: { Args: { p_block_id: string }; Returns: boolean }
@@ -3747,6 +3871,7 @@ export type Database = {
       bats_throws: "right" | "left" | "switch"
       billable_entity_type: "team" | "league"
       channel_type: "announcement" | "topic" | "direct"
+      drill_focus_visibility: "system" | "team"
       drill_injury_severity: "hard" | "caution"
       game_location_type: "home" | "away" | "neutral"
       game_status:
@@ -4016,6 +4141,7 @@ export const Constants = {
       bats_throws: ["right", "left", "switch"],
       billable_entity_type: ["team", "league"],
       channel_type: ["announcement", "topic", "direct"],
+      drill_focus_visibility: ["system", "team"],
       drill_injury_severity: ["hard", "caution"],
       game_location_type: ["home", "away", "neutral"],
       game_status: [
