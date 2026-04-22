@@ -4,9 +4,13 @@ import { Stack } from 'expo-router';
 import { DatabaseProvider } from '@nozbe/watermelondb/DatabaseProvider';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider, useAuth } from '../src/providers/AuthProvider';
+import { RoleProvider } from '../src/providers/RoleProvider';
 import { SyncProvider } from '../src/providers/SyncProvider';
 import { database } from '../src/db';
-import { registerForPushNotifications } from '../src/lib/notifications';
+import {
+  registerForPushNotifications,
+  setupNotificationDeepLinks,
+} from '../src/lib/notifications';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -17,6 +21,7 @@ function RootLayoutNav() {
     if (!loading) {
       SplashScreen.hideAsync();
       registerForPushNotifications().catch(console.warn);
+      setupNotificationDeepLinks();
     }
   }, [loading]);
 
@@ -42,9 +47,11 @@ export default function RootLayout() {
   return (
     <DatabaseProvider database={database}>
       <AuthProvider>
-        <SyncProvider>
-          <RootLayoutNav />
-        </SyncProvider>
+        <RoleProvider>
+          <SyncProvider>
+            <RootLayoutNav />
+          </SyncProvider>
+        </RoleProvider>
       </AuthProvider>
     </DatabaseProvider>
   );

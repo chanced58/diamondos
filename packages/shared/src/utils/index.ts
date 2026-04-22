@@ -13,3 +13,4 @@ export * from './practice-rotation';
 export * from './practice-drill-filter';
 export * from './practice-timer';
 export * from './practice-print';
+export * from './practice-player-view';

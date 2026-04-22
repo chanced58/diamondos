@@ -10,3 +10,4 @@ export * from './practice-drills';
 export * from './practice-templates';
 export * from './practices';
 export * from './practice-stations';
+export * from './practice-attendance';

@@ -67,3 +67,18 @@ export async function getTeamMembers(client: TypedSupabaseClient, teamId: string
   if (error) throw error;
   return data;
 }
+
+export async function updateTeamNotificationLead(
+  client: TypedSupabaseClient,
+  teamId: string,
+  minutes: number,
+): Promise<void> {
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes > 10080) {
+    throw new Error('practice_notification_lead_minutes must be an integer in [0, 10080]');
+  }
+  const { error } = await client
+    .from('teams')
+    .update({ practice_notification_lead_minutes: minutes } as never)
+    .eq('id', teamId);
+  if (error) throw error;
+}
