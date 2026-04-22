@@ -311,6 +311,107 @@ export type Database = {
           },
         ]
       }
+      facilities: {
+        Row: {
+          capacity: number | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          kind: Database["public"]["Enums"]["facility_kind"]
+          name: string
+          notes: string | null
+          team_id: string
+          updated_at: string
+        }
+        Insert: {
+          capacity?: number | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          kind: Database["public"]["Enums"]["facility_kind"]
+          name: string
+          notes?: string | null
+          team_id: string
+          updated_at?: string
+        }
+        Update: {
+          capacity?: number | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          kind?: Database["public"]["Enums"]["facility_kind"]
+          name?: string
+          notes?: string | null
+          team_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facilities_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      facility_bookings: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          ends_at: string
+          facility_id: string
+          id: string
+          notes: string | null
+          practice_id: string | null
+          starts_at: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          ends_at: string
+          facility_id: string
+          id?: string
+          notes?: string | null
+          practice_id?: string | null
+          starts_at: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          ends_at?: string
+          facility_id?: string
+          id?: string
+          notes?: string | null
+          practice_id?: string | null
+          starts_at?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facility_bookings_facility_id_fkey"
+            columns: ["facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "facility_bookings_practice_id_fkey"
+            columns: ["practice_id"]
+            isOneToOne: false
+            referencedRelation: "practices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       game_coach_notes: {
         Row: {
           coach_notes: string | null
@@ -2182,6 +2283,7 @@ export type Database = {
           completed_at: string | null
           created_at: string
           drill_id: string | null
+          facility_id: string | null
           field_spaces: Database["public"]["Enums"]["practice_field_space"][]
           id: string
           notes: string | null
@@ -2200,6 +2302,7 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           drill_id?: string | null
+          facility_id?: string | null
           field_spaces?: Database["public"]["Enums"]["practice_field_space"][]
           id?: string
           notes?: string | null
@@ -2218,6 +2321,7 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           drill_id?: string | null
+          facility_id?: string | null
           field_spaces?: Database["public"]["Enums"]["practice_field_space"][]
           id?: string
           notes?: string | null
@@ -2235,6 +2339,13 @@ export type Database = {
             columns: ["drill_id"]
             isOneToOne: false
             referencedRelation: "practice_drills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_blocks_facility_id_fkey"
+            columns: ["facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
             referencedColumns: ["id"]
           },
           {
@@ -3873,6 +3984,14 @@ export type Database = {
       channel_type: "announcement" | "topic" | "direct"
       drill_focus_visibility: "system" | "team"
       drill_injury_severity: "hard" | "caution"
+      facility_kind:
+        | "cage"
+        | "field"
+        | "bullpen"
+        | "gym"
+        | "classroom"
+        | "weight_room"
+        | "other"
       game_location_type: "home" | "away" | "neutral"
       game_status:
         | "scheduled"
@@ -4143,6 +4262,15 @@ export const Constants = {
       channel_type: ["announcement", "topic", "direct"],
       drill_focus_visibility: ["system", "team"],
       drill_injury_severity: ["hard", "caution"],
+      facility_kind: [
+        "cage",
+        "field",
+        "bullpen",
+        "gym",
+        "classroom",
+        "weight_room",
+        "other",
+      ],
       game_location_type: ["home", "away", "neutral"],
       game_status: [
         "scheduled",
