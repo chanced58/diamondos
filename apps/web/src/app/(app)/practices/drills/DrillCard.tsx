@@ -1,6 +1,9 @@
 import type { JSX } from 'react';
 import {
+  PracticeDeficit,
   PracticeDrill,
+  PracticeDrillDeficitPriority,
+  PracticeDrillDeficitTag,
   PracticeDrillVisibility,
   SKILL_CATEGORY_LABELS,
   FIELD_SPACE_LABELS,
@@ -8,10 +11,16 @@ import {
 
 interface Props {
   drill: PracticeDrill;
+  tags: PracticeDrillDeficitTag[];
+  deficitById: Map<string, PracticeDeficit>;
 }
 
-export function DrillCard({ drill }: Props): JSX.Element {
+export function DrillCard({ drill, tags, deficitById }: Props): JSX.Element {
   const isSystem = drill.visibility === PracticeDrillVisibility.SYSTEM;
+  const primaryTags = tags
+    .filter((t) => t.priority === PracticeDrillDeficitPriority.PRIMARY)
+    .slice(0, 2);
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 hover:border-brand-400 hover:shadow-sm transition-all p-4 h-full flex flex-col">
       <div className="flex items-start justify-between gap-2 mb-2">
@@ -41,6 +50,24 @@ export function DrillCard({ drill }: Props): JSX.Element {
           </span>
         ))}
       </div>
+
+      {primaryTags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-3">
+          {primaryTags.map((t) => {
+            const d = deficitById.get(t.deficitId);
+            if (!d) return null;
+            return (
+              <span
+                key={t.id}
+                className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-800"
+                title={d.description ?? d.name}
+              >
+                Fixes: {d.name}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       <div className="mt-auto text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-1">
         {drill.defaultDurationMinutes !== undefined && (

@@ -35,6 +35,12 @@ export function DrillLibraryClient({ drills, deficits, tags }: Props): JSX.Eleme
     return map;
   }, [tags]);
 
+  const deficitById = useMemo(() => {
+    const m = new Map<string, PracticeDeficit>();
+    for (const d of deficits) m.set(d.id, d);
+    return m;
+  }, [deficits]);
+
   const visible = useMemo(() => {
     const filtered = filterDrills(drills, filters)
       .filter((d) => matchesDeficits(d, tagIndex, filters));
@@ -80,7 +86,11 @@ export function DrillLibraryClient({ drills, deficits, tags }: Props): JSX.Eleme
             {visible.map((d) => (
               <li key={d.id}>
                 <Link href={`/practices/drills/${d.id}`} className="block h-full">
-                  <DrillCard drill={d} />
+                  <DrillCard
+                    drill={d}
+                    tags={tagIndex.get(d.id) ?? []}
+                    deficitById={deficitById}
+                  />
                 </Link>
               </li>
             ))}
