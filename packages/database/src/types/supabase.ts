@@ -208,6 +208,61 @@ export type Database = {
           },
         ]
       }
+      drill_injury_contraindications: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          drill_id: string
+          id: string
+          injury_slug: string
+          reason: string | null
+          severity: Database["public"]["Enums"]["drill_injury_severity"]
+          team_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          drill_id: string
+          id?: string
+          injury_slug: string
+          reason?: string | null
+          severity?: Database["public"]["Enums"]["drill_injury_severity"]
+          team_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          drill_id?: string
+          id?: string
+          injury_slug?: string
+          reason?: string | null
+          severity?: Database["public"]["Enums"]["drill_injury_severity"]
+          team_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "drill_injury_contraindications_drill_id_fkey"
+            columns: ["drill_id"]
+            isOneToOne: false
+            referencedRelation: "practice_drills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "drill_injury_contraindications_injury_slug_fkey"
+            columns: ["injury_slug"]
+            isOneToOne: false
+            referencedRelation: "injury_flag_catalog"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "drill_injury_contraindications_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       game_coach_notes: {
         Row: {
           coach_notes: string | null
@@ -576,6 +631,44 @@ export type Database = {
           },
           {
             foreignKeyName: "games_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      injury_flag_catalog: {
+        Row: {
+          body_part: string
+          created_at: string
+          description: string | null
+          name: string
+          slug: string
+          team_id: string | null
+          visibility: Database["public"]["Enums"]["injury_flag_visibility"]
+        }
+        Insert: {
+          body_part: string
+          created_at?: string
+          description?: string | null
+          name: string
+          slug: string
+          team_id?: string | null
+          visibility?: Database["public"]["Enums"]["injury_flag_visibility"]
+        }
+        Update: {
+          body_part?: string
+          created_at?: string
+          description?: string | null
+          name?: string
+          slug?: string
+          team_id?: string | null
+          visibility?: Database["public"]["Enums"]["injury_flag_visibility"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "injury_flag_catalog_team_id_fkey"
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
@@ -1693,6 +1786,57 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "player_external_ids_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_injury_flags: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          effective_from: string
+          effective_to: string | null
+          id: string
+          injury_slug: string
+          notes: string | null
+          player_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          injury_slug: string
+          notes?: string | null
+          player_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          injury_slug?: string
+          notes?: string | null
+          player_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_injury_flags_injury_slug_fkey"
+            columns: ["injury_slug"]
+            isOneToOne: false
+            referencedRelation: "injury_flag_catalog"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "player_injury_flags_player_id_fkey"
             columns: ["player_id"]
             isOneToOne: false
             referencedRelation: "players"
@@ -3603,6 +3747,7 @@ export type Database = {
       bats_throws: "right" | "left" | "switch"
       billable_entity_type: "team" | "league"
       channel_type: "announcement" | "topic" | "direct"
+      drill_injury_severity: "hard" | "caution"
       game_location_type: "home" | "away" | "neutral"
       game_status:
         | "scheduled"
@@ -3610,6 +3755,7 @@ export type Database = {
         | "completed"
         | "cancelled"
         | "postponed"
+      injury_flag_visibility: "system" | "team"
       league_role: "league_admin" | "league_manager"
       opponent_scouting_category:
         | "pitch_mix"
@@ -3870,6 +4016,7 @@ export const Constants = {
       bats_throws: ["right", "left", "switch"],
       billable_entity_type: ["team", "league"],
       channel_type: ["announcement", "topic", "direct"],
+      drill_injury_severity: ["hard", "caution"],
       game_location_type: ["home", "away", "neutral"],
       game_status: [
         "scheduled",
@@ -3878,6 +4025,7 @@ export const Constants = {
         "cancelled",
         "postponed",
       ],
+      injury_flag_visibility: ["system", "team"],
       league_role: ["league_admin", "league_manager"],
       opponent_scouting_category: [
         "pitch_mix",

@@ -477,9 +477,21 @@ export default async function PlayerPage({
         )}
       </section>
 
-      {/* ── Compliance documents (coaches only) ─────────────────────────── */}
+      {/* ── Availability & compliance (coaches only) ──────────────────── */}
       {isCoach && (
-        <section className="mb-6">
+        <section className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Link
+            href={`/teams/${params.teamId}/roster/${params.playerId}/availability`}
+            className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-5 py-4 hover:bg-gray-50 transition-colors"
+          >
+            <div>
+              <p className="font-semibold text-gray-900">Availability</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Injury flags that suppress contraindicated drills.
+              </p>
+            </div>
+            <span className="text-gray-400 text-sm">Open →</span>
+          </Link>
           <Link
             href={`/teams/${params.teamId}/roster/${params.playerId}/documents`}
             className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-5 py-4 hover:bg-gray-50 transition-colors"
