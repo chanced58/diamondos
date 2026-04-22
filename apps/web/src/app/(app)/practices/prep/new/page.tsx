@@ -15,9 +15,7 @@ import {
   generatePrepPractice,
   EventType,
   PracticeDrillDeficitPriority,
-  WeaknessSeverity,
   type DerivedScoutingTag,
-  type Game,
   type GameEvent,
   type HydratedWeaknessSignal,
   type OpponentPlayer,
@@ -381,4 +379,3 @@ function formatGameDate(iso: string): string {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-export { WeaknessSeverity }; // re-export keeps the type package in graph
