@@ -1,0 +1,87 @@
+import {
+  PracticeRepCoachTag,
+  PracticeRepOutcomeCategory,
+  type PracticeRep,
+  type PracticeRepInput,
+} from '@baseball/shared';
+import type { TypedSupabaseClient } from '../client';
+
+/** Insert one or more practice reps in a single round-trip. */
+export async function insertPracticeReps(
+  supabase: TypedSupabaseClient,
+  reps: PracticeRepInput[],
+  recordedBy: string,
+): Promise<void> {
+  if (reps.length === 0) return;
+  const rows = reps.map((r) => ({
+    practice_id: r.practiceId,
+    block_id: r.blockId ?? null,
+    drill_id: r.drillId ?? null,
+    player_id: r.playerId ?? null,
+    rep_number: r.repNumber ?? null,
+    outcome: r.outcome,
+    outcome_category: r.outcomeCategory,
+    metrics: r.metrics ?? {},
+    coach_tag: r.coachTag ?? null,
+    recorded_by: recordedBy,
+  }));
+  const { error } = await supabase.from('practice_reps').insert(rows as never);
+  if (error) throw error;
+}
+
+/**
+ * Lists practice reps for a team across all practices since `sinceDate`.
+ * Cross-joins through practices (practices.team_id). Used by the hot-hitter
+ * ranker, which expects per-player rep counts in a rolling window.
+ */
+export async function listTeamPracticeReps(
+  supabase: TypedSupabaseClient,
+  teamId: string,
+  sinceDate: Date,
+): Promise<PracticeRep[]> {
+  // Two-step: find practice ids for this team since the date, then reps.
+  const { data: practices, error: practicesErr } = await supabase
+    .from('practices')
+    .select('id')
+    .eq('team_id', teamId)
+    .gte('scheduled_at', sinceDate.toISOString());
+  if (practicesErr) throw practicesErr;
+
+  const ids = ((practices ?? []) as Array<{ id: string }>).map((p) => p.id);
+  if (ids.length === 0) return [];
+
+  const { data: rows, error } = await supabase
+    .from('practice_reps')
+    .select('*')
+    .in('practice_id', ids)
+    .order('recorded_at', { ascending: false });
+  if (error) throw error;
+
+  return ((rows ?? []) as unknown as Array<{
+    id: string;
+    practice_id: string;
+    block_id: string | null;
+    drill_id: string | null;
+    player_id: string | null;
+    rep_number: number | null;
+    outcome: string;
+    outcome_category: string;
+    metrics: Record<string, unknown>;
+    coach_tag: string | null;
+    recorded_by: string | null;
+    recorded_at: string;
+  }>).map((r) => ({
+    id: r.id,
+    practiceId: r.practice_id,
+    blockId: r.block_id ?? undefined,
+    drillId: r.drill_id ?? undefined,
+    playerId: r.player_id ?? undefined,
+    repNumber: r.rep_number ?? undefined,
+    outcome: r.outcome,
+    outcomeCategory: r.outcome_category as PracticeRepOutcomeCategory,
+    metrics: r.metrics ?? {},
+    coachTag: (r.coach_tag ?? undefined) as PracticeRepCoachTag | undefined,
+    recordedBy: r.recorded_by ?? undefined,
+    recordedAt: r.recorded_at,
+  }));
+}

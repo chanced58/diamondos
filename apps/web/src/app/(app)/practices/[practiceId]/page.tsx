@@ -11,6 +11,10 @@ import { PlayerPracticeView } from './PlayerPracticeView';
 import { CancelPracticeForm } from './CancelPracticeForm';
 import { PracticePlanEditor } from './PracticePlanEditor';
 import { LocationMap } from '@/components/maps/LocationMap';
+import { RepCaptureForm } from './RepCaptureForm';
+import { HotHittersPanel } from './HotHittersPanel';
+import { identifyColdHitters, rankHotHitters } from '@baseball/shared';
+import { listTeamPracticeReps } from '@baseball/database';
 
 export const metadata: Metadata = { title: 'Practice Notes' };
 
@@ -156,6 +160,23 @@ export default async function PracticeNotesPage({
       (playerNotesResult.data ?? []).map((row) => [row.player_id, row]),
     );
 
+    // Tier 6 F4: hot-hitter analysis over the last 3 days of practice reps
+    // across ALL practices for this team, so today's practice informs the
+    // lineup decision for tomorrow's game.
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 3600 * 1000);
+    const recentReps = await listTeamPracticeReps(db as never, practice.team_id, threeDaysAgo);
+    const hotHitters = rankHotHitters(recentReps, { lookbackDays: 3 });
+    const coldHitters = identifyColdHitters(recentReps, { lookbackDays: 3 });
+    const playerLookup = Object.fromEntries(
+      players.map((p) => [p.id, { firstName: p.first_name, lastName: p.last_name, jerseyNumber: p.jersey_number }]),
+    );
+    const repPlayers = players.map((p) => ({
+      id: p.id,
+      firstName: p.first_name,
+      lastName: p.last_name,
+      jerseyNumber: p.jersey_number,
+    }));
+
     return (
       <div className="p-8 max-w-4xl">
         {header}
@@ -189,6 +210,20 @@ export default async function PracticeNotesPage({
           practiceId={params.practiceId}
           initialPlan={practice.plan ?? ''}
         />
+
+        {/* ── Tier 6 F4 — rep capture + hot-hitter analysis ─────────── */}
+        {practice.status !== 'cancelled' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-6">
+            <RepCaptureForm practiceId={params.practiceId} players={repPlayers} />
+            <HotHittersPanel
+              hotHitters={hotHitters}
+              coldHitters={coldHitters}
+              players={playerLookup}
+              totalReps={recentReps.length}
+            />
+          </div>
+        )}
+
         <PracticeNotesForm
           practiceId={params.practiceId}
           teamId={practice.team_id}

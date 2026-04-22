@@ -16,3 +16,4 @@ export * from './next-game';
 export * from './game-prep';
 export * from './game-weaknesses';
 export * from './pitcher-availability';
+export * from './practice-reps';
