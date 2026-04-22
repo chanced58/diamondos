@@ -98,12 +98,35 @@ export async function listDrills(
   teamId: string,
   filters: DrillFilters = {},
 ): Promise<PracticeDrill[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from(DRILLS_TABLE)
     .select('*')
     .or(`team_id.eq.${teamId},visibility.eq.system`)
     .order('name', { ascending: true });
 
+  if (filters.deficitIds && filters.deficitIds.length > 0) {
+    // Fetch matching drill_ids from the tag table, then IN-filter. RLS on the
+    // tag table handles system-vs-team visibility so we don't re-encode it.
+    const tagQuery = supabase
+      .from('practice_drill_deficit_tags' as never)
+      .select('drill_id')
+      .in('deficit_id', filters.deficitIds);
+
+    const { data: tagRows, error: tagError } =
+      filters.deficitPriority === 'primary'
+        ? await tagQuery.eq('priority', 'primary')
+        : await tagQuery;
+    if (tagError) throw tagError;
+    const drillIds = Array.from(
+      new Set(
+        ((tagRows as unknown as { drill_id: string }[]) ?? []).map((r) => r.drill_id),
+      ),
+    );
+    if (drillIds.length === 0) return [];
+    query = query.in('id', drillIds);
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
   const rows = (data as unknown as RawDrillRow[]) ?? [];
   const mapped = rows.map(mapDrill);
