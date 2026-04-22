@@ -1,37 +1,44 @@
 /**
  * maxpreps-export edge function
  *
- * Generates a MaxPreps-compatible TXT file for a completed game.
- * The file is tab-delimited and matches MaxPreps Score Reporter specifications.
+ * Request body (Tier 5, backwards compatible with the original single-game TXT):
+ *   { gameId: string }                             → TXT, byte-identical to pre-Tier-5 output (default)
+ *   { gameId: string, format: 'txt' }              → same as above
+ *   { gameId: string, format: 'xml' }              → MaxPreps stats XML for one game
+ *   { seasonId: string, format: 'xml' }            → MaxPreps stats XML for every completed game in the season
+ *   { seasonId: string, format: 'txt' }            → 400 (batch TXT intentionally unsupported — use XML)
  *
- * Request body: { gameId: string }
- * Response: text/plain file download
+ * Response: text/plain (TXT) or application/xml (XML) file download.
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { aggregateStats, applyCorrections, type PlayerStats, type RawEvent } from './stats.ts';
+import { buildMaxPrepsXml, type AggregatedGame, type AggregatedPlayer } from './xml.ts';
 
-Deno.serve(async (req: Request) => {
-  const corsResponse = handleCors(req);
-  if (corsResponse) return corsResponse;
+type SupabaseClient = ReturnType<typeof createClient>;
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
+interface GameRow {
+  id: string;
+  team_id: string;
+  opponent_name: string;
+  scheduled_at: string;
+  home_score: number;
+  away_score: number;
+  seasons: { name: string; teams: { name: string; organization: string } } | null;
+}
 
-  const { gameId } = await req.json();
-  if (!gameId) {
-    return new Response(JSON.stringify({ error: 'gameId is required' }), {
-      status: 400,
-      headers: corsHeaders,
-    });
-  }
+function jsonError(status: number, error: string): Response {
+  return new Response(JSON.stringify({ error }), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
 
-  // Fetch game info
-  const { data: game, error: gameError } = await supabase
+async function fetchGame(supabase: SupabaseClient, gameId: string): Promise<GameRow | null> {
+  const { data, error } = await supabase
     .from('games')
     .select(`
-      *,
+      id, team_id, opponent_name, scheduled_at, home_score, away_score,
       seasons (
         name,
         teams (name, organization, state_code)
@@ -40,40 +47,65 @@ Deno.serve(async (req: Request) => {
     .eq('id', gameId)
     .single();
 
-  if (gameError || !game) {
-    return new Response(JSON.stringify({ error: 'Game not found' }), {
-      status: 404,
-      headers: corsHeaders,
-    });
-  }
+  if (error || !data) return null;
+  return data as unknown as GameRow;
+}
 
-  // Fetch batting stats aggregated from game_events. Include id and
-  // sequence_number so correction events (EVENT_VOIDED / PITCH_REVERTED)
-  // can be applied before aggregation.
+async function fetchCompletedGamesForSeason(
+  supabase: SupabaseClient,
+  seasonId: string,
+): Promise<GameRow[]> {
+  const { data, error } = await supabase
+    .from('games')
+    .select(`
+      id, team_id, opponent_name, scheduled_at, home_score, away_score,
+      seasons (
+        name,
+        teams (name, organization, state_code)
+      )
+    `)
+    .eq('season_id', seasonId)
+    .eq('status', 'completed')
+    .order('scheduled_at', { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as unknown as GameRow[];
+}
+
+async function aggregateOneGame(
+  supabase: SupabaseClient,
+  game: GameRow,
+): Promise<{ playerStats: Map<string, PlayerStats>; players: Map<string, { id: string; first_name: string; last_name: string; jersey_number: number | null }> }> {
   const { data: events } = await supabase
     .from('game_events')
     .select('id, sequence_number, event_type, payload, inning, is_top_of_inning')
-    .eq('game_id', gameId)
+    .eq('game_id', game.id)
     .order('sequence_number');
 
-  const correctedEvents = applyCorrections(events ?? []);
-
-  // Aggregate per-player stats from events
+  const correctedEvents = applyCorrections((events ?? []) as unknown as RawEvent[]);
   const playerStats = aggregateStats(correctedEvents);
 
-  // Fetch player names
   const playerIds = [...playerStats.keys()];
-  const { data: players } = await supabase
-    .from('players')
-    .select('id, first_name, last_name, jersey_number')
-    .in('id', playerIds);
+  const { data: players } = playerIds.length === 0
+    ? { data: [] as Array<{ id: string; first_name: string; last_name: string; jersey_number: number | null }> }
+    : await supabase
+        .from('players')
+        .select('id, first_name, last_name, jersey_number')
+        .in('id', playerIds);
 
-  const playerMap = new Map((players ?? []).map((p: { id: string; first_name: string; last_name: string; jersey_number: number }) => [p.id, p]));
+  const playerMap = new Map(
+    (players ?? []).map((p) => [p.id as string, p as { id: string; first_name: string; last_name: string; jersey_number: number | null }]),
+  );
+  return { playerStats, players: playerMap };
+}
 
-  // Format MaxPreps TXT (simplified spec — actual MaxPreps spec requires
-  // account-specific school and team IDs which must be configured by the coach)
+function buildTxtForSingleGame(
+  game: GameRow,
+  playerStats: Map<string, PlayerStats>,
+  playerMap: Map<string, { first_name: string; last_name: string; jersey_number: number | null }>,
+): string {
   const gameDate = new Date(game.scheduled_at).toLocaleDateString('en-US');
-  const teamName = (game.seasons as { teams: { name: string; organization: string } })?.teams?.name ?? 'Team';
+  const teamName = game.seasons?.teams?.name ?? 'Team';
   const opponent = game.opponent_name;
   const homeScore = game.home_score;
   const awayScore = game.away_score;
@@ -84,7 +116,6 @@ Deno.serve(async (req: Request) => {
     `# Game: ${teamName} vs ${opponent} — ${gameDate}`,
     `# Final Score: ${homeScore}-${awayScore}`,
     '',
-    // Header row
     'PlayerID\tPlayerName\tJersey\tAB\tR\tH\t2B\t3B\tHR\tRBI\tBB\tSO\tAVG',
   ];
 
@@ -111,270 +142,117 @@ Deno.serve(async (req: Request) => {
     );
   }
 
-  const txt = lines.join('\n');
+  return lines.join('\n');
+}
 
-  return new Response(txt, {
+function buildAggregatedGame(
+  game: GameRow,
+  playerStats: Map<string, PlayerStats>,
+  playerMap: Map<string, { id: string; first_name: string; last_name: string; jersey_number: number | null }>,
+): AggregatedGame {
+  const teamName = game.seasons?.teams?.name ?? 'Team';
+  const players: AggregatedPlayer[] = [];
+  for (const [playerId, stats] of playerStats.entries()) {
+    const p = playerMap.get(playerId);
+    if (!p) continue;
+    players.push({
+      playerId,
+      firstName: p.first_name,
+      lastName: p.last_name,
+      jerseyNumber: p.jersey_number,
+      stats,
+    });
+  }
+  return {
+    gameId: game.id,
+    gameDate: game.scheduled_at,
+    teamName,
+    opponentName: game.opponent_name,
+    homeScore: game.home_score,
+    awayScore: game.away_score,
+    players,
+  };
+}
+
+Deno.serve(async (req: Request) => {
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+
+  let body: { gameId?: string; seasonId?: string; format?: 'txt' | 'xml' };
+  try {
+    body = await req.json();
+  } catch {
+    return jsonError(400, 'Invalid JSON body');
+  }
+
+  const format = body.format ?? 'txt';
+  if (format !== 'txt' && format !== 'xml') {
+    return jsonError(400, `Invalid format "${format}" — expected "txt" or "xml"`);
+  }
+
+  if (body.seasonId && format === 'txt') {
+    return jsonError(400, 'Batch export requires format:"xml"');
+  }
+  if (!body.gameId && !body.seasonId) {
+    return jsonError(400, 'gameId or seasonId is required');
+  }
+
+  // ─── Single-game path ────────────────────────────────────────────────────
+  if (body.gameId) {
+    const game = await fetchGame(supabase, body.gameId);
+    if (!game) return jsonError(404, 'Game not found');
+
+    const { playerStats, players } = await aggregateOneGame(supabase, game);
+
+    if (format === 'txt') {
+      const txt = buildTxtForSingleGame(game, playerStats, players);
+      return new Response(txt, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Content-Disposition': `attachment; filename="game-${body.gameId}-maxpreps.txt"`,
+        },
+      });
+    }
+
+    // format === 'xml'
+    const aggregated = buildAggregatedGame(game, playerStats, players);
+    const xml = buildMaxPrepsXml([aggregated]);
+    return new Response(xml, {
+      status: 200,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/xml; charset=utf-8',
+        'Content-Disposition': `attachment; filename="game-${body.gameId}-maxpreps.xml"`,
+      },
+    });
+  }
+
+  // ─── Season-batch path (XML only) ────────────────────────────────────────
+  const games = await fetchCompletedGamesForSeason(supabase, body.seasonId!);
+  if (games.length === 0) {
+    return jsonError(404, 'No completed games found for season');
+  }
+
+  const aggregatedGames: AggregatedGame[] = [];
+  for (const game of games) {
+    const { playerStats, players } = await aggregateOneGame(supabase, game);
+    aggregatedGames.push(buildAggregatedGame(game, playerStats, players));
+  }
+
+  const xml = buildMaxPrepsXml(aggregatedGames);
+  return new Response(xml, {
     status: 200,
     headers: {
       ...corsHeaders,
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Content-Disposition': `attachment; filename="game-${gameId}-maxpreps.txt"`,
+      'Content-Type': 'application/xml; charset=utf-8',
+      'Content-Disposition': `attachment; filename="season-${body.seasonId}-maxpreps.xml"`,
     },
   });
 });
-
-interface PlayerStats {
-  ab: number;
-  r: number;
-  h: number;
-  doubles: number;
-  triples: number;
-  hr: number;
-  rbi: number;
-  bb: number;
-  so: number;
-}
-
-type RawEvent = {
-  id?: string;
-  sequence_number?: number;
-  event_type: string;
-  payload: Record<string, unknown>;
-  inning?: number;
-  is_top_of_inning: boolean;
-};
-
-/**
- * Mirror of packages/shared/src/utils/event-filters.ts applyPitchReverted,
- * inlined because Deno edge functions can't import from @baseball/shared
- * at runtime. Removes events targeted by EVENT_VOIDED and trims the tail
- * back to revertToSequenceNumber on PITCH_REVERTED.
- */
-function applyCorrections(events: RawEvent[]): RawEvent[] {
-  const result: RawEvent[] = [];
-  for (const event of events) {
-    const etype = event.event_type;
-    if (etype === 'pitch_reverted') {
-      const keepUntilSeq = (event.payload?.revertToSequenceNumber as number | undefined) ?? 0;
-      // Tail-pop instead of splice(0, len, ...result.filter(...)) so we
-      // don't spread a potentially large array through the argument list.
-      while (
-        result.length > 0 &&
-        (result[result.length - 1].sequence_number ?? 0) > keepUntilSeq
-      ) {
-        result.pop();
-      }
-    } else if (etype === 'event_voided') {
-      const voidedId = event.payload?.voidedEventId as string | undefined;
-      if (!voidedId) continue;
-      const idx = result.findIndex((e) => e.id === voidedId);
-      if (idx !== -1) result.splice(idx, 1);
-    } else {
-      result.push(event);
-    }
-  }
-  return result;
-}
-
-function aggregateStats(events: RawEvent[]): Map<string, PlayerStats> {
-  const stats = new Map<string, PlayerStats>();
-
-  // Runner tracking for RBI auto-derive (OBR 9.04). Mirrors the logic in
-  // packages/shared/src/utils/batting-stats.ts so the MaxPreps export stays
-  // consistent with what the app displays.
-  let r1: string | null = null;
-  let r2: string | null = null;
-  let r3: string | null = null;
-
-  function get(id: string): PlayerStats {
-    if (!stats.has(id)) {
-      stats.set(id, { ab: 0, r: 0, h: 0, doubles: 0, triples: 0, hr: 0, rbi: 0, bb: 0, so: 0 });
-    }
-    return stats.get(id)!;
-  }
-  function scoreRunner(id: string | null) { if (id) get(id).r++; }
-  function clearBases() { r1 = null; r2 = null; r3 = null; }
-  function forceAdvance(batterId: string) {
-    if (r1 && r2 && r3) scoreRunner(r3);
-    if (r1 && r2) r3 = r2;
-    if (r1) r2 = r1;
-    r1 = batterId;
-  }
-  function creditRbi(batterStats: PlayerStats, payload: Record<string, unknown>, autoDerived: number) {
-    const explicit = payload.rbis as number | undefined;
-    batterStats.rbi += explicit !== undefined ? explicit : autoDerived;
-  }
-
-  for (const event of events) {
-    const p = event.payload;
-    const etype = event.event_type;
-
-    if (etype === 'inning_change') { clearBases(); continue; }
-
-    const batterId = p.batterId as string | undefined;
-
-    if (etype === 'hit') {
-      if (!batterId) continue;
-      const s = get(batterId);
-      const hitType = p.hitType as string;
-      const fieldersChoice = p.fieldersChoice === true;
-      s.ab++;
-      if (!fieldersChoice) {
-        s.h++;
-        if (hitType === 'double') s.doubles++;
-        else if (hitType === 'triple') s.triples++;
-        else if (hitType === 'home_run') s.hr++;
-      }
-      const bases = hitType === 'home_run' ? 4
-        : hitType === 'triple' ? 3
-        : hitType === 'double' ? 2
-        : 1;
-      let runsScored = 0;
-      if (bases === 4) {
-        if (r3) runsScored++;
-        if (r2) runsScored++;
-        if (r1) runsScored++;
-        runsScored++;
-        scoreRunner(r3); scoreRunner(r2); scoreRunner(r1); scoreRunner(batterId);
-        clearBases();
-      } else {
-        if (r3) { scoreRunner(r3); runsScored++; }
-        if (r2 && 2 + bases >= 4) { scoreRunner(r2); runsScored++; }
-        if (r1 && 1 + bases >= 4) { scoreRunner(r1); runsScored++; }
-        if (bases === 1) { r3 = r2 ?? null; r2 = r1; r1 = batterId; }
-        else if (bases === 2) { r3 = r1 ?? null; r2 = batterId; r1 = null; }
-        else if (bases === 3) { r3 = batterId; r2 = null; r1 = null; }
-      }
-      creditRbi(s, p, runsScored);
-      continue;
-    }
-
-    if (etype === 'out') {
-      if (!batterId) continue;
-      const s = get(batterId);
-      s.ab++;
-      if (p.outType === 'strikeout') s.so++;
-      creditRbi(s, p, 0);
-      continue;
-    }
-
-    if (etype === 'strikeout') {
-      if (!batterId) continue;
-      const s = get(batterId);
-      s.ab++; s.so++;
-      continue;
-    }
-
-    if (etype === 'double_play' || etype === 'triple_play') {
-      if (!batterId) continue;
-      get(batterId).ab++;
-      if (etype === 'double_play') {
-        const runnerOutBase = p.runnerOutBase as number | undefined;
-        if (runnerOutBase === 1) r1 = null;
-        else if (runnerOutBase === 2) r2 = null;
-        else if (runnerOutBase === 3) r3 = null;
-      }
-      continue;
-    }
-
-    if (etype === 'walk') {
-      if (!batterId) continue;
-      const s = get(batterId);
-      s.bb++;
-      const forcedRun = !!(r1 && r2 && r3);
-      forceAdvance(batterId);
-      creditRbi(s, p, forcedRun ? 1 : 0);
-      continue;
-    }
-
-    if (etype === 'hit_by_pitch' || etype === 'catcher_interference') {
-      if (!batterId) continue;
-      const s = get(batterId);
-      const forcedRun = !!(r1 && r2 && r3);
-      forceAdvance(batterId);
-      creditRbi(s, p, forcedRun ? 1 : 0);
-      continue;
-    }
-
-    if (etype === 'sacrifice_fly') {
-      if (!batterId) continue;
-      const s = get(batterId);
-      const runScored = !!r3;
-      if (r3) { scoreRunner(r3); r3 = null; }
-      creditRbi(s, p, runScored ? 1 : 0);
-      continue;
-    }
-
-    if (etype === 'sacrifice_bunt') {
-      if (!batterId) continue;
-      const s = get(batterId);
-      const runScored = !!r3;
-      if (r3) scoreRunner(r3);
-      r3 = r2 ?? null;
-      r2 = r1;
-      r1 = null;
-      creditRbi(s, p, runScored ? 1 : 0);
-      continue;
-    }
-
-    if (etype === 'field_error') {
-      if (!batterId) continue;
-      get(batterId).ab++;
-      forceAdvance(batterId);
-      continue;
-    }
-
-    if (etype === 'dropped_third_strike') {
-      if (!batterId) continue;
-      const s = get(batterId);
-      s.ab++; s.so++;
-      if (p.outcome !== 'thrown_out') forceAdvance(batterId);
-      continue;
-    }
-
-    if (etype === 'stolen_base') {
-      const runnerId = p.runnerId as string | undefined;
-      const toBase = p.toBase as number | undefined;
-      if (!runnerId || !toBase) continue;
-      if (r1 === runnerId) r1 = null;
-      else if (r2 === runnerId) r2 = null;
-      else if (r3 === runnerId) r3 = null;
-      if (toBase === 3) r3 = runnerId;
-      else if (toBase === 2) r2 = runnerId;
-      continue;
-    }
-
-    if (etype === 'caught_stealing' || etype === 'baserunner_out') {
-      const runnerId = p.runnerId as string | undefined;
-      if (r1 === runnerId) r1 = null;
-      else if (r2 === runnerId) r2 = null;
-      else if (r3 === runnerId) r3 = null;
-      continue;
-    }
-
-    if (etype === 'baserunner_advance') {
-      const runnerId = p.runnerId as string | undefined;
-      const toBase = p.toBase as number | undefined;
-      if (!runnerId || !toBase) continue;
-      if (r1 === runnerId) r1 = null;
-      else if (r2 === runnerId) r2 = null;
-      else if (r3 === runnerId) r3 = null;
-      if (toBase === 3) r3 = runnerId;
-      else if (toBase === 2) r2 = runnerId;
-      else if (toBase === 1) r1 = runnerId;
-      continue;
-    }
-
-    if (etype === 'score') {
-      const scoringPlayerId = p.scoringPlayerId as string | undefined;
-      if (!scoringPlayerId) continue;
-      scoreRunner(scoringPlayerId);
-      if (r3 === scoringPlayerId) r3 = null;
-      else if (r2 === scoringPlayerId) r2 = null;
-      else if (r1 === scoringPlayerId) r1 = null;
-      continue;
-    }
-  }
-
-  return stats;
-}
