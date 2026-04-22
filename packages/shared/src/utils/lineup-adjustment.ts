@@ -37,10 +37,12 @@ export function suggestLineupAdjustment(args: {
   // Cold hitters currently in the top slots are demotion candidates.
   const demotionCandidates = topSlots.filter((s) => coldPlayerIds.has(s.playerId));
 
-  // Hot hitters not yet in the top slots are promotion candidates.
-  const promotionCandidates = args.hotHitters.filter(
-    (h) => !topPlayerIds.has(h.playerId) && starterByPlayerId.has(h.playerId),
-  );
+  // Hot hitters not yet in the top slots are promotion candidates. Sort by
+  // rank ascending (1 = hottest) so the hottest eligible bat is promoted
+  // first, regardless of caller ordering.
+  const promotionCandidates = args.hotHitters
+    .filter((h) => !topPlayerIds.has(h.playerId) && starterByPlayerId.has(h.playerId))
+    .sort((a, b) => a.rank - b.rank);
 
   const suggestions: LineupSwapSuggestion[] = [];
 

@@ -1,7 +1,9 @@
 import {
   PracticeRepCoachTag,
+  PRACTICE_REP_OUTCOME_DEFAULT_CATEGORY,
   PracticeRepOutcomeCategory,
   type PracticeRep,
+  type PracticeRepOutcome,
 } from '../../types/practice-rep';
 import { identifyColdHitters, rankHotHitters } from '../practice-hot-hitters';
 
@@ -11,10 +13,15 @@ function rep(
   overrides: Partial<PracticeRep> & { playerId: string; outcome: string },
 ): PracticeRep {
   seq += 1;
+  // Default outcomeCategory from the canonical map so tests match prod
+  // behavior (the RepCaptureForm derives category the same way).
+  const fallbackCategory =
+    PRACTICE_REP_OUTCOME_DEFAULT_CATEGORY[overrides.outcome as PracticeRepOutcome] ??
+    PracticeRepOutcomeCategory.NEUTRAL;
   return {
     id: `rep-${seq}`,
     practiceId: 'pr-1',
-    outcomeCategory: PracticeRepOutcomeCategory.NEUTRAL,
+    outcomeCategory: fallbackCategory,
     metrics: {},
     recordedAt: '2026-04-22T18:00:00Z',
     ...overrides,

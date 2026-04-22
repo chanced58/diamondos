@@ -70,23 +70,38 @@ export function computePitcherAvailability(
     }
 
     const mostRecent = history[0];
-    const requiredRest = getRequiredRestDays(mostRecent.pitchCount, rule);
-    const eligibleDate = getEligibleDate(mostRecent.gameDate, requiredRest);
+
+    // "Last pitched" is just the most recent appearance. "Eligible date" is
+    // the LATEST of (game + rest days) across every recent appearance — a
+    // heavy earlier outing can block availability beyond the most-recent
+    // outing's rest window. Treat them separately.
+    let maxEligibleDate = asOfIso;
+    let blockingEntry = mostRecent;
+    let blockingRest = 0;
+    for (const entry of history) {
+      const rest = getRequiredRestDays(entry.pitchCount, rule);
+      const eligible = getEligibleDate(entry.gameDate, rest);
+      if (eligible > maxEligibleDate) {
+        maxEligibleDate = eligible;
+        blockingEntry = entry;
+        blockingRest = rest;
+      }
+    }
 
     const pitchesLast7d = history
       .filter((h) => new Date(h.gameDate) >= windowStart)
       .reduce((sum, h) => sum + h.pitchCount, 0);
 
-    if (eligibleDate > asOfIso) {
+    if (maxEligibleDate > asOfIso) {
       return {
         playerId: pitcher.id,
         status: PitcherAvailabilityStatus.UNAVAILABLE,
-        nextAvailableDate: eligibleDate,
+        nextAvailableDate: maxEligibleDate,
         pitchesLast7d,
         lastPitchedAt: mostRecent.gameDate,
         reason:
-          `Threw ${mostRecent.pitchCount} on ${mostRecent.gameDate} — ` +
-          `needs ${requiredRest} rest day${requiredRest === 1 ? '' : 's'}. Clears ${eligibleDate}.`,
+          `Threw ${blockingEntry.pitchCount} on ${blockingEntry.gameDate} — ` +
+          `needs ${blockingRest} rest day${blockingRest === 1 ? '' : 's'}. Clears ${maxEligibleDate}.`,
       };
     }
 

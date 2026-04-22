@@ -97,12 +97,20 @@ describe('deriveOpponentTendencies — pitcher handedness', () => {
   });
 
   it('ignores inactive pitchers', () => {
+    // 3 active right-handed pitchers (meets the handedness min-sample) and
+    // 2 inactive left-handed pitchers. If the filter were broken, the ratio
+    // would be 2/5 = 40% LHP → "lefty_heavy". When working, only active R's
+    // are counted → "righty_only".
     const roster: OpponentPlayer[] = [
-      pitcher({ id: 'p1', throws: BatsThrows.LEFT, isActive: false }),
-      pitcher({ id: 'p2', throws: BatsThrows.RIGHT }),
+      pitcher({ id: 'r1', throws: BatsThrows.RIGHT }),
+      pitcher({ id: 'r2', throws: BatsThrows.RIGHT }),
+      pitcher({ id: 'r3', throws: BatsThrows.RIGHT }),
+      pitcher({ id: 'l1-inactive', throws: BatsThrows.LEFT, isActive: false }),
+      pitcher({ id: 'l2-inactive', throws: BatsThrows.LEFT, isActive: false }),
     ];
     const tags = deriveOpponentTendencies([], roster);
-    expect(tags.filter((t) => t.category === OpponentScoutingCategory.PITCHER_HANDEDNESS)).toHaveLength(0);
+    const handedness = tags.find((t) => t.category === OpponentScoutingCategory.PITCHER_HANDEDNESS);
+    expect(handedness?.tagValue).toBe('righty_only');
   });
 });
 

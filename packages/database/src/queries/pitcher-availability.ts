@@ -31,6 +31,7 @@ export async function listPitchersWithUsage(
   const fromDate = new Date(asOfDate);
   fromDate.setDate(fromDate.getDate() - 10);
   const fromIso = fromDate.toISOString().split('T')[0];
+  const toIso = asOfDate.toISOString().split('T')[0];
 
   const [{ data: playerRows, error: playersErr }, { data: ruleRows, error: ruleErr }] =
     await Promise.all([
@@ -142,6 +143,7 @@ export async function listPitchersWithUsage(
     .select('player_id, game_date, pitch_count')
     .in('player_id', pitcherIds)
     .gte('game_date', fromIso)
+    .lte('game_date', toIso)
     .order('game_date', { ascending: false });
   if (countErr) throw countErr;
 

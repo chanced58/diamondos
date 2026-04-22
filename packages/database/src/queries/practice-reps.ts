@@ -30,21 +30,23 @@ export async function insertPracticeReps(
 }
 
 /**
- * Lists practice reps for a team across all practices since `sinceDate`.
- * Cross-joins through practices (practices.team_id). Used by the hot-hitter
- * ranker, which expects per-player rep counts in a rolling window.
+ * Lists practice reps for a team with recorded_at >= sinceDate.
+ * Filtering on recorded_at (not the practice's scheduled_at) matters when
+ * reps are logged late against rescheduled or older practices — the
+ * hot-hitter ranker cares about what was *recorded* recently, not what was
+ * *scheduled* recently.
  */
 export async function listTeamPracticeReps(
   supabase: TypedSupabaseClient,
   teamId: string,
   sinceDate: Date,
 ): Promise<PracticeRep[]> {
-  // Two-step: find practice ids for this team since the date, then reps.
+  // Team-scope via the practices join (no scheduled_at gate — reps are
+  // filtered by recorded_at below).
   const { data: practices, error: practicesErr } = await supabase
     .from('practices')
     .select('id')
-    .eq('team_id', teamId)
-    .gte('scheduled_at', sinceDate.toISOString());
+    .eq('team_id', teamId);
   if (practicesErr) throw practicesErr;
 
   const ids = ((practices ?? []) as Array<{ id: string }>).map((p) => p.id);
@@ -54,6 +56,7 @@ export async function listTeamPracticeReps(
     .from('practice_reps')
     .select('*')
     .in('practice_id', ids)
+    .gte('recorded_at', sinceDate.toISOString())
     .order('recorded_at', { ascending: false });
   if (error) throw error;
 

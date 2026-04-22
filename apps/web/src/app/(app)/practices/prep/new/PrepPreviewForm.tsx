@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SuggestedBlock } from '@baseball/shared';
 import { createPrepPracticeAction } from './actions';
@@ -21,29 +21,34 @@ export function PrepPreviewForm(props: Props): JSX.Element {
   const router = useRouter();
   const [scheduledAt, setScheduledAt] = useState(toLocalInput(props.scheduledAt));
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  // Explicit submit state guards against useTransition's sync completion
+  // clearing isSubmitting before the server action resolves (which would let
+  // a fast double-click fire two practice-creation requests).
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (isSubmitting) return;
     setError(null);
-    startTransition(() => {
-      void (async () => {
-        const result = await createPrepPracticeAction({
-          teamId: props.teamId,
-          linkedGameId: props.linkedGameId,
-          scheduledAt: new Date(scheduledAt).toISOString(),
-          durationMinutes: props.durationMinutes,
-          prepFocusSummary: props.focusSummary,
-          blocks: props.blocks,
-        });
-        if (typeof result === 'string') {
-          setError(result);
-          return;
-        }
-        router.push(`/practices/${result.practiceId}`);
-        router.refresh();
-      })();
-    });
+    setIsSubmitting(true);
+    try {
+      const result = await createPrepPracticeAction({
+        teamId: props.teamId,
+        linkedGameId: props.linkedGameId,
+        scheduledAt: new Date(scheduledAt).toISOString(),
+        durationMinutes: props.durationMinutes,
+        prepFocusSummary: props.focusSummary,
+        blocks: props.blocks,
+      });
+      if (typeof result === 'string') {
+        setError(result);
+        return;
+      }
+      router.push(`/practices/${result.practiceId}`);
+      router.refresh();
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -89,10 +94,10 @@ export function PrepPreviewForm(props: Props): JSX.Element {
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={isPending}
+          disabled={isSubmitting}
           className="bg-brand-700 text-white font-semibold px-5 py-2 rounded-lg hover:bg-brand-800 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
         >
-          {isPending ? 'Creating…' : 'Create prep practice'}
+          {isSubmitting ? 'Creating…' : 'Create prep practice'}
         </button>
         <button
           type="button"

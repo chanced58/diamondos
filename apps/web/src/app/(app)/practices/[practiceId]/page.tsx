@@ -86,6 +86,7 @@ export default async function PracticeNotesPage({
       .from('games')
       .select('opponent_name, scheduled_at')
       .eq('id', practice.linked_game_id)
+      .eq('team_id', practice.team_id)
       .maybeSingle();
     if (linkedGame) {
       prepTarget = {

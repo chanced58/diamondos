@@ -64,13 +64,31 @@ describe('computePitcherAvailability', () => {
     expect(out[0].pitchesLast7d).toBe(70);
   });
 
-  it('uses the most recent game for rest calculation', () => {
+  it('reports lastPitchedAt as the most recent appearance', () => {
     const counts: PitchCountRecord[] = [
-      { playerId: 'p1', gameDate: '2026-04-10', pitchCount: 100 }, // long ago
-      { playerId: 'p1', gameDate: '2026-04-21', pitchCount: 20 },  // yesterday
+      { playerId: 'p1', gameDate: '2026-04-10', pitchCount: 100 },
+      { playerId: 'p1', gameDate: '2026-04-21', pitchCount: 20 },
     ];
     const out = computePitcherAvailability([player('p1')], counts, NFHS, target);
     expect(out[0].lastPitchedAt).toBe('2026-04-21');
+  });
+
+  it('takes the MAX rest-end across recent outings, not just the most recent game', () => {
+    // Heavy earlier outing: 85 pitches Sat Apr 18 → NFHS 4 rest days → clears Apr 23.
+    // Light recent outing:   20 pitches Sun Apr 19 → NFHS 0 rest days → clears Apr 20.
+    // Target: Apr 22. The earlier heavy outing still blocks availability.
+    const counts: PitchCountRecord[] = [
+      { playerId: 'p1', gameDate: '2026-04-18', pitchCount: 85 },
+      { playerId: 'p1', gameDate: '2026-04-19', pitchCount: 20 },
+    ];
+    const out = computePitcherAvailability([player('p1')], counts, NFHS, target);
+    expect(out[0].status).toBe(PitcherAvailabilityStatus.UNAVAILABLE);
+    // Rest clears day after Apr 18 + 4 rest days = Apr 23.
+    expect(out[0].nextAvailableDate).toBe('2026-04-23');
+    // But lastPitchedAt still tracks the most recent game.
+    expect(out[0].lastPitchedAt).toBe('2026-04-19');
+    // The reason string names the blocking outing, not just the latest.
+    expect(out[0].reason).toContain('2026-04-18');
   });
 
   it('handles multiple pitchers independently', () => {

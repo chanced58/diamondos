@@ -52,9 +52,10 @@ export default async function BullpenPage({ searchParams }: PageProps): Promise<
   );
 
   // Default target date: next scheduled game's date, or today if none.
+  // Parse YYYY-MM-DD as local (not UTC) so it round-trips with toDateInput().
   let targetDate: Date;
   if (sp?.date) {
-    targetDate = new Date(sp.date);
+    targetDate = parseLocalDate(sp.date);
   } else {
     const nextGame = await getNextGameForTeam(db as never, activeTeam.id);
     targetDate = nextGame ? new Date(nextGame.scheduledAt) : new Date();
@@ -124,7 +125,7 @@ export default async function BullpenPage({ searchParams }: PageProps): Promise<
                       )}
                     </div>
                     {player.throws && (
-                      <div className="text-xs text-gray-500 uppercase">{player.throws}HP</div>
+                      <div className="text-xs text-gray-500">{handednessLabel(player.throws)}HP</div>
                     )}
                   </td>
                   <td className="px-4 py-2">
@@ -147,4 +148,23 @@ export default async function BullpenPage({ searchParams }: PageProps): Promise<
 function toDateInput(date: Date): string {
   const pad = (n: number) => n.toString().padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * Parses a YYYY-MM-DD string as a Date at local midnight. `new Date("YYYY-MM-DD")`
+ * is specified to be UTC, which causes off-by-one days when rendering via
+ * toDateInput() in non-UTC timezones — so we construct explicitly with
+ * year/month/day in local time.
+ */
+function parseLocalDate(s: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!match) return new Date(s);
+  const [, y, m, d] = match;
+  return new Date(Number(y), Number(m) - 1, Number(d));
+}
+
+function handednessLabel(throws: string): 'R' | 'L' | 'S' {
+  if (throws === 'left') return 'L';
+  if (throws === 'switch') return 'S';
+  return 'R';
 }

@@ -112,15 +112,23 @@ export default async function GameDetailPage({
 
   // Tier 6 F2: compute weakness takeaways for completed games when the viewer is a coach.
   let weaknesses: Awaited<ReturnType<typeof getGameWeaknesses>> = [];
+  let weaknessesUnavailable = false;
   let lostGame = false;
   if (isCompleted && isCoach) {
+    const weHome = weAreHome(game.location_type, game.neutral_home_team);
+    const ourScore = weHome ? game.home_score : game.away_score;
+    const theirScore = weHome ? game.away_score : game.home_score;
+    lostGame = ourScore < theirScore;
+
     try {
       weaknesses = await getGameWeaknesses(db as never, params.gameId, game.team_id);
-      const weHome = weAreHome(game.location_type, game.neutral_home_team);
-      const ourScore = weHome ? game.home_score : game.away_score;
-      const theirScore = weHome ? game.away_score : game.home_score;
-      lostGame = ourScore < theirScore;
-    } catch {
+    } catch (err) {
+      console.error('[GameDetail] getGameWeaknesses failed', {
+        gameId: params.gameId,
+        teamId: game.team_id,
+        err,
+      });
+      weaknessesUnavailable = true;
       weaknesses = [];
     }
   }
@@ -189,13 +197,18 @@ export default async function GameDetailPage({
           <GameTakeaways weaknesses={weaknesses} lostGame={lostGame} />
           <div className="mb-6">
             <Link
-              href="/practices/prep/new"
+              href={`/practices/prep/new?sourceGameId=${game.id}`}
               className="inline-block bg-amber-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-amber-700 transition-colors text-sm"
             >
               Create prep practice from these takeaways
             </Link>
           </div>
         </>
+      )}
+      {isCompleted && isCoach && weaknessesUnavailable && (
+        <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-600">
+          Takeaways are temporarily unavailable for this game. Reload to try again.
+        </div>
       )}
 
       {/* ── Edit game (coaches only) ────────────────────────────── */}

@@ -87,7 +87,7 @@ export function detectWeaknesses(
   const risp = detectRispFailure(events, ctx);
   if (risp) signals.push(risp);
 
-  const errors = detectDefensiveErrors(events);
+  const errors = detectDefensiveErrors(events, ctx);
   if (errors) signals.push(errors);
 
   const walks = detectWalksIssued(events, ctx);
@@ -316,12 +316,9 @@ function detectRispFailure(
       if ((payload.toBase ?? 0) >= 2) runnerOnSecondOrThird = true;
     }
 
-    if (e.eventType === EventType.HIT) {
-      // A hit could put a runner on 2B — rough heuristic: doubles/triples/HRs
-      const p = e.payload as { hitType?: string };
-      if (p.hitType === 'double' || p.hitType === 'triple') runnerOnSecondOrThird = true;
-    }
-
+    // PA_END must be evaluated BEFORE the HIT branch mutates baserunner state,
+    // otherwise a leadoff double counts itself as a RISP PA (the PA ended
+    // with no runner in scoring position; it PUTS a runner there).
     if (PA_END.has(e.eventType)) {
       const ours = isOurBatterEvent(e.payload as never, ctx.ourPlayerIds);
       if (ours && runnerOnSecondOrThird) {
@@ -330,6 +327,13 @@ function detectRispFailure(
           rispProductive++;
         }
       }
+    }
+
+    if (e.eventType === EventType.HIT) {
+      // A hit could put a runner on 2B — rough heuristic: doubles/triples.
+      // Evaluated AFTER the PA_END check so the current PA isn't affected.
+      const p = e.payload as { hitType?: string };
+      if (p.hitType === 'double' || p.hitType === 'triple') runnerOnSecondOrThird = true;
     }
   }
 
@@ -354,13 +358,23 @@ function detectRispFailure(
   };
 }
 
-function detectDefensiveErrors(events: GameEvent[]): WeaknessSignal | null {
-  const errorEvents = events.filter((e) => e.eventType === EventType.FIELD_ERROR);
-  // Also count errors embedded in OUT payloads (some event shapes mark them as reached-on-error).
+function detectDefensiveErrors(
+  events: GameEvent[],
+  ctx: DetectContext,
+): WeaknessSignal | null {
+  // Defensive errors are ours only when we're fielding, i.e. when our
+  // pitcher (equivalently the opposing batter) is involved. A FIELD_ERROR
+  // or "reached-on-error" OUT during our at-bat is the OPPONENT's error —
+  // not a weakness of ours.
+  const errorEvents = events.filter(
+    (e) => e.eventType === EventType.FIELD_ERROR &&
+      isOurPitcherEvent(e.payload as never, ctx.ourPlayerIds),
+  );
   const reachedOnError = events.filter((e) => {
     if (e.eventType !== EventType.OUT) return false;
     const payload = e.payload as OutPayload & { error?: boolean };
-    return payload.error === true;
+    if (payload.error !== true) return false;
+    return isOurPitcherEvent(payload as never, ctx.ourPlayerIds);
   });
 
   const total = errorEvents.length + reachedOnError.length;

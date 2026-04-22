@@ -31,13 +31,26 @@ export function deriveOpponentTendencies(
   opponentPlayers: OpponentPlayer[],
 ): DerivedScoutingTag[] {
   return [
-    ...derivePitchMix(eventsVsOpponent),
+    ...derivePitchMix(eventsVsOpponent, opponentPlayers),
     ...derivePitcherHandedness(opponentPlayers),
   ];
 }
 
-function derivePitchMix(events: GameEvent[]): DerivedScoutingTag[] {
-  const pitches = events.filter((e) => e.eventType === EventType.PITCH_THROWN);
+function derivePitchMix(
+  events: GameEvent[],
+  _opponentPlayers: OpponentPlayer[],
+): DerivedScoutingTag[] {
+  // Past-games events include pitches from BOTH sides. Limit to pitches
+  // thrown by the opponent — identified by payload.opponentPitcherId.
+  // When only pitcherId is set, the pitcher is one of OUR players — skip.
+  // (The caller already scopes events to games vs this opponent, so any
+  // opponentPitcherId in the payload is that opponent's pitcher.)
+  const pitches = events.filter((e) => {
+    if (e.eventType !== EventType.PITCH_THROWN) return false;
+    const payload = e.payload as PitchThrownPayload;
+    if (payload.opponentPitcherId) return true;
+    return false;
+  });
   const typed = pitches.filter((e) => (e.payload as PitchThrownPayload).pitchType);
   if (typed.length < SCOUTING_DERIVE_MIN_SAMPLES.pitchMix) return [];
 

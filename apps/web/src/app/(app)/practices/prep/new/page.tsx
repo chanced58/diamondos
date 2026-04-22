@@ -29,7 +29,7 @@ import { PrepPreviewForm } from './PrepPreviewForm';
 export const metadata: Metadata = { title: 'Prep for next game' };
 
 interface PageProps {
-  searchParams: Promise<{ duration?: string }>;
+  searchParams: Promise<{ duration?: string; sourceGameId?: string }>;
 }
 
 const DEFAULT_DURATION = 90;
@@ -37,6 +37,7 @@ const DEFAULT_DURATION = 90;
 export default async function PrepNewPage({ searchParams }: PageProps): Promise<JSX.Element | null> {
   const sp = await searchParams;
   const durationMinutes = sp?.duration ? Math.max(30, Math.min(180, parseInt(sp.duration, 10) || DEFAULT_DURATION)) : DEFAULT_DURATION;
+  const sourceGameId = sp?.sourceGameId ?? null;
 
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
@@ -80,7 +81,7 @@ export default async function PrepNewPage({ searchParams }: PageProps): Promise<
   }
 
   const [weaknesses, tendencies, drillsWithTags] = await Promise.all([
-    loadRecentWeaknesses(db, activeTeam.id),
+    loadRecentWeaknesses(db, activeTeam.id, sourceGameId),
     loadOpponentTendencies(db, activeTeam.id, nextGame.opponentTeamId),
     loadDrillsAndTags(db, activeTeam.id),
   ]);
@@ -141,26 +142,49 @@ export default async function PrepNewPage({ searchParams }: PageProps): Promise<
 async function loadRecentWeaknesses(
   db: SupabaseUntyped,
   teamId: string,
+  sourceGameId: string | null,
 ): Promise<HydratedWeaknessSignal[]> {
-  // Look back 21 days for the most recent completed game; compute signals there.
-  const twentyOneDaysAgo = new Date(Date.now() - 21 * 24 * 3600 * 1000).toISOString();
-  const { data: games } = await db
-    .from('games')
-    .select('id, completed_at')
-    .eq('team_id', teamId)
-    .eq('status', 'completed')
-    .gt('completed_at', twentyOneDaysAgo)
-    .order('completed_at', { ascending: false })
-    .limit(1);
+  // If the coach deep-linked from a specific game's takeaways, anchor to that
+  // game (and still verify it belongs to this team). Otherwise fall back to
+  // the most recent completed game in the last 21 days.
+  let sourceGame: { id: string } | null = null;
+  if (sourceGameId) {
+    const { data: specificGame, error } = await db
+      .from('games')
+      .select('id')
+      .eq('id', sourceGameId)
+      .eq('team_id', teamId)
+      .eq('status', 'completed')
+      .maybeSingle();
+    if (error) throw new Error(`Failed to load source game: ${error.message}`);
+    sourceGame = specificGame ? { id: (specificGame as { id: string }).id } : null;
+  }
+  if (!sourceGame) {
+    const twentyOneDaysAgo = new Date(Date.now() - 21 * 24 * 3600 * 1000).toISOString();
+    const { data: games, error } = await db
+      .from('games')
+      .select('id, completed_at')
+      .eq('team_id', teamId)
+      .eq('status', 'completed')
+      .gt('completed_at', twentyOneDaysAgo)
+      .order('completed_at', { ascending: false })
+      .limit(1);
+    if (error) throw new Error(`Failed to load recent games: ${error.message}`);
+    sourceGame = ((games ?? []) as Array<{ id: string }>)[0] ?? null;
+  }
+  if (!sourceGame) return [];
 
-  const lastGame = ((games ?? []) as Array<{ id: string }>)[0];
-  if (!lastGame) return [];
-
-  const [{ data: events }, { data: playerRows }, { data: mapRows }] = await Promise.all([
-    db.from('game_events').select('*').eq('game_id', lastGame.id).order('sequence_number'),
+  const [eventsResult, playersResult, mapResult] = await Promise.all([
+    db.from('game_events').select('*').eq('game_id', sourceGame.id).order('sequence_number'),
     db.from('players').select('id').eq('team_id', teamId),
     db.from('weakness_deficit_map').select('weakness_code, deficit_slug'),
   ]);
+  if (eventsResult.error) throw new Error(`Failed to load game events: ${eventsResult.error.message}`);
+  if (playersResult.error) throw new Error(`Failed to load players: ${playersResult.error.message}`);
+  if (mapResult.error) throw new Error(`Failed to load weakness map: ${mapResult.error.message}`);
+  const events = eventsResult.data;
+  const playerRows = playersResult.data;
+  const mapRows = mapResult.data;
 
   const ourPlayerIds = new Set(((playerRows ?? []) as Array<{ id: string }>).map((p) => p.id));
   const rawEvents = (events ?? []) as Array<{
@@ -196,11 +220,12 @@ async function loadRecentWeaknesses(
   for (const s of signals) for (const slug of slugsByCode.get(s.code) ?? []) needed.add(slug);
   if (needed.size === 0) return signals.map((s) => ({ ...s, suggestedDeficitIds: [] }));
 
-  const { data: deficitRows } = await db
+  const { data: deficitRows, error: deficitErr } = await db
     .from('practice_deficits')
     .select('id, slug')
     .eq('visibility', 'system')
     .in('slug', Array.from(needed));
+  if (deficitErr) throw new Error(`Failed to hydrate deficits: ${deficitErr.message}`);
   const idBySlug = new Map(
     ((deficitRows ?? []) as Array<{ id: string; slug: string }>).map((r) => [r.slug, r.id]),
   );
@@ -219,18 +244,23 @@ async function loadOpponentTendencies(
 ): Promise<DerivedScoutingTag[]> {
   if (!opponentTeamId) return [];
 
-  const [{ data: pastGames }, { data: oppPlayers }] = await Promise.all([
+  const [pastGamesResult, oppPlayersResult] = await Promise.all([
     db.from('games').select('id').eq('team_id', teamId).eq('opponent_team_id', opponentTeamId),
     db.from('opponent_players').select('*').eq('opponent_team_id', opponentTeamId),
   ]);
+  if (pastGamesResult.error) throw new Error(`Failed to load past games: ${pastGamesResult.error.message}`);
+  if (oppPlayersResult.error) throw new Error(`Failed to load opponent roster: ${oppPlayersResult.error.message}`);
+  const pastGames = pastGamesResult.data;
+  const oppPlayers = oppPlayersResult.data;
 
   const gameIds = ((pastGames ?? []) as Array<{ id: string }>).map((g) => g.id);
   let mappedEvents: GameEvent[] = [];
   if (gameIds.length > 0) {
-    const { data: events } = await db
+    const { data: events, error: eventsErr } = await db
       .from('game_events')
       .select('*')
       .in('game_id', gameIds);
+    if (eventsErr) throw new Error(`Failed to load scouting events: ${eventsErr.message}`);
     const raw = (events ?? []) as Array<{
       id: string;
       game_id: string;
@@ -289,10 +319,14 @@ async function loadDrillsAndTags(
   db: SupabaseUntyped,
   teamId: string,
 ): Promise<{ drills: PracticeDrill[]; tagsByDrill: Map<string, PracticeDrillDeficitTag[]> }> {
-  const [{ data: drillRows }, { data: tagRows }] = await Promise.all([
+  const [drillsResult, tagsResult] = await Promise.all([
     db.from('practice_drills').select('*').or(`team_id.is.null,team_id.eq.${teamId}`),
     db.from('practice_drill_deficit_tags').select('*').or(`team_id.is.null,team_id.eq.${teamId}`),
   ]);
+  if (drillsResult.error) throw new Error(`Failed to load drills: ${drillsResult.error.message}`);
+  if (tagsResult.error) throw new Error(`Failed to load drill deficit tags: ${tagsResult.error.message}`);
+  const drillRows = drillsResult.data;
+  const tagRows = tagsResult.data;
   const drills = ((drillRows ?? []) as Array<Record<string, unknown>>).map(mapDrillRow);
   const tagsByDrill = new Map<string, PracticeDrillDeficitTag[]>();
   for (const r of (tagRows ?? []) as Array<{

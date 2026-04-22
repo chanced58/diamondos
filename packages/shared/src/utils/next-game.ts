@@ -13,16 +13,22 @@ import { GameStatus } from '../types/game';
  * no network access.
  */
 export function findNextGame(games: Game[], fromDate: Date): Game | null {
-  const fromIso = fromDate.toISOString();
+  // Compare as numeric timestamps rather than ISO strings so differing ISO
+  // serializations (e.g. '+00:00' vs 'Z') can't reorder equivalent instants.
+  const fromMs = fromDate.getTime();
   let best: Game | null = null;
+  let bestMs = Number.POSITIVE_INFINITY;
 
   for (const game of games) {
     if (game.status !== GameStatus.SCHEDULED && game.status !== GameStatus.POSTPONED) {
       continue;
     }
-    if (game.scheduledAt <= fromIso) continue;
-    if (best === null || game.scheduledAt < best.scheduledAt) {
+    const scheduledMs = Date.parse(game.scheduledAt);
+    if (Number.isNaN(scheduledMs)) continue;
+    if (scheduledMs <= fromMs) continue;
+    if (scheduledMs < bestMs) {
       best = game;
+      bestMs = scheduledMs;
     }
   }
 

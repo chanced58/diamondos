@@ -196,12 +196,15 @@ describe('generatePrepPractice', () => {
     expect(result.focusSummary.toLowerCase()).toContain('ks on off-speed');
   });
 
-  it('does not exceed the requested duration budget', () => {
+  it('does not exceed the requested duration budget, even with more matching drills than fit', () => {
+    // Each drill is tagged with its OWN deficit (def-0..def-9), and each
+    // weakness suggests the matching deficit — so the generator can choose
+    // from 10 distinct matches and must stop when the budget fills.
     const drills = Array.from({ length: 10 }, (_, i) =>
       drill({ id: `d-${i}`, name: `Drill ${i}`, defaultDurationMinutes: 20 }),
     );
     const tags = new Map<string, PracticeDrillDeficitTag[]>();
-    drills.forEach((d) => tags.set(d.id, [tag(d.id, 'def-1')]));
+    drills.forEach((d, i) => tags.set(d.id, [tag(d.id, `def-${i}`)]));
 
     const result = generatePrepPractice({
       nextGame: NEXT_GAME,
@@ -215,5 +218,10 @@ describe('generatePrepPractice', () => {
       durationMinutes: 60,
     });
     expect(result.totalPlannedMinutes).toBeLessThanOrEqual(60);
+    // 10 drills available, but only a 45-min drill budget (60 minus 10 warmup
+    // + 5 stretch). The generator must stop well before exhausting the list.
+    const drillBlocks = result.blocks.filter((b) => b.drillId);
+    expect(drillBlocks.length).toBeLessThan(drills.length);
+    expect(drillBlocks.length).toBeGreaterThanOrEqual(1);
   });
 });

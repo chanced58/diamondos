@@ -150,17 +150,43 @@ describe('detectWeaknesses — two_strike_approach', () => {
 });
 
 describe('detectWeaknesses — defensive_errors', () => {
-  it('fires on ≥ errorsInGame FIELD_ERROR events', () => {
+  it('fires on ≥ errorsInGame FIELD_ERROR events committed while we were fielding', () => {
     const events: GameEvent[] = [];
     for (let i = 0; i < WEAKNESS_THRESHOLDS.errorsInGame; i++) {
-      events.push(event({ eventType: EventType.FIELD_ERROR }));
+      // We were fielding → our pitcher + opponent batter on the event.
+      events.push(
+        event({
+          eventType: EventType.FIELD_ERROR,
+          payload: { pitcherId: 'p-us-1', opponentBatterId: 'opp-1' },
+        }),
+      );
     }
     const signals = detectWeaknesses(events, CTX);
     expect(signals.find((s) => s.code === WeaknessCode.DEFENSIVE_ERRORS)).toBeDefined();
   });
 
+  it('does NOT fire for errors committed while the opponent was fielding (we benefited)', () => {
+    const events: GameEvent[] = [];
+    for (let i = 0; i < WEAKNESS_THRESHOLDS.errorsInGame + 2; i++) {
+      // We were batting → opponent pitcher + our batter.
+      events.push(
+        event({
+          eventType: EventType.FIELD_ERROR,
+          payload: { opponentPitcherId: 'opp-p-1', batterId: 'p-us-1' },
+        }),
+      );
+    }
+    const signals = detectWeaknesses(events, CTX);
+    expect(signals.find((s) => s.code === WeaknessCode.DEFENSIVE_ERRORS)).toBeUndefined();
+  });
+
   it('does not fire below threshold', () => {
-    const events = [event({ eventType: EventType.FIELD_ERROR })];
+    const events = [
+      event({
+        eventType: EventType.FIELD_ERROR,
+        payload: { pitcherId: 'p-us-1', opponentBatterId: 'opp-1' },
+      }),
+    ];
     const signals = detectWeaknesses(events, CTX);
     expect(signals.find((s) => s.code === WeaknessCode.DEFENSIVE_ERRORS)).toBeUndefined();
   });
@@ -238,9 +264,14 @@ describe('detectWeaknesses — sorting', () => {
         }),
       );
     }
-    // Trip errors
+    // Trip errors (while we were fielding)
     for (let i = 0; i < WEAKNESS_THRESHOLDS.errorsInGame + 1; i++) {
-      events.push(event({ eventType: EventType.FIELD_ERROR }));
+      events.push(
+        event({
+          eventType: EventType.FIELD_ERROR,
+          payload: { pitcherId: 'p-us-1', opponentBatterId: 'opp-1' },
+        }),
+      );
     }
     const signals = detectWeaknesses(events, CTX);
     expect(signals.length).toBeGreaterThanOrEqual(2);

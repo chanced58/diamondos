@@ -1,9 +1,5 @@
-import type {
-  PracticeDrill,
-  PracticeDrillDeficitTag,
-  SuggestedBlock,
-} from '@baseball/shared';
-import { PracticeDrillDeficitPriority, PracticeBlockStatus } from '@baseball/shared';
+import type { SuggestedBlock } from '@baseball/shared';
+import { PracticeBlockStatus } from '@baseball/shared';
 import type { TypedSupabaseClient } from '../client';
 
 /**
@@ -115,50 +111,3 @@ export async function getLinkedGameForPractice(
   };
 }
 
-/**
- * Fetches drills + their deficit tags for the prep-practice generator.
- * The generator runs the tag map through `matchesDeficits()` / picks the
- * best-fit drill per target deficit, so returning both in one call keeps
- * the RSC path simple.
- */
-export async function getDrillsWithDeficitTags(
-  supabase: TypedSupabaseClient,
-  teamId: string,
-): Promise<{ drills: PracticeDrill[]; tagsByDrill: Map<string, PracticeDrillDeficitTag[]> }> {
-  // Reuse the existing listDrills if available for drills; this module only
-  // provides the tag index. The caller should have a drills array loaded
-  // separately via `listDrills(supabase, teamId)`.
-  const { data: tagRows, error } = await supabase
-    .from('practice_drill_deficit_tags')
-    .select('*')
-    .or(`team_id.is.null,team_id.eq.${teamId}`);
-  if (error) throw error;
-
-  const tagsByDrill = new Map<string, PracticeDrillDeficitTag[]>();
-  const rows = (tagRows ?? []) as unknown as Array<{
-    id: string;
-    drill_id: string;
-    deficit_id: string;
-    team_id: string | null;
-    priority: string;
-    created_by: string | null;
-    created_at: string;
-  }>;
-
-  for (const r of rows) {
-    const tag: PracticeDrillDeficitTag = {
-      id: r.id,
-      drillId: r.drill_id,
-      deficitId: r.deficit_id,
-      teamId: r.team_id,
-      priority: r.priority as PracticeDrillDeficitPriority,
-      createdBy: r.created_by ?? undefined,
-      createdAt: r.created_at,
-    };
-    const bucket = tagsByDrill.get(tag.drillId);
-    if (bucket) bucket.push(tag);
-    else tagsByDrill.set(tag.drillId, [tag]);
-  }
-
-  return { drills: [], tagsByDrill };
-}

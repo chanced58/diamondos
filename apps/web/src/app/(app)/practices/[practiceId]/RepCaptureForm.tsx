@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   PRACTICE_REP_OUTCOMES,
@@ -41,13 +41,16 @@ export function RepCaptureForm({ practiceId, players }: Props): JSX.Element | nu
   const [outcome, setOutcome] = useState<PracticeRepOutcome>('line_drive');
   const [coachTag, setCoachTag] = useState<PracticeRepCoachTag | ''>('');
   const [note, setNote] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  // Explicit submit state — see PrepPreviewForm for the rationale on not
+  // using useTransition here (isSubmitting would clear before the server
+  // action resolves, permitting duplicate submits).
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (players.length === 0) return null;
 
-  function submit(e: React.FormEvent<HTMLFormElement>) {
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!playerId) return;
+    if (!playerId || isSubmitting) return;
     const input: PracticeRepInput = {
       practiceId,
       playerId,
@@ -56,16 +59,17 @@ export function RepCaptureForm({ practiceId, players }: Props): JSX.Element | nu
       coachTag: coachTag || undefined,
     };
     setNote(null);
-    startTransition(() => {
-      void (async () => {
-        const result = await logRepAction(input);
-        if (typeof result === 'string') setNote(result);
-        else {
-          setNote('Logged.');
-          router.refresh();
-        }
-      })();
-    });
+    setIsSubmitting(true);
+    try {
+      const result = await logRepAction(input);
+      if (typeof result === 'string') setNote(result);
+      else {
+        setNote('Logged.');
+        router.refresh();
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -122,10 +126,10 @@ export function RepCaptureForm({ practiceId, players }: Props): JSX.Element | nu
         <div className="sm:col-span-3 flex items-center gap-3">
           <button
             type="submit"
-            disabled={isPending}
+            disabled={isSubmitting}
             className="bg-brand-700 text-white font-semibold px-4 py-2 rounded-lg hover:bg-brand-800 disabled:opacity-50 text-sm"
           >
-            {isPending ? 'Logging…' : 'Log rep'}
+            {isSubmitting ? 'Logging…' : 'Log rep'}
           </button>
           {note && <span className="text-xs text-gray-600">{note}</span>}
         </div>

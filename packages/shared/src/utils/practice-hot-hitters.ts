@@ -8,12 +8,21 @@ import type { HotHitter, HotHitterEvidence } from '../types/hot-hitters';
 /**
  * Score weights for the hot-hitter composite. Tuned on intuition for MVP —
  * expose via a `weights` param once we have tuning signal.
+ *
+ * The scoring is layered:
+ *  1. outcomeCategory bucket (positive/neutral/negative) — ensures every
+ *     recorded rep contributes, including walks, ground_outs, fly_outs, etc.
+ *  2. specific outcome slug bonuses for the most telling plays
+ *     (hit_hard > generic positive, swing_miss < generic negative).
+ *  3. coach-tag bonuses layered on top.
  */
 const SCORE_WEIGHTS = {
-  hitHard: 3,
-  lineDrive: 2,
-  weakContact: -0.5,
-  swingAndMiss: -1,
+  categoryPositive: 1,
+  categoryNegative: -1,
+  hitHardBonus: 2,
+  lineDriveBonus: 1,
+  weakContactBonus: 0.5,   // added to the negative category base
+  swingAndMissBonus: -0.5, // added to the negative category base
   coachHot: 4,
   coachCold: -3,
 } as const;
@@ -56,14 +65,7 @@ export function rankHotHitters(
   for (const [playerId, playerReps] of byPlayer) {
     if (playerReps.length < MIN_REPS_FOR_RANKING) continue;
     const evidence = summarize(playerReps);
-    const raw =
-      evidence.hitHard * SCORE_WEIGHTS.hitHard +
-      evidence.lineDrives * SCORE_WEIGHTS.lineDrive +
-      evidence.weakContact * SCORE_WEIGHTS.weakContact +
-      evidence.swingAndMisses * SCORE_WEIGHTS.swingAndMiss +
-      evidence.coachTaggedHot * SCORE_WEIGHTS.coachHot +
-      evidence.coachTaggedCold * SCORE_WEIGHTS.coachCold;
-    const score = normalize(raw, evidence.totalReps);
+    const score = normalize(scoreReps(playerReps, evidence), evidence.totalReps);
     scored.push({ playerId, score, evidence });
   }
 
@@ -74,6 +76,28 @@ export function rankHotHitters(
     rank: i + 1,
     evidence: s.evidence,
   }));
+}
+
+/**
+ * Composite score = categorical base (every rep contributes by its
+ * outcomeCategory bucket) + specific-outcome bonuses + coach-tag bonuses.
+ */
+function scoreReps(reps: PracticeRep[], evidence: HotHitterEvidence): number {
+  let raw = 0;
+  for (const r of reps) {
+    if (r.outcomeCategory === PracticeRepOutcomeCategory.POSITIVE) {
+      raw += SCORE_WEIGHTS.categoryPositive;
+    } else if (r.outcomeCategory === PracticeRepOutcomeCategory.NEGATIVE) {
+      raw += SCORE_WEIGHTS.categoryNegative;
+    }
+    if (r.outcome === OUTCOME_HIT_HARD) raw += SCORE_WEIGHTS.hitHardBonus;
+    if (r.outcome === OUTCOME_LINE_DRIVE) raw += SCORE_WEIGHTS.lineDriveBonus;
+    if (r.outcome === OUTCOME_WEAK_CONTACT) raw += SCORE_WEIGHTS.weakContactBonus;
+    if (r.outcome === OUTCOME_SWING_MISS) raw += SCORE_WEIGHTS.swingAndMissBonus;
+  }
+  raw += evidence.coachTaggedHot * SCORE_WEIGHTS.coachHot;
+  raw += evidence.coachTaggedCold * SCORE_WEIGHTS.coachCold;
+  return raw;
 }
 
 function summarize(reps: PracticeRep[]): HotHitterEvidence {
@@ -140,14 +164,17 @@ export function identifyColdHitters(
   for (const [playerId, playerReps] of byPlayer) {
     if (playerReps.length < MIN_REPS_FOR_RANKING) continue;
     const evidence = summarize(playerReps);
-    const negative =
-      evidence.swingAndMisses +
-      evidence.weakContact +
-      evidence.coachTaggedCold * 2 -
-      evidence.hitHard -
-      evidence.lineDrives -
-      evidence.coachTaggedHot * 2;
-    const coldness = negative / evidence.totalReps;
+    // Use outcomeCategory counts so every rep (including walks and generic
+    // outs) contributes, then weight coach tags 2x.
+    let negative = 0;
+    let positive = 0;
+    for (const r of playerReps) {
+      if (r.outcomeCategory === PracticeRepOutcomeCategory.NEGATIVE) negative += 1;
+      else if (r.outcomeCategory === PracticeRepOutcomeCategory.POSITIVE) positive += 1;
+    }
+    negative += evidence.coachTaggedCold * 2;
+    positive += evidence.coachTaggedHot * 2;
+    const coldness = (negative - positive) / evidence.totalReps;
     if (coldness <= 0) continue;
     scored.push({ playerId, score: coldness, evidence });
   }

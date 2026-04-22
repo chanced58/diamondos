@@ -22,7 +22,7 @@ export interface PitcherAvailability {
   nextAvailableDate: string | null;
   /** Pitches thrown in the trailing 7 days. */
   pitchesLast7d: number;
-  /** Most recent game pitched. Null if no history. */
+  /** Most recent game pitched (YYYY-MM-DD). Omitted when there's no history. */
   lastPitchedAt?: string;
   /**
    * If status=LIMITED, the remaining pitches the rule allows without tripping
