@@ -477,6 +477,24 @@ export default async function PlayerPage({
         )}
       </section>
 
+      {/* ── Compliance documents (coaches only) ─────────────────────────── */}
+      {isCoach && (
+        <section className="mb-6">
+          <Link
+            href={`/teams/${params.teamId}/roster/${params.playerId}/documents`}
+            className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-5 py-4 hover:bg-gray-50 transition-colors"
+          >
+            <div>
+              <p className="font-semibold text-gray-900">Documents</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Liability waivers, medical releases, and other compliance paperwork.
+              </p>
+            </div>
+            <span className="text-gray-400 text-sm">Open →</span>
+          </Link>
+        </section>
+      )}
+
       {/* ── Edit player info (coaches only, active players) ────────────── */}
       {isCoach && player.is_active && (
         <section>

@@ -1551,6 +1551,117 @@ export type Database = {
           },
         ]
       }
+      player_document_type: {
+        Row: {
+          created_at: string
+          description: string | null
+          name: string
+          requires_expiration: boolean
+          slug: string
+          team_id: string | null
+          visibility: Database["public"]["Enums"]["player_document_visibility"]
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          name: string
+          requires_expiration?: boolean
+          slug: string
+          team_id?: string | null
+          visibility?: Database["public"]["Enums"]["player_document_visibility"]
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          name?: string
+          requires_expiration?: boolean
+          slug?: string
+          team_id?: string | null
+          visibility?: Database["public"]["Enums"]["player_document_visibility"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_document_type_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_documents: {
+        Row: {
+          created_at: string
+          document_type: string
+          expires_on: string | null
+          id: string
+          is_current: boolean
+          notes: string | null
+          player_id: string
+          signed_on: string | null
+          storage_path: string
+          team_id: string
+          title: string
+          updated_at: string
+          uploaded_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          document_type: string
+          expires_on?: string | null
+          id?: string
+          is_current?: boolean
+          notes?: string | null
+          player_id: string
+          signed_on?: string | null
+          storage_path: string
+          team_id: string
+          title: string
+          updated_at?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          document_type?: string
+          expires_on?: string | null
+          id?: string
+          is_current?: boolean
+          notes?: string | null
+          player_id?: string
+          signed_on?: string | null
+          storage_path?: string
+          team_id?: string
+          title?: string
+          updated_at?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_documents_document_type_fkey"
+            columns: ["document_type"]
+            isOneToOne: false
+            referencedRelation: "player_document_type"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "player_documents_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_documents_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       player_external_ids: {
         Row: {
           confidence: string | null
@@ -3463,6 +3574,10 @@ export type Database = {
         Args: { p_external_id: string; p_service: string }
         Returns: string
       }
+      player_documents_path_uuid: {
+        Args: { p_name: string; p_segment: number }
+        Returns: string
+      }
       practice_reorder_blocks: {
         Args: { p_order: string[]; p_practice_id: string }
         Returns: undefined
@@ -3504,6 +3619,7 @@ export type Database = {
         | "baserunning"
         | "defense"
       opponent_scouting_source: "manual" | "auto_derived"
+      player_document_visibility: "system" | "team"
       player_position:
         | "pitcher"
         | "catcher"
@@ -3772,6 +3888,7 @@ export const Constants = {
         "defense",
       ],
       opponent_scouting_source: ["manual", "auto_derived"],
+      player_document_visibility: ["system", "team"],
       player_position: [
         "pitcher",
         "catcher",

@@ -147,7 +147,7 @@ export default async function CompliancePage({
   // participated in past games still resolve their names in stats.
   const { data: players } = await db
     .from('players')
-    .select('id, first_name, last_name')
+    .select('id, first_name, last_name, is_active')
     .eq('team_id', activeTeam.id);
 
   const playerList = (players ?? []).map((p) => ({
@@ -155,6 +155,26 @@ export default async function CompliancePage({
     firstName: p.first_name,
     lastName: p.last_name,
   }));
+
+  // Tier 8 F5: active players without a current (non-expired) liability waiver.
+  const activePlayerIds = (players ?? []).filter((p) => p.is_active).map((p) => p.id);
+  let missingWaiverCount = 0;
+  if (activePlayerIds.length > 0) {
+    const { data: waiverRows } = await db
+      .from('player_documents')
+      .select('player_id, expires_on')
+      .eq('document_type', 'liability_waiver')
+      .eq('is_current', true)
+      .in('player_id', activePlayerIds);
+
+    const todayDate = new Date().toISOString().slice(0, 10);
+    const playersWithCurrentWaiver = new Set(
+      (waiverRows ?? [])
+        .filter((r) => !r.expires_on || r.expires_on >= todayDate)
+        .map((r) => r.player_id),
+    );
+    missingWaiverCount = activePlayerIds.filter((id) => !playersWithCurrentWaiver.has(id)).length;
+  }
 
   // Only show stats for players on our team roster (filters out opponent
   // player IDs that leak through derivePitchingStats' fallback coalesce
@@ -365,6 +385,25 @@ export default async function CompliancePage({
           <TierToggle currentTier={tier} />
         </div>
       </div>
+
+      {/* Tier 8 F5: Missing-waiver banner */}
+      {missingWaiverCount > 0 && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-amber-700">⚠️</span>
+            <span className="text-sm text-amber-900">
+              <strong>{missingWaiverCount}</strong>{' '}
+              {missingWaiverCount === 1 ? 'active player is' : 'active players are'} missing a current liability waiver.
+            </span>
+          </div>
+          <Link
+            href={`/teams/${activeTeam.id}/roster`}
+            className="text-xs font-medium text-amber-900 bg-white border border-amber-300 px-3 py-1.5 rounded-lg hover:bg-amber-100"
+          >
+            Review roster →
+          </Link>
+        </div>
+      )}
 
       {/* Tab strip */}
       <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
