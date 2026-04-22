@@ -17,6 +17,7 @@ import {
 } from '@baseball/shared';
 import type { PitchingStats, BattingStats } from '@baseball/shared';
 import { EditPlayerForm, DeactivatePlayerForm, ReactivatePlayerForm } from './EditPlayerForm';
+import { DrillRecommendations } from './DrillRecommendations';
 
 export const metadata: Metadata = { title: 'Player Profile' };
 
@@ -423,6 +424,11 @@ export default async function PlayerPage({
             ))}
           </div>
         </section>
+      )}
+
+      {/* ── Tier 7 F4 — AI drill recommendations (coaches only) ────────── */}
+      {isCoach && player.is_active && (
+        <DrillRecommendations teamId={params.teamId} playerId={params.playerId} />
       )}
 
       {/* ── Per-category note history ──────────────────────────────────── */}
