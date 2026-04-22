@@ -10,12 +10,11 @@ import {
   hasFeature,
   PracticeDeficit,
   PracticeDrill,
-  PracticeDrillDeficitPriority,
   PracticeDrillDeficitTag,
   PracticeDrillVisibility,
 } from '@baseball/shared';
 import { createPracticeServiceClient } from '@/lib/practices/authz';
-import { listDeficitsForTeam, listDrills } from '@baseball/database';
+import { listDeficitsForTeam, listDrills, listTagsForTeam } from '@baseball/database';
 import { DrillLibraryClient } from './DrillLibraryClient';
 
 export const metadata: Metadata = { title: 'Drill library' };
@@ -68,34 +67,15 @@ export default async function DrillsPage(): Promise<JSX.Element | null> {
   }
 
   const supabase = createPracticeServiceClient();
-  const [drills, deficits]: [PracticeDrill[], PracticeDeficit[]] = await Promise.all([
+  const [drills, deficits, tags]: [
+    PracticeDrill[],
+    PracticeDeficit[],
+    PracticeDrillDeficitTag[],
+  ] = await Promise.all([
     listDrills(supabase, activeTeam.id),
     listDeficitsForTeam(supabase, activeTeam.id),
+    listTagsForTeam(supabase, activeTeam.id),
   ]);
-
-  const { data: tagRows, error: tagError } = await supabase
-    .from('practice_drill_deficit_tags')
-    .select('*')
-    .or(`team_id.is.null,team_id.eq.${activeTeam.id}`);
-  if (tagError) throw tagError;
-
-  const tags: PracticeDrillDeficitTag[] = ((tagRows ?? []) as {
-    id: string;
-    drill_id: string;
-    deficit_id: string;
-    team_id: string | null;
-    priority: 'primary' | 'secondary';
-    created_at: string;
-    created_by: string | null;
-  }[]).map((r) => ({
-    id: r.id,
-    drillId: r.drill_id,
-    deficitId: r.deficit_id,
-    teamId: r.team_id,
-    priority: r.priority as PracticeDrillDeficitPriority,
-    createdBy: r.created_by ?? undefined,
-    createdAt: r.created_at,
-  }));
 
   const systemCount = drills.filter(
     (d) => d.visibility === PracticeDrillVisibility.SYSTEM,

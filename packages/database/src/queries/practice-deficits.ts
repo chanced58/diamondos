@@ -158,6 +158,23 @@ export async function deleteTeamDeficit(
   if (error) throw error;
 }
 
+/**
+ * All drill-deficit tags visible to the team (system + team-scoped), raw
+ * (not hydrated). Used by the drill-library page to build a tag index for
+ * client-side filtering and card rendering.
+ */
+export async function listTagsForTeam(
+  supabase: TypedSupabaseClient,
+  teamId: string,
+): Promise<PracticeDrillDeficitTag[]> {
+  const { data, error } = await supabase
+    .from(TAGS_TABLE)
+    .select('*')
+    .or(`team_id.is.null,team_id.eq.${teamId}`);
+  if (error) throw error;
+  return ((data as unknown as RawTagRow[]) ?? []).map(mapTag);
+}
+
 /** Returns system + team-scoped tags on the drill, hydrated with the deficit row. */
 export async function listDrillDeficitTags(
   supabase: TypedSupabaseClient,

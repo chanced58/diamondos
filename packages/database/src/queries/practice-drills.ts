@@ -105,8 +105,12 @@ export async function listDrills(
     .order('name', { ascending: true });
 
   if (filters.deficitIds && filters.deficitIds.length > 0) {
-    // Fetch matching drill_ids from the tag table, then IN-filter. RLS on the
-    // tag table handles system-vs-team visibility so we don't re-encode it.
+    // Two round-trips: fetch matching drill_ids from the tag table, then
+    // IN-filter the drill query. RLS on the tag table handles system-vs-team
+    // visibility so we don't re-encode it. Not read-consistent — a concurrent
+    // tag insert/delete between the two queries can cause the drill list and
+    // tag index to disagree. Acceptable at current scale; revisit with a
+    // single-round-trip embed once PostgREST typing for it settles.
     const tagQuery = supabase
       .from('practice_drill_deficit_tags' as never)
       .select('drill_id')
