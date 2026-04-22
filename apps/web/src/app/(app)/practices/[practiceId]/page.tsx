@@ -75,6 +75,22 @@ export default async function PracticeNotesPage({
       p !== null && p.team_id === practice.team_id,
     );
 
+  // Tier 6 F1: load the linked game's opponent + date when this is a prep practice.
+  let prepTarget: { opponentName: string; scheduledAt: string } | null = null;
+  if (practice.linked_game_id) {
+    const { data: linkedGame } = await db
+      .from('games')
+      .select('opponent_name, scheduled_at')
+      .eq('id', practice.linked_game_id)
+      .maybeSingle();
+    if (linkedGame) {
+      prepTarget = {
+        opponentName: linkedGame.opponent_name,
+        scheduledAt: linkedGame.scheduled_at,
+      };
+    }
+  }
+
   const header = (
     <div className="mb-8">
       <Link href="/practices" className="text-sm text-brand-700 hover:underline">
@@ -88,6 +104,19 @@ export default async function PracticeNotesPage({
         {practice.duration_minutes && ` · ${practice.duration_minutes} min`}
         {practice.location && ` · ${practice.location}`}
       </p>
+      {prepTarget && (
+        <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="text-xs font-semibold text-amber-900 uppercase tracking-wide mb-1">
+            Prepping for
+          </div>
+          <div className="text-sm font-medium text-amber-900">
+            vs {prepTarget.opponentName} · {formatDate(prepTarget.scheduledAt)}
+          </div>
+          {practice.prep_focus_summary && (
+            <p className="mt-2 text-xs text-amber-900/80">{practice.prep_focus_summary}</p>
+          )}
+        </div>
+      )}
       {practice.latitude && practice.longitude && (
         <div className="mt-4">
           <LocationMap
