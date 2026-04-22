@@ -1033,8 +1033,8 @@ export function ScoringBoard({
   // ── Pitch handlers ────────────────────────────────────────────────────────
 
   async function handlePitch(outcome: string) {
-    const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = activePitcherId ?? 'unknown-pitcher';
+    const batterId = activeBatterId ?? undefined;
+    const pitcherId = activePitcherId ?? undefined;
 
     if (outcome === 'in_play') {
       setInPlayPending(true);
@@ -1065,8 +1065,8 @@ export function ScoringBoard({
     setInPlayPending(false);
     setOutAssignmentPending(false);
     setPendingResult(null);
-    const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = activePitcherId ?? 'unknown-pitcher';
+    const batterId = activeBatterId ?? undefined;
+    const pitcherId = activePitcherId ?? undefined;
 
     // Capture annotation values before resetting
     const pitchExtra: Record<string, unknown> = {};
@@ -1115,8 +1115,8 @@ export function ScoringBoard({
   async function handleFielderChoice(outRunnerId: string | null) {
     setInPlayPending(false);
     setFcRunnerOutPending(false);
-    const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = activePitcherId ?? 'unknown-pitcher';
+    const batterId = activeBatterId ?? undefined;
+    const pitcherId = activePitcherId ?? undefined;
 
     const pitchExtra: Record<string, unknown> = {};
     if (pitchType) pitchExtra.pitchType = pitchType;
@@ -1159,8 +1159,8 @@ export function ScoringBoard({
   async function handleError(errorPosition: string) {
     setInPlayPending(false);
     setErrorPending(false);
-    const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = activePitcherId ?? 'unknown-pitcher';
+    const batterId = activeBatterId ?? undefined;
+    const pitcherId = activePitcherId ?? undefined;
 
     const pitchExtra: Record<string, unknown> = {};
     if (pitchType) pitchExtra.pitchType = pitchType;
@@ -1185,20 +1185,20 @@ export function ScoringBoard({
   }
 
   async function handleWalk() {
-    const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = activePitcherId ?? 'unknown-pitcher';
+    const batterId = activeBatterId ?? undefined;
+    const pitcherId = activePitcherId ?? undefined;
     await recordEvent('walk', { batterId, pitcherId });
   }
 
   async function handleStrikeout() {
-    const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = activePitcherId ?? 'unknown-pitcher';
+    const batterId = activeBatterId ?? undefined;
+    const pitcherId = activePitcherId ?? undefined;
     await recordEvent('strikeout', { batterId, pitcherId, outType: 'strikeout' });
   }
 
   async function handleHBP() {
-    const batterId = activeBatterId ?? 'unknown-batter';
-    const pitcherId = activePitcherId ?? 'unknown-pitcher';
+    const batterId = activeBatterId ?? undefined;
+    const pitcherId = activePitcherId ?? undefined;
     const extra: Record<string, unknown> = {};
     if (pitchType) extra.pitchType = pitchType;
     if (zoneLocation !== null) extra.zoneLocation = zoneLocation;
@@ -1252,7 +1252,7 @@ export function ScoringBoard({
       runnerId,
       base,
       outcome: 'out',
-      pitcherId: activePitcherId ?? 'unknown-pitcher',
+      pitcherId: activePitcherId ?? undefined,
     };
     if (csPickoffFieldingSeq.length > 0) payload.fieldingSequence = csPickoffFieldingSeq;
     await recordEvent('pickoff_attempt', payload);
@@ -1265,7 +1265,7 @@ export function ScoringBoard({
       runnerId,
       base,
       outcome: 'safe',
-      pitcherId: activePitcherId ?? 'unknown-pitcher',
+      pitcherId: activePitcherId ?? undefined,
     });
   }
 
@@ -1292,7 +1292,7 @@ export function ScoringBoard({
   }
 
   async function handleBalk() {
-    const balkPitcherId = activePitcherId ?? 'unknown-pitcher';
+    const balkPitcherId = activePitcherId ?? undefined;
     await recordEvent('balk', { pitcherId: balkPitcherId });
     // Runs scored on balks are not RBIs per official scoring rules
     const thirdRunner = gameState.runnersOnBase.third;
