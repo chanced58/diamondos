@@ -124,6 +124,22 @@ export interface PitchThrownPayload {
   zoneLocation?: number;
   isWildPitch?: boolean;
   isPassedBall?: boolean;
+  // ─── Sensor metrics (Tier 5) ─────────────────────────────────────────────
+  // Populated when a connected sensor (Rapsodo, TrackMan, etc.) supplies the
+  // reading alongside the pitch. All optional — existing events without
+  // sensor data remain valid.
+  /** Revolutions per minute. */
+  spinRate?: number;
+  /** Off-the-bat exit velocity, mph. Only set when the pitch is put in play. */
+  exitVelocity?: number;
+  /** Launch angle in degrees. Only set when the pitch is put in play. */
+  launchAngle?: number;
+  /** Horizontal break in inches (positive = arm-side for a RHP). */
+  pitchBreakHorizontal?: number;
+  /** Vertical break in inches (positive = rise vs gravity-only reference). */
+  pitchBreakVertical?: number;
+  /** Pitcher's release extension in feet toward the plate. */
+  extension?: number;
 }
 
 export interface HitPayload {

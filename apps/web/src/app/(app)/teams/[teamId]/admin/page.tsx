@@ -97,6 +97,12 @@ export default async function TeamAdminPage({
       description: 'Create and manage seasons (Spring, Summer, Fall).',
       icon: '📅',
     },
+    {
+      href: `/teams/${params.teamId}/admin/integrations`,
+      title: 'Integrations',
+      description: 'Calendar subscription URL and external-service links.',
+      icon: '🔗',
+    },
   ];
 
   return (

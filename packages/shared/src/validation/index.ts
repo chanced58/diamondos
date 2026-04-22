@@ -8,3 +8,4 @@ export * from './practice-template';
 export * from './practice';
 export * from './practice-attendance';
 export * from './practice-deficit';
+export * from './training-session';
