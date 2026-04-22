@@ -1,5 +1,6 @@
 import {
   createDeficitSchema,
+  drillDeficitTagSchema,
   updateDeficitSchema,
   type CreateDeficitInput,
   type UpdateDeficitInput,
@@ -189,15 +190,19 @@ export async function listDrillDeficitTags(
   if (error) throw error;
 
   interface Joined extends RawTagRow {
-    deficit: RawDeficitRow;
+    deficit: RawDeficitRow | null;
   }
   const rows = (data as unknown as Joined[]) ?? [];
-  return rows.map((r) => ({
-    tagId: r.id,
-    deficit: mapDeficit(r.deficit),
-    priority: r.priority as PracticeDrillDeficitPriority,
-    tagScope: r.team_id === null ? 'system' : 'team',
-  }));
+  // Defensive: PostgREST returns null for the embedded deficit when RLS hides
+  // it. Skip those rows rather than throwing on mapDeficit(null).
+  return rows
+    .filter((r): r is Joined & { deficit: RawDeficitRow } => r.deficit !== null)
+    .map((r) => ({
+      tagId: r.id,
+      deficit: mapDeficit(r.deficit),
+      priority: r.priority as PracticeDrillDeficitPriority,
+      tagScope: r.team_id === null ? 'system' : 'team',
+    }));
 }
 
 export async function upsertDrillDeficitTag(
@@ -210,11 +215,17 @@ export async function upsertDrillDeficitTag(
     createdBy: string;
   },
 ): Promise<PracticeDrillDeficitTag> {
-  const payload = {
-    drill_id: input.drillId,
-    deficit_id: input.deficitId,
-    team_id: input.teamId,
+  const { drillId, deficitId, teamId, priority } = drillDeficitTagSchema.parse({
+    drillId: input.drillId,
+    deficitId: input.deficitId,
+    teamId: input.teamId,
     priority: input.priority,
+  });
+  const payload = {
+    drill_id: drillId,
+    deficit_id: deficitId,
+    team_id: teamId,
+    priority,
     created_by: input.createdBy,
   };
   const { data, error } = await supabase

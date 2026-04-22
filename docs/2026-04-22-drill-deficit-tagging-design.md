@@ -20,7 +20,15 @@ Drills today are tagged with descriptive labels (`'tee-work-basic'`, `'bunt-drag
 
 ## Schema
 
-Single forward migration `supabase/migrations/20260422000001_practice_deficits.sql`.
+Shipped as **five** forward migrations (the plan's original two grew by one RLS-hardening migration found in post-implementation review, a separate seed migration, and a second UPDATE-policy tightening from CodeRabbit review):
+
+| File | Purpose |
+|---|---|
+| `supabase/migrations/20260422000001_practice_deficits.sql` | Vocabulary table + RLS |
+| `supabase/migrations/20260422000002_practice_drill_deficit_tags.sql` | Junction table + enum + initial RLS |
+| `supabase/migrations/20260422000003_drill_deficit_tags_tighten_rls.sql` | Adds deficit-visibility check to junction SELECT + INSERT |
+| `supabase/migrations/20260422000004_seed_system_deficits.sql` | Seeds 30 curated system deficits |
+| `supabase/migrations/20260422000005_drill_deficit_tags_update_tighten.sql` | Mirrors the INSERT deficit-visibility check on UPDATE |
 
 ### `practice_deficits`
 
@@ -133,6 +141,7 @@ export interface PracticeDrillDeficitTag {
 }
 
 export interface DrillDeficitTagHydrated {
+  tagId: string;
   deficit: PracticeDeficit;
   priority: PracticeDrillDeficitPriority;
   tagScope: 'system' | 'team';
@@ -151,9 +160,9 @@ Validation in `packages/shared/src/validation/practice-deficit.ts`:
 - `updateDeficitSchema` — `createDeficitSchema.partial()`.
 - `drillDeficitTagSchema` — `drillId`, `deficitId` UUIDs; `teamId` UUID or null; `priority` enum.
 
-Pure-filter logic in `packages/shared/src/utils/filter-drills.ts` is extended with a helper `matchesDeficits(drill, tagsByDrill, filters)` so the shared package can be unit-tested without a DB.
+Pure-filter logic in `packages/shared/src/utils/practice-drill-filter.ts` is extended with a helper `matchesDeficits(drill, tagsByDrill, filters)` so the shared package can be unit-tested without a DB.
 
-Tests in `packages/shared/src/utils/__tests__/drill-deficit-filter.test.ts`:
+Tests in `packages/shared/src/utils/__tests__/practice-drill-deficit-filter.test.ts`:
 - Drill matches when any tagged deficit is in `deficitIds`.
 - `deficitPriority: 'primary'` filters out drills whose only matching tags are secondary.
 - System and team tags both count toward matching.
@@ -169,13 +178,13 @@ New file `packages/database/src/queries/practice-deficits.ts` exported from `que
 - `listDrillDeficitTags(supabase, drillId, teamId): Promise<DrillDeficitTagHydrated[]>` — joins the tag rows to their deficits, filters to `team_id is null OR team_id = :teamId`.
 - `upsertDrillDeficitTag(supabase, { drillId, deficitId, teamId, priority })` / `removeDrillDeficitTag(supabase, id)` — foundation for a later tagging UI; used by seed migration for system tags.
 
-Extend `listDrills(supabase, filters)`: when `filters.deficitIds?.length > 0`, add an `exists` subquery on `practice_drill_deficit_tags` filtered by `deficit_id = any(:deficitIds)` and (if `deficitPriority = 'primary'`) `priority = 'primary'`. Visibility is enforced by the tag table's RLS policy (not re-encoded in the query), so the subquery naturally surfaces system tags + the caller's team tags and nothing else.
+Extend `listDrills(supabase, teamId, filters)`: when `filters.deficitIds?.length > 0`, issue a two-step query — first fetch matching `drill_id`s from `practice_drill_deficit_tags` filtered by `deficit_id = any(:deficitIds)`, the caller's team scope (`team_id.is.null` OR `team_id = :teamId`), and optionally `priority = 'primary'`; then `.in('id', drillIds)` on the drill query. The two-step shape is used because `listDrills` is commonly called with a service-role client that bypasses RLS — team scoping must be applied explicitly in the tag query. Trade-off: not read-consistent under concurrent tag writes; acceptable at current scale.
 
 Regenerate `packages/database/src/types/supabase.ts` after the migration.
 
 ## Seed — ~30 system deficits
 
-New migration `supabase/migrations/20260422000002_seed_system_deficits.sql`. Uses the same deterministic UUIDv5 pattern as the drill seed, with a fresh namespace UUID. Each row: `slug`, `name`, `description`, `skill_categories[]`. No drill-to-deficit tags are seeded in this round.
+Shipped as `supabase/migrations/20260422000004_seed_system_deficits.sql` (`20260422000003` was taken by the RLS-hardening migration). Uses the same deterministic UUIDv5 pattern as the drill seed, with a fresh namespace UUID. Each row: `slug`, `name`, `description`, `skill_categories[]`. No drill-to-deficit tags are seeded in this round.
 
 Distribution (names and skill_categories):
 

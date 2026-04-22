@@ -106,15 +106,18 @@ export async function listDrills(
 
   if (filters.deficitIds && filters.deficitIds.length > 0) {
     // Two round-trips: fetch matching drill_ids from the tag table, then
-    // IN-filter the drill query. RLS on the tag table handles system-vs-team
-    // visibility so we don't re-encode it. Not read-consistent — a concurrent
-    // tag insert/delete between the two queries can cause the drill list and
-    // tag index to disagree. Acceptable at current scale; revisit with a
-    // single-round-trip embed once PostgREST typing for it settles.
+    // IN-filter the drill query. Tag-table team scoping is applied explicitly
+    // here because callers may hit this with a service-role client that
+    // bypasses RLS; relying on RLS alone would leak tags from other teams.
+    // Not read-consistent — a concurrent tag insert/delete between the two
+    // queries can cause the drill list and tag index to disagree. Acceptable
+    // at current scale; revisit with a single-round-trip embed once PostgREST
+    // typing for it settles.
     const tagQuery = supabase
       .from('practice_drill_deficit_tags' as never)
       .select('drill_id')
-      .in('deficit_id', filters.deficitIds);
+      .in('deficit_id', filters.deficitIds)
+      .or(`team_id.is.null,team_id.eq.${teamId}`);
 
     const { data: tagRows, error: tagError } =
       filters.deficitPriority === 'primary'

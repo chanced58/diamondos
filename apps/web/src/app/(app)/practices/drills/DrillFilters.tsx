@@ -190,7 +190,14 @@ export function DrillFiltersPanel({ filters, onChange, deficits }: Props): JSX.E
                         const next = checked
                           ? current.filter((id) => id !== d.id)
                           : [...current, d.id];
-                        onChange({ ...filters, deficitIds: next });
+                        onChange({
+                          ...filters,
+                          deficitIds: next,
+                          // Drop the priority qualifier when no deficits are
+                          // selected so a hidden 'primary' doesn't linger.
+                          deficitPriority:
+                            next.length === 0 ? undefined : filters.deficitPriority,
+                        });
                       }}
                       className="rounded border-gray-300 text-brand-700 focus:ring-brand-500"
                     />

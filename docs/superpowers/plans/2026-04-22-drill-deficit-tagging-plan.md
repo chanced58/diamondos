@@ -1,5 +1,9 @@
 # Drill-to-Deficit Tagging Implementation Plan
 
+> **Historical — final code diverges from this plan in two places.** Document preserved as authored intent, not as current reality.
+> - **Task 3 seed filename:** shipped as `supabase/migrations/20260422000004_seed_system_deficits.sql` (not `000003`). `000003` is the mid-implementation RLS-tightening migration (not in this plan), and a fifth migration `20260422000005_drill_deficit_tags_update_tighten.sql` was added post-review to mirror the hardened INSERT policy onto UPDATE.
+> - **Task 11/12 tag fetch:** the inline `supabase.from('practice_drill_deficit_tags')...` shown in the Task 12 page.tsx edits was refactored into the `listTagsForTeam` helper in `packages/database/src/queries/practice-deficits.ts`. Callers now do `listTagsForTeam(supabase, teamId)` instead of the hand-rolled query + mapping.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a deficits vocabulary (system + team-authored), a drill↔deficit junction with primary/secondary priority, ~30 curated system deficits, and a drill-library filter on web. Foundation for later IDPs / auto-suggest / recruit export.
