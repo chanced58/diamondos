@@ -13,6 +13,7 @@ import { PracticePlanEditor } from './PracticePlanEditor';
 import { LocationMap } from '@/components/maps/LocationMap';
 import { RepCaptureForm } from './RepCaptureForm';
 import { HotHittersPanel } from './HotHittersPanel';
+import { SummarySection } from './summary/SummarySection';
 import { identifyColdHitters, rankHotHitters } from '@baseball/shared';
 import { listTeamPracticeReps } from '@baseball/database';
 
@@ -233,6 +234,16 @@ export default async function PracticeNotesPage({
           players={players}
           playerNotesMap={playerNotesMap}
         />
+
+        {/* ── Tier 7 F2 — AI post-practice summary ──────────────────── */}
+        {practice.status !== 'cancelled' && (
+          <div className="mt-6">
+            <SummarySection
+              practiceId={params.practiceId}
+              players={playerLookup}
+            />
+          </div>
+        )}
 
         {/* ── Cancel practice (coaches only) ──────────────────────────── */}
         {practice.status !== 'cancelled' && (

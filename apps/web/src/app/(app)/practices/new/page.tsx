@@ -43,6 +43,14 @@ export default async function NewPracticePage(): Promise<JSX.Element | null> {
         <h1 className="text-2xl font-bold text-gray-900 mt-2">Log a Practice</h1>
         <p className="text-gray-500 text-sm">{activeTeam.name}</p>
       </div>
+      <div className="mb-5">
+        <Link
+          href="/practices/new/ai"
+          className="inline-flex items-center gap-2 text-sm font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded-lg px-3 py-2 hover:bg-brand-100"
+        >
+          Generate with AI instead
+        </Link>
+      </div>
       <CreatePracticeForm teamId={activeTeam.id} />
     </div>
   );
