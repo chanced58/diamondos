@@ -10,6 +10,7 @@ import {
   PracticeTemplateKind,
 } from '../types/practice-template';
 import { PracticeWeatherMode } from '../types/practice';
+import { PracticeDrillDeficitPriority } from '../types/practice-deficit';
 
 export const SKILL_CATEGORY_LABELS: Record<PracticeSkillCategory, string> = {
   [PracticeSkillCategory.HITTING]: 'Hitting',
@@ -151,4 +152,9 @@ export const FULL_FIELD_SUBSUMES: Partial<
     PracticeFieldSpace.INFIELD,
     PracticeFieldSpace.OUTFIELD,
   ],
+};
+
+export const DEFICIT_PRIORITY_LABELS: Record<PracticeDrillDeficitPriority, string> = {
+  [PracticeDrillDeficitPriority.PRIMARY]: 'Primary',
+  [PracticeDrillDeficitPriority.SECONDARY]: 'Secondary',
 };
