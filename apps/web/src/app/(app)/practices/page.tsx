@@ -61,6 +61,18 @@ export default async function PracticesPage(): Promise<JSX.Element | null> {
         {isCoach && (
           <div className="flex items-center gap-2">
             <Link
+              href="/practices/prep/new"
+              className="bg-amber-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-amber-700 transition-colors text-sm"
+            >
+              Prep for next game
+            </Link>
+            <Link
+              href="/bullpen"
+              className="bg-white text-gray-700 font-semibold px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors text-sm"
+            >
+              Bullpen
+            </Link>
+            <Link
               href="/practices/plan"
               className="bg-brand-700 text-white font-semibold px-4 py-2 rounded-lg hover:bg-brand-800 transition-colors text-sm"
             >

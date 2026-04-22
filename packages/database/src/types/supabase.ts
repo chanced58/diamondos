@@ -1075,6 +1075,56 @@ export type Database = {
           },
         ]
       }
+      opponent_scouting_tags: {
+        Row: {
+          category: Database["public"]["Enums"]["opponent_scouting_category"]
+          confidence: number | null
+          created_at: string
+          created_by: string | null
+          evidence: Json
+          id: string
+          note: string | null
+          opponent_team_id: string
+          source: Database["public"]["Enums"]["opponent_scouting_source"]
+          tag_value: string
+          updated_at: string
+        }
+        Insert: {
+          category: Database["public"]["Enums"]["opponent_scouting_category"]
+          confidence?: number | null
+          created_at?: string
+          created_by?: string | null
+          evidence?: Json
+          id?: string
+          note?: string | null
+          opponent_team_id: string
+          source: Database["public"]["Enums"]["opponent_scouting_source"]
+          tag_value: string
+          updated_at?: string
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["opponent_scouting_category"]
+          confidence?: number | null
+          created_at?: string
+          created_by?: string | null
+          evidence?: Json
+          id?: string
+          note?: string | null
+          opponent_team_id?: string
+          source?: Database["public"]["Enums"]["opponent_scouting_source"]
+          tag_value?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opponent_scouting_tags_opponent_team_id_fkey"
+            columns: ["opponent_team_id"]
+            isOneToOne: false
+            referencedRelation: "opponent_teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       opponent_teams: {
         Row: {
           abbreviation: string | null
@@ -1287,6 +1337,44 @@ export type Database = {
             columns: ["season_id"]
             isOneToOne: false
             referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_external_ids: {
+        Row: {
+          confidence: string | null
+          created_at: string
+          external_id: string
+          id: string
+          linked_by: string | null
+          player_id: string
+          service: string
+        }
+        Insert: {
+          confidence?: string | null
+          created_at?: string
+          external_id: string
+          id?: string
+          linked_by?: string | null
+          player_id: string
+          service: string
+        }
+        Update: {
+          confidence?: string | null
+          created_at?: string
+          external_id?: string
+          id?: string
+          linked_by?: string | null
+          player_id?: string
+          service?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_external_ids_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]
@@ -1998,6 +2086,86 @@ export type Database = {
           },
         ]
       }
+      practice_reps: {
+        Row: {
+          block_id: string | null
+          coach_tag:
+            | Database["public"]["Enums"]["practice_rep_coach_tag"]
+            | null
+          drill_id: string | null
+          id: string
+          metrics: Json
+          outcome: string
+          outcome_category: Database["public"]["Enums"]["practice_rep_outcome_category"]
+          player_id: string | null
+          practice_id: string
+          recorded_at: string
+          recorded_by: string | null
+          rep_number: number | null
+        }
+        Insert: {
+          block_id?: string | null
+          coach_tag?:
+            | Database["public"]["Enums"]["practice_rep_coach_tag"]
+            | null
+          drill_id?: string | null
+          id?: string
+          metrics?: Json
+          outcome: string
+          outcome_category: Database["public"]["Enums"]["practice_rep_outcome_category"]
+          player_id?: string | null
+          practice_id: string
+          recorded_at?: string
+          recorded_by?: string | null
+          rep_number?: number | null
+        }
+        Update: {
+          block_id?: string | null
+          coach_tag?:
+            | Database["public"]["Enums"]["practice_rep_coach_tag"]
+            | null
+          drill_id?: string | null
+          id?: string
+          metrics?: Json
+          outcome?: string
+          outcome_category?: Database["public"]["Enums"]["practice_rep_outcome_category"]
+          player_id?: string | null
+          practice_id?: string
+          recorded_at?: string
+          recorded_by?: string | null
+          rep_number?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_reps_block_id_fkey"
+            columns: ["block_id"]
+            isOneToOne: false
+            referencedRelation: "practice_blocks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_reps_drill_id_fkey"
+            columns: ["drill_id"]
+            isOneToOne: false
+            referencedRelation: "practice_drills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_reps_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_reps_practice_id_fkey"
+            columns: ["practice_id"]
+            isOneToOne: false
+            referencedRelation: "practices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       practice_station_assignments: {
         Row: {
           block_id: string
@@ -2245,10 +2413,12 @@ export type Database = {
           indoor_template_id: string | null
           is_quick_practice: boolean
           latitude: number | null
+          linked_game_id: string | null
           location: string | null
           longitude: number | null
           place_id: string | null
           plan: string | null
+          prep_focus_summary: string | null
           run_status: Database["public"]["Enums"]["practice_run_status"]
           scheduled_at: string
           started_at: string | null
@@ -2270,10 +2440,12 @@ export type Database = {
           indoor_template_id?: string | null
           is_quick_practice?: boolean
           latitude?: number | null
+          linked_game_id?: string | null
           location?: string | null
           longitude?: number | null
           place_id?: string | null
           plan?: string | null
+          prep_focus_summary?: string | null
           run_status?: Database["public"]["Enums"]["practice_run_status"]
           scheduled_at: string
           started_at?: string | null
@@ -2295,10 +2467,12 @@ export type Database = {
           indoor_template_id?: string | null
           is_quick_practice?: boolean
           latitude?: number | null
+          linked_game_id?: string | null
           location?: string | null
           longitude?: number | null
           place_id?: string | null
           plan?: string | null
+          prep_focus_summary?: string | null
           run_status?: Database["public"]["Enums"]["practice_run_status"]
           scheduled_at?: string
           started_at?: string | null
@@ -2322,6 +2496,13 @@ export type Database = {
             columns: ["indoor_template_id"]
             isOneToOne: false
             referencedRelation: "practice_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practices_linked_game_id_fkey"
+            columns: ["linked_game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
             referencedColumns: ["id"]
           },
           {
@@ -2659,6 +2840,47 @@ export type Database = {
           },
         ]
       }
+      team_integrations: {
+        Row: {
+          config: Json
+          connected_at: string
+          connected_by: string | null
+          id: string
+          is_active: boolean
+          service: string
+          team_id: string
+          updated_at: string
+        }
+        Insert: {
+          config?: Json
+          connected_at?: string
+          connected_by?: string | null
+          id?: string
+          is_active?: boolean
+          service: string
+          team_id: string
+          updated_at?: string
+        }
+        Update: {
+          config?: Json
+          connected_at?: string
+          connected_by?: string | null
+          id?: string
+          is_active?: boolean
+          service?: string
+          team_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_integrations_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       team_invitations: {
         Row: {
           accepted_at: string | null
@@ -2795,6 +3017,57 @@ export type Database = {
         }
         Relationships: []
       }
+      training_sessions: {
+        Row: {
+          external_session_id: string | null
+          id: string
+          imported_at: string
+          imported_by: string | null
+          metrics: Json
+          occurred_at: string
+          player_id: string
+          service: string
+          team_id: string
+        }
+        Insert: {
+          external_session_id?: string | null
+          id?: string
+          imported_at?: string
+          imported_by?: string | null
+          metrics: Json
+          occurred_at: string
+          player_id: string
+          service: string
+          team_id: string
+        }
+        Update: {
+          external_session_id?: string | null
+          id?: string
+          imported_at?: string
+          imported_by?: string | null
+          metrics?: Json
+          occurred_at?: string
+          player_id?: string
+          service?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "training_sessions_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_sessions_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_profiles: {
         Row: {
           avatar_url: string | null
@@ -2831,6 +3104,21 @@ export type Database = {
           last_name?: string
           phone?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      weakness_deficit_map: {
+        Row: {
+          deficit_slug: string
+          weakness_code: string
+        }
+        Insert: {
+          deficit_slug: string
+          weakness_code: string
+        }
+        Update: {
+          deficit_slug?: string
+          weakness_code?: string
         }
         Relationships: []
       }
@@ -2883,6 +3171,10 @@ export type Database = {
         Args: { p_player_id: string; p_user_id: string }
         Returns: boolean
       }
+      match_player_by_external_id: {
+        Args: { p_external_id: string; p_service: string }
+        Returns: string
+      }
       practice_reorder_blocks: {
         Args: { p_order: string[]; p_practice_id: string }
         Returns: undefined
@@ -2902,6 +3194,14 @@ export type Database = {
         | "cancelled"
         | "postponed"
       league_role: "league_admin" | "league_manager"
+      opponent_scouting_category:
+        | "pitch_mix"
+        | "pitcher_handedness"
+        | "batter_profile"
+        | "approach"
+        | "baserunning"
+        | "defense"
+      opponent_scouting_source: "manual" | "auto_derived"
       player_position:
         | "pitcher"
         | "catcher"
@@ -2970,6 +3270,8 @@ export type Database = {
         | "classroom"
         | "open_space"
       practice_notification_kind: "pre_practice"
+      practice_rep_coach_tag: "hot" | "cold" | "improved" | "form_break"
+      practice_rep_outcome_category: "positive" | "neutral" | "negative"
       practice_run_status: "not_started" | "running" | "completed"
       practice_season_phase:
         | "preseason"
@@ -3152,6 +3454,15 @@ export const Constants = {
         "postponed",
       ],
       league_role: ["league_admin", "league_manager"],
+      opponent_scouting_category: [
+        "pitch_mix",
+        "pitcher_handedness",
+        "batter_profile",
+        "approach",
+        "baserunning",
+        "defense",
+      ],
+      opponent_scouting_source: ["manual", "auto_derived"],
       player_position: [
         "pitcher",
         "catcher",
@@ -3225,6 +3536,8 @@ export const Constants = {
         "open_space",
       ],
       practice_notification_kind: ["pre_practice"],
+      practice_rep_coach_tag: ["hot", "cold", "improved", "form_break"],
+      practice_rep_outcome_category: ["positive", "neutral", "negative"],
       practice_run_status: ["not_started", "running", "completed"],
       practice_season_phase: [
         "preseason",

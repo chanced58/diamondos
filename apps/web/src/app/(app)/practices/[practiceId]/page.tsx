@@ -11,6 +11,10 @@ import { PlayerPracticeView } from './PlayerPracticeView';
 import { CancelPracticeForm } from './CancelPracticeForm';
 import { PracticePlanEditor } from './PracticePlanEditor';
 import { LocationMap } from '@/components/maps/LocationMap';
+import { RepCaptureForm } from './RepCaptureForm';
+import { HotHittersPanel } from './HotHittersPanel';
+import { identifyColdHitters, rankHotHitters } from '@baseball/shared';
+import { listTeamPracticeReps } from '@baseball/database';
 
 export const metadata: Metadata = { title: 'Practice Notes' };
 
@@ -75,6 +79,23 @@ export default async function PracticeNotesPage({
       p !== null && p.team_id === practice.team_id,
     );
 
+  // Tier 6 F1: load the linked game's opponent + date when this is a prep practice.
+  let prepTarget: { opponentName: string; scheduledAt: string } | null = null;
+  if (practice.linked_game_id) {
+    const { data: linkedGame } = await db
+      .from('games')
+      .select('opponent_name, scheduled_at')
+      .eq('id', practice.linked_game_id)
+      .eq('team_id', practice.team_id)
+      .maybeSingle();
+    if (linkedGame) {
+      prepTarget = {
+        opponentName: linkedGame.opponent_name,
+        scheduledAt: linkedGame.scheduled_at,
+      };
+    }
+  }
+
   const header = (
     <div className="mb-8">
       <Link href="/practices" className="text-sm text-brand-700 hover:underline">
@@ -88,6 +109,19 @@ export default async function PracticeNotesPage({
         {practice.duration_minutes && ` · ${practice.duration_minutes} min`}
         {practice.location && ` · ${practice.location}`}
       </p>
+      {prepTarget && (
+        <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="text-xs font-semibold text-amber-900 uppercase tracking-wide mb-1">
+            Prepping for
+          </div>
+          <div className="text-sm font-medium text-amber-900">
+            vs {prepTarget.opponentName} · {formatDate(prepTarget.scheduledAt)}
+          </div>
+          {practice.prep_focus_summary && (
+            <p className="mt-2 text-xs text-amber-900/80">{practice.prep_focus_summary}</p>
+          )}
+        </div>
+      )}
       {practice.latitude && practice.longitude && (
         <div className="mt-4">
           <LocationMap
@@ -127,6 +161,23 @@ export default async function PracticeNotesPage({
       (playerNotesResult.data ?? []).map((row) => [row.player_id, row]),
     );
 
+    // Tier 6 F4: hot-hitter analysis over the last 3 days of practice reps
+    // across ALL practices for this team, so today's practice informs the
+    // lineup decision for tomorrow's game.
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 3600 * 1000);
+    const recentReps = await listTeamPracticeReps(db as never, practice.team_id, threeDaysAgo);
+    const hotHitters = rankHotHitters(recentReps, { lookbackDays: 3 });
+    const coldHitters = identifyColdHitters(recentReps, { lookbackDays: 3 });
+    const playerLookup = Object.fromEntries(
+      players.map((p) => [p.id, { firstName: p.first_name, lastName: p.last_name, jerseyNumber: p.jersey_number }]),
+    );
+    const repPlayers = players.map((p) => ({
+      id: p.id,
+      firstName: p.first_name,
+      lastName: p.last_name,
+      jerseyNumber: p.jersey_number,
+    }));
+
     return (
       <div className="p-8 max-w-4xl">
         {header}
@@ -160,6 +211,20 @@ export default async function PracticeNotesPage({
           practiceId={params.practiceId}
           initialPlan={practice.plan ?? ''}
         />
+
+        {/* ── Tier 6 F4 — rep capture + hot-hitter analysis ─────────── */}
+        {practice.status !== 'cancelled' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-6">
+            <RepCaptureForm practiceId={params.practiceId} players={repPlayers} />
+            <HotHittersPanel
+              hotHitters={hotHitters}
+              coldHitters={coldHitters}
+              players={playerLookup}
+              totalReps={recentReps.length}
+            />
+          </div>
+        )}
+
         <PracticeNotesForm
           practiceId={params.practiceId}
           teamId={practice.team_id}

@@ -104,6 +104,10 @@ export interface PracticeWithBlocks {
   isQuickPractice: boolean;
   status: string;
   plan?: string;
+  /** Optional Tier 6 link: the upcoming game this practice is prepping for. */
+  linkedGameId?: string;
+  /** Tier 6 rationale shown on the plan header when linkedGameId is set. */
+  prepFocusSummary?: string;
   blocks: Array<PracticeBlock & {
     players: PracticeBlockPlayer[];
     stations: Array<PracticeStation & { assignments: PracticeStationAssignment[] }>;

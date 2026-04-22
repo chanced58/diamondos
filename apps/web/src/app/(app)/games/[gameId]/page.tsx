@@ -11,6 +11,8 @@ import { CancelGameForm } from './CancelGameForm';
 import { StartGameForm } from './StartGameForm';
 import { LocationMap } from '@/components/maps/LocationMap';
 import { EditGameButton, ResetGameForm, RecalculateScoresForm } from './GameDetailClient';
+import { GameTakeaways } from './GameTakeaways';
+import { getGameWeaknesses } from '@baseball/database';
 
 export const metadata: Metadata = { title: 'Game' };
 
@@ -108,6 +110,29 @@ export default async function GameDetailPage({
   const vsAt = isHome ? 'vs' : '@';
   const isCompleted = game.status === 'completed';
 
+  // Tier 6 F2: compute weakness takeaways for completed games when the viewer is a coach.
+  let weaknesses: Awaited<ReturnType<typeof getGameWeaknesses>> = [];
+  let weaknessesUnavailable = false;
+  let lostGame = false;
+  if (isCompleted && isCoach) {
+    const weHome = weAreHome(game.location_type, game.neutral_home_team);
+    const ourScore = weHome ? game.home_score : game.away_score;
+    const theirScore = weHome ? game.away_score : game.home_score;
+    lostGame = ourScore < theirScore;
+
+    try {
+      weaknesses = await getGameWeaknesses(db as never, params.gameId, game.team_id);
+    } catch (err) {
+      console.error('[GameDetail] getGameWeaknesses failed', {
+        gameId: params.gameId,
+        teamId: game.team_id,
+        err,
+      });
+      weaknessesUnavailable = true;
+      weaknesses = [];
+    }
+  }
+
   // Parse date and time for the edit form using local timezone so the form
   // shows the coach's local time, not the UTC equivalent.
   const scheduled    = new Date(game.scheduled_at);
@@ -165,6 +190,26 @@ export default async function GameDetailPage({
           )}
         </div>
       </div>
+
+      {/* ── Takeaways (Tier 6 F2 — coaches, completed games) ────── */}
+      {isCompleted && isCoach && weaknesses.length > 0 && (
+        <>
+          <GameTakeaways weaknesses={weaknesses} lostGame={lostGame} />
+          <div className="mb-6">
+            <Link
+              href={`/practices/prep/new?sourceGameId=${game.id}`}
+              className="inline-block bg-amber-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-amber-700 transition-colors text-sm"
+            >
+              Create prep practice from these takeaways
+            </Link>
+          </div>
+        </>
+      )}
+      {isCompleted && isCoach && weaknessesUnavailable && (
+        <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-600">
+          Takeaways are temporarily unavailable for this game. Reload to try again.
+        </div>
+      )}
 
       {/* ── Edit game (coaches only) ────────────────────────────── */}
       {isCoach && (
