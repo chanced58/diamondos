@@ -7,6 +7,7 @@ import {
   EQUIPMENT_LABELS,
   FIELD_SPACE_LABELS,
   PracticeAgeLevel,
+  PracticeDeficit,
   PracticeEquipment,
   PracticeFieldSpace,
   PracticeSkillCategory,
@@ -16,6 +17,7 @@ import {
 interface Props {
   filters: DrillFilters;
   onChange: (next: DrillFilters) => void;
+  deficits: PracticeDeficit[];
 }
 
 function toggle<T>(arr: readonly T[] | undefined, value: T): T[] {
@@ -50,12 +52,14 @@ function Checkbox<T extends string>({
   );
 }
 
-export function DrillFiltersPanel({ filters, onChange }: Props): JSX.Element {
+export function DrillFiltersPanel({ filters, onChange, deficits }: Props): JSX.Element {
   const hasAnyFilter =
     (filters.skillCategories?.length ?? 0) > 0 ||
     (filters.ageLevels?.length ?? 0) > 0 ||
     (filters.equipment?.length ?? 0) > 0 ||
     (filters.fieldSpaces?.length ?? 0) > 0 ||
+    (filters.deficitIds?.length ?? 0) > 0 ||
+    filters.deficitPriority === 'primary' ||
     // 'all' is the default source — don't count it as an active filter so
     // the Clear button stays hidden on a fresh page.
     (filters.visibility !== undefined && filters.visibility !== 'all') ||
@@ -145,6 +149,59 @@ export function DrillFiltersPanel({ filters, onChange }: Props): JSX.Element {
             }
           />
         ))}
+      </section>
+
+      <section className="border-t border-gray-100 pt-3 mt-3">
+        <h3 className="text-xs uppercase tracking-wide font-semibold text-gray-500 mb-1">
+          Addresses deficit
+        </h3>
+        {deficits.length === 0 ? (
+          <p className="text-xs text-gray-400">No deficits available.</p>
+        ) : (
+          <>
+            <label className="flex items-center gap-2 text-sm text-gray-700 py-1 cursor-pointer mb-1">
+              <input
+                type="checkbox"
+                checked={filters.deficitPriority === 'primary'}
+                onChange={(e) =>
+                  onChange({
+                    ...filters,
+                    deficitPriority: e.target.checked ? 'primary' : 'any',
+                  })
+                }
+                className="rounded border-gray-300 text-brand-700 focus:ring-brand-500"
+              />
+              Primary tags only
+            </label>
+            <div className="max-h-48 overflow-y-auto pr-1 border border-gray-100 rounded">
+              {deficits.map((d) => {
+                const checked = filters.deficitIds?.includes(d.id) ?? false;
+                return (
+                  <label
+                    key={d.id}
+                    className="flex items-center gap-2 text-sm text-gray-700 py-1 px-2 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        const current = filters.deficitIds ?? [];
+                        const next = checked
+                          ? current.filter((id) => id !== d.id)
+                          : [...current, d.id];
+                        onChange({ ...filters, deficitIds: next });
+                      }}
+                      className="rounded border-gray-300 text-brand-700 focus:ring-brand-500"
+                    />
+                    <span className="truncate" title={d.description ?? d.name}>
+                      {d.name}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </>
+        )}
       </section>
 
       <section className="border-t border-gray-100 pt-3 mt-3">
