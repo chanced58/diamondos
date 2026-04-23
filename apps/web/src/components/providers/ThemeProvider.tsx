@@ -14,6 +14,11 @@ export type Density = 'compact' | 'comfortable' | 'spacious';
 export type Motion = 'on' | 'off';
 export type Tone = 'utilitarian' | 'editorial' | 'energetic';
 
+const THEMES    = ['light', 'dark', 'dugout'] as const;
+const DENSITIES = ['compact', 'comfortable', 'spacious'] as const;
+const MOTIONS   = ['on', 'off'] as const;
+const TONES     = ['utilitarian', 'editorial', 'energetic'] as const;
+
 type Prefs = {
   theme: Theme;
   density: Density;
@@ -52,16 +57,36 @@ function applyAttrs(prefs: Prefs): void {
   el.setAttribute('data-tone', prefs.tone);
 }
 
+function safeRead(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function pick<T extends string>(raw: string | null, allowed: readonly T[], fallback: T): T {
+  return raw && (allowed as readonly string[]).includes(raw) ? (raw as T) : fallback;
+}
+
 function readInitialPrefs(serverPrefs?: Partial<Prefs>): Prefs {
   if (typeof window === 'undefined') {
     return { ...DEFAULT_PREFS, ...serverPrefs };
   }
-  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  const theme = (localStorage.getItem(STORAGE_KEYS.theme) as Theme | null) ?? serverPrefs?.theme ?? DEFAULT_PREFS.theme;
-  const density = (localStorage.getItem(STORAGE_KEYS.density) as Density | null) ?? serverPrefs?.density ?? DEFAULT_PREFS.density;
-  const storedMotion = localStorage.getItem(STORAGE_KEYS.motion) as Motion | null;
-  const motion: Motion = storedMotion ?? serverPrefs?.motion ?? (reducedMotion ? 'off' : DEFAULT_PREFS.motion);
-  const tone = (localStorage.getItem(STORAGE_KEYS.tone) as Tone | null) ?? serverPrefs?.tone ?? DEFAULT_PREFS.tone;
+  let reducedMotion = false;
+  try {
+    reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  } catch {
+    reducedMotion = false;
+  }
+
+  const theme   = pick(safeRead(STORAGE_KEYS.theme),   THEMES,    serverPrefs?.theme   ?? DEFAULT_PREFS.theme);
+  const density = pick(safeRead(STORAGE_KEYS.density), DENSITIES, serverPrefs?.density ?? DEFAULT_PREFS.density);
+  const storedMotion = safeRead(STORAGE_KEYS.motion);
+  const motionDefault: Motion = serverPrefs?.motion ?? (reducedMotion ? 'off' : DEFAULT_PREFS.motion);
+  const motion = pick(storedMotion, MOTIONS, motionDefault);
+  const tone    = pick(safeRead(STORAGE_KEYS.tone),    TONES,     serverPrefs?.tone    ?? DEFAULT_PREFS.tone);
+
   return { theme, density, motion, tone };
 }
 
@@ -115,13 +140,26 @@ export function useAppearance(): AppearanceContextValue {
   return ctx;
 }
 
+// Pre-paint inline script. Reads localStorage, validates against known values,
+// falls back to system defaults on any failure. Mirrors readInitialPrefs so the
+// server-rendered <html data-*> never desyncs from the hydrated state.
 export function AppearanceBootstrap(): JSX.Element {
-  return (
-    <script
-      // Runs before paint to prevent theme flash. Defaults are safe no-ops.
-      dangerouslySetInnerHTML={{
-        __html: `(function(){try{var d=document.documentElement;var t=localStorage.getItem('dos_theme')||'light';var den=localStorage.getItem('dos_density')||'comfortable';var m=localStorage.getItem('dos_motion');var to=localStorage.getItem('dos_tone')||'editorial';if(!m){m=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches?'off':'on';}d.setAttribute('data-theme',t);d.setAttribute('data-density',den);d.setAttribute('data-motion',m);d.setAttribute('data-tone',to);}catch(e){}})();`,
-      }}
-    />
-  );
+  const script = `(function(){try{
+    var d=document.documentElement;
+    var themes=['light','dark','dugout'];
+    var densities=['compact','comfortable','spacious'];
+    var motions=['on','off'];
+    var tones=['utilitarian','editorial','energetic'];
+    function pick(k,allow,fb){try{var v=localStorage.getItem(k);return v&&allow.indexOf(v)>-1?v:fb;}catch(e){return fb;}}
+    var reduced=false;try{reduced=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){}
+    var t=pick('dos_theme',themes,'light');
+    var den=pick('dos_density',densities,'comfortable');
+    var m=pick('dos_motion',motions,reduced?'off':'on');
+    var to=pick('dos_tone',tones,'editorial');
+    d.setAttribute('data-theme',t);
+    d.setAttribute('data-density',den);
+    d.setAttribute('data-motion',m);
+    d.setAttribute('data-tone',to);
+  }catch(e){}})();`;
+  return <script dangerouslySetInnerHTML={{ __html: script }} />;
 }

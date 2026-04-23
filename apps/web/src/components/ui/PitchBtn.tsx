@@ -47,7 +47,7 @@ export function PitchBtn({ label, tone, hot, wide, onClick }: PitchBtnProps): JS
     <button
       type="button"
       onClick={onClick}
-      className="btn"
+      className="btn pitch-btn"
       style={{
         background: TONE_BG[tone],
         color: TONE_FG[tone],
@@ -59,15 +59,6 @@ export function PitchBtn({ label, tone, hot, wide, onClick }: PitchBtnProps): JS
         transition: 'transform 100ms var(--ease), filter var(--mo) var(--ease)',
         border: '1px solid rgba(0,0,0,0.03)',
         justifyContent: 'center',
-      }}
-      onMouseDown={(e) => {
-        e.currentTarget.style.transform = 'scale(.97)';
-      }}
-      onMouseUp={(e) => {
-        e.currentTarget.style.transform = '';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = '';
       }}
     >
       {label}

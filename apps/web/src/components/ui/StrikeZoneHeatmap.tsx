@@ -79,11 +79,11 @@ export function StrikeZoneHeatmap({
         />
       ))}
       {/* Pitch markers */}
-      {pitches.map((p) => {
+      {pitches.map((p, index) => {
         const cx = zoneX + p.x * zoneW;
         const cy = zoneY + p.y * zoneH;
         return (
-          <g key={p.num}>
+          <g key={`${p.num}-${index}`}>
             <circle cx={cx} cy={cy} r="11" fill={CALL_COLOR[p.call] ?? 'var(--app-fg-muted)'} opacity="0.85" />
             <text
               x={cx}
