@@ -6,14 +6,14 @@ import { createClient } from '@supabase/supabase-js';
 import { ScoringDemo } from '@/components/home/ScoringDemo';
 import { LeadCaptureForm } from '@/components/home/LeadCaptureForm';
 import { HashRedirect } from '@/components/auth/HashRedirect';
+import { BrandMark } from '@/components/ui/BrandMark';
+import { DiamondField } from '@/components/ui/DiamondField';
 
 export const metadata: Metadata = {
-  title: 'DiamondOS — Baseball Coaching Platform',
+  title: 'DiamondOS — Coach like you mean it',
   description:
     'Pitch-by-pitch scorekeeping, real-time stats, team communication, and pitch count compliance for baseball coaches.',
 };
-
-// ── Site settings type ──────────────────────────────────────────────────────
 
 interface SiteSettings {
   logo_url: string | null;
@@ -34,66 +34,37 @@ const DEFAULTS: SiteSettings = {
   primary_color: '#1e3a8a',
   secondary_color: '#1d4ed8',
   accent_color: '#eff6ff',
-  hero_headline: 'The Operating System for Baseball Coaches',
-  hero_subtext: 'Scorekeeping, pitch count compliance, team communication, and statistics — all in one platform built for high school and youth baseball.',
-  cta_button_text: 'Let Us Know',
-  form_headline: 'Still Building',
+  hero_headline: 'Coach like you mean it.',
+  hero_subtext:
+    'Scorekeeping, pitch-count compliance, team communication, and statistics — built for the dugout, not the desk.',
+  cta_button_text: 'Let us know',
+  form_headline: 'Still building',
   form_subtext: 'If you are interested, please let us know.',
 };
 
-// ── Feature data ────────────────────────────────────────────────────────────
-
-const FEATURES = [
+const VALUE_PROPS = [
   {
-    title: 'Pitch-by-Pitch Scoring',
-    description:
-      'Record every pitch, hit, and play in real time. Works offline — syncs automatically when you reconnect.',
-    icon: (
-      <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
-      </svg>
-    ),
+    eyebrow: 'Scorekeeping',
+    title: 'Pitch by pitch, in the sun',
+    body: 'Record every ball, hit, and out in real time. Works offline — syncs automatically when you reconnect.',
   },
   {
-    title: 'Pitch Count Compliance',
-    description:
-      'Built-in NFHS, Little League, and NCAA pitch count rules. Automatic rest-day calculations and live alerts.',
-    icon: (
-      <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
-      </svg>
-    ),
+    eyebrow: 'Communication',
+    title: 'Team in one tap',
+    body: 'Announcements, topic channels, direct messages. Push notifications and RSVPs. No more group texts.',
   },
   {
-    title: 'Team Communication',
-    description:
-      'Announcements, topic channels, and direct messages with push notifications and RSVP tracking.',
-    icon: (
-      <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
-      </svg>
-    ),
-  },
-  {
-    title: 'Statistics & Analytics',
-    description:
-      'Batting averages, ERA, Quality At-Bats, and spray charts — all computed from your play-by-play data.',
-    icon: (
-      <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
-      </svg>
-    ),
+    eyebrow: 'Stats',
+    title: 'Numbers that follow the player',
+    body: 'Every at-bat is tied to the player profile — moves with them team to team. Spray charts, QABs, ERAs, all computed from play-by-play.',
   },
 ];
-
-// ── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function HomePage(): Promise<JSX.Element> {
   const supabase = createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   const isLoggedIn = !!user;
 
-  // Fetch site settings (public read)
   let s: SiteSettings = DEFAULTS;
   try {
     const db = createClient(
@@ -111,180 +82,244 @@ export default async function HomePage(): Promise<JSX.Element> {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div style={{ minHeight: '100vh', background: 'var(--app-bg)', display: 'flex', flexDirection: 'column' }}>
       <HashRedirect />
-      {/* ── Nav ─────────────────────────────────────────────────────────────── */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur border-b border-gray-200">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <a href="/" className="flex items-center gap-2.5">
+
+      {/* Sticky nav */}
+      <nav
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 50,
+          background: 'rgba(255,255,255,.85)',
+          backdropFilter: 'saturate(1.2) blur(10px)',
+          borderBottom: '1px solid var(--app-border)',
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 1100,
+            margin: '0 auto',
+            padding: '14px 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'var(--app-fg)' }}>
             {s.logo_url ? (
-              <img src={s.logo_url} alt={s.site_name} className="h-8 w-8 object-contain" />
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={s.logo_url} alt={s.site_name} style={{ height: 32, width: 32, objectFit: 'contain' }} />
             ) : (
-              <span
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm"
-                style={{ backgroundColor: s.primary_color }}
-              >
-                {s.site_name.charAt(0)}
-              </span>
+              <BrandMark size={32} />
             )}
-            <span className="text-xl font-bold tracking-tight" style={{ color: s.primary_color }}>
-              {s.site_name}
-            </span>
-          </a>
-          <Link
-            href={isLoggedIn ? '/dashboard' : '/login'}
-            className="text-sm font-medium px-4 py-2 rounded-lg text-white transition-colors"
-            style={{ backgroundColor: s.primary_color }}
-          >
-            {isLoggedIn ? 'Go to Dashboard' : 'Sign In'}
+            <span className="display" style={{ fontSize: 20, letterSpacing: '-0.01em' }}>{s.site_name}</span>
           </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Link href={isLoggedIn ? '/dashboard' : '/login'} className="btn btn-ghost btn-sm">
+              {isLoggedIn ? 'Dashboard' : 'Sign in'}
+            </Link>
+            {!isLoggedIn && (
+              <Link href="/players/signup" className="btn btn-turf btn-sm">Start free</Link>
+            )}
+          </div>
         </div>
       </nav>
 
-      {/* ── Hero ────────────────────────────────────────────────────────────── */}
-      <section className="pt-20 pb-12 px-6" style={{ backgroundColor: s.accent_color }}>
-        <div className="max-w-3xl mx-auto text-center space-y-5">
-          {s.logo_url && (
-            <img src={s.logo_url} alt={s.site_name} className="h-16 w-16 object-contain mx-auto" />
-          )}
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-gray-900 tracking-tight leading-tight">
-            {s.hero_headline}
+      {/* Hero */}
+      <section style={{ padding: '80px 24px 48px', position: 'relative' }}>
+        <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
+          <div className="eyebrow" style={{ color: 'var(--turf-700)', marginBottom: 14 }}>
+            Built for dugouts · Not desks
+          </div>
+          <h1
+            className="display"
+            style={{
+              fontSize: 'clamp(44px, 7vw, 88px)',
+              letterSpacing: '-0.02em',
+              lineHeight: 1,
+              margin: 0,
+            }}
+          >
+            Coach like you{' '}
+            <em className="display-it" style={{ color: 'var(--turf-700)' }}>mean</em> it.
           </h1>
-          <p className="text-lg text-gray-500 max-w-2xl mx-auto leading-relaxed">
+          <p
+            style={{
+              fontSize: 18,
+              color: 'var(--app-fg-muted)',
+              lineHeight: 1.55,
+              maxWidth: 640,
+              margin: '22px auto 0',
+            }}
+          >
             {s.hero_subtext}
           </p>
-          {isLoggedIn && (
-            <div className="pt-2">
-              <Link
-                href="/dashboard"
-                className="inline-block px-6 py-3 text-sm font-semibold rounded-lg text-white transition-colors shadow-sm"
-                style={{ backgroundColor: s.primary_color }}
-              >
-                Open Dashboard
-              </Link>
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 28, flexWrap: 'wrap' }}>
+            <Link href={isLoggedIn ? '/dashboard' : '/players/signup'} className="btn btn-turf btn-lg">
+              {isLoggedIn ? 'Open dashboard' : 'Start free'}
+            </Link>
+            <Link href="/demo/player-profile" className="btn btn-ghost btn-lg">
+              See a sample profile
+            </Link>
+          </div>
         </div>
       </section>
 
-      {/* ── Features ────────────────────────────────────────────────────────── */}
-      <section className="py-20 px-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-10">
-            <h2 className="text-2xl font-bold text-gray-900">
-              Everything You Need on Game Day
-            </h2>
+      {/* Product mock — scoreboard + floating field */}
+      <section style={{ padding: '0 24px 80px' }}>
+        <div style={{ maxWidth: 1000, margin: '0 auto', position: 'relative' }}>
+          <div
+            className="card card-hero"
+            style={{
+              padding: 32,
+              borderRadius: 20,
+              boxShadow: '0 30px 60px -30px rgba(0,0,0,.3)',
+            }}
+          >
+            <div className="between" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 20 }}>
+              <div>
+                <div className="eyebrow" style={{ color: 'var(--turf-200)' }}>
+                  <span className="live-chip" style={{ marginRight: 8 }}>
+                    <span className="pulse" />
+                    Live
+                  </span>
+                  Top of 4
+                </div>
+                <div className="display" style={{ fontSize: 'clamp(32px, 5vw, 48px)', color: 'white', marginTop: 10 }}>
+                  Wildcats{' '}
+                  <span style={{ opacity: 0.55, fontFamily: 'var(--font-sans)', fontWeight: 500, fontSize: 24 }}>vs</span>{' '}
+                  Hawks
+                </div>
+                <div style={{ color: 'rgba(255,255,255,.7)', marginTop: 6, fontSize: 13 }}>
+                  Ridgeview HS · Field 2 · Sat 3:30 PM
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 28, alignItems: 'center' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,.6)', letterSpacing: '.1em', textTransform: 'uppercase' }}>
+                    Away
+                  </div>
+                  <div
+                    className="mono"
+                    style={{ fontSize: 'clamp(44px, 7vw, 64px)', fontWeight: 800, lineHeight: 1, color: 'white', fontFamily: 'var(--font-display)' }}
+                  >
+                    4
+                  </div>
+                </div>
+                <div style={{ color: 'rgba(255,255,255,.3)', fontSize: 24, fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>
+                  vs
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,.6)', letterSpacing: '.1em', textTransform: 'uppercase' }}>
+                    Home
+                  </div>
+                  <div
+                    className="mono"
+                    style={{ fontSize: 'clamp(44px, 7vw, 64px)', fontWeight: 800, lineHeight: 1, color: 'white', fontFamily: 'var(--font-display)' }}
+                  >
+                    2
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {FEATURES.map((f) => (
+          <div
+            style={{
+              position: 'absolute',
+              right: -10,
+              top: -24,
+              display: 'grid',
+              placeItems: 'center',
+              pointerEvents: 'none',
+            }}
+            className="hidden md:grid"
+          >
+            <DiamondField runners={{ first: true, second: true, third: false }} size={140} variant="editorial" />
+          </div>
+        </div>
+      </section>
+
+      {/* Value props */}
+      <section style={{ padding: '0 24px 80px' }}>
+        <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
+            {VALUE_PROPS.map((p) => (
               <div
-                key={f.title}
-                className="bg-white rounded-xl border border-gray-200 p-6 space-y-3"
+                key={p.title}
+                className="card"
+                style={{
+                  padding: 24,
+                  borderLeft: '3px solid var(--turf-600)',
+                  borderRadius: 12,
+                }}
               >
-                <div style={{ color: s.secondary_color }}>{f.icon}</div>
-                <h3 className="font-semibold text-gray-900">{f.title}</h3>
-                <p className="text-sm text-gray-500 leading-relaxed">{f.description}</p>
+                <div className="eyebrow" style={{ color: 'var(--turf-700)' }}>{p.eyebrow}</div>
+                <div className="display" style={{ fontSize: 22, marginTop: 6 }}>{p.title}</div>
+                <p style={{ fontSize: 14, color: 'var(--app-fg-muted)', lineHeight: 1.55, marginTop: 8, marginBottom: 0 }}>
+                  {p.body}
+                </p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── Scoring Demo ────────────────────────────────────────────────────── */}
-      <section className="pb-16 px-6 pt-16">
-        <div className="max-w-xl mx-auto">
-          <div className="text-center mb-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: s.secondary_color }}>
-              Try It
-            </h2>
-            <p className="mt-1 text-2xl font-bold text-gray-900">Score an At-Bat</p>
-            <p className="mt-1 text-sm text-gray-400">
+      {/* Scoring demo */}
+      <section style={{ padding: '0 24px 80px' }}>
+        <div style={{ maxWidth: 560, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 18 }}>
+            <div className="eyebrow" style={{ color: 'var(--turf-700)' }}>Try it</div>
+            <div className="display" style={{ fontSize: 28, marginTop: 6 }}>Score an at-bat</div>
+            <p style={{ fontSize: 14, color: 'var(--app-fg-muted)', marginTop: 4 }}>
               Record pitches and outcomes for 3 batters using the real {s.site_name} game engine.
             </p>
           </div>
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8">
+          <div className="card" style={{ padding: 28 }}>
             <ScoringDemo isLoggedIn={isLoggedIn} />
           </div>
         </div>
       </section>
 
-      {/* ── Player Profile Preview ─────────────────────────────────────────── */}
-      <section className="pb-16 px-6 pt-4">
-        <div className="max-w-xl mx-auto text-center">
-          <p className="text-sm font-semibold uppercase tracking-wide" style={{ color: s.secondary_color }}>
-            Preview
-          </p>
-          <p className="mt-1 text-2xl font-bold text-gray-900">See the Player Profile</p>
-          <p className="mt-1 text-sm text-gray-400">
-            Lifetime stats, measurables, coach-verified character highlights, and an AI-powered scouting summary — what recruiters will see.
-          </p>
-          <div className="pt-4">
-            <Link
-              href="/demo/player-profile"
-              className="inline-flex items-center gap-2 text-sm font-semibold px-5 py-2.5 rounded-lg text-white hover:opacity-90 transition-opacity"
-              style={{ backgroundColor: s.primary_color }}
-            >
-              Preview a sample profile →
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Portable Stats ────────────────────────────────────────────────── */}
-      <section className="py-20 px-6" style={{ backgroundColor: s.accent_color }}>
-        <div className="max-w-3xl mx-auto text-center space-y-6">
-          <div
-            className="inline-flex items-center justify-center w-14 h-14 rounded-full"
-            style={{ backgroundColor: s.primary_color + '15', color: s.primary_color }}
+      {/* Quote band */}
+      <section
+        style={{
+          padding: '64px 24px',
+          background: 'var(--brand-900)',
+          color: 'white',
+        }}
+      >
+        <div style={{ maxWidth: 800, margin: '0 auto', textAlign: 'center' }}>
+          <p
+            className="display-it"
+            style={{
+              fontSize: 'clamp(24px, 3.5vw, 40px)',
+              lineHeight: 1.25,
+              color: 'white',
+              margin: 0,
+            }}
           >
-            <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
-            </svg>
-          </div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
-            Stats that follow the player, not the team
-          </h2>
-          <p className="text-lg text-gray-500 max-w-2xl mx-auto leading-relaxed">
-            Every at-bat, pitch, and play is tied to the player&apos;s profile — not a single team roster.
-            When a player moves to a new team on the platform, their full statistical history comes with them.
-            Coaches see the complete picture from day one.
+            &ldquo;Numbers that follow the player, not the team.
+            Every at-bat, every pitch, every play — portable across every team a player joins.&rdquo;
           </p>
-          <div className="grid sm:grid-cols-3 gap-4 max-w-xl mx-auto pt-2">
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-2xl font-bold" style={{ color: s.primary_color }}>100%</div>
-              <div className="text-sm text-gray-500 mt-1">Portable stats</div>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-2xl font-bold" style={{ color: s.primary_color }}>Every</div>
-              <div className="text-sm text-gray-500 mt-1">Season preserved</div>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-2xl font-bold" style={{ color: s.primary_color }}>Zero</div>
-              <div className="text-sm text-gray-500 mt-1">Data lost on transfer</div>
-            </div>
-          </div>
-
-          <div className="pt-6">
-            <Link
-              href="/players/signup"
-              className="inline-flex items-center gap-2 text-sm font-semibold px-5 py-2.5 rounded-lg text-white hover:opacity-90 transition-opacity"
-              style={{ backgroundColor: s.primary_color }}
-            >
-              Are you a player? Create your recruiting profile →
-            </Link>
-            <p className="text-xs text-gray-500 mt-3">
-              Free to start. Upgrade to Pro to publish publicly and share with recruiters.
-            </p>
+          <div style={{ marginTop: 18, color: 'var(--turf-200)', fontSize: 13, letterSpacing: 0.14, textTransform: 'uppercase', fontWeight: 700 }}>
+            The DiamondOS promise
           </div>
         </div>
       </section>
 
-      {/* ── CTA / Lead Capture ────────────────────────────────────────────── */}
+      {/* Footer CTA / Lead capture */}
       {!isLoggedIn && (
-        <section className="py-16 px-6 bg-white">
-          <div className="max-w-sm mx-auto text-center">
-            <h2 className="text-xl font-bold text-gray-900 mb-1">{s.form_headline}</h2>
-            <p className="text-sm text-gray-500 mb-5">{s.form_subtext}</p>
+        <section style={{ padding: '64px 24px', background: 'var(--app-surface)' }}>
+          <div style={{ maxWidth: 460, margin: '0 auto', textAlign: 'center' }}>
+            <div className="display" style={{ fontSize: 32 }}>
+              {s.form_headline.toLowerCase().includes('build')
+                ? <>Still <em className="display-it" style={{ color: 'var(--turf-700)' }}>building</em></>
+                : s.form_headline}
+            </div>
+            <p style={{ fontSize: 14, color: 'var(--app-fg-muted)', marginTop: 8, marginBottom: 18 }}>
+              {s.form_subtext}
+            </p>
             <LeadCaptureForm
               ctaText={s.cta_button_text}
               primaryColor={s.primary_color}
@@ -295,13 +330,22 @@ export default async function HomePage(): Promise<JSX.Element> {
         </section>
       )}
 
-      {/* ── Footer ──────────────────────────────────────────────────────────── */}
-      <footer className="mt-auto border-t border-gray-200 bg-white">
-        <div className="max-w-5xl mx-auto px-6 py-6 flex items-center justify-between text-xs text-gray-400">
-          <div className="flex items-center gap-2">
-            {s.logo_url && (
-              <img src={s.logo_url} alt="" className="h-5 w-5 object-contain opacity-50" />
-            )}
+      {/* Footer */}
+      <footer style={{ marginTop: 'auto', borderTop: '1px solid var(--app-border)', background: 'var(--app-surface)' }}>
+        <div
+          style={{
+            maxWidth: 1100,
+            margin: '0 auto',
+            padding: '20px 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: 12,
+            color: 'var(--app-fg-subtle)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <BrandMark size={20} />
             <span>{s.site_name}</span>
           </div>
           <span>&copy; {new Date().getFullYear()}</span>
