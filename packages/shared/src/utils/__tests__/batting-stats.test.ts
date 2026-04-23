@@ -167,6 +167,34 @@ describe('deriveBattingStats — lineup-replay batter inference', () => {
     expect(stats.get('p9')?.plateAppearances).toBe(1);
     expect(stats.has('p2')).toBe(false);
   });
+
+  it('attributes a substitution-by-position correctly when the lineup has batting-order gaps', () => {
+    // Lineup has slots 1 and 3 only (slot 2 missing). A substitution comes
+    // in for battingOrderPosition 3; it should land on the slot-3 entry,
+    // not on the second dense-packed array element (which would be wrong
+    // if we used idx = 3 - 1 without a battingOrder lookup).
+    const gappyLineup: BattingLineupContext = {
+      isHome: true,
+      ourLineup: [
+        { playerId: 'p1', battingOrder: 1 },
+        { playerId: 'p3', battingOrder: 3 },
+      ],
+    };
+    const events = [
+      // sub in p9 at position 3; no outPlayerId (slot had occupant but sub tracked by position)
+      e('substitution', { inPlayerId: 'p9', battingOrderPosition: 3 }, false),
+      // PA 1 (slot 1 → p1)
+      e(EventType.HIT, { hitType: HitType.SINGLE }, false),
+      // PA 2 (dense-packed index 1 → now p9, which IS the real slot-3 player)
+      e(EventType.OUT, { outType: 'groundout' }, false),
+    ];
+    const lineups = new Map([[GAME, gappyLineup]]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players, lineups);
+    expect(stats.get('p1')?.plateAppearances).toBe(1);
+    expect(stats.get('p9')?.plateAppearances).toBe(1);
+    expect(stats.has('p3')).toBe(false);
+  });
 });
 
 describe('deriveBattingStats — TRIPLE_PLAY handler', () => {

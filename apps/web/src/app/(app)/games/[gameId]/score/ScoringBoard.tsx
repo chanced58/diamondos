@@ -2167,7 +2167,11 @@ export function ScoringBoard({
             ) : (
               <>
                 {!canRecord && (
-                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                  <div
+                    role="alert"
+                    aria-live="assertive"
+                    className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800"
+                  >
                     <p className="font-semibold">Set active batter and pitcher to start recording</p>
                     <p className="text-xs mt-1">
                       {activeBatterId == null && activePitcherId == null

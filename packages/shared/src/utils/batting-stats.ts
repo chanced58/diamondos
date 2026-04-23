@@ -16,16 +16,22 @@ function isHardHit(hitType: string | undefined, trajectory: string | undefined, 
   return false;
 }
 
-// Legacy scoring sessions (pre-commit a071a02) stamped the literal string
-// 'unknown-batter' into payloads when no batter was selected. That stub is
-// truthy, so a plain `if (!batterId) continue` guard lets it through;
-// stats then accumulate against a phantom player whose ID isn't in any
-// roster, and the downstream `teamPlayerIds.has(s.playerId)` filter in the
-// stats and compliance pages silently drops the entire row. Mirror the
+/**
+ * The literal string stamped into `batterId` payload fields by pre-a071a02
+ * scoring sessions when no active batter was selected. Exported so every
+ * consumer (batting-stats, opponent-batting-stats, any future scorer UI)
+ * references the same symbolic name rather than repeating the string.
+ */
+export const UNKNOWN_BATTER_STUB = 'unknown-batter';
+
+// The stub is truthy, so a plain `if (!batterId) continue` guard lets it
+// through; stats then accumulate against a phantom player whose ID isn't in
+// any roster, and the downstream `teamPlayerIds.has(s.playerId)` filter in
+// the stats and compliance pages silently drops the entire row. Mirror the
 // normalizePitcherId helper in pitching-stats so batting also drops the
 // stub cleanly instead of routing data to a hidden sink.
 const normalizeBatterId = (id: string | null | undefined): string | null =>
-  id && id !== 'unknown-batter' ? id : null;
+  id && id !== UNKNOWN_BATTER_STUB ? id : null;
 
 // FanGraphs 2023 wOBA linear weights
 const W_BB  = 0.69;
@@ -150,19 +156,20 @@ export function deriveBattingStats(
     }
 
     // ── Lineup-based batter inference (only if caller supplied context) ────
-    // Build an ordered array of playerIds indexed by batting order slot minus
-    // one. Legacy lineups can have gaps (not every 1..9 slot filled), so we
-    // pack dense: the n-th entry of orderedLineup is the n-th occupied slot.
-    // When a PA-closing event lacks a resolvable batter, infer it from
-    // orderedLineup[ourCompletedPAs % orderedLineup.length]. SUBSTITUTION
-    // events update orderedLineup in place so pinch hitters flow through.
+    // Store the lineup as an array of { playerId, battingOrder } objects
+    // sorted by battingOrder ascending. Keeping the original battingOrder
+    // value (not just position in the array) matters for substitutions that
+    // carry `battingOrderPosition` — legacy lineups can have gaps (slot 2
+    // missing, etc.), so looking up by array index would attribute the sub
+    // to the wrong slot. We dense-pack for cycling (baseball batting order
+    // skips empty slots), but match by value for substitutions.
     const lineupInfo = lineupsByGameId?.get(gameId);
-    const orderedLineup: string[] = lineupInfo
+    const orderedLineup: { playerId: string; battingOrder: number }[] = lineupInfo
       ? lineupInfo.ourLineup
           .filter((e) => e.playerId && typeof e.battingOrder === 'number')
           .slice()
           .sort((a, b) => a.battingOrder - b.battingOrder)
-          .map((e) => e.playerId)
+          .map((e) => ({ playerId: e.playerId, battingOrder: e.battingOrder }))
       : [];
     let ourCompletedPAs = 0;
 
@@ -186,7 +193,7 @@ export function deriveBattingStats(
       const normalized = normalizeBatterId(rawId as string | null | undefined);
       if (normalized) return normalized;
       if (!isOurHalfInning(isTop) || orderedLineup.length === 0) return null;
-      return orderedLineup[ourCompletedPAs % orderedLineup.length] ?? null;
+      return orderedLineup[ourCompletedPAs % orderedLineup.length]?.playerId ?? null;
     };
 
     // Called after every PA-closing handler to advance the batting order
@@ -567,13 +574,29 @@ export function deriveBattingStats(
         // pinch hitter's PA still resolves to the real player. Only apply for
         // our team's subs — opponent subs are tracked separately in
         // opponent-batting-stats and don't affect our batting-order pointer.
+        //
+        // Match by playerId when outPlayerId is given (the canonical swap).
+        // Match by battingOrder value when only battingOrderPosition is
+        // given (slot had no known prior occupant). We match by *value* —
+        // not array index — because dense-packed lineups with gaps (e.g.
+        // battingOrders [1, 3, 5]) would otherwise attribute a sub at
+        // position 3 to the third entry (battingOrder 5) instead of the
+        // real slot 3. Fall back to index-based lookup only if no slot
+        // with that battingOrder exists (defensive; preserves prior
+        // behavior for callers whose lineups don't include the slot yet).
         if (!isOpponentSub && orderedLineup.length > 0 && inId) {
           if (outId) {
-            const idx = orderedLineup.indexOf(outId);
-            if (idx >= 0) orderedLineup[idx] = inId;
+            const idx = orderedLineup.findIndex((e) => e.playerId === outId);
+            if (idx >= 0) orderedLineup[idx].playerId = inId;
           } else if (typeof payload?.battingOrderPosition === 'number') {
-            const idx = payload.battingOrderPosition - 1;
-            if (idx >= 0 && idx < orderedLineup.length) orderedLineup[idx] = inId;
+            const pos = payload.battingOrderPosition;
+            const byBatOrder = orderedLineup.findIndex((e) => e.battingOrder === pos);
+            if (byBatOrder >= 0) {
+              orderedLineup[byBatOrder].playerId = inId;
+            } else {
+              const idx = pos - 1;
+              if (idx >= 0 && idx < orderedLineup.length) orderedLineup[idx].playerId = inId;
+            }
           }
         }
         continue;
