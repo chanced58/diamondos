@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { PracticeBlockType } from '@baseball/shared';
 
 export async function planPracticeAction(
   _prevState: string | null | undefined,
@@ -19,6 +20,7 @@ export async function planPracticeAction(
   const durationRaw = formData.get('duration') as string;
   const duration = durationRaw ? parseInt(durationRaw, 10) : null;
   const plan = ((formData.get('plan') as string) || '').trim();
+  const drillIdsRaw = (formData.get('drill_ids') as string) || '[]';
 
   // Structured address fields from AddressAutocomplete
   const address = (formData.get('location_address') as string) || null;
@@ -30,6 +32,16 @@ export async function planPracticeAction(
 
   if (!teamId) return 'Missing team ID.';
   if (!date) return 'Practice date is required.';
+
+  let drillIds: string[] = [];
+  try {
+    const parsed: unknown = JSON.parse(drillIdsRaw);
+    if (Array.isArray(parsed)) {
+      drillIds = parsed.filter((v): v is string => typeof v === 'string');
+    }
+  } catch {
+    drillIds = [];
+  }
 
   const scheduledAt = new Date(`${date}T${time}`).toISOString();
 
@@ -83,6 +95,42 @@ export async function planPracticeAction(
       },
       { onConflict: 'practice_id' },
     );
+  }
+
+  // Create structured practice_blocks from selected drills. Block insert
+  // failures don't fail the flow — the practice is created and the coach can
+  // re-add drills in the full plan editor.
+  if (drillIds.length > 0) {
+    const { data: drillRows } = await supabase
+      .from('practice_drills')
+      .select('id, name, default_duration_minutes')
+      .in('id', drillIds)
+      .or(`team_id.eq.${teamId},visibility.eq.system`);
+    const drillsById = new Map(
+      ((drillRows ?? []) as Array<{
+        id: string;
+        name: string;
+        default_duration_minutes: number | null;
+      }>).map((d) => [d.id, d]),
+    );
+    const blockRows = drillIds
+      .map((id, position) => {
+        const drill = drillsById.get(id);
+        if (!drill) return null;
+        return {
+          practice_id: practice.id,
+          position,
+          block_type: PracticeBlockType.CUSTOM,
+          title: drill.name,
+          planned_duration_minutes: drill.default_duration_minutes ?? 10,
+          drill_id: drill.id,
+          field_spaces: [],
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+    if (blockRows.length > 0) {
+      await supabase.from('practice_blocks').insert(blockRows);
+    }
   }
 
   redirect(`/practices/${practice.id}`);

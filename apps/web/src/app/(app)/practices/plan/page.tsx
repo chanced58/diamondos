@@ -1,9 +1,11 @@
 import type { JSX } from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
+import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getUserAccess } from '@/lib/user-access';
+import { listDrills } from '@baseball/database';
 import { PlanPracticeForm } from './PlanPracticeForm';
 
 export const metadata: Metadata = { title: 'Plan a Practice' };
@@ -39,6 +41,12 @@ export default async function PlanPracticePage(): Promise<JSX.Element | null> {
     );
   }
 
+  const db = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+  const drills = await listDrills(db as never, activeTeam.id);
+
   return (
     <div className="p-8 max-w-lg">
       <div className="mb-6">
@@ -48,7 +56,7 @@ export default async function PlanPracticePage(): Promise<JSX.Element | null> {
         <h1 className="text-2xl font-bold text-gray-900 mt-2">Plan a Practice</h1>
         <p className="text-gray-500 text-sm">{activeTeam.name}</p>
       </div>
-      <PlanPracticeForm teamId={activeTeam.id} />
+      <PlanPracticeForm teamId={activeTeam.id} drills={drills} />
     </div>
   );
 }

@@ -1,9 +1,11 @@
 'use client';
-import type { JSX } from 'react';
+import { useState, type JSX } from 'react';
 
 import { useFormState, useFormStatus } from 'react-dom';
 import { planPracticeAction } from './actions';
 import { AddressAutocomplete } from '@/components/maps/AddressAutocomplete';
+import type { PracticeDrill } from '@baseball/shared';
+import { DrillPicker } from '../templates/DrillPicker';
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -21,8 +23,15 @@ function SubmitButton() {
 const inputClass =
   'w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent';
 
-export function PlanPracticeForm({ teamId }: { teamId: string }): JSX.Element | null {
+interface Props {
+  teamId: string;
+  drills: PracticeDrill[];
+}
+
+export function PlanPracticeForm({ teamId, drills }: Props): JSX.Element | null {
   const [error, formAction] = useFormState(planPracticeAction, null);
+  const [selectedDrills, setSelectedDrills] = useState<PracticeDrill[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Default date = tomorrow
   const tomorrow = new Date();
@@ -32,6 +41,11 @@ export function PlanPracticeForm({ teamId }: { teamId: string }): JSX.Element | 
   return (
     <form action={formAction} className="space-y-5">
       <input type="hidden" name="teamId" value={teamId} />
+      <input
+        type="hidden"
+        name="drill_ids"
+        value={JSON.stringify(selectedDrills.map((d) => d.id))}
+      />
 
       <div className="grid grid-cols-2 gap-4">
         <div>
@@ -96,6 +110,50 @@ export function PlanPracticeForm({ teamId }: { teamId: string }): JSX.Element | 
         </p>
       </div>
 
+      {/* Drills ─ added as structured practice_blocks */}
+      <div className="border-t border-gray-100 pt-5">
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-sm font-medium text-gray-700">Drills</label>
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="text-sm text-brand-700 hover:underline"
+          >
+            + Add drill
+          </button>
+        </div>
+        {selectedDrills.length === 0 ? (
+          <p className="text-xs text-gray-400">
+            Optionally pre-load drills — you can reorder and fine-tune them later in the plan
+            builder.
+          </p>
+        ) : (
+          <ul className="flex flex-wrap gap-2">
+            {selectedDrills.map((drill, idx) => (
+              <li
+                key={`${drill.id}-${idx}`}
+                className="inline-flex items-center gap-1.5 bg-brand-50 border border-brand-200 text-brand-800 text-xs font-medium px-2.5 py-1 rounded-full"
+              >
+                <span>{drill.name}</span>
+                {drill.defaultDurationMinutes !== undefined && (
+                  <span className="text-brand-600/70">· {drill.defaultDurationMinutes}m</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedDrills((arr) => arr.filter((_, i) => i !== idx))
+                  }
+                  aria-label={`Remove ${drill.name}`}
+                  className="text-brand-500 hover:text-red-500 ml-0.5"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       {error && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
           {error}
@@ -103,6 +161,17 @@ export function PlanPracticeForm({ teamId }: { teamId: string }): JSX.Element | 
       )}
 
       <SubmitButton />
+
+      {pickerOpen && (
+        <DrillPicker
+          drills={drills}
+          onPick={(d) => {
+            setSelectedDrills((arr) => [...arr, d]);
+            setPickerOpen(false);
+          }}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
     </form>
   );
 }
