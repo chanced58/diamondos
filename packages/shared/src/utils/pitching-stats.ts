@@ -148,6 +148,13 @@ export function derivePitchingStats(
     let awayStartingPitcher: string | null = null;
     let isTopOfInning = true;
 
+    // Normalize a pitcher id field: treat the legacy 'unknown-pitcher' stub
+    // (and other falsy values) as null. Anything stored into currentPitcherId
+    // or the side caches must go through this so a stub never poisons state
+    // and then leaks back out via the resolvePitcher fallback.
+    const normalizePitcherId = (id: string | null | undefined): string | null =>
+      id && id !== 'unknown-pitcher' ? id : null;
+
     // Resolve the pitcher for an event:
     //   • prefer the payload field, but treat the legacy stub
     //     'unknown-pitcher' as missing — same convention as the new emit path
@@ -155,10 +162,12 @@ export function derivePitchingStats(
     //   • fall back to currentPitcherId tracked across the replay so out
     //     events without a payload pitcher still attribute to whoever's on
     //     the mound
-    function resolvePitcher(rawId: string | null | undefined): string | null {
-      if (rawId && rawId !== 'unknown-pitcher') return rawId;
-      return currentPitcherId;
-    }
+    // Arrow expression (not a function declaration) so it doesn't trigger
+    // `no-inner-declarations` while still closing over currentPitcherId.
+    const resolvePitcher = (rawId: string | null | undefined): string | null => {
+      const real = normalizePitcherId(rawId);
+      return real ?? currentPitcherId;
+    };
 
     // Set by pitch progression when a strikeout is detected via ab.strikes >= 3,
     // so the subsequent explicit STRIKEOUT event can skip redundant stat updates.
@@ -244,7 +253,7 @@ export function derivePitchingStats(
       // ── Pitching change / game start → update current pitcher ──────────
       if (etype === EventType.PITCHING_CHANGE) {
         const p = payload as PitchingChangePayload;
-        const newPitcherId = p.newPitcherId;
+        const newPitcherId = normalizePitcherId(p.newPitcherId);
         currentPitcherId = newPitcherId;
         // Update the appropriate side's cached starter so a subsequent
         // INNING_CHANGE restores this pitcher (not the original starter).
@@ -262,8 +271,8 @@ export function derivePitchingStats(
       }
 
       if (etype === EventType.GAME_START) {
-        homeStartingPitcher = (payload?.homeLineupPitcherId as string) ?? null;
-        awayStartingPitcher = (payload?.awayLineupPitcherId as string) ?? null;
+        homeStartingPitcher = normalizePitcherId(payload?.homeLineupPitcherId as string | undefined);
+        awayStartingPitcher = normalizePitcherId(payload?.awayLineupPitcherId as string | undefined);
         // Top of first: home team is in the field (away bats first).
         currentPitcherId = isTopOfInning ? homeStartingPitcher : awayStartingPitcher;
       }
@@ -535,12 +544,13 @@ export function derivePitchingStats(
         const pitcherId = resolvePitcher(rawPitcherId);
         const batterId: string | undefined = payload?.batterId;
         if (pitcherId) {
-          // Seed currentPitcherId so forceAdvanceRunners/scoreRun see it.
-          // Only do so when the payload carried a real id — never let
-          // 'unknown-pitcher' overwrite the cached real pitcher.
-          if (!currentPitcherId && rawPitcherId && rawPitcherId !== 'unknown-pitcher') {
-            currentPitcherId = rawPitcherId;
-          }
+          // Update currentPitcherId from any real payload pitcher (no
+          // !currentPitcherId guard) so subsequent forceAdvanceRunners /
+          // scoreRun calls charge runs to whoever the walk says is on the
+          // mound. Mirrors the PITCH_THROWN behavior; the stub check keeps
+          // 'unknown-pitcher' from poisoning state.
+          const realPayloadPitcher = normalizePitcherId(rawPitcherId);
+          if (realPayloadPitcher) currentPitcherId = realPayloadPitcher;
           if (!walkCountedByPitch) {
             // Quick-walk: no PITCH_THROWN preceded this, so gamesAppeared
             // and totalPAs were never incremented for this PA.
@@ -574,10 +584,10 @@ export function derivePitchingStats(
         const pitcherId = resolvePitcher(rawPitcherId);
         const batterId: string | undefined = payload?.batterId;
         if (pitcherId) {
-          // Seed currentPitcherId only from a real id (never from the stub)
-          if (!currentPitcherId && rawPitcherId && rawPitcherId !== 'unknown-pitcher') {
-            currentPitcherId = rawPitcherId;
-          }
+          // Update currentPitcherId from any real payload pitcher (mirrors
+          // PITCH_THROWN/WALK so subsequent run attribution stays correct).
+          const realPayloadPitcher = normalizePitcherId(rawPitcherId);
+          if (realPayloadPitcher) currentPitcherId = realPayloadPitcher;
         }
         if (pitcherId && batterId) {
           resetAtBat(batterId);
