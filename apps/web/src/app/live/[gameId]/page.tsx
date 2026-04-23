@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
 import { createServerClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 import { getGameById } from '@baseball/database';
 import { LiveScoreClient } from '@/components/game/LiveScoreClient';
 import { BrandMark } from '@/components/ui/BrandMark';
@@ -28,8 +29,14 @@ export default async function LiveGamePage({ params }: Props): Promise<JSX.Eleme
     );
   }
 
-  // Look up the team name for display (public data — no auth needed for public viewer).
-  const { data: team } = await supabase
+  // teams is RLS-protected (team_members_view_team) so anon visitors can't read
+  // it via the request-scoped client. Use the service-role client to fetch the
+  // display name for the hero scoreboard.
+  const service = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+  const { data: team } = await service
     .from('teams')
     .select('name')
     .eq('id', game.team_id)

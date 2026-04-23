@@ -4,6 +4,7 @@ import type { JSX } from 'react';
 import { useEffect, useState } from 'react';
 import { createBrowserClient } from '@/lib/supabase/client';
 import type { Database } from '@baseball/database';
+import { weAreHome } from '@baseball/shared';
 import { DiamondField } from '@/components/ui/DiamondField';
 import { LiveChip } from '@/components/ui/LiveChip';
 
@@ -49,6 +50,9 @@ export function LiveScoreClient({ gameId, initialGame, teamName }: LiveScoreClie
   const usName = teamName ?? 'Our team';
   const isLive = game.status === 'in_progress';
   const isComplete = game.status === 'completed';
+  const weHome = weAreHome(game.location_type, game.neutral_home_team);
+  const awaySub = weHome ? game.opponent_name : usName;
+  const homeSub = weHome ? usName : game.opponent_name;
 
   return (
     <div className="card card-hero" style={{ padding: 24, borderRadius: 18 }}>
@@ -89,7 +93,7 @@ export function LiveScoreClient({ gameId, initialGame, teamName }: LiveScoreClie
         </div>
 
         <div style={{ display: 'flex', gap: 28, alignItems: 'center', marginLeft: 'auto' }}>
-          <ScoreBlock label="Away" score={game.away_score} sub={game.location_type === 'away' ? usName : game.opponent_name} />
+          <ScoreBlock label="Away" score={game.away_score} sub={awaySub} />
           <div
             style={{
               color: 'rgba(255,255,255,.3)',
@@ -100,7 +104,7 @@ export function LiveScoreClient({ gameId, initialGame, teamName }: LiveScoreClie
           >
             vs
           </div>
-          <ScoreBlock label="Home" score={game.home_score} sub={game.location_type === 'home' ? usName : game.opponent_name} />
+          <ScoreBlock label="Home" score={game.home_score} sub={homeSub} />
         </div>
       </div>
 

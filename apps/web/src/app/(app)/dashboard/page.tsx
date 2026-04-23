@@ -260,47 +260,19 @@ export default async function DashboardPage({
         </div>
         {league && (
           <div className="seg" style={{ width: 240 }}>
-            <Link
-              href="/dashboard"
-              className={!isLeagueView ? 'on' : ''}
-              style={{
-                textAlign: 'center',
-                padding: '6px 8px',
-                fontSize: 12,
-                fontWeight: 600,
-                color: !isLeagueView ? 'var(--app-fg)' : 'var(--app-fg-muted)',
-                background: !isLeagueView ? 'var(--app-surface)' : 'transparent',
-                borderRadius: 7,
-                textDecoration: 'none',
-                boxShadow: !isLeagueView ? '0 1px 3px rgba(0,0,0,.1)' : undefined,
-              }}
-            >
+            <Link href="/dashboard" className={!isLeagueView ? 'on' : ''}>
               My Team
             </Link>
-            <Link
-              href="/dashboard?view=league"
-              className={isLeagueView ? 'on' : ''}
-              style={{
-                textAlign: 'center',
-                padding: '6px 8px',
-                fontSize: 12,
-                fontWeight: 600,
-                color: isLeagueView ? 'var(--app-fg)' : 'var(--app-fg-muted)',
-                background: isLeagueView ? 'var(--app-surface)' : 'transparent',
-                borderRadius: 7,
-                textDecoration: 'none',
-                boxShadow: isLeagueView ? '0 1px 3px rgba(0,0,0,.1)' : undefined,
-              }}
-            >
+            <Link href="/dashboard?view=league" className={isLeagueView ? 'on' : ''}>
               {league.name}
             </Link>
           </div>
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
+      <div className="dashboard-summary-grid">
         {nextGame ? (
-          <CardHero style={{ padding: 28, gridColumn: 'span 1' }}>
+          <CardHero style={{ padding: 28 }}>
             <div className="between" style={{ alignItems: 'flex-start' }}>
               <div>
                 <div className="eyebrow" style={{ color: 'var(--turf-200)' }}>Next up</div>
@@ -337,7 +309,7 @@ export default async function DashboardPage({
             </div>
           </CardHero>
         ) : (
-          <CardHero style={{ padding: 28, gridColumn: 'span 1' }}>
+          <CardHero style={{ padding: 28 }}>
             <div className="eyebrow" style={{ color: 'var(--turf-200)' }}>Next up</div>
             <div className="display" style={{ fontSize: 30, color: 'white', marginTop: 6 }}>
               Nothing <em className="display-it" style={{ color: 'var(--turf-200)' }}>scheduled</em>
@@ -364,7 +336,7 @@ export default async function DashboardPage({
         />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 16 }}>
+      <div className="dashboard-content-grid">
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div className="between" style={{ padding: '16px 20px', borderBottom: '1px solid var(--app-border)' }}>
             <h2 className="display" style={{ fontSize: 18 }}>Upcoming</h2>

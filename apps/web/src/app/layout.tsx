@@ -7,10 +7,7 @@ import {
   ThemeProvider,
 } from '@/components/providers/ThemeProvider';
 
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-sans-next',
-});
+const inter = Inter({ subsets: ['latin'] });
 
 export const viewport: Viewport = {
   themeColor: '#1e3a8a',
@@ -39,7 +36,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }): JSX.Element {
   return (
-    <html lang="en" data-theme="light" data-density="comfortable" data-motion="on" data-tone="editorial">
+    <html
+      lang="en"
+      data-theme="light"
+      data-density="comfortable"
+      data-motion="on"
+      data-tone="editorial"
+      suppressHydrationWarning
+    >
       <head>
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
         <AppearanceBootstrap />

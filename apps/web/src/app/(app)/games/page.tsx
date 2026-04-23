@@ -161,32 +161,12 @@ export default async function SchedulePage({
                 <Link
                   href={`/games?month=${year}-${String(month).padStart(2, '0')}`}
                   className={!isLeagueView ? 'on' : ''}
-                  style={{
-                    textAlign: 'center',
-                    padding: '6px 8px',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    borderRadius: 7,
-                    textDecoration: 'none',
-                    color: !isLeagueView ? 'var(--app-fg)' : 'var(--app-fg-muted)',
-                    background: !isLeagueView ? 'var(--app-surface)' : 'transparent',
-                  }}
                 >
                   My Team
                 </Link>
                 <Link
                   href={`/games?month=${year}-${String(month).padStart(2, '0')}&view=league`}
                   className={isLeagueView ? 'on' : ''}
-                  style={{
-                    textAlign: 'center',
-                    padding: '6px 8px',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    borderRadius: 7,
-                    textDecoration: 'none',
-                    color: isLeagueView ? 'var(--app-fg)' : 'var(--app-fg-muted)',
-                    background: isLeagueView ? 'var(--app-surface)' : 'transparent',
-                  }}
                 >
                   {league.name}
                 </Link>

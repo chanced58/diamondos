@@ -459,13 +459,38 @@
     background: var(--app-surface-2); border: 1px solid var(--app-border); border-radius: 10px;
     padding: 3px;
   }
-  .seg button {
+  .seg > * {
     padding: 6px 8px; font-size: 12px; font-weight: 600;
     color: var(--app-fg-muted);
     border-radius: 7px; transition: all var(--mo) var(--ease);
     background: none; border: none; cursor: pointer;
+    text-align: center; text-decoration: none;
   }
-  .seg button.on { background: var(--app-surface); color: var(--app-fg); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+  .seg > .on { background: var(--app-surface); color: var(--app-fg); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+
+  /* Dashboard responsive grids */
+  .dashboard-summary-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .dashboard-content-grid {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 960px) {
+    .dashboard-summary-grid { grid-template-columns: 1fr 1fr; }
+    .dashboard-summary-grid > :first-child { grid-column: 1 / -1; }
+    .dashboard-content-grid  { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) {
+    .dashboard-summary-grid { grid-template-columns: 1fr; }
+  }
+
+  /* PitchBtn active feedback (applies to keyboard, touch, mouse) */
+  .pitch-btn:active { transform: scale(.97); }
 
   /* Baseball primitives */
   .diamond-field { position: relative; width: 180px; height: 180px; }

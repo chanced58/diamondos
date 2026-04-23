@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import type { JSX, ReactNode } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { createServerClient } from '@/lib/supabase/server';
@@ -34,13 +34,29 @@ const DEFAULTS: SiteSettings = {
   primary_color: '#1e3a8a',
   secondary_color: '#1d4ed8',
   accent_color: '#eff6ff',
-  hero_headline: 'Coach like you mean it.',
+  hero_headline: 'Coach like you *mean* it.',
   hero_subtext:
     'Scorekeeping, pitch-count compliance, team communication, and statistics — built for the dugout, not the desk.',
   cta_button_text: 'Let us know',
-  form_headline: 'Still building',
+  form_headline: 'Still *building*',
   form_subtext: 'If you are interested, please let us know.',
 };
+
+// Render a string with `*word*` markers as italic-turf emphasis.
+// Lets tenants customize hero/form headlines from site_settings while keeping
+// the editorial italic accent in place.
+function renderEmphasized(text: string): ReactNode[] {
+  return text.split(/(\*[^*]+\*)/g).map((part, i) => {
+    if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+      return (
+        <em key={`${i}:${part}`} className="display-it" style={{ color: 'var(--turf-700)' }}>
+          {part.slice(1, -1)}
+        </em>
+      );
+    }
+    return part;
+  });
+}
 
 const VALUE_PROPS = [
   {
@@ -108,7 +124,6 @@ export default async function HomePage(): Promise<JSX.Element> {
         >
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'var(--app-fg)' }}>
             {s.logo_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img src={s.logo_url} alt={s.site_name} style={{ height: 32, width: 32, objectFit: 'contain' }} />
             ) : (
               <BrandMark size={32} />
@@ -141,8 +156,7 @@ export default async function HomePage(): Promise<JSX.Element> {
               margin: 0,
             }}
           >
-            Coach like you{' '}
-            <em className="display-it" style={{ color: 'var(--turf-700)' }}>mean</em> it.
+            {renderEmphasized(s.hero_headline)}
           </h1>
           <p
             style={{
@@ -313,9 +327,7 @@ export default async function HomePage(): Promise<JSX.Element> {
         <section style={{ padding: '64px 24px', background: 'var(--app-surface)' }}>
           <div style={{ maxWidth: 460, margin: '0 auto', textAlign: 'center' }}>
             <div className="display" style={{ fontSize: 32 }}>
-              {s.form_headline.toLowerCase().includes('build')
-                ? <>Still <em className="display-it" style={{ color: 'var(--turf-700)' }}>building</em></>
-                : s.form_headline}
+              {renderEmphasized(s.form_headline)}
             </div>
             <p style={{ fontSize: 14, color: 'var(--app-fg-muted)', marginTop: 8, marginBottom: 18 }}>
               {s.form_subtext}
