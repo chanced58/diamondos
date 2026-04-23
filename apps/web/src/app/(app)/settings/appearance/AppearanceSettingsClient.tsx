@@ -1,6 +1,7 @@
 'use client';
 
 import type { JSX, ReactNode } from 'react';
+import { useId } from 'react';
 import {
   useAppearance,
   type Theme,
@@ -15,22 +16,31 @@ interface SectionProps<T extends string> {
   title: string;
   description: string;
   value: T;
-  set: (v: T) => void;
-  options: { v: T; l: string; hint?: string }[];
+  set: (value: T) => void;
+  options: { value: T; label: string; hint?: string }[];
 }
 
-function Section<T extends string>({ title, description, value, set, options }: SectionProps<T>): JSX.Element {
+function Section<T extends string>({
+  title,
+  description,
+  value,
+  set,
+  options,
+}: SectionProps<T>): JSX.Element {
+  const labelId = useId();
   return (
     <div className="card" style={{ padding: 20, marginTop: 14 }}>
       <div className="between" style={{ alignItems: 'flex-start' }}>
         <div>
-          <div className="display" style={{ fontSize: 18 }}>{title}</div>
+          <div id={labelId} className="display" style={{ fontSize: 18 }}>{title}</div>
           <p style={{ fontSize: 13, color: 'var(--app-fg-muted)', marginTop: 4, margin: 0, maxWidth: 420 }}>
             {description}
           </p>
         </div>
       </div>
       <div
+        role="radiogroup"
+        aria-labelledby={labelId}
         style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
@@ -38,13 +48,15 @@ function Section<T extends string>({ title, description, value, set, options }: 
           marginTop: 14,
         }}
       >
-        {options.map((o) => {
-          const active = value === o.v;
+        {options.map((option) => {
+          const active = value === option.value;
           return (
             <button
-              key={o.v}
+              key={option.value}
               type="button"
-              onClick={() => set(o.v)}
+              role="radio"
+              aria-checked={active}
+              onClick={() => set(option.value)}
               className="btn"
               style={{
                 background: active ? 'var(--app-surface)' : 'var(--app-surface-2)',
@@ -58,10 +70,10 @@ function Section<T extends string>({ title, description, value, set, options }: 
                 color: 'var(--app-fg)',
               }}
             >
-              <span style={{ fontSize: 13, fontWeight: 700 }}>{o.l}</span>
-              {o.hint && (
+              <span style={{ fontSize: 13, fontWeight: 700 }}>{option.label}</span>
+              {option.hint && (
                 <span style={{ fontSize: 11, color: 'var(--app-fg-muted)', fontWeight: 400 }}>
-                  {o.hint}
+                  {option.hint}
                 </span>
               )}
             </button>
@@ -105,9 +117,9 @@ export function AppearanceSettingsClient(): JSX.Element {
         value={theme}
         set={setTheme}
         options={[
-          { v: 'light',  l: 'Light',        hint: 'Default' },
-          { v: 'dark',   l: 'Dark',         hint: 'Low glare' },
-          { v: 'dugout', l: 'Dugout night', hint: 'Turf accent' },
+          { value: 'light',  label: 'Light',        hint: 'Default' },
+          { value: 'dark',   label: 'Dark',         hint: 'Low glare' },
+          { value: 'dugout', label: 'Dugout night', hint: 'Turf accent' },
         ]}
       />
 
@@ -117,9 +129,9 @@ export function AppearanceSettingsClient(): JSX.Element {
         value={density}
         set={setDensity}
         options={[
-          { v: 'compact',     l: 'Compact' },
-          { v: 'comfortable', l: 'Comfortable' },
-          { v: 'spacious',    l: 'Spacious' },
+          { value: 'compact',     label: 'Compact' },
+          { value: 'comfortable', label: 'Comfortable' },
+          { value: 'spacious',    label: 'Spacious' },
         ]}
       />
 
@@ -129,8 +141,8 @@ export function AppearanceSettingsClient(): JSX.Element {
         value={motion}
         set={setMotion}
         options={[
-          { v: 'on',  l: 'On' },
-          { v: 'off', l: 'Off' },
+          { value: 'on',  label: 'On' },
+          { value: 'off', label: 'Off' },
         ]}
       />
 
@@ -140,9 +152,9 @@ export function AppearanceSettingsClient(): JSX.Element {
         value={tone}
         set={setTone}
         options={[
-          { v: 'utilitarian', l: 'Utility' },
-          { v: 'editorial',   l: 'Editorial' },
-          { v: 'energetic',   l: 'Energetic' },
+          { value: 'utilitarian', label: 'Utility' },
+          { value: 'editorial',   label: 'Editorial' },
+          { value: 'energetic',   label: 'Energetic' },
         ]}
       />
 
