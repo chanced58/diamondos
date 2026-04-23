@@ -138,6 +138,28 @@ export function derivePitchingStats(
     // Current pitcher on the mound for the active half-inning
     let currentPitcherId: string | null = null;
 
+    // Cache of each side's most recently named starting pitcher, captured from
+    // GAME_START and updated by PITCHING_CHANGE. Lets INNING_CHANGE restore
+    // currentPitcherId for the new defending team even when subsequent events
+    // carry the legacy 'unknown-pitcher' stub or omit pitcherId entirely
+    // (which is the failure mode that left the Notus Pirates game's IP blank
+    // — see commit a071a02 for the upstream stub removal).
+    let homeStartingPitcher: string | null = null;
+    let awayStartingPitcher: string | null = null;
+    let isTopOfInning = true;
+
+    // Resolve the pitcher for an event:
+    //   • prefer the payload field, but treat the legacy stub
+    //     'unknown-pitcher' as missing — same convention as the new emit path
+    //     (a071a02) which omits the field entirely
+    //   • fall back to currentPitcherId tracked across the replay so out
+    //     events without a payload pitcher still attribute to whoever's on
+    //     the mound
+    function resolvePitcher(rawId: string | null | undefined): string | null {
+      if (rawId && rawId !== 'unknown-pitcher') return rawId;
+      return currentPitcherId;
+    }
+
     // Set by pitch progression when a strikeout is detected via ab.strikes >= 3,
     // so the subsequent explicit STRIKEOUT event can skip redundant stat updates.
     let strikeoutHandledByPitch = false;
@@ -222,37 +244,63 @@ export function derivePitchingStats(
       // ── Pitching change / game start → update current pitcher ──────────
       if (etype === EventType.PITCHING_CHANGE) {
         const p = payload as PitchingChangePayload;
-        currentPitcherId = p.newPitcherId;
+        const newPitcherId = p.newPitcherId;
+        currentPitcherId = newPitcherId;
+        // Update the appropriate side's cached starter so a subsequent
+        // INNING_CHANGE restores this pitcher (not the original starter).
+        // Whichever team is currently *defending* — i.e. the opposite of
+        // who's batting — is the one being changed. When isTopOfInning is
+        // true, the home team is in the field.
+        if (isTopOfInning) {
+          homeStartingPitcher = newPitcherId;
+        } else {
+          awayStartingPitcher = newPitcherId;
+        }
         // Clear at-bat state on pitching change (new pitcher inherits runners but not count)
         atBatState.clear();
         pendingContact.clear();
       }
 
       if (etype === EventType.GAME_START) {
-        currentPitcherId = (payload?.homeLineupPitcherId as string) ?? null;
+        homeStartingPitcher = (payload?.homeLineupPitcherId as string) ?? null;
+        awayStartingPitcher = (payload?.awayLineupPitcherId as string) ?? null;
+        // Top of first: home team is in the field (away bats first).
+        currentPitcherId = isTopOfInning ? homeStartingPitcher : awayStartingPitcher;
       }
 
-      // ── Inning change → clear at-bat state and reset pitcher ──────────
+      // ── Inning change → clear at-bat state and rotate to the new
+      // ── defending team's starter (cached from GAME_START / PITCHING_CHANGE)
       if (etype === EventType.INNING_CHANGE) {
         atBatState.clear();
         pendingContact.clear();
         clearRunners();
-        // Reset pitcher — the next PITCH_THROWN (or quick-walk/HBP handler)
-        // will set the correct pitcher for this half-inning. Without this,
-        // events between INNING_CHANGE and the first pitch would be
-        // attributed to the previous half-inning's pitcher.
-        currentPitcherId = null;
+        // Flip the half-inning, then restore currentPitcherId from the cache
+        // so out events at the top of the new half (before any PITCH_THROWN
+        // re-seeds it) attribute to the right pitcher. If the cache is
+        // empty for this side (lineup didn't include a starter), falls
+        // back to null and the next real PITCH_THROWN will seed it.
+        isTopOfInning = !isTopOfInning;
+        currentPitcherId = isTopOfInning ? homeStartingPitcher : awayStartingPitcher;
       }
 
       // ── PITCH_THROWN ────────────────────────────────────────────────────
       if (etype === EventType.PITCH_THROWN) {
         const p = payload as PitchThrownPayload;
-        const pitcherId = p.pitcherId ?? p.opponentPitcherId;
+        const rawPitcherId = p.pitcherId ?? p.opponentPitcherId;
         const batterId = p.batterId ?? p.opponentBatterId;
         const { outcome } = p;
 
-        // If we don't know who's pitching yet, infer from the event
-        if (!currentPitcherId) currentPitcherId = pitcherId ?? null;
+        // Update currentPitcherId only when the payload carries a real id —
+        // 'unknown-pitcher' must not overwrite the cached real starter that
+        // INNING_CHANGE just restored (otherwise the stub pollutes state and
+        // every subsequent out attributes to the phantom).
+        if (rawPitcherId && rawPitcherId !== 'unknown-pitcher') {
+          currentPitcherId = rawPitcherId;
+        }
+        // Use the resolved pitcher (real payload first, then current state)
+        // so legacy 'unknown-pitcher' events still drive stats for whoever
+        // the lineup said is on the mound.
+        const pitcherId = resolvePitcher(rawPitcherId);
 
         // Skip if we lack enough context to track stats
         if (!pitcherId || !batterId || !outcome) continue;
@@ -347,10 +395,14 @@ export function derivePitchingStats(
       // ── HIT ─────────────────────────────────────────────────────────────
       if (etype === EventType.HIT) {
         const p = payload as HitPayload;
-        const pitcherId = p.pitcherId ?? p.opponentPitcherId;
+        const pitcherId = resolvePitcher(p.pitcherId ?? p.opponentPitcherId);
         const batterId = p.batterId ?? p.opponentBatterId;
         const fieldersChoice = p.fieldersChoice === true;
         if (pitcherId) {
+          if (!appearedThisGame.has(pitcherId)) {
+            appearedThisGame.add(pitcherId);
+            getStats(pitcherId).gamesAppeared += 1;
+          }
           const s = getStats(pitcherId);
           if (!fieldersChoice) s.hitsAllowed += 1;
           const contact = batterId ? pendingContact.get(batterId) : undefined;
@@ -394,9 +446,13 @@ export function derivePitchingStats(
       // ── OUT (groundout, flyout, etc.) ────────────────────────────────────
       if (etype === EventType.OUT) {
         const p = payload as OutPayload;
-        const pitcherId = p.pitcherId ?? p.opponentPitcherId;
+        const pitcherId = resolvePitcher(p.pitcherId ?? p.opponentPitcherId);
         const batterId = p.batterId ?? p.opponentBatterId;
         if (pitcherId) {
+          if (!appearedThisGame.has(pitcherId)) {
+            appearedThisGame.add(pitcherId);
+            getStats(pitcherId).gamesAppeared += 1;
+          }
           const s = getStats(pitcherId);
           s.inningsPitchedOuts += 1;
           const contact = batterId ? pendingContact.get(batterId) : undefined;
@@ -417,9 +473,13 @@ export function derivePitchingStats(
       // and threeBallCount stats. This handler only adds the out recording.
       // If pitch progression already ran, skip redundant stat updates.
       if (etype === EventType.STRIKEOUT) {
-        const pitcherId: string | undefined = payload?.pitcherId;
+        const pitcherId = resolvePitcher(payload?.pitcherId);
         const batterId: string | undefined = payload?.batterId;
         if (pitcherId) {
+          if (!appearedThisGame.has(pitcherId)) {
+            appearedThisGame.add(pitcherId);
+            getStats(pitcherId).gamesAppeared += 1;
+          }
           const s = getStats(pitcherId);
           if (strikeoutHandledByPitch) {
             // Pitch progression already counted the strikeout; just record the out
@@ -436,9 +496,13 @@ export function derivePitchingStats(
 
       // ── DROPPED_THIRD_STRIKE ──────────────────────────────────────────────
       if (etype === EventType.DROPPED_THIRD_STRIKE) {
-        const pitcherId: string | undefined = payload?.pitcherId;
+        const pitcherId = resolvePitcher(payload?.pitcherId);
         const batterId: string | undefined = payload?.batterId;
         if (pitcherId) {
+          if (!appearedThisGame.has(pitcherId)) {
+            appearedThisGame.add(pitcherId);
+            getStats(pitcherId).gamesAppeared += 1;
+          }
           const s = getStats(pitcherId);
           // K already counted via pitch progression (ab.strikes >= 3) — do NOT double-count
           if (strikeoutHandledByPitch) {
@@ -467,11 +531,16 @@ export function derivePitchingStats(
       // walkCountedByPitch, so we must count walksAllowed here and ensure
       // gamesAppeared / totalPAs are tracked for rate denominators.
       if (etype === EventType.WALK) {
-        const pitcherId: string | undefined = payload?.pitcherId;
+        const rawPitcherId: string | undefined = payload?.pitcherId;
+        const pitcherId = resolvePitcher(rawPitcherId);
         const batterId: string | undefined = payload?.batterId;
         if (pitcherId) {
-          // Seed currentPitcherId so forceAdvanceRunners/scoreRun see it
-          if (!currentPitcherId) currentPitcherId = pitcherId;
+          // Seed currentPitcherId so forceAdvanceRunners/scoreRun see it.
+          // Only do so when the payload carried a real id — never let
+          // 'unknown-pitcher' overwrite the cached real pitcher.
+          if (!currentPitcherId && rawPitcherId && rawPitcherId !== 'unknown-pitcher') {
+            currentPitcherId = rawPitcherId;
+          }
           if (!walkCountedByPitch) {
             // Quick-walk: no PITCH_THROWN preceded this, so gamesAppeared
             // and totalPAs were never incremented for this PA.
@@ -501,11 +570,14 @@ export function derivePitchingStats(
 
       // ── HIT_BY_PITCH (explicit event) ────────────────────────────────────
       if (etype === EventType.HIT_BY_PITCH) {
-        const pitcherId: string | undefined = payload?.pitcherId;
+        const rawPitcherId: string | undefined = payload?.pitcherId;
+        const pitcherId = resolvePitcher(rawPitcherId);
         const batterId: string | undefined = payload?.batterId;
         if (pitcherId) {
-          // Seed currentPitcherId so forceAdvanceRunners/scoreRun see it
-          if (!currentPitcherId) currentPitcherId = pitcherId;
+          // Seed currentPitcherId only from a real id (never from the stub)
+          if (!currentPitcherId && rawPitcherId && rawPitcherId !== 'unknown-pitcher') {
+            currentPitcherId = rawPitcherId;
+          }
         }
         if (pitcherId && batterId) {
           resetAtBat(batterId);
@@ -515,12 +587,16 @@ export function derivePitchingStats(
 
       // ── DOUBLE_PLAY / SACRIFICE → still counts as outs ──────────────────
       if (etype === EventType.DOUBLE_PLAY || etype === EventType.SACRIFICE_BUNT || etype === EventType.SACRIFICE_FLY) {
-        const pitcherId: string | undefined = payload?.pitcherId;
+        const pitcherId = resolvePitcher(payload?.pitcherId);
         const batterId: string | undefined = payload?.batterId;
         // DP retires 2 outs (batter + forced runner); SB/SF retire 1.
         const defaultOuts = etype === EventType.DOUBLE_PLAY ? 2 : 1;
         const outsRecorded: number = payload?.outsRecorded ?? defaultOuts;
         if (pitcherId) {
+          if (!appearedThisGame.has(pitcherId)) {
+            appearedThisGame.add(pitcherId);
+            getStats(pitcherId).gamesAppeared += 1;
+          }
           const s = getStats(pitcherId);
           s.inningsPitchedOuts += outsRecorded;
           if (batterId) {
@@ -562,7 +638,7 @@ export function derivePitchingStats(
 
       // ── FIELD_ERROR → batter reaches on error (unearned), force advance ─
       if (etype === EventType.FIELD_ERROR) {
-        const pitcherId: string | undefined = payload?.pitcherId ?? payload?.opponentPitcherId;
+        const pitcherId = resolvePitcher(payload?.pitcherId ?? payload?.opponentPitcherId);
         const batterId: string | undefined = payload?.batterId ?? payload?.opponentBatterId;
         // Field errors ARE at-bats (no hit) — record to BA by count
         if (pitcherId && batterId) {
