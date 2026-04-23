@@ -39,6 +39,7 @@ export function PlanPracticeForm({ teamId, drills }: Props): JSX.Element | null 
   const defaultDate = tomorrow.toISOString().slice(0, 10);
 
   return (
+    <>
     <form action={formAction} className="space-y-5">
       <input type="hidden" name="teamId" value={teamId} />
       <input
@@ -161,17 +162,20 @@ export function PlanPracticeForm({ teamId, drills }: Props): JSX.Element | null 
       )}
 
       <SubmitButton />
-
-      {pickerOpen && (
-        <DrillPicker
-          drills={drills}
-          onPick={(d) => {
-            setSelectedDrills((arr) => [...arr, d]);
-            setPickerOpen(false);
-          }}
-          onClose={() => setPickerOpen(false)}
-        />
-      )}
     </form>
+
+    {/* Mounted outside the <form> so Enter inside the picker's search input
+        doesn't submit the practice form. */}
+    {pickerOpen && (
+      <DrillPicker
+        drills={drills}
+        onPick={(d) => {
+          setSelectedDrills((arr) => [...arr, d]);
+          setPickerOpen(false);
+        }}
+        onClose={() => setPickerOpen(false)}
+      />
+    )}
+    </>
   );
 }

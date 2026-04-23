@@ -86,17 +86,28 @@ export async function listPitchersWithUsage(
   // Find which of the team's active players have pitching history. We scope to
   // the roster we just loaded — if a player has pitched on another team, their
   // history only counts here when they're on this roster.
+  //
+  // Paginate rather than a single .limit() because pitch_counts has one row per
+  // pitcher per game and multi-year history for a full roster can exceed a
+  // single page. We only need the DISTINCT set of player_ids, so we stop early
+  // once every roster player has been seen.
   const rosterIds = allRosterRows.map((r) => r.id);
   const historyIds = new Set<string>();
   if (rosterIds.length > 0) {
-    const { data: histRows, error: histErr } = await supabase
-      .from('pitch_counts')
-      .select('player_id')
-      .in('player_id', rosterIds)
-      .limit(10000);
-    if (histErr) throw histErr;
-    for (const r of (histRows ?? []) as Array<{ player_id: string }>) {
-      historyIds.add(r.player_id);
+    const PAGE_SIZE = 1000;
+    let from = 0;
+    while (true) {
+      const { data: histRows, error: histErr } = await supabase
+        .from('pitch_counts')
+        .select('player_id')
+        .in('player_id', rosterIds)
+        .range(from, from + PAGE_SIZE - 1);
+      if (histErr) throw histErr;
+      const rows = (histRows ?? []) as Array<{ player_id: string }>;
+      for (const r of rows) historyIds.add(r.player_id);
+      if (rows.length < PAGE_SIZE) break;
+      if (historyIds.size === rosterIds.length) break;
+      from += PAGE_SIZE;
     }
   }
 

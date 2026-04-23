@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useMemo, useState, type JSX } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type JSX } from 'react';
 import {
   PitcherAvailabilityStatus,
   PitcherEligibilitySource,
@@ -58,6 +58,24 @@ const STATUS_RANK: Record<PitcherAvailabilityStatus, number> = {
   [PitcherAvailabilityStatus.UNAVAILABLE]: 2,
 };
 
+/**
+ * Returns all tab-reachable elements inside `root`, in DOM order. Excludes
+ * disabled and explicitly hidden inputs. Used for the dialog's focus trap.
+ */
+function getFocusableElements(root: HTMLElement): HTMLElement[] {
+  const selector = [
+    'a[href]',
+    'button:not([disabled])',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(',');
+  return Array.from(root.querySelectorAll<HTMLElement>(selector)).filter(
+    (el) => !el.hasAttribute('aria-hidden'),
+  );
+}
+
 export function BullpenPitcherPicker({
   candidates,
   initialSelectedIds,
@@ -65,17 +83,51 @@ export function BullpenPitcherPicker({
   onClose,
 }: Props): JSX.Element {
   const headingId = useId();
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(initialSelectedIds),
   );
 
-  // Escape key closes.
+  // Focus management: move initial focus inside the dialog, trap Tab/Shift+Tab
+  // to cycle within it, close on Escape, and restore focus to the previously
+  // focused element on unmount.
   useEffect(() => {
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    if (dialog) {
+      const focusables = getFocusableElements(dialog);
+      (focusables[0] ?? dialog).focus();
+    }
+
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab' || !dialogRef.current) return;
+      const focusables = getFocusableElements(dialogRef.current);
+      if (focusables.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      previouslyFocused?.focus();
+    };
   }, [onClose]);
 
   const sorted = useMemo(() => {
@@ -107,10 +159,12 @@ export function BullpenPitcherPicker({
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={headingId}
-        className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[80vh] flex flex-col"
+        tabIndex={-1}
+        className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[80vh] flex flex-col outline-none"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="p-4 border-b border-gray-200">

@@ -677,9 +677,13 @@ function SortableBlock({
         .map((id) => candidatesById.get(id))
         .filter((c): c is BullpenCandidate => c !== undefined)
     : [];
-  const assignedNotInCandidateList = isBullpen
-    ? block.playerIds.filter((id) => !candidatesById.has(id)).length
-    : 0;
+  // Players who were assigned earlier but are no longer in the candidate list
+  // (e.g., deactivated, transferred, or their game history was purged). Keep
+  // them visible with a distinct badge so the coach can explicitly remove them
+  // — otherwise they'd be unreachable from the UI.
+  const staleAssignedIds = isBullpen
+    ? block.playerIds.filter((id) => !candidatesById.has(id))
+    : [];
 
   const startsAt = slot ? new Date(slot.startsAt) : null;
   const endsAt = slot ? new Date(slot.endsAt) : null;
@@ -822,7 +826,7 @@ function SortableBlock({
                 <span className="font-semibold uppercase tracking-wide text-gray-500">
                   Pitchers:
                 </span>
-                {assignedPitchers.length === 0 && assignedNotInCandidateList === 0 && (
+                {assignedPitchers.length === 0 && staleAssignedIds.length === 0 && (
                   <span className="text-gray-400">None assigned</span>
                 )}
                 {assignedPitchers.map((c) => {
@@ -860,11 +864,27 @@ function SortableBlock({
                     </span>
                   );
                 })}
-                {assignedNotInCandidateList > 0 && (
-                  <span className="text-xs text-gray-400 italic">
-                    +{assignedNotInCandidateList} no longer a pitcher candidate
+                {staleAssignedIds.map((id) => (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border bg-gray-50 border-gray-200 text-gray-500 italic"
+                    title="No longer a pitcher candidate (deactivated or off roster)"
+                  >
+                    Former pitcher
+                    {canEdit && (
+                      <button
+                        type="button"
+                        aria-label="Remove former pitcher"
+                        onClick={() =>
+                          onSavePitchers(block.playerIds.filter((pid) => pid !== id))
+                        }
+                        className="text-gray-400 hover:text-red-500 ml-0.5"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </span>
-                )}
+                ))}
                 <button
                   type="button"
                   onClick={() => setPitcherPickerOpen(true)}
