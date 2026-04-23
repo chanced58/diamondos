@@ -10,6 +10,8 @@
  * pass all relevant events in sequence-number order.
  */
 
+import { UNKNOWN_BATTER_STUB } from './batting-stats';
+
 export type OppBattingRow = {
   playerId: string;
   playerName: string;
@@ -87,10 +89,16 @@ export function computeOpponentBatting(
         continue;
       }
 
-      // Resolve opponent batter: check opponentBatterId first, then batterId if in map
+      // Resolve opponent batter: check opponentBatterId first, then batterId if in map.
+      // Reject the legacy UNKNOWN_BATTER_STUB so it can never be taken from
+      // opponentBatterId and accumulate into a phantom row that the caller's
+      // roster filter would then silently drop (same class of bug fixed for
+      // our-team batting via batting-stats.ts normalizeBatterId).
+      const rawOppBatterId = payload.opponentBatterId as string | undefined;
+      const rawBatterId = payload.batterId as string | undefined;
       const batterId =
-        (payload.opponentBatterId as string | undefined) ??
-        (oppPlayerNameMap.has(payload.batterId as string) ? (payload.batterId as string) : undefined);
+        (rawOppBatterId && rawOppBatterId !== UNKNOWN_BATTER_STUB ? rawOppBatterId : undefined) ??
+        (rawBatterId && rawBatterId !== UNKNOWN_BATTER_STUB && oppPlayerNameMap.has(rawBatterId) ? rawBatterId : undefined);
 
       // Handle events without an opponent batter
       if (!batterId) {

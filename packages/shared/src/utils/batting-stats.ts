@@ -16,6 +16,23 @@ function isHardHit(hitType: string | undefined, trajectory: string | undefined, 
   return false;
 }
 
+/**
+ * The literal string stamped into `batterId` payload fields by pre-a071a02
+ * scoring sessions when no active batter was selected. Exported so every
+ * consumer (batting-stats, opponent-batting-stats, any future scorer UI)
+ * references the same symbolic name rather than repeating the string.
+ */
+export const UNKNOWN_BATTER_STUB = 'unknown-batter';
+
+// The stub is truthy, so a plain `if (!batterId) continue` guard lets it
+// through; stats then accumulate against a phantom player whose ID isn't in
+// any roster, and the downstream `teamPlayerIds.has(s.playerId)` filter in
+// the stats and compliance pages silently drops the entire row. Mirror the
+// normalizePitcherId helper in pitching-stats so batting also drops the
+// stub cleanly instead of routing data to a hidden sink.
+const normalizeBatterId = (id: string | null | undefined): string | null =>
+  id && id !== UNKNOWN_BATTER_STUB ? id : null;
+
 // FanGraphs 2023 wOBA linear weights
 const W_BB  = 0.69;
 const W_HBP = 0.72;
@@ -70,16 +87,35 @@ export function formatBattingPct(value: number): string {
 }
 
 /**
+ * Per-game lineup context used to infer a batter when a PA-closing event's
+ * payload omits `batterId` entirely or carries the legacy 'unknown-batter'
+ * stub. Callers should supply our team's lineup in batting order (the
+ * `battingOrder` values don't need to be contiguous — they're just sorted)
+ * and whether our team is the home team for that game.
+ */
+export type BattingLineupContext = {
+  ourLineup: { playerId: string; battingOrder: number }[];
+  isHome: boolean;
+};
+
+/**
  * Derive season batting statistics for all batters from an ordered list of
  * game events. Events must be sorted by (game_id, sequence_number) ascending.
  *
- * @param events  All game events for the season (filtered to relevant types).
- * @param players Name lookup for player IDs.
+ * @param events            All game events for the season (filtered to relevant types).
+ * @param players           Name lookup for player IDs.
+ * @param lineupsByGameId   Optional per-game lineup context. When supplied,
+ *                          PA-closing events with a missing or 'unknown-batter'
+ *                          batter are attributed to `ourLineup[completedPAs %
+ *                          size]` instead of silently dropping. Recovers stats
+ *                          for legacy stub data and for scoring sessions that
+ *                          skipped setting an active batter.
  * @returns A map from playerId → BattingStats.
  */
 export function deriveBattingStats(
   events: GameEvent[],
   players: { id: string; firstName: string; lastName: string }[],
+  lineupsByGameId?: Map<string, BattingLineupContext>,
 ): Map<string, BattingStats> {
   const nameMap = new Map<string, string>(
     players.map((p) => [p.id, `${p.firstName} ${p.lastName}`]),
@@ -103,7 +139,7 @@ export function deriveBattingStats(
     gameMap.get(gameId)!.push(event);
   }
 
-  for (const gameEvents of gameMap.values()) {
+  for (const [gameId, gameEvents] of gameMap.entries()) {
     gameEvents.sort((a, b) => {
       const aSeq = (a as any).sequence_number ?? a.sequenceNumber;
       const bSeq = (b as any).sequence_number ?? b.sequenceNumber;
@@ -118,6 +154,53 @@ export function deriveBattingStats(
         getStats(playerId).gamesAppeared += 1;
       }
     }
+
+    // ── Lineup-based batter inference (only if caller supplied context) ────
+    // Store the lineup as an array of { playerId, battingOrder } objects
+    // sorted by battingOrder ascending. Keeping the original battingOrder
+    // value (not just position in the array) matters for substitutions that
+    // carry `battingOrderPosition` — legacy lineups can have gaps (slot 2
+    // missing, etc.), so looking up by array index would attribute the sub
+    // to the wrong slot. We dense-pack for cycling (baseball batting order
+    // skips empty slots), but match by value for substitutions.
+    const lineupInfo = lineupsByGameId?.get(gameId);
+    const orderedLineup: { playerId: string; battingOrder: number }[] = lineupInfo
+      ? lineupInfo.ourLineup
+          .filter((e) => e.playerId && typeof e.battingOrder === 'number')
+          .slice()
+          .sort((a, b) => a.battingOrder - b.battingOrder)
+          .map((e) => ({ playerId: e.playerId, battingOrder: e.battingOrder }))
+      : [];
+    let ourCompletedPAs = 0;
+
+    // Our team is batting during the "top" of the inning when we're the
+    // visitor and during the "bottom" when we're the home team. Matches the
+    // convention used by ScoringBoard and stats/page.tsx's `weAreHome`.
+    const isOurHalfInning = (isTop: boolean): boolean => {
+      if (!lineupInfo) return false;
+      return lineupInfo.isHome ? !isTop : isTop;
+    };
+
+    // Resolve the batter for a PA-closing event:
+    //   • prefer the payload id (but treat the 'unknown-batter' stub as missing)
+    //   • when our team is batting and we have a lineup, infer from the
+    //     batting-order slot implied by `ourCompletedPAs`
+    //   • otherwise return null and let the caller drop the event
+    const resolveBatterId = (
+      rawId: unknown,
+      isTop: boolean,
+    ): string | null => {
+      const normalized = normalizeBatterId(rawId as string | null | undefined);
+      if (normalized) return normalized;
+      if (!isOurHalfInning(isTop) || orderedLineup.length === 0) return null;
+      return orderedLineup[ourCompletedPAs % orderedLineup.length]?.playerId ?? null;
+    };
+
+    // Called after every PA-closing handler to advance the batting order
+    // pointer that resolveBatterId uses for the next inference.
+    const creditOurPA = (isTop: boolean): void => {
+      if (isOurHalfInning(isTop)) ourCompletedPAs += 1;
+    };
 
     // ── Base-runner tracking (player IDs) for run attribution ──────────────
     let r1: string | null = null; // runner on 1st
@@ -144,6 +227,10 @@ export function deriveBattingStats(
     for (const event of gameEvents) {
       const etype: string = (event as any).event_type ?? event.eventType;
       const payload = event.payload as any;
+      // `is_top_of_inning` is stored on every game_events row (snake_case in
+      // DB, camelCase in TS GameEvent type). Read it once per event so
+      // resolveBatterId and creditOurPA share the same half-inning answer.
+      const isTop: boolean = (event as any).is_top_of_inning ?? event.isTopOfInning ?? true;
 
       // ── INNING_CHANGE ──────────────────────────────────────────────────────
       if (etype === 'inning_change') {
@@ -154,12 +241,14 @@ export function deriveBattingStats(
       // ── HIT ────────────────────────────────────────────────────────────────
       if (etype === EventType.HIT) {
         const p = payload as HitPayload;
-        const { batterId, hitType, trajectory, rbis, sprayY, fieldersChoice } = p;
+        const { hitType, trajectory, rbis, sprayY, fieldersChoice } = p;
+        const batterId = resolveBatterId(p.batterId, isTop);
         if (!batterId) continue;
 
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
+        creditOurPA(isTop);
         s.atBats += 1;
         s.battedBalls += 1;
 
@@ -224,12 +313,14 @@ export function deriveBattingStats(
       // ── OUT ────────────────────────────────────────────────────────────────
       if (etype === EventType.OUT) {
         const p = payload as OutPayload;
-        const { batterId, outType, trajectory } = p;
+        const { outType, trajectory } = p;
+        const batterId = resolveBatterId(p.batterId, isTop);
         if (!batterId) continue;
 
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
+        creditOurPA(isTop);
 
         if (outType === 'strikeout') {
           s.strikeouts += 1;
@@ -244,11 +335,12 @@ export function deriveBattingStats(
 
       // ── STRIKEOUT (explicit event) ─────────────────────────────────────────
       if (etype === EventType.STRIKEOUT) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
+        creditOurPA(isTop);
         s.atBats += 1;
         s.strikeouts += 1;
         continue;
@@ -256,11 +348,12 @@ export function deriveBattingStats(
 
       // ── DROPPED_THIRD_STRIKE ──────────────────────────────────────────────
       if (etype === EventType.DROPPED_THIRD_STRIKE) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
+        creditOurPA(isTop);
         s.atBats += 1;
         s.strikeouts += 1;
         if (payload?.outcome !== 'thrown_out') {
@@ -271,11 +364,12 @@ export function deriveBattingStats(
 
       // ── WALK ───────────────────────────────────────────────────────────────
       if (etype === EventType.WALK) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
+        creditOurPA(isTop);
         s.walks += 1;
         // Per OBR 9.04(a)(2): a base on balls with the bases loaded forces
         // the runner on third home and credits the batter with 1 RBI.
@@ -288,11 +382,12 @@ export function deriveBattingStats(
 
       // ── CATCHER_INTERFERENCE ───────────────────────────────────────────────
       if (etype === EventType.CATCHER_INTERFERENCE) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
+        creditOurPA(isTop);
         // Per OBR 9.02(a)(4) CI does NOT count as an at-bat.
         // Per OBR 9.04(a)(2), a bases-loaded CI forces a run and credits RBI.
         const forcedRun = !!(r1 && r2 && r3);
@@ -304,11 +399,12 @@ export function deriveBattingStats(
 
       // ── HIT_BY_PITCH ───────────────────────────────────────────────────────
       if (etype === EventType.HIT_BY_PITCH) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
+        creditOurPA(isTop);
         s.hitByPitch += 1;
         // Per OBR 9.04(a)(2): HBP with the bases loaded forces in a run.
         const forcedRun = !!(r1 && r2 && r3);
@@ -320,11 +416,12 @@ export function deriveBattingStats(
 
       // ── SACRIFICE_FLY ──────────────────────────────────────────────────────
       if (etype === EventType.SACRIFICE_FLY) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
+        creditOurPA(isTop);
         s.sacrificeFlies += 1;
         s.battedBalls += 1;
         // Per OBR 9.04(a)(1): a sacrifice fly that scores the runner from
@@ -338,11 +435,12 @@ export function deriveBattingStats(
 
       // ── SACRIFICE_BUNT ────────────────────────────────────────────────────
       if (etype === EventType.SACRIFICE_BUNT) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
+        creditOurPA(isTop);
         s.sacrificeHits += 1;
         s.battedBalls += 1;
         // OBR 9.08(a): sac bunt advances runners one base; squeeze scores
@@ -359,11 +457,12 @@ export function deriveBattingStats(
 
       // ── FIELD_ERROR ────────────────────────────────────────────────────────
       if (etype === EventType.FIELD_ERROR) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
+        creditOurPA(isTop);
         s.atBats += 1;
         s.battedBalls += 1;
         const traj = payload?.trajectory as string | undefined;
@@ -375,11 +474,12 @@ export function deriveBattingStats(
 
       // ── DOUBLE_PLAY ────────────────────────────────────────────────────────
       if (etype === EventType.DOUBLE_PLAY) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
+        creditOurPA(isTop);
         s.atBats += 1;
         // Remove the forced runner from base tracking so stats that depend
         // on runner state (RBI auto-derive on the next hit, etc.) stay
@@ -388,6 +488,23 @@ export function deriveBattingStats(
         if (runnerOutBase === 1) r1 = null;
         else if (runnerOutBase === 2) r2 = null;
         else if (runnerOutBase === 3) r3 = null;
+        continue;
+      }
+
+      // ── TRIPLE_PLAY ────────────────────────────────────────────────────────
+      // Every triple play ends the half-inning (3 outs), so base state will
+      // be reset by the following INNING_CHANGE. We only need to credit the
+      // batter with a PA + AB — without this handler the batter's turn was
+      // silently dropped and batting stats undercounted relative to opponent
+      // batting (which does handle triple_play).
+      if (etype === EventType.TRIPLE_PLAY) {
+        const batterId = resolveBatterId(payload?.batterId, isTop);
+        if (!batterId) continue;
+        markAppeared(batterId);
+        const s = getStats(batterId);
+        s.plateAppearances += 1;
+        creditOurPA(isTop);
+        s.atBats += 1;
         continue;
       }
 
@@ -446,11 +563,41 @@ export function deriveBattingStats(
       if (etype === 'substitution') {
         const inId: string | undefined = payload?.inPlayerId;
         const outId: string | undefined = payload?.outPlayerId;
+        const isOpponentSub = payload?.isOpponentSubstitution === true;
         if (inId && outId) {
           // If the substituted player is on base, replace them
           if (r1 === outId) r1 = inId;
           if (r2 === outId) r2 = inId;
           if (r3 === outId) r3 = inId;
+        }
+        // Keep the inferred-lineup order in sync with our substitutions so a
+        // pinch hitter's PA still resolves to the real player. Only apply for
+        // our team's subs — opponent subs are tracked separately in
+        // opponent-batting-stats and don't affect our batting-order pointer.
+        //
+        // Match by playerId when outPlayerId is given (the canonical swap).
+        // Match by battingOrder value when only battingOrderPosition is
+        // given (slot had no known prior occupant). We match by *value* —
+        // not array index — because dense-packed lineups with gaps (e.g.
+        // battingOrders [1, 3, 5]) would otherwise attribute a sub at
+        // position 3 to the third entry (battingOrder 5) instead of the
+        // real slot 3. Fall back to index-based lookup only if no slot
+        // with that battingOrder exists (defensive; preserves prior
+        // behavior for callers whose lineups don't include the slot yet).
+        if (!isOpponentSub && orderedLineup.length > 0 && inId) {
+          if (outId) {
+            const idx = orderedLineup.findIndex((e) => e.playerId === outId);
+            if (idx >= 0) orderedLineup[idx].playerId = inId;
+          } else if (typeof payload?.battingOrderPosition === 'number') {
+            const pos = payload.battingOrderPosition;
+            const byBatOrder = orderedLineup.findIndex((e) => e.battingOrder === pos);
+            if (byBatOrder >= 0) {
+              orderedLineup[byBatOrder].playerId = inId;
+            } else {
+              const idx = pos - 1;
+              if (idx >= 0 && idx < orderedLineup.length) orderedLineup[idx].playerId = inId;
+            }
+          }
         }
         continue;
       }

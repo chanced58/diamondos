@@ -849,6 +849,14 @@ export function ScoringBoard({
   const activePitcher    = isOpponentBatting ? currentTeamPitcher : currentOpponentPitcher;
   const activePitcherId  = activePitcher?.playerId ?? null;
 
+  // When an active batter or pitcher cannot be resolved (empty lineup slot,
+  // missing opponent lineup, mid-substitution state), recording a PA-closing
+  // event would emit batterId/pitcherId as undefined — the stats aggregators
+  // then silently drop the event with no attribution and no recovery path.
+  // Gate the PA-closing handlers on both sides being resolved, and surface a
+  // banner so the scorer fixes the lineup before logging new events.
+  const canRecord = activeBatterId != null && activePitcherId != null;
+
   // Count pitches thrown by the active pitcher from effectiveEventRows directly, so the
   // count is correct even before the first pitch of a new half-inning.
   const activePitcherPitchCount = activePitcherId
@@ -1033,6 +1041,7 @@ export function ScoringBoard({
   // ── Pitch handlers ────────────────────────────────────────────────────────
 
   async function handlePitch(outcome: string) {
+    if (!canRecord) return;
     const batterId = activeBatterId ?? undefined;
     const pitcherId = activePitcherId ?? undefined;
 
@@ -1062,6 +1071,7 @@ export function ScoringBoard({
   }
 
   async function handleInPlay(result: string, trajectory: string, sequence?: number[], assignments?: (string | null)[]) {
+    if (!canRecord) return;
     setInPlayPending(false);
     setOutAssignmentPending(false);
     setPendingResult(null);
@@ -1185,18 +1195,21 @@ export function ScoringBoard({
   }
 
   async function handleWalk() {
+    if (!canRecord) return;
     const batterId = activeBatterId ?? undefined;
     const pitcherId = activePitcherId ?? undefined;
     await recordEvent('walk', { batterId, pitcherId });
   }
 
   async function handleStrikeout() {
+    if (!canRecord) return;
     const batterId = activeBatterId ?? undefined;
     const pitcherId = activePitcherId ?? undefined;
     await recordEvent('strikeout', { batterId, pitcherId, outType: 'strikeout' });
   }
 
   async function handleHBP() {
+    if (!canRecord) return;
     const batterId = activeBatterId ?? undefined;
     const pitcherId = activePitcherId ?? undefined;
     const extra: Record<string, unknown> = {};
@@ -2153,6 +2166,23 @@ export function ScoringBoard({
               </div>
             ) : (
               <>
+                {!canRecord && (
+                  <div
+                    role="alert"
+                    aria-live="assertive"
+                    className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800"
+                  >
+                    <p className="font-semibold">Set active batter and pitcher to start recording</p>
+                    <p className="text-xs mt-1">
+                      {activeBatterId == null && activePitcherId == null
+                        ? 'No active batter or pitcher — '
+                        : activeBatterId == null
+                          ? 'No active batter — '
+                          : 'No active pitcher — '}
+                      open the lineup and fill the batting order / starting pitcher before logging events. Events without attribution are silently dropped from stats.
+                    </p>
+                  </div>
+                )}
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Pitch outcome</p>
                   <div className="grid grid-cols-3 gap-2">
@@ -2164,7 +2194,7 @@ export function ScoringBoard({
                       <button
                         key={outcome}
                         onClick={() => handlePitch(outcome)}
-                        disabled={!pitchAnnotationsReady}
+                        disabled={!pitchAnnotationsReady || !canRecord}
                         className="py-2.5 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-white hover:bg-gray-50 disabled:hover:bg-white"
                       >
                         {label}
@@ -2174,14 +2204,14 @@ export function ScoringBoard({
                   <div className="grid grid-cols-2 gap-2 mt-2">
                     <button
                       onClick={() => handlePitch('foul')}
-                      disabled={!pitchAnnotationsReady}
+                      disabled={!pitchAnnotationsReady || !canRecord}
                       className="py-2.5 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-white hover:bg-gray-50 disabled:hover:bg-white"
                     >
                       Foul
                     </button>
                     <button
                       onClick={() => handlePitch('foul_tip')}
-                      disabled={!pitchAnnotationsReady}
+                      disabled={!pitchAnnotationsReady || !canRecord}
                       className="py-2.5 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-white hover:bg-gray-50 disabled:hover:bg-white"
                       title="Foul tip caught by catcher — strike (K on 2 strikes)"
                     >
@@ -2228,10 +2258,10 @@ export function ScoringBoard({
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Plate result</p>
                   <div className="grid grid-cols-4 gap-2">
                     {[
-                      { label: 'In Play', outcome: 'in_play', handler: () => handlePitch('in_play'), disabled: !pitchAnnotationsReady },
-                      { label: 'HBP', outcome: 'hbp', handler: handleHBP, disabled: !pitchAnnotationsReady },
-                      { label: 'Walk', outcome: 'walk', handler: handleWalk, disabled: gameState.balls < 3 },
-                      { label: 'Strikeout', outcome: 'strikeout', handler: handleStrikeout, disabled: gameState.strikes < 2 },
+                      { label: 'In Play', outcome: 'in_play', handler: () => handlePitch('in_play'), disabled: !pitchAnnotationsReady || !canRecord },
+                      { label: 'HBP', outcome: 'hbp', handler: handleHBP, disabled: !pitchAnnotationsReady || !canRecord },
+                      { label: 'Walk', outcome: 'walk', handler: handleWalk, disabled: gameState.balls < 3 || !canRecord },
+                      { label: 'Strikeout', outcome: 'strikeout', handler: handleStrikeout, disabled: gameState.strikes < 2 || !canRecord },
                     ].map(({ label, outcome, handler, disabled }) => (
                       <button
                         key={outcome}
