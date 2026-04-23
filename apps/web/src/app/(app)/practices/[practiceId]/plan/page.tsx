@@ -8,6 +8,7 @@ import { getUserAccess } from '@/lib/user-access';
 import {
   getPracticeWithBlocks,
   listDrills,
+  listPitchersWithUsage,
   listTeamCoaches,
   listTemplates,
 } from '@baseball/database';
@@ -38,10 +39,12 @@ export default async function PracticePlanPage({ params }: Props): Promise<JSX.E
   );
   if (!isCoach) redirect(`/practices/${practiceId}`);
 
-  const [drills, templates, coaches] = await Promise.all([
+  const practiceDate = new Date(practice.scheduledAt);
+  const [drills, templates, coaches, bullpenCandidates] = await Promise.all([
     listDrills(supabase, practice.teamId),
     listTemplates(supabase, practice.teamId),
     listTeamCoaches(supabase, practice.teamId),
+    listPitchersWithUsage(supabase, practice.teamId, practiceDate),
   ]);
 
   // Platform admins get full-structure privileges without needing a
@@ -91,6 +94,7 @@ export default async function PracticePlanPage({ params }: Props): Promise<JSX.E
           drills={drills}
           templates={templates}
           coaches={coaches}
+          bullpenCandidates={bullpenCandidates.pitchers}
           currentUserId={user.id}
           canChangeStructure={canChangeStructure}
         />

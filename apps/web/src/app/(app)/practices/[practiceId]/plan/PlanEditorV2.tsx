@@ -22,6 +22,7 @@ import { CSS } from '@dnd-kit/utilities';
 import {
   BLOCK_TYPE_LABELS,
   FIELD_SPACE_LABELS,
+  PitcherAvailabilityStatus,
   PracticeBlockStatus,
   PracticeBlockType,
   PracticeDrill,
@@ -36,8 +37,10 @@ import {
 } from '@baseball/shared';
 import type { TeamCoach } from '@baseball/database';
 import { DrillPicker } from '../../templates/DrillPicker';
+import { BullpenPitcherPicker, type BullpenCandidate } from './BullpenPitcherPicker';
 import {
   applyWeatherSwapAction,
+  assignPlayersAction,
   compressRemainingAction,
   deleteBlockAction,
   instantiateFromTemplateAction,
@@ -51,6 +54,7 @@ interface Props {
   drills: PracticeDrill[];
   templates: PracticeTemplate[];
   coaches: TeamCoach[];
+  bullpenCandidates: BullpenCandidate[];
   currentUserId: string;
   /** True for head_coach / athletic_director / platform admin — may edit any
    * structural field, create/delete blocks, reorder, reassign. Assistant coaches
@@ -68,6 +72,7 @@ interface BlockRowData {
   assignedCoachId: string | null;
   fieldSpaces: PracticeFieldSpace[];
   notes: string;
+  playerIds: string[];
 }
 
 export function PlanEditorV2({
@@ -75,6 +80,7 @@ export function PlanEditorV2({
   drills,
   templates,
   coaches,
+  bullpenCandidates,
   currentUserId,
   canChangeStructure,
 }: Props): JSX.Element {
@@ -107,6 +113,7 @@ export function PlanEditorV2({
           assignedCoachId: b.assignedCoachId ?? null,
           fieldSpaces: b.fieldSpaces,
           notes: b.notes ?? '',
+          playerIds: b.players.map((p) => p.playerId),
         })),
     [practice.blocks],
   );
@@ -307,6 +314,24 @@ export function PlanEditorV2({
       if (res.error) setError(res.error);
       else {
         setBlocks((arr) => arr.filter((b) => b.id !== id));
+        router.refresh();
+      }
+    });
+  }
+
+  function savePitchers(blockId: string, playerIds: string[]) {
+    const prev = blocks.find((b) => b.id === blockId)?.playerIds ?? [];
+    patchBlock(blockId, { playerIds });
+    run(async () => {
+      const res = await assignPlayersAction({
+        practiceId: practice.id,
+        blockId,
+        playerIds,
+      });
+      if (res.error) {
+        setError(res.error);
+        patchBlock(blockId, { playerIds: prev });
+      } else {
         router.refresh();
       }
     });
@@ -517,6 +542,7 @@ export function PlanEditorV2({
                     drillsById={drillsById}
                     coaches={coaches}
                     coachesById={coachesById}
+                    bullpenCandidates={bullpenCandidates}
                     canChangeStructure={canChangeStructure}
                     canEdit={canEdit}
                     pending={pending}
@@ -526,6 +552,7 @@ export function PlanEditorV2({
                       saveBlockWithPatch(b.id, patch);
                     }}
                     onAssignCoach={(coachId) => assignCoach(b.id, coachId)}
+                    onSavePitchers={(ids) => savePitchers(b.id, ids)}
                     onRemove={() => removeBlock(b.id)}
                   />
                 );
@@ -592,6 +619,7 @@ interface RowProps {
   drillsById: Map<string, PracticeDrill>;
   coaches: TeamCoach[];
   coachesById: Map<string, TeamCoach>;
+  bullpenCandidates: BullpenCandidate[];
   /** Viewer can change structural fields (HC/AD). */
   canChangeStructure: boolean;
   /** Viewer can edit this specific block's content (HC/AD or block owner). */
@@ -606,6 +634,7 @@ interface RowProps {
    * parent state so no stale commit can occur. */
   onChangeAndCommit: (patch: Partial<BlockRowData>) => void;
   onAssignCoach: (coachUserId: string | null) => void;
+  onSavePitchers: (playerIds: string[]) => void;
   onRemove: () => void;
 }
 
@@ -617,12 +646,14 @@ function SortableBlock({
   drillsById,
   coaches,
   coachesById,
+  bullpenCandidates,
   canChangeStructure,
   canEdit,
   pending,
   onChange,
   onChangeAndCommit,
   onAssignCoach,
+  onSavePitchers,
   onRemove,
 }: RowProps): JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -633,6 +664,22 @@ function SortableBlock({
   };
   const drill = block.drillId ? drillsById.get(block.drillId) : undefined;
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pitcherPickerOpen, setPitcherPickerOpen] = useState(false);
+
+  const isBullpen = block.blockType === PracticeBlockType.BULLPEN;
+  const candidatesById = useMemo(() => {
+    const m = new Map<string, BullpenCandidate>();
+    for (const c of bullpenCandidates) m.set(c.player.id, c);
+    return m;
+  }, [bullpenCandidates]);
+  const assignedPitchers = isBullpen
+    ? block.playerIds
+        .map((id) => candidatesById.get(id))
+        .filter((c): c is BullpenCandidate => c !== undefined)
+    : [];
+  const assignedNotInCandidateList = isBullpen
+    ? block.playerIds.filter((id) => !candidatesById.has(id)).length
+    : 0;
 
   const startsAt = slot ? new Date(slot.startsAt) : null;
   const endsAt = slot ? new Date(slot.endsAt) : null;
@@ -769,6 +816,67 @@ function SortableBlock({
             )}
           </div>
 
+          {isBullpen && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                <span className="font-semibold uppercase tracking-wide text-gray-500">
+                  Pitchers:
+                </span>
+                {assignedPitchers.length === 0 && assignedNotInCandidateList === 0 && (
+                  <span className="text-gray-400">None assigned</span>
+                )}
+                {assignedPitchers.map((c) => {
+                  const unavailable =
+                    c.availability.status === PitcherAvailabilityStatus.UNAVAILABLE;
+                  return (
+                    <span
+                      key={c.player.id}
+                      className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${
+                        unavailable
+                          ? 'bg-amber-50 border-amber-300 text-amber-800'
+                          : 'bg-brand-50 border-brand-200 text-brand-800'
+                      }`}
+                      title={unavailable ? c.availability.reason : undefined}
+                    >
+                      {c.player.lastName}
+                      {c.player.jerseyNumber !== undefined && (
+                        <span className="text-brand-600/70">#{c.player.jerseyNumber}</span>
+                      )}
+                      {unavailable && <span aria-hidden="true">⚠</span>}
+                      {canEdit && (
+                        <button
+                          type="button"
+                          aria-label={`Remove ${c.player.firstName} ${c.player.lastName}`}
+                          onClick={() =>
+                            onSavePitchers(
+                              block.playerIds.filter((id) => id !== c.player.id),
+                            )
+                          }
+                          className="text-gray-400 hover:text-red-500 ml-0.5"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </span>
+                  );
+                })}
+                {assignedNotInCandidateList > 0 && (
+                  <span className="text-xs text-gray-400 italic">
+                    +{assignedNotInCandidateList} no longer a pitcher candidate
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPitcherPickerOpen(true)}
+                  disabled={!canEdit || pending}
+                  className="text-brand-700 hover:underline text-xs disabled:text-gray-400 disabled:no-underline"
+                >
+                  + Add pitcher
+                </button>
+              </div>
+            </div>
+          )}
+
           <FieldSpacesChipInput
             value={block.fieldSpaces}
             onChange={(fs) => onChangeAndCommit({ fieldSpaces: fs })}
@@ -806,6 +914,18 @@ function SortableBlock({
             setPickerOpen(false);
           }}
           onClose={() => setPickerOpen(false)}
+        />
+      )}
+
+      {pitcherPickerOpen && (
+        <BullpenPitcherPicker
+          candidates={bullpenCandidates}
+          initialSelectedIds={block.playerIds}
+          onSave={(ids) => {
+            onSavePitchers(ids);
+            setPitcherPickerOpen(false);
+          }}
+          onClose={() => setPitcherPickerOpen(false)}
         />
       )}
     </li>
