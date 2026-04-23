@@ -6,10 +6,20 @@
  *   1. Aggregates the total pitch count for that pitcher in the game
  *   2. Upserts the pitch_counts row
  *   3. Checks compliance thresholds and dispatches push notifications if needed
+ *
+ * Scope: this function only tracks pitches thrown by the platform team's own
+ * pitchers (events carrying `payload.pitcherId`). Pitches by opposing pitchers
+ * carry `payload.opponentPitcherId` instead and are explicitly skipped —
+ * compliance is an internal concern of the tracking team. Malformed events
+ * missing both fields are logged and skipped rather than erroring, so the
+ * webhook never turns routine opponent pitches into 400-error spam.
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { resolveEffectiveTier } from '../_shared/resolve-tier.ts';
+
+/** Stub stamped by pre-a071a02 scoring sessions when no active pitcher was selected. */
+const UNKNOWN_PITCHER_STUB = 'unknown-pitcher';
 
 interface GameEventRecord {
   id: string;
@@ -47,13 +57,32 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const pitcherId = record.payload?.pitcherId as string;
-  if (!pitcherId) {
-    return new Response(JSON.stringify({ error: 'Missing pitcherId in payload' }), {
-      status: 400,
+  const rawPitcherId = record.payload?.pitcherId as string | undefined;
+  const opponentPitcherId = record.payload?.opponentPitcherId as string | undefined;
+
+  // Opponent pitch — compliance only tracks own pitchers, so skip silently.
+  if (!rawPitcherId && opponentPitcherId) {
+    return new Response(JSON.stringify({ skipped: 'opponent_pitcher' }), {
+      status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
+
+  // Legacy stub or missing ID — log for visibility but do not error. An error
+  // response would mark the webhook delivery as failed and spam the logs.
+  if (!rawPitcherId || rawPitcherId === UNKNOWN_PITCHER_STUB) {
+    console.warn('pitch-count-calculator: skipping pitch with no identifiable pitcher', {
+      eventId: record.id,
+      gameId: record.game_id,
+      rawPitcherId: rawPitcherId ?? null,
+    });
+    return new Response(JSON.stringify({ skipped: 'no_pitcher' }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  const pitcherId = rawPitcherId;
 
   const gameId = record.game_id;
 
