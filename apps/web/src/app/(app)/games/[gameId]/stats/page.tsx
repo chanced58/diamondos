@@ -315,8 +315,17 @@ export default async function GameStatsPage({
 
   const ourPlayerIds = new Set(teamRoster.map((p) => p.id));
 
+  // Build lineup context so deriveBattingStats can infer the batter when a
+  // PA-closing event has a missing/stub batterId (recovers pre-a071a02 stub
+  // data and lineup-gap PAs for new games).
+  const isHome = weAreHome(game.location_type, game.neutral_home_team);
+  const ourLineupForInference = lineup
+    .filter((l) => l.playerId && l.battingOrder > 0)
+    .map((l) => ({ playerId: l.playerId, battingOrder: l.battingOrder }));
+  const lineupsByGameId = new Map([[params.gameId, { ourLineup: ourLineupForInference, isHome }]]);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ourBattingMap = deriveBattingStats(effectiveEvents as any, ourPlayers);
+  const ourBattingMap = deriveBattingStats(effectiveEvents as any, ourPlayers, lineupsByGameId);
   const ourBatting: BattingStats[] = Array.from(ourBattingMap.values())
     .filter((s) => s.plateAppearances > 0 && ourPlayerIds.has(s.playerId));
 
@@ -358,8 +367,6 @@ export default async function GameStatsPage({
       ourPlayerNameMap.set(p.id, { name: `${p.firstName} ${p.lastName}`, position: '' });
     }
   }
-
-  const isHome = weAreHome(game.location_type, game.neutral_home_team);
 
   const ourFielding = computeFieldingStats(
     effectiveEvents,

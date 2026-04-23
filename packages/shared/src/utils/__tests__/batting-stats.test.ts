@@ -1,4 +1,4 @@
-import { deriveBattingStats } from '../batting-stats';
+import { deriveBattingStats, type BattingLineupContext } from '../batting-stats';
 import { EventType, HitType } from '../../types/game-event';
 
 type Evt = {
@@ -6,17 +6,24 @@ type Evt = {
   sequence_number: number;
   event_type: string;
   payload: Record<string, unknown>;
+  is_top_of_inning: boolean;
 };
 
 const GAME = 'g1';
 let seq = 0;
-const e = (event_type: string, payload: Record<string, unknown>): Evt => ({
+let topOfInning = true;
+const e = (
+  event_type: string,
+  payload: Record<string, unknown>,
+  isTop = topOfInning,
+): Evt => ({
   game_id: GAME,
   sequence_number: seq++,
   event_type,
   payload,
+  is_top_of_inning: isTop,
 });
-const resetSeq = () => { seq = 0; };
+const resetSeq = () => { seq = 0; topOfInning = true; };
 
 const players = [
   { id: 'p1', firstName: 'Alice', lastName: 'Atbat' },
@@ -64,6 +71,101 @@ describe('deriveBattingStats — normalizeBatterId', () => {
     expect(s.walks).toBe(1);
     expect(s.strikeouts).toBe(1);
     expect(s.atBats).toBe(2); // walk doesn't count as AB
+  });
+});
+
+describe('deriveBattingStats — lineup-replay batter inference', () => {
+  beforeEach(resetSeq);
+
+  const ourLineupCtx = (isHome: boolean): BattingLineupContext => ({
+    isHome,
+    ourLineup: [
+      { playerId: 'p1', battingOrder: 1 },
+      { playerId: 'p2', battingOrder: 2 },
+      { playerId: 'p3', battingOrder: 3 },
+    ],
+  });
+
+  it('attributes a null-batter PA to the expected lineup slot when our team is batting', () => {
+    // Home team at bat = bottom of inning (isTop=false). We are home.
+    const events = [
+      e(EventType.HIT, { hitType: HitType.SINGLE }, false), // slot 1 (p1)
+      e(EventType.OUT, { outType: 'groundout' },    false), // slot 2 (p2)
+      e(EventType.WALK, {},                         false), // slot 3 (p3)
+      e(EventType.STRIKEOUT, {},                    false), // wraps back to slot 1 (p1)
+    ];
+    const lineups = new Map([[GAME, ourLineupCtx(true)]]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players, lineups);
+    expect(stats.get('p1')?.plateAppearances).toBe(2);
+    expect(stats.get('p1')?.strikeouts).toBe(1);
+    expect(stats.get('p1')?.hits).toBe(1);
+    expect(stats.get('p2')?.plateAppearances).toBe(1);
+    expect(stats.get('p3')?.plateAppearances).toBe(1);
+    expect(stats.has('unknown-batter')).toBe(false);
+  });
+
+  it('attributes PAs correctly when we are the visitor (top of inning = our bat)', () => {
+    const events = [
+      e(EventType.HIT, { hitType: HitType.SINGLE }, true),
+      e(EventType.OUT, { outType: 'flyout' },       true),
+    ];
+    const lineups = new Map([[GAME, ourLineupCtx(false)]]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players, lineups);
+    expect(stats.get('p1')?.plateAppearances).toBe(1);
+    expect(stats.get('p2')?.plateAppearances).toBe(1);
+  });
+
+  it('does not infer for the opposing half-inning (isTop events when we are home)', () => {
+    const events = [e(EventType.HIT, { hitType: HitType.SINGLE }, true)];
+    const lineups = new Map([[GAME, ourLineupCtx(true)]]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players, lineups);
+    expect(stats.size).toBe(0);
+  });
+
+  it('prefers a real batterId over inference', () => {
+    const events = [
+      e(EventType.HIT, { batterId: 'p2', hitType: HitType.SINGLE }, false),
+    ];
+    const lineups = new Map([[GAME, ourLineupCtx(true)]]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players, lineups);
+    expect(stats.get('p2')?.plateAppearances).toBe(1);
+    expect(stats.has('p1')).toBe(false);
+  });
+
+  it('treats the stub as missing and falls back to inference', () => {
+    const events = [
+      e(EventType.HIT, { batterId: 'unknown-batter', hitType: HitType.SINGLE }, false),
+    ];
+    const lineups = new Map([[GAME, ourLineupCtx(true)]]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players, lineups);
+    expect(stats.get('p1')?.plateAppearances).toBe(1);
+    expect(stats.has('unknown-batter')).toBe(false);
+  });
+
+  it('drops the event when no lineup is supplied (backwards-compatible)', () => {
+    const events = [e(EventType.HIT, { hitType: HitType.SINGLE }, false)];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    expect(stats.size).toBe(0);
+  });
+
+  it('tracks pinch-hitter substitutions so inferred PAs land on the new player', () => {
+    const events = [
+      e(EventType.HIT, { hitType: HitType.SINGLE }, false), // slot 1 (p1)
+      e('substitution', { inPlayerId: 'p9', outPlayerId: 'p2' }, false),
+      e(EventType.HIT, { hitType: HitType.SINGLE }, false), // slot 2 now = p9
+    ];
+    const lineups = new Map([[GAME, ourLineupCtx(true)]]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players, lineups);
+    expect(stats.get('p1')?.plateAppearances).toBe(1);
+    expect(stats.get('p9')?.plateAppearances).toBe(1);
+    expect(stats.has('p2')).toBe(false);
   });
 });
 
