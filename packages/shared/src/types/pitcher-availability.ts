@@ -12,6 +12,16 @@ export enum PitcherAvailabilityStatus {
   UNAVAILABLE = 'unavailable',
 }
 
+/**
+ * Why a player appears in the bullpen candidate set. Prefer primary → secondary
+ * → game_history when a player qualifies multiple ways.
+ */
+export enum PitcherEligibilitySource {
+  PRIMARY = 'primary',
+  SECONDARY = 'secondary',
+  GAME_HISTORY = 'game_history',
+}
+
 export interface PitcherAvailability {
   playerId: string;
   status: PitcherAvailabilityStatus;

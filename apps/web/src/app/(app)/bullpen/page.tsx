@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getUserAccess } from '@/lib/user-access';
-import { PitcherAvailabilityStatus } from '@baseball/shared';
+import { PitcherAvailabilityStatus, PitcherEligibilitySource } from '@baseball/shared';
 import { listPitchersWithUsage, getNextGameForTeam } from '@baseball/database';
 import { BullpenDateControl } from './BullpenDateControl';
 
@@ -27,6 +27,21 @@ const STATUS_STYLES: Record<PitcherAvailabilityStatus, { pill: string; label: st
   [PitcherAvailabilityStatus.UNAVAILABLE]: {
     pill: 'bg-red-50 text-red-800 border-red-200',
     label: 'Unavailable',
+  },
+};
+
+const ELIGIBILITY_STYLES: Record<PitcherEligibilitySource, { pill: string; label: string }> = {
+  [PitcherEligibilitySource.PRIMARY]: {
+    pill: 'bg-gray-100 text-gray-700 border-gray-200',
+    label: 'Primary',
+  },
+  [PitcherEligibilitySource.SECONDARY]: {
+    pill: 'bg-sky-50 text-sky-800 border-sky-200',
+    label: 'Secondary',
+  },
+  [PitcherEligibilitySource.GAME_HISTORY]: {
+    pill: 'bg-violet-50 text-violet-800 border-violet-200',
+    label: 'Game history',
   },
 };
 
@@ -100,6 +115,7 @@ export default async function BullpenPage({ searchParams }: PageProps): Promise<
           <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
             <tr>
               <th className="text-left py-2 px-4 font-medium">Pitcher</th>
+              <th className="text-left py-2 px-4 font-medium">Eligibility</th>
               <th className="text-left py-2 px-4 font-medium">Status</th>
               <th className="text-left py-2 px-4 font-medium">Last 7d</th>
               <th className="text-left py-2 px-4 font-medium">Reason</th>
@@ -108,13 +124,14 @@ export default async function BullpenPage({ searchParams }: PageProps): Promise<
           <tbody className="divide-y divide-gray-100">
             {pitchers.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">
-                  No pitchers on this roster. Add players with primary position "pitcher" to see availability.
+                <td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-500">
+                  No pitchers found. Add players with pitcher as a primary or secondary position, or scorekeep a game to include pitchers by game history.
                 </td>
               </tr>
             )}
-            {pitchers.map(({ player, availability }) => {
+            {pitchers.map(({ player, availability, eligibilitySource }) => {
               const style = STATUS_STYLES[availability.status];
+              const elig = ELIGIBILITY_STYLES[eligibilitySource];
               return (
                 <tr key={player.id}>
                   <td className="px-4 py-2">
@@ -127,6 +144,11 @@ export default async function BullpenPage({ searchParams }: PageProps): Promise<
                     {player.throws && (
                       <div className="text-xs text-gray-500">{handednessLabel(player.throws)}HP</div>
                     )}
+                  </td>
+                  <td className="px-4 py-2">
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${elig.pill}`}>
+                      {elig.label}
+                    </span>
                   </td>
                   <td className="px-4 py-2">
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${style.pill}`}>

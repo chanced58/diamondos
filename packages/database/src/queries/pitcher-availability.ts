@@ -1,6 +1,8 @@
 import {
   computePitcherAvailability,
   PitcherAvailabilityStatus,
+  PitcherEligibilitySource,
+  PlayerPosition,
   type PitchComplianceRule,
   type PitcherAvailability,
   type PitchCountRecord,
@@ -8,20 +10,31 @@ import {
 } from '@baseball/shared';
 import type { TypedSupabaseClient } from '../client';
 
+export interface BullpenPitcherEntry {
+  player: Player;
+  availability: PitcherAvailability;
+  eligibilitySource: PitcherEligibilitySource;
+}
+
 export interface BullpenPlan {
   rule: PitchComplianceRule | null;
-  pitchers: Array<{ player: Player; availability: PitcherAvailability }>;
+  pitchers: BullpenPitcherEntry[];
 }
 
 /**
- * Loads the full availability picture for a team's pitchers on a given date:
- *  - the pitchers on the roster (primary_position='pitcher', active)
- *  - their last 10 days of pitch_counts
- *  - the team's (or fallback system) active compliance rule
- * Then delegates to computePitcherAvailability() for the rule-based status.
+ * Loads the full availability picture for a team's pitchers on a given date.
  *
- * Returns `rule: null` when no rule is configured — caller should render a
- * "configure your compliance rule" callout.
+ * A player counts as a bullpen candidate when any of the following is true:
+ *  - primary_position = 'pitcher'
+ *  - 'pitcher' is in secondary_positions
+ *  - they have at least one row in pitch_counts (i.e., pitched in a game before)
+ *
+ * eligibilitySource reports which rule matched, preferring primary → secondary
+ * → game_history when multiple apply. The caller (UI) uses it to explain to a
+ * coach why a player shows up in the list.
+ *
+ * Returns `rule: null` when no compliance rule is configured — caller should
+ * render a "configure your compliance rule" callout.
  */
 export async function listPitchersWithUsage(
   supabase: TypedSupabaseClient,
@@ -39,8 +52,7 @@ export async function listPitchersWithUsage(
         .from('players')
         .select('*')
         .eq('team_id', teamId)
-        .eq('is_active', true)
-        .eq('primary_position', 'pitcher'),
+        .eq('is_active', true),
       supabase
         .from('pitch_compliance_rules')
         .select('*')
@@ -52,7 +64,7 @@ export async function listPitchersWithUsage(
   if (playersErr) throw playersErr;
   if (ruleErr) throw ruleErr;
 
-  const pitcherRows = (playerRows ?? []) as unknown as Array<{
+  const allRosterRows = (playerRows ?? []) as unknown as Array<{
     id: string;
     team_id: string;
     user_id: string | null;
@@ -60,6 +72,7 @@ export async function listPitchersWithUsage(
     last_name: string;
     jersey_number: number | null;
     primary_position: string | null;
+    secondary_positions: string[] | null;
     bats: string | null;
     throws: string | null;
     date_of_birth: string | null;
@@ -70,7 +83,50 @@ export async function listPitchersWithUsage(
     updated_at: string;
   }>;
 
-  const pitchers: Player[] = pitcherRows.map((r) => ({
+  // Find which of the team's active players have pitching history. We scope to
+  // the roster we just loaded — if a player has pitched on another team, their
+  // history only counts here when they're on this roster.
+  //
+  // Paginate rather than a single .limit() because pitch_counts has one row per
+  // pitcher per game and multi-year history for a full roster can exceed a
+  // single page. We only need the DISTINCT set of player_ids, so we stop early
+  // once every roster player has been seen.
+  const rosterIds = allRosterRows.map((r) => r.id);
+  const historyIds = new Set<string>();
+  if (rosterIds.length > 0) {
+    const PAGE_SIZE = 1000;
+    let from = 0;
+    while (true) {
+      const { data: histRows, error: histErr } = await supabase
+        .from('pitch_counts')
+        .select('player_id')
+        .in('player_id', rosterIds)
+        .range(from, from + PAGE_SIZE - 1);
+      if (histErr) throw histErr;
+      const rows = (histRows ?? []) as Array<{ player_id: string }>;
+      for (const r of rows) historyIds.add(r.player_id);
+      if (rows.length < PAGE_SIZE) break;
+      if (historyIds.size === rosterIds.length) break;
+      from += PAGE_SIZE;
+    }
+  }
+
+  // Classify eligibility. primary > secondary > game_history.
+  const qualifiedRows: Array<{
+    row: (typeof allRosterRows)[number];
+    source: PitcherEligibilitySource;
+  }> = [];
+  for (const row of allRosterRows) {
+    if (row.primary_position === PlayerPosition.PITCHER) {
+      qualifiedRows.push({ row, source: PitcherEligibilitySource.PRIMARY });
+    } else if ((row.secondary_positions ?? []).includes(PlayerPosition.PITCHER)) {
+      qualifiedRows.push({ row, source: PitcherEligibilitySource.SECONDARY });
+    } else if (historyIds.has(row.id)) {
+      qualifiedRows.push({ row, source: PitcherEligibilitySource.GAME_HISTORY });
+    }
+  }
+
+  const pitchers: Player[] = qualifiedRows.map(({ row: r }) => ({
     id: r.id,
     teamId: r.team_id,
     userId: r.user_id ?? undefined,
@@ -87,6 +143,10 @@ export async function listPitchersWithUsage(
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }));
+
+  const sourceByPlayerId = new Map(
+    qualifiedRows.map(({ row, source }) => [row.id, source]),
+  );
 
   const ruleData = ((ruleRows ?? []) as unknown as Array<{
     id: string;
@@ -132,6 +192,8 @@ export async function listPitchersWithUsage(
             ? 'No recent pitching history — fully rested.'
             : 'No compliance rule configured for this team.',
         },
+        eligibilitySource:
+          sourceByPlayerId.get(p.id) ?? PitcherEligibilitySource.PRIMARY,
       })),
     };
   }
@@ -172,6 +234,8 @@ export async function listPitchersWithUsage(
           pitchesLast7d: 0,
           reason: 'No recent history.',
         },
+      eligibilitySource:
+        sourceByPlayerId.get(p.id) ?? PitcherEligibilitySource.PRIMARY,
     })),
   };
 }
