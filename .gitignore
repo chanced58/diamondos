@@ -45,3 +45,6 @@ web-build/
 
 # Claude Code worktrees
 claude/
+
+# Design handoff (extracted from DiamondOS Revamp.zip — reference only)
+design_handoff_diamondos_revamp/
