@@ -2,6 +2,7 @@
 import { useTransition } from 'react';
 import type { JSX } from 'react';
 import { endInjuryFlagAction } from './actions';
+import { localDateYmd } from '@/lib/local-date';
 
 type FlagRow = {
   id: string;
@@ -37,7 +38,7 @@ export function InjuryFlagList({
     fd.append('teamId', teamId);
     fd.append('playerId', playerId);
     fd.append('flagId', flagId);
-    fd.append('endDate', new Date().toISOString().slice(0, 10));
+    fd.append('endDate', localDateYmd());
     startTransition(() => {
       void endInjuryFlagAction(null, fd);
     });

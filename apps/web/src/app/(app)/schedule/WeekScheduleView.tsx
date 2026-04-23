@@ -1,6 +1,6 @@
 'use client';
 import type { JSX } from 'react';
-import { useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { deleteBookingAction } from './actions';
 
 type Facility = { id: string; name: string; kind: string };
@@ -31,6 +31,7 @@ export function WeekScheduleView({
   canManage: boolean;
 }): JSX.Element {
   const [isPending, startTransition] = useTransition();
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const weekStartDate = new Date(weekStart);
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStartDate);
@@ -39,8 +40,17 @@ export function WeekScheduleView({
   });
   const facilityById = new Map(facilities.map((f) => [f.id, f]));
   const bookingsByDay: Record<number, Booking[]> = {};
+
+  // DST-safe bucketing: compare local-calendar midnights rather than dividing
+  // raw ms by 86_400_000 (which miscounts on the spring-forward/fall-back day).
+  const weekStartMidnight = new Date(weekStartDate);
+  weekStartMidnight.setHours(0, 0, 0, 0);
   for (const b of bookings) {
-    const dayIdx = Math.floor((new Date(b.starts_at).getTime() - weekStartDate.getTime()) / 86_400_000);
+    const startLocal = new Date(b.starts_at);
+    startLocal.setHours(0, 0, 0, 0);
+    const dayIdx = Math.round(
+      (startLocal.getTime() - weekStartMidnight.getTime()) / 86_400_000,
+    );
     if (dayIdx >= 0 && dayIdx < 7) {
       (bookingsByDay[dayIdx] ??= []).push(b);
     }
@@ -50,8 +60,11 @@ export function WeekScheduleView({
     if (!confirm('Delete this booking?')) return;
     const fd = new FormData();
     fd.append('bookingId', bookingId);
+    setDeleteError(null);
     startTransition(() => {
-      void deleteBookingAction(null, fd);
+      deleteBookingAction(null, fd).then((result) => {
+        if (result) setDeleteError(result);
+      });
     });
   }
 
@@ -67,6 +80,10 @@ export function WeekScheduleView({
   }
 
   return (
+    <div>
+      {deleteError && (
+        <p className="text-sm text-red-600 mb-2">{deleteError}</p>
+      )}
     <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
       {days.map((day, i) => {
         const dayBookings = (bookingsByDay[i] ?? []).sort(
@@ -116,6 +133,7 @@ export function WeekScheduleView({
           </div>
         );
       })}
+    </div>
     </div>
   );
 }

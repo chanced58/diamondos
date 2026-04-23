@@ -1,9 +1,21 @@
 'use client';
 import { useFormState, useFormStatus } from 'react-dom';
+import { useEffect, useState } from 'react';
 import type { JSX } from 'react';
 import { createBookingAction } from './actions';
 
 type Facility = { id: string; name: string; kind: string };
+
+// Browser local-time offset in ±HH:MM — computed post-mount so SSR and
+// hydration agree. Falls back to '+00:00' until then.
+function computeLocalTzOffset(): string {
+  const offsetMin = -new Date().getTimezoneOffset();
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const abs = Math.abs(offsetMin);
+  const hh = String(Math.floor(abs / 60)).padStart(2, '0');
+  const mm = String(abs % 60).padStart(2, '0');
+  return `${sign}${hh}:${mm}`;
+}
 
 export function NewBookingForm({
   facilities,
@@ -13,9 +25,14 @@ export function NewBookingForm({
   defaultDate: string;
 }): JSX.Element {
   const [error, formAction] = useFormState(createBookingAction, null);
+  const [tzOffset, setTzOffset] = useState('+00:00');
+  useEffect(() => {
+    setTzOffset(computeLocalTzOffset());
+  }, []);
 
   return (
     <form action={formAction} className="space-y-3">
+      <input type="hidden" name="tzOffset" value={tzOffset} />
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <label className="block">
           <span className="text-xs font-medium text-gray-700">Facility</span>

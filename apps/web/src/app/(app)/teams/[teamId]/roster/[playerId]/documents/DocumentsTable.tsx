@@ -1,5 +1,5 @@
 'use client';
-import { useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import type { JSX } from 'react';
 import { deletePlayerDocumentAction, getDocumentDownloadUrl } from './actions';
 
@@ -33,7 +33,7 @@ function expirationBadge(expires_on: string | null, today: string): JSX.Element 
 
 export function DocumentsTable({
   teamId,
-  playerId: _playerId,
+  playerId,
   documents,
   docTypes,
   today,
@@ -46,20 +46,24 @@ export function DocumentsTable({
 }): JSX.Element {
   const typeLabel = (slug: string) => docTypes.find((t) => t.slug === slug)?.name ?? slug;
   const [isPending, startTransition] = useTransition();
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function handleDownload(docId: string) {
     const url = await getDocumentDownloadUrl(docId, teamId);
     if (url) window.open(url, '_blank');
   }
 
-  async function handleDelete(docId: string) {
+  function handleDelete(docId: string) {
     if (!confirm('Delete this document? This cannot be undone.')) return;
     const fd = new FormData();
     fd.append('teamId', teamId);
-    fd.append('playerId', _playerId);
+    fd.append('playerId', playerId);
     fd.append('docId', docId);
+    setDeleteError(null);
     startTransition(() => {
-      void deletePlayerDocumentAction(null, fd);
+      deletePlayerDocumentAction(null, fd).then((result) => {
+        if (result) setDeleteError(result);
+      });
     });
   }
 
@@ -72,6 +76,8 @@ export function DocumentsTable({
   }
 
   return (
+    <div>
+      {deleteError && <p className="text-sm text-red-600 mb-2">{deleteError}</p>}
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
       <table className="w-full text-sm">
         <thead className="bg-gray-50 border-b border-gray-200">
@@ -126,6 +132,7 @@ export function DocumentsTable({
           ))}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }

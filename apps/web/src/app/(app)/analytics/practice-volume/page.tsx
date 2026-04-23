@@ -87,6 +87,9 @@ export default async function PracticeVolumePage({
       .lte('practices.scheduled_at', `${seasonEnd}T23:59:59Z`);
 
     const agg = new Map<string, SeasonVolumeRow>();
+    // Dedupe sessions per focus_slug: one block-per-focus shouldn't be counted
+    // as N sessions when two blocks in the same practice share a focus.
+    const seenPracticesByFocus = new Map<string, Set<string>>();
     for (const row of (blockRows ?? []) as unknown as Array<{
       planned_duration_minutes: number | null;
       actual_duration_minutes: number | null;
@@ -106,7 +109,14 @@ export default async function PracticeVolumePage({
         };
         existing.planned += row.planned_duration_minutes ?? 0;
         existing.actual += row.actual_duration_minutes ?? 0;
-        existing.sessions += 1;
+
+        const seen = seenPracticesByFocus.get(tag.focus_slug) ?? new Set<string>();
+        if (!seen.has(row.practice_id)) {
+          seen.add(row.practice_id);
+          existing.sessions += 1;
+          seenPracticesByFocus.set(tag.focus_slug, seen);
+        }
+
         if (!existing.last_worked_at || practice.scheduled_at > existing.last_worked_at) {
           existing.last_worked_at = practice.scheduled_at;
         }

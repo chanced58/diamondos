@@ -126,10 +126,23 @@ Deno.serve(async (req: Request) => {
 
   // 5. Resolve compliance rule: per-player override → DOB auto-match → season default.
   //    Tier 8 F1 replaces the season-only lookup so travel / mixed-age rosters work.
-  const { data: ruleIdResult } = await supabase.rpc('resolve_compliance_rule_for_player', {
-    p_player_id: pitcherId,
-    p_game_date: gameDate,
-  });
+  const { data: ruleIdResult, error: ruleError } = await supabase.rpc(
+    'resolve_compliance_rule_for_player',
+    { p_player_id: pitcherId, p_game_date: gameDate },
+  );
+  if (ruleError) {
+    console.error('Error resolving compliance rule:', {
+      error: ruleError,
+      pitcherId,
+      gameDate,
+    });
+    // Return non-2xx so the database webhook retries rather than silently
+    // skipping compliance alerts for this pitch.
+    return new Response(JSON.stringify({ error: ruleError.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
   const ruleId = ruleIdResult as string | null;
 
   let rule: { max_pitches_per_day: number; max_pitches_per_week: number | null } | null = null;
@@ -143,7 +156,24 @@ Deno.serve(async (req: Request) => {
   }
 
   if (rule) {
-    const dispatchAlert = async (title: string, body: string, alertType: string) => {
+    const dispatchAlert = async (
+      title: string,
+      body: string,
+      alertType: string,
+      alertKind: 'daily_warn' | 'daily_danger' | 'weekly_warn' | 'weekly_danger',
+      payloadExtras: Record<string, unknown> = {},
+    ) => {
+      // Dedup: one row per (player, game, alert_kind). Insert first; skip the
+      // push if the row already exists (duplicate key = already dispatched).
+      const { error: dedupError } = await supabase
+        .from('pitch_count_alerts_sent')
+        .insert({ player_id: pitcherId, game_id: gameId, alert_kind: alertKind });
+      if (dedupError) {
+        if (dedupError.code === '23505') return; // already sent — silent skip
+        console.error('Failed to record alert dedup row:', dedupError);
+        return; // fail closed rather than spamming
+      }
+
       const { data: coaches } = await supabase
         .from('team_members')
         .select('user_id')
@@ -157,7 +187,7 @@ Deno.serve(async (req: Request) => {
           userIds: coaches.map((c: { user_id: string }) => c.user_id),
           title,
           body,
-          data: { gameId, pitcherId, pitchCount, type: alertType },
+          data: { gameId, pitcherId, pitchCount, type: alertType, ...payloadExtras },
         },
       });
     };
@@ -167,13 +197,19 @@ Deno.serve(async (req: Request) => {
     const warningThreshold = Math.floor(max * 0.75);
     const dangerThreshold = Math.floor(max * 0.9);
 
-    if (pitchCount === warningThreshold || pitchCount === dangerThreshold) {
-      const severity = pitchCount >= dangerThreshold ? 'danger' : 'warning';
-      const emoji = severity === 'danger' ? '🔴' : '🟡';
+    if (pitchCount >= dangerThreshold) {
       await dispatchAlert(
-        `${emoji} Pitch Count Alert`,
+        '🔴 Pitch Count Alert',
         `Pitcher has thrown ${pitchCount} pitches today (limit: ${max})`,
         'pitch_count_alert',
+        'daily_danger',
+      );
+    } else if (pitchCount >= warningThreshold) {
+      await dispatchAlert(
+        '🟡 Pitch Count Alert',
+        `Pitcher has thrown ${pitchCount} pitches today (limit: ${max})`,
+        'pitch_count_alert',
+        'daily_warn',
       );
     }
 
@@ -186,20 +222,30 @@ Deno.serve(async (req: Request) => {
         .eq('game_date', gameDate)
         .maybeSingle();
 
-      const pitches7d = (rolling?.pitches_7d as number | null) ?? pitchCount;
+      // Missing row = no pitches in the window; treat as 0 rather than falling
+      // back to this game's count (which double-counts when the view is slow
+      // to propagate or when the pitcher has pitched this week but this game
+      // is the first entry).
+      const pitches7d = (rolling?.pitches_7d as number | null) ?? 0;
       const weeklyMax = rule.max_pitches_per_week;
       const weeklyWarn = Math.floor(weeklyMax * 0.75);
       const weeklyDanger = Math.floor(weeklyMax * 0.9);
 
-      // Mirror the daily pattern: fire exactly when the rolling total lands on
-      // the threshold. One alert per threshold crossing.
-      if (pitches7d === weeklyWarn || pitches7d === weeklyDanger) {
-        const severity = pitches7d >= weeklyDanger ? 'danger' : 'warning';
-        const emoji = severity === 'danger' ? '🔴' : '🟡';
+      if (pitches7d >= weeklyDanger) {
         await dispatchAlert(
-          `${emoji} Weekly Pitch Limit Alert`,
+          '🔴 Weekly Pitch Limit Alert',
           `Pitcher at ${pitches7d} pitches over the last 7 days (weekly limit: ${weeklyMax})`,
           'pitch_count_weekly_alert',
+          'weekly_danger',
+          { pitches7d },
+        );
+      } else if (pitches7d >= weeklyWarn) {
+        await dispatchAlert(
+          '🟡 Weekly Pitch Limit Alert',
+          `Pitcher at ${pitches7d} pitches over the last 7 days (weekly limit: ${weeklyMax})`,
+          'pitch_count_weekly_alert',
+          'weekly_warn',
+          { pitches7d },
         );
       }
     }

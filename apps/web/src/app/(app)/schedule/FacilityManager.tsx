@@ -1,6 +1,6 @@
 'use client';
 import { useFormState, useFormStatus } from 'react-dom';
-import { useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import type { JSX } from 'react';
 import { createFacilityAction, deleteFacilityAction } from './actions';
 
@@ -23,16 +23,32 @@ const KIND_OPTIONS: { slug: string; label: string }[] = [
   { slug: 'other',       label: 'Other' },
 ];
 
+const KIND_LABEL: Record<string, string> = Object.fromEntries(
+  [
+    ['cage', 'Batting cage'],
+    ['field', 'Field'],
+    ['bullpen', 'Bullpen'],
+    ['gym', 'Gym'],
+    ['classroom', 'Classroom'],
+    ['weight_room', 'Weight room'],
+    ['other', 'Other'],
+  ],
+);
+
 export function FacilityManager({ facilities }: { facilities: Facility[] }): JSX.Element {
   const [error, formAction] = useFormState(createFacilityAction, null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function handleDelete(id: string, name: string) {
     if (!confirm(`Delete facility "${name}"? This also deletes all of its bookings.`)) return;
     const fd = new FormData();
     fd.append('facilityId', id);
+    setDeleteError(null);
     startTransition(() => {
-      void deleteFacilityAction(null, fd);
+      deleteFacilityAction(null, fd).then((result) => {
+        if (result) setDeleteError(result);
+      });
     });
   }
 
@@ -92,6 +108,7 @@ export function FacilityManager({ facilities }: { facilities: Facility[] }): JSX
           <AddButton />
         </form>
         {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+        {deleteError && <p className="text-sm text-red-600 mt-2">{deleteError}</p>}
       </div>
 
       {facilities.length === 0 ? (
@@ -105,7 +122,9 @@ export function FacilityManager({ facilities }: { facilities: Facility[] }): JSX
               <div>
                 <p className="text-sm font-medium text-gray-900">
                   {f.name}
-                  <span className="ml-2 text-xs font-normal text-gray-500">({f.kind.replace('_', ' ')})</span>
+                  <span className="ml-2 text-xs font-normal text-gray-500">
+                    ({KIND_LABEL[f.kind] ?? f.kind.replace(/_/g, ' ')})
+                  </span>
                   {f.capacity && <span className="ml-2 text-xs text-gray-500">cap {f.capacity}</span>}
                   {!f.is_active && <span className="ml-2 text-xs text-amber-600">inactive</span>}
                 </p>

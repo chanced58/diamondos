@@ -301,14 +301,19 @@ async function loadFilteredDrills(
       .from('practice_drills')
       .select('*')
       .or(`team_id.is.null,team_id.eq.${teamId}`),
-    // Tier 8 F2: active injury flags (open-ended or not yet expired).
+    // Tier 8 F2: active injury flags (window includes today).
     db
       .from('player_injury_flags')
-      .select('injury_slug, effective_to')
+      .select('injury_slug, effective_from, effective_to')
       .eq('player_id', playerId),
   ]);
   const { data, error } = drillsResult;
   if (error) throw new Error(`Failed to load drills: ${error.message}`);
+  // Fail closed: a read error on injury flags must not silently skip the
+  // contraindication filter and recommend an unsafe drill.
+  if (injuriesResult.error) {
+    throw new Error(`Failed to load injury flags: ${injuriesResult.error.message}`);
+  }
 
   const all = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
     id: r.id as string,
@@ -337,21 +342,30 @@ async function loadFilteredDrills(
   }));
 
   // Tier 8 F2: pull drill contraindications for the player's active injuries.
+  // "Active" = window includes today (start <= today, no end or end >= today).
   const todayIso = new Date().toISOString().slice(0, 10);
   const activeInjurySlugs = ((injuriesResult.data ?? []) as Array<{
     injury_slug: string;
+    effective_from: string;
     effective_to: string | null;
   }>)
-    .filter((f) => !f.effective_to || f.effective_to >= todayIso)
+    .filter(
+      (f) =>
+        f.effective_from <= todayIso &&
+        (!f.effective_to || f.effective_to >= todayIso),
+    )
     .map((f) => f.injury_slug);
 
   const excludedDrillIds = new Set<string>();
   if (activeInjurySlugs.length > 0) {
-    const { data: contra } = await db
+    const { data: contra, error: contraError } = await db
       .from('drill_injury_contraindications')
       .select('drill_id, severity, team_id')
       .in('injury_slug', activeInjurySlugs)
       .or(`team_id.is.null,team_id.eq.${teamId}`);
+    if (contraError) {
+      throw new Error(`Failed to load drill contraindications: ${contraError.message}`);
+    }
     for (const row of (contra ?? []) as Array<{
       drill_id: string;
       severity: 'hard' | 'caution';

@@ -1690,6 +1690,45 @@ export type Database = {
           },
         ]
       }
+      pitch_count_alerts_sent: {
+        Row: {
+          alert_kind: string
+          game_id: string
+          id: string
+          player_id: string
+          sent_at: string
+        }
+        Insert: {
+          alert_kind: string
+          game_id: string
+          id?: string
+          player_id: string
+          sent_at?: string
+        }
+        Update: {
+          alert_kind?: string
+          game_id?: string
+          id?: string
+          player_id?: string
+          sent_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pitch_count_alerts_sent_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pitch_count_alerts_sent_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pitch_counts: {
         Row: {
           can_pitch_next_day: boolean | null
@@ -3872,6 +3911,48 @@ export type Database = {
             columns: ["season_id"]
             isOneToOne: false
             referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_player_injury_flags_public: {
+        Row: {
+          created_at: string | null
+          effective_from: string | null
+          effective_to: string | null
+          id: string | null
+          injury_slug: string | null
+          player_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          id?: string | null
+          injury_slug?: string | null
+          player_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          id?: string | null
+          injury_slug?: string | null
+          player_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_injury_flags_injury_slug_fkey"
+            columns: ["injury_slug"]
+            isOneToOne: false
+            referencedRelation: "injury_flag_catalog"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "player_injury_flags_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]

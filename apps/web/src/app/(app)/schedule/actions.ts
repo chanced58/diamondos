@@ -84,6 +84,7 @@ export async function createBookingAction(_prev: string | null | undefined, form
   const date = formData.get('date') as string;      // yyyy-mm-dd
   const startTime = formData.get('startTime') as string; // HH:mm
   const endTime = formData.get('endTime') as string;
+  const tzOffset = (formData.get('tzOffset') as string) || '+00:00'; // ±HH:MM
   const title = (formData.get('title') as string)?.trim();
   const notes = (formData.get('notes') as string)?.trim() || null;
 
@@ -91,8 +92,14 @@ export async function createBookingAction(_prev: string | null | undefined, form
     return 'Missing required fields.';
   }
 
-  const startsAt = new Date(`${date}T${startTime}`);
-  const endsAt = new Date(`${date}T${endTime}`);
+  // tzOffset must match ±HH:MM. If it doesn't, fail rather than silently
+  // interpreting the user's wall-clock time in the server's timezone.
+  if (!/^[+-]\d{2}:\d{2}$/.test(tzOffset)) return 'Invalid timezone offset.';
+
+  // Compose an ISO string that pins the wall-clock to the user's browser
+  // timezone. Postgres timestamptz stores the resulting absolute instant.
+  const startsAt = new Date(`${date}T${startTime}:00${tzOffset}`);
+  const endsAt = new Date(`${date}T${endTime}:00${tzOffset}`);
   if (!Number.isFinite(startsAt.getTime()) || !Number.isFinite(endsAt.getTime())) {
     return 'Invalid date/time.';
   }

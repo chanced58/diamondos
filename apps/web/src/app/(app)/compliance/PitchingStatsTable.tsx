@@ -276,12 +276,16 @@ function ComplianceBadge({
     return <span className="text-xs text-gray-400">—</span>;
   }
 
-  const { requiredRestDays, canPitchNextDay, lastGameDate } = compliance;
+  const { requiredRestDays, canPitchNextDay, lastGameDate, pitches7d } = compliance;
+  const weekly =
+    pitches7d != null ? (
+      <span className="ml-1 text-[10px] font-normal text-gray-500">· {pitches7d} 7d</span>
+    ) : null;
 
   if (requiredRestDays == null || requiredRestDays === 0 || canPitchNextDay) {
     return (
       <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
-        Eligible
+        Eligible{weekly}
       </span>
     );
   }
@@ -298,14 +302,14 @@ function ComplianceBadge({
   if (daysRemaining === 0) {
     return (
       <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
-        Eligible
+        Eligible{weekly}
       </span>
     );
   }
 
   return (
     <span className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded-full px-2 py-0.5">
-      {daysRemaining}d rest
+      {daysRemaining}d rest{weekly}
     </span>
   );
 }

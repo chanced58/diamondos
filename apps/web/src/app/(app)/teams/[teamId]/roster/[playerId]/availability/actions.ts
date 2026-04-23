@@ -26,6 +26,18 @@ export async function addInjuryFlagAction(_prev: string | null | undefined, form
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
+  // Defensive: confirm the player is on this team. canManageRoster gates the
+  // *caller's* authority on teamId, but without this check a request could
+  // smuggle a player from another team via the hidden playerId field.
+  const { data: playerRow } = await supabase
+    .from('players')
+    .select('id, team_id')
+    .eq('id', playerId)
+    .maybeSingle();
+  if (!playerRow || playerRow.team_id !== teamId) {
+    return 'Player does not belong to this team.';
+  }
+
   const { error } = await supabase.from('player_injury_flags').insert({
     player_id: playerId,
     injury_slug: injurySlug,
@@ -63,6 +75,17 @@ export async function endInjuryFlagAction(_prev: string | null | undefined, form
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  // Scope the update to (flagId, playerId) and verify the player's team. This
+  // prevents a forged request from ending a flag on another team's player.
+  const { data: flagRow } = await supabase
+    .from('player_injury_flags')
+    .select('id, player_id, players(team_id)')
+    .eq('id', flagId)
+    .eq('player_id', playerId)
+    .maybeSingle();
+  const flag = flagRow as unknown as { id: string; player_id: string; players: { team_id: string } } | null;
+  if (!flag || flag.players.team_id !== teamId) return 'Flag not found on this team.';
 
   const { error } = await supabase
     .from('player_injury_flags')

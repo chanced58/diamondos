@@ -11,7 +11,7 @@ const ALLOWED_MIME_PREFIXES = ['application/pdf', 'image/'];
 
 function extFromMime(mime: string): string {
   if (mime === 'application/pdf') return 'pdf';
-  if (mime === 'image/jpeg' || mime === 'image/jpg') return 'jpg';
+  if (mime === 'image/jpeg') return 'jpg';
   if (mime === 'image/png') return 'png';
   if (mime === 'image/heic') return 'heic';
   if (mime === 'image/webp') return 'webp';
@@ -45,6 +45,16 @@ export async function uploadPlayerDocumentAction(_prev: string | null | undefine
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  // Defensive cross-team check before we upload or insert.
+  const { data: playerRow } = await supabase
+    .from('players')
+    .select('id, team_id')
+    .eq('id', playerId)
+    .maybeSingle();
+  if (!playerRow || playerRow.team_id !== teamId) {
+    return 'Player does not belong to this team.';
+  }
 
   const docId = randomUUID();
   const ext = extFromMime(file.type);

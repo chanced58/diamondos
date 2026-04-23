@@ -12,11 +12,17 @@ import { NewBookingForm } from './NewBookingForm';
 
 export const metadata: Metadata = { title: 'Schedule' };
 
+// Parse a "YYYY-MM-DD" string as a *local* calendar date, not as a UTC instant.
+// (new Date("2026-04-22") is UTC midnight, which shifts by a day in most zones.)
+function parseLocalYmd(ymd: string): Date {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1);
+}
+
 function startOfWeek(date: Date): Date {
   const d = new Date(date);
   const day = d.getDay(); // 0=Sun
-  const diff = d.getDate() - day;
-  d.setDate(diff);
+  d.setDate(d.getDate() - day);
   d.setHours(0, 0, 0, 0);
   return d;
 }
@@ -41,7 +47,7 @@ export default async function SchedulePage({
   );
 
   const weekStartDate = searchParams.week
-    ? startOfWeek(new Date(searchParams.week))
+    ? startOfWeek(parseLocalYmd(searchParams.week))
     : startOfWeek(new Date());
   const weekEndDate = new Date(weekStartDate);
   weekEndDate.setDate(weekEndDate.getDate() + 7);
