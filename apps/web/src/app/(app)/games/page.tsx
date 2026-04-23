@@ -148,78 +148,52 @@ export default async function SchedulePage({
   }
 
   return (
-    <div className="p-8 max-w-4xl">
-      {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between mb-6">
+    <div className="page" style={{ maxWidth: 1100 }}>
+      <div className="between" style={{ marginBottom: 20, alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
+          <div className="eyebrow">
+            {activeTeam ? (isLeagueView ? league!.name : activeTeam.name) : 'Games'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 4 }}>
+            <h1 className="display" style={{ fontSize: 34 }}>Schedule</h1>
             {league && activeTeam && (
-              <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+              <div className="seg" style={{ width: 200 }}>
                 <Link
                   href={`/games?month=${year}-${String(month).padStart(2, '0')}`}
-                  className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
-                    !isLeagueView ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                  }`}
+                  className={!isLeagueView ? 'on' : ''}
                 >
                   My Team
                 </Link>
                 <Link
                   href={`/games?month=${year}-${String(month).padStart(2, '0')}&view=league`}
-                  className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
-                    isLeagueView ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                  }`}
+                  className={isLeagueView ? 'on' : ''}
                 >
                   {league.name}
                 </Link>
               </div>
             )}
           </div>
-          {activeTeam && (
-            <p className="text-gray-500 text-sm">{isLeagueView ? league!.name : activeTeam.name}</p>
-          )}
         </div>
         {isCoach && activeTeam && (
-          <div className="flex items-center gap-2">
-            <Link
-              href="/games/new"
-              className="bg-brand-700 text-white font-semibold px-4 py-2 rounded-lg hover:bg-brand-800 transition-colors text-sm"
-            >
-              + Add Game
-            </Link>
-            <Link
-              href="/practices/new"
-              className="bg-white border border-gray-200 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-            >
-              + Practice
-            </Link>
-            <Link
-              href="/games/events/new"
-              className="bg-white border border-gray-200 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-            >
-              + Event
-            </Link>
-            <Link
-              href="/games/opponents"
-              className="text-sm text-brand-700 hover:underline font-medium px-2"
-            >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <Link href="/games/new" className="btn btn-turf btn-sm">+ Game</Link>
+            <Link href="/practices/new" className="btn btn-ghost btn-sm">+ Practice</Link>
+            <Link href="/games/events/new" className="btn btn-ghost btn-sm">+ Event</Link>
+            <Link href="/games/opponents" style={{ fontSize: 12, color: 'var(--app-brand-2)', padding: '0 6px', textDecoration: 'none', fontWeight: 600 }}>
               Opponents
             </Link>
-            <Link
-              href="/games/demo/lineup"
-              className="text-sm text-brand-700 hover:underline font-medium px-2"
-            >
-              Practice Scoring
+            <Link href="/games/demo/lineup" style={{ fontSize: 12, color: 'var(--app-brand-2)', padding: '0 6px', textDecoration: 'none', fontWeight: 600 }}>
+              Practice scoring
             </Link>
           </div>
         )}
       </div>
 
       {!activeTeam ? (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
-          <p className="text-blue-700">
+        <div className="card" style={{ padding: 24 }}>
+          <p style={{ color: 'var(--app-fg-muted)' }}>
             No team found.{' '}
-            <Link href="/admin/create-team" className="underline font-medium">
+            <Link href="/admin/create-team" style={{ color: 'var(--app-brand-2)', fontWeight: 600 }}>
               Create a team
             </Link>{' '}
             to start scheduling.

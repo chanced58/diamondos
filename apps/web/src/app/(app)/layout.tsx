@@ -255,8 +255,32 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
   // Check if user is a league admin (for sidebar nav)
   const leagueAccess = league ? await getLeagueAccess(league.id, user.id) : null;
 
+  // Pull display name for the sidebar footer
+  let userName: string | undefined;
+  let userInitials: string | undefined;
+  if (db) {
+    try {
+      const { data: profile } = await db
+        .from('user_profiles')
+        .select('first_name, last_name')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (profile?.first_name || profile?.last_name) {
+        userName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ');
+        userInitials = [profile?.first_name?.[0], profile?.last_name?.[0]]
+          .filter(Boolean)
+          .join('')
+          .toUpperCase();
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+  if (!userName && user.email) userName = user.email.split('@')[0];
+  if (!userInitials && userName) userInitials = userName.slice(0, 2).toUpperCase();
+
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="app">
       <Sidebar
         teamName={activeTeam?.name}
         teamOrg={activeTeam?.organization ?? undefined}
@@ -270,8 +294,10 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         subscriptionTier={subscriptionTier ?? undefined}
         hasPlayerProfile={hasPlayerProfile}
         isLeagueAdmin={leagueAccess?.isLeagueAdmin ?? false}
+        userName={userName}
+        userInitials={userInitials}
       />
-      <main className="flex-1 overflow-auto">
+      <main className="main">
         {children}
       </main>
     </div>
