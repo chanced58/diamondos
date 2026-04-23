@@ -10,6 +10,7 @@ import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
 import { PitchingStatsTable } from './PitchingStatsTable';
 import { BattingStatsTable } from './BattingStatsTable';
 import { OpponentsStatsTable } from './OpponentsStatsTable';
+import { CatcherInningsTable } from './CatcherInningsTable';
 import type { OpponentTeamStats } from './OpponentsStatsTable';
 import { SeasonPicker } from './SeasonPicker';
 import { TierToggle } from './TierToggle';
@@ -47,7 +48,7 @@ export default async function CompliancePage({
 }: {
   searchParams: { tab?: string; season?: string; tier?: string };
 }): Promise<JSX.Element | null> {
-  const VALID_TABS = ['pitching', 'hitting', 'opponents'] as const;
+  const VALID_TABS = ['pitching', 'hitting', 'catcher', 'opponents'] as const;
   let tab = VALID_TABS.includes(searchParams.tab as typeof VALID_TABS[number])
     ? (searchParams.tab as typeof VALID_TABS[number])
     : 'pitching';
@@ -146,7 +147,7 @@ export default async function CompliancePage({
   // participated in past games still resolve their names in stats.
   const { data: players } = await db
     .from('players')
-    .select('id, first_name, last_name')
+    .select('id, first_name, last_name, is_active')
     .eq('team_id', activeTeam.id);
 
   const playerList = (players ?? []).map((p) => ({
@@ -154,6 +155,26 @@ export default async function CompliancePage({
     firstName: p.first_name,
     lastName: p.last_name,
   }));
+
+  // Tier 8 F5: active players without a current (non-expired) liability waiver.
+  const activePlayerIds = (players ?? []).filter((p) => p.is_active).map((p) => p.id);
+  let missingWaiverCount = 0;
+  if (activePlayerIds.length > 0) {
+    const { data: waiverRows } = await db
+      .from('player_documents')
+      .select('player_id, expires_on')
+      .eq('document_type', 'liability_waiver')
+      .eq('is_current', true)
+      .in('player_id', activePlayerIds);
+
+    const todayDate = new Date().toISOString().slice(0, 10);
+    const playersWithCurrentWaiver = new Set(
+      (waiverRows ?? [])
+        .filter((r) => !r.expires_on || r.expires_on >= todayDate)
+        .map((r) => r.player_id),
+    );
+    missingWaiverCount = activePlayerIds.filter((id) => !playersWithCurrentWaiver.has(id)).length;
+  }
 
   // Only show stats for players on our team roster (filters out opponent
   // player IDs that leak through derivePitchingStats' fallback coalesce
@@ -186,6 +207,7 @@ export default async function CompliancePage({
     requiredRestDays: number | null;
     canPitchNextDay: boolean | null;
     lastGameDate: string | null;
+    pitches7d: number | null;
   }> = {};
 
   for (const row of pitchCounts ?? []) {
@@ -195,8 +217,53 @@ export default async function CompliancePage({
         requiredRestDays: row.required_rest_days,
         canPitchNextDay: row.can_pitch_next_day,
         lastGameDate: row.game_date,
+        pitches7d: null,
       };
     }
+  }
+
+  // Tier 8 F1: rolling 7-day totals for each pitcher (last row per player).
+  if (allPitchingStats.length > 0) {
+    const { data: rolling7d } = await db
+      .from('v_pitcher_rolling_7d')
+      .select('player_id, game_date, pitches_7d')
+      .in('player_id', allPitchingStats.map((s) => s.playerId))
+      .order('game_date', { ascending: false });
+
+    for (const row of rolling7d ?? []) {
+      const existing = complianceMap[row.player_id];
+      if (existing && existing.pitches7d === null) {
+        existing.pitches7d = row.pitches_7d;
+      }
+    }
+  }
+
+  // Tier 8 F1: catcher innings for the selected season (or all if no season).
+  type CatcherRow = { playerId: string; totalInnings: number; games: number; lastGameDate: string | null };
+  const catcherRows: CatcherRow[] = [];
+  if (tab === 'catcher' && teamPlayerIds.size > 0) {
+    let catcherQuery = db
+      .from('catcher_innings')
+      .select('player_id, innings_caught, game_date, season_id')
+      .in('player_id', Array.from(teamPlayerIds))
+      .order('game_date', { ascending: false });
+    if (season) catcherQuery = catcherQuery.eq('season_id', season.id);
+
+    const { data: catcherData } = await catcherQuery;
+    const byPlayer = new Map<string, CatcherRow>();
+    for (const row of catcherData ?? []) {
+      const r = byPlayer.get(row.player_id) ?? {
+        playerId: row.player_id,
+        totalInnings: 0,
+        games: 0,
+        lastGameDate: null,
+      };
+      r.totalInnings += Number(row.innings_caught ?? 0);
+      r.games += 1;
+      if (!r.lastGameDate || row.game_date > r.lastGameDate) r.lastGameDate = row.game_date;
+      byPlayer.set(row.player_id, r);
+    }
+    catcherRows.push(...Array.from(byPlayer.values()).sort((a, b) => b.totalInnings - a.totalInnings));
   }
 
   // ── Opponents tab data ──────────────────────────────────────────────────────
@@ -319,6 +386,25 @@ export default async function CompliancePage({
         </div>
       </div>
 
+      {/* Tier 8 F5: Missing-waiver banner */}
+      {missingWaiverCount > 0 && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-amber-700">⚠️</span>
+            <span className="text-sm text-amber-900">
+              <strong>{missingWaiverCount}</strong>{' '}
+              {missingWaiverCount === 1 ? 'active player is' : 'active players are'} missing a current liability waiver.
+            </span>
+          </div>
+          <Link
+            href={`/teams/${activeTeam.id}/roster`}
+            className="text-xs font-medium text-amber-900 bg-white border border-amber-300 px-3 py-1.5 rounded-lg hover:bg-amber-100"
+          >
+            Review roster →
+          </Link>
+        </div>
+      )}
+
       {/* Tab strip */}
       <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
         <Link
@@ -340,6 +426,16 @@ export default async function CompliancePage({
           }`}
         >
           Hitting
+        </Link>
+        <Link
+          href={`/compliance?tab=catcher${season ? `&season=${season.id}` : ''}&tier=${tier}`}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            tab === 'catcher'
+              ? 'bg-white text-gray-900 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          Catcher
         </Link>
         {canViewOpponents && (
           <Link
@@ -390,6 +486,33 @@ export default async function CompliancePage({
           </div>
         ) : (
           <BattingStatsTable stats={allBattingStats} tier={tier} subscriptionTier={subscriptionTier} />
+        )
+      )}
+
+      {/* Catcher tab */}
+      {tab === 'catcher' && (
+        catcherRows.length === 0 ? (
+          <div className="bg-white border border-gray-200 rounded-xl px-5 py-12 text-center">
+            <p className="text-gray-500 text-sm">
+              {season ? `No catcher innings tracked for ${season.name} yet.` : 'No catcher innings tracked yet.'}
+            </p>
+            <p className="text-gray-400 text-xs mt-1">
+              Innings populate from in-game substitutions. Use the &quot;Recompute&quot; action on a game to backfill.
+            </p>
+          </div>
+        ) : (
+          <CatcherInningsTable
+            rows={catcherRows.map((r) => {
+              const player = playerList.find((p) => p.id === r.playerId);
+              return {
+                playerId: r.playerId,
+                playerName: player ? `${player.firstName} ${player.lastName}` : 'Unknown',
+                totalInnings: r.totalInnings,
+                games: r.games,
+                lastGameDate: r.lastGameDate,
+              };
+            })}
+          />
         )
       )}
 

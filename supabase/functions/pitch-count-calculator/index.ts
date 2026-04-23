@@ -124,25 +124,56 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // 5. Fetch compliance rule for this season
-  const { data: seasonRule } = await supabase
-    .from('season_compliance_rules')
-    .select('pitch_compliance_rules(*)')
-    .eq('season_id', game.season_id)
-    .maybeSingle();
+  // 5. Resolve compliance rule: per-player override → DOB auto-match → season default.
+  //    Tier 8 F1 replaces the season-only lookup so travel / mixed-age rosters work.
+  const { data: ruleIdResult, error: ruleError } = await supabase.rpc(
+    'resolve_compliance_rule_for_player',
+    { p_player_id: pitcherId, p_game_date: gameDate },
+  );
+  if (ruleError) {
+    console.error('Error resolving compliance rule:', {
+      error: ruleError,
+      pitcherId,
+      gameDate,
+    });
+    // Return non-2xx so the database webhook retries rather than silently
+    // skipping compliance alerts for this pitch.
+    return new Response(JSON.stringify({ error: ruleError.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+  const ruleId = ruleIdResult as string | null;
 
-  if (seasonRule?.pitch_compliance_rules) {
-    const rule = seasonRule.pitch_compliance_rules as { max_pitches_per_day: number };
-    const max = rule.max_pitches_per_day;
-    const warningThreshold = Math.floor(max * 0.75);
-    const dangerThreshold = Math.floor(max * 0.90);
+  let rule: { max_pitches_per_day: number; max_pitches_per_week: number | null } | null = null;
+  if (ruleId) {
+    const { data: ruleRow } = await supabase
+      .from('pitch_compliance_rules')
+      .select('max_pitches_per_day, max_pitches_per_week')
+      .eq('id', ruleId)
+      .maybeSingle();
+    rule = ruleRow ?? null;
+  }
 
-    // Dispatch push notification at warning/danger thresholds
-    if (pitchCount === warningThreshold || pitchCount === dangerThreshold) {
-      const severity = pitchCount >= dangerThreshold ? 'danger' : 'warning';
-      const emoji = severity === 'danger' ? '🔴' : '🟡';
+  if (rule) {
+    const dispatchAlert = async (
+      title: string,
+      body: string,
+      alertType: string,
+      alertKind: 'daily_warn' | 'daily_danger' | 'weekly_warn' | 'weekly_danger',
+      payloadExtras: Record<string, unknown> = {},
+    ) => {
+      // Dedup: one row per (player, game, alert_kind). Insert first; skip the
+      // push if the row already exists (duplicate key = already dispatched).
+      const { error: dedupError } = await supabase
+        .from('pitch_count_alerts_sent')
+        .insert({ player_id: pitcherId, game_id: gameId, alert_kind: alertKind });
+      if (dedupError) {
+        if (dedupError.code === '23505') return; // already sent — silent skip
+        console.error('Failed to record alert dedup row:', dedupError);
+        return; // fail closed rather than spamming
+      }
 
-      // Fetch coach user IDs for this team
       const { data: coaches } = await supabase
         .from('team_members')
         .select('user_id')
@@ -150,16 +181,72 @@ Deno.serve(async (req: Request) => {
         .in('role', ['head_coach', 'assistant_coach'])
         .eq('is_active', true);
 
-      if (coaches && coaches.length > 0) {
-        // Call push-notifications function
-        await supabase.functions.invoke('push-notifications', {
-          body: {
-            userIds: coaches.map((c: { user_id: string }) => c.user_id),
-            title: `${emoji} Pitch Count Alert`,
-            body: `Pitcher has thrown ${pitchCount} pitches (limit: ${max})`,
-            data: { gameId, pitcherId, pitchCount, type: 'pitch_count_alert' },
-          },
-        });
+      if (!coaches || coaches.length === 0) return;
+      await supabase.functions.invoke('push-notifications', {
+        body: {
+          userIds: coaches.map((c: { user_id: string }) => c.user_id),
+          title,
+          body,
+          data: { gameId, pitcherId, pitchCount, type: alertType, ...payloadExtras },
+        },
+      });
+    };
+
+    // Daily threshold alerts (75% / 90%)
+    const max = rule.max_pitches_per_day;
+    const warningThreshold = Math.floor(max * 0.75);
+    const dangerThreshold = Math.floor(max * 0.9);
+
+    if (pitchCount >= dangerThreshold) {
+      await dispatchAlert(
+        '🔴 Pitch Count Alert',
+        `Pitcher has thrown ${pitchCount} pitches today (limit: ${max})`,
+        'pitch_count_alert',
+        'daily_danger',
+      );
+    } else if (pitchCount >= warningThreshold) {
+      await dispatchAlert(
+        '🟡 Pitch Count Alert',
+        `Pitcher has thrown ${pitchCount} pitches today (limit: ${max})`,
+        'pitch_count_alert',
+        'daily_warn',
+      );
+    }
+
+    // Weekly rolling-7d threshold alerts (only when the rule has a weekly cap)
+    if (rule.max_pitches_per_week) {
+      const { data: rolling } = await supabase
+        .from('v_pitcher_rolling_7d')
+        .select('pitches_7d')
+        .eq('player_id', pitcherId)
+        .eq('game_date', gameDate)
+        .maybeSingle();
+
+      // Missing row = no pitches in the window; treat as 0 rather than falling
+      // back to this game's count (which double-counts when the view is slow
+      // to propagate or when the pitcher has pitched this week but this game
+      // is the first entry).
+      const pitches7d = (rolling?.pitches_7d as number | null) ?? 0;
+      const weeklyMax = rule.max_pitches_per_week;
+      const weeklyWarn = Math.floor(weeklyMax * 0.75);
+      const weeklyDanger = Math.floor(weeklyMax * 0.9);
+
+      if (pitches7d >= weeklyDanger) {
+        await dispatchAlert(
+          '🔴 Weekly Pitch Limit Alert',
+          `Pitcher at ${pitches7d} pitches over the last 7 days (weekly limit: ${weeklyMax})`,
+          'pitch_count_weekly_alert',
+          'weekly_danger',
+          { pitches7d },
+        );
+      } else if (pitches7d >= weeklyWarn) {
+        await dispatchAlert(
+          '🟡 Weekly Pitch Limit Alert',
+          `Pitcher at ${pitches7d} pitches over the last 7 days (weekly limit: ${weeklyMax})`,
+          'pitch_count_weekly_alert',
+          'weekly_warn',
+          { pitches7d },
+        );
       }
     }
   }

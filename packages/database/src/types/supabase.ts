@@ -70,6 +70,61 @@ export type Database = {
           },
         ]
       }
+      catcher_innings: {
+        Row: {
+          created_at: string
+          game_date: string
+          game_id: string
+          id: string
+          innings_caught: number
+          player_id: string
+          season_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          game_date: string
+          game_id: string
+          id?: string
+          innings_caught?: number
+          player_id: string
+          season_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          game_date?: string
+          game_id?: string
+          id?: string
+          innings_caught?: number
+          player_id?: string
+          season_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catcher_innings_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catcher_innings_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catcher_innings_season_id_fkey"
+            columns: ["season_id"]
+            isOneToOne: false
+            referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       channel_members: {
         Row: {
           can_post: boolean
@@ -149,6 +204,210 @@ export type Database = {
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      drill_focus_catalog: {
+        Row: {
+          created_at: string
+          description: string | null
+          name: string
+          parent_slug: string | null
+          slug: string
+          sort_order: number
+          team_id: string | null
+          visibility: Database["public"]["Enums"]["drill_focus_visibility"]
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          name: string
+          parent_slug?: string | null
+          slug: string
+          sort_order?: number
+          team_id?: string | null
+          visibility?: Database["public"]["Enums"]["drill_focus_visibility"]
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          name?: string
+          parent_slug?: string | null
+          slug?: string
+          sort_order?: number
+          team_id?: string | null
+          visibility?: Database["public"]["Enums"]["drill_focus_visibility"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "drill_focus_catalog_parent_slug_fkey"
+            columns: ["parent_slug"]
+            isOneToOne: false
+            referencedRelation: "drill_focus_catalog"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "drill_focus_catalog_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      drill_injury_contraindications: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          drill_id: string
+          id: string
+          injury_slug: string
+          reason: string | null
+          severity: Database["public"]["Enums"]["drill_injury_severity"]
+          team_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          drill_id: string
+          id?: string
+          injury_slug: string
+          reason?: string | null
+          severity?: Database["public"]["Enums"]["drill_injury_severity"]
+          team_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          drill_id?: string
+          id?: string
+          injury_slug?: string
+          reason?: string | null
+          severity?: Database["public"]["Enums"]["drill_injury_severity"]
+          team_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "drill_injury_contraindications_drill_id_fkey"
+            columns: ["drill_id"]
+            isOneToOne: false
+            referencedRelation: "practice_drills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "drill_injury_contraindications_injury_slug_fkey"
+            columns: ["injury_slug"]
+            isOneToOne: false
+            referencedRelation: "injury_flag_catalog"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "drill_injury_contraindications_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      facilities: {
+        Row: {
+          capacity: number | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          kind: Database["public"]["Enums"]["facility_kind"]
+          name: string
+          notes: string | null
+          team_id: string
+          updated_at: string
+        }
+        Insert: {
+          capacity?: number | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          kind: Database["public"]["Enums"]["facility_kind"]
+          name: string
+          notes?: string | null
+          team_id: string
+          updated_at?: string
+        }
+        Update: {
+          capacity?: number | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          kind?: Database["public"]["Enums"]["facility_kind"]
+          name?: string
+          notes?: string | null
+          team_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facilities_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      facility_bookings: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          ends_at: string
+          facility_id: string
+          id: string
+          notes: string | null
+          practice_id: string | null
+          starts_at: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          ends_at: string
+          facility_id: string
+          id?: string
+          notes?: string | null
+          practice_id?: string | null
+          starts_at: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          ends_at?: string
+          facility_id?: string
+          id?: string
+          notes?: string | null
+          practice_id?: string | null
+          starts_at?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facility_bookings_facility_id_fkey"
+            columns: ["facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "facility_bookings_practice_id_fkey"
+            columns: ["practice_id"]
+            isOneToOne: false
+            referencedRelation: "practices"
             referencedColumns: ["id"]
           },
         ]
@@ -521,6 +780,44 @@ export type Database = {
           },
           {
             foreignKeyName: "games_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      injury_flag_catalog: {
+        Row: {
+          body_part: string
+          created_at: string
+          description: string | null
+          name: string
+          slug: string
+          team_id: string | null
+          visibility: Database["public"]["Enums"]["injury_flag_visibility"]
+        }
+        Insert: {
+          body_part: string
+          created_at?: string
+          description?: string | null
+          name: string
+          slug: string
+          team_id?: string | null
+          visibility?: Database["public"]["Enums"]["injury_flag_visibility"]
+        }
+        Update: {
+          body_part?: string
+          created_at?: string
+          description?: string | null
+          name?: string
+          slug?: string
+          team_id?: string | null
+          visibility?: Database["public"]["Enums"]["injury_flag_visibility"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "injury_flag_catalog_team_id_fkey"
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
@@ -1350,6 +1647,7 @@ export type Database = {
           id: string
           is_active: boolean
           max_pitches_per_day: number
+          max_pitches_per_week: number | null
           rest_day_thresholds: Json
           rule_name: string
           team_id: string | null
@@ -1363,6 +1661,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           max_pitches_per_day: number
+          max_pitches_per_week?: number | null
           rest_day_thresholds: Json
           rule_name: string
           team_id?: string | null
@@ -1376,6 +1675,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           max_pitches_per_day?: number
+          max_pitches_per_week?: number | null
           rest_day_thresholds?: Json
           rule_name?: string
           team_id?: string | null
@@ -1386,6 +1686,45 @@ export type Database = {
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pitch_count_alerts_sent: {
+        Row: {
+          alert_kind: string
+          game_id: string
+          id: string
+          player_id: string
+          sent_at: string
+        }
+        Insert: {
+          alert_kind: string
+          game_id: string
+          id?: string
+          player_id: string
+          sent_at?: string
+        }
+        Update: {
+          alert_kind?: string
+          game_id?: string
+          id?: string
+          player_id?: string
+          sent_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pitch_count_alerts_sent_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pitch_count_alerts_sent_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]
@@ -1451,6 +1790,159 @@ export type Database = {
           },
         ]
       }
+      player_compliance_rule_overrides: {
+        Row: {
+          compliance_rule_id: string
+          created_at: string
+          created_by: string | null
+          player_id: string
+          reason: string | null
+          updated_at: string
+        }
+        Insert: {
+          compliance_rule_id: string
+          created_at?: string
+          created_by?: string | null
+          player_id: string
+          reason?: string | null
+          updated_at?: string
+        }
+        Update: {
+          compliance_rule_id?: string
+          created_at?: string
+          created_by?: string | null
+          player_id?: string
+          reason?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_compliance_rule_overrides_compliance_rule_id_fkey"
+            columns: ["compliance_rule_id"]
+            isOneToOne: false
+            referencedRelation: "pitch_compliance_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_compliance_rule_overrides_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: true
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_document_type: {
+        Row: {
+          created_at: string
+          description: string | null
+          name: string
+          requires_expiration: boolean
+          slug: string
+          team_id: string | null
+          visibility: Database["public"]["Enums"]["player_document_visibility"]
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          name: string
+          requires_expiration?: boolean
+          slug: string
+          team_id?: string | null
+          visibility?: Database["public"]["Enums"]["player_document_visibility"]
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          name?: string
+          requires_expiration?: boolean
+          slug?: string
+          team_id?: string | null
+          visibility?: Database["public"]["Enums"]["player_document_visibility"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_document_type_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_documents: {
+        Row: {
+          created_at: string
+          document_type: string
+          expires_on: string | null
+          id: string
+          is_current: boolean
+          notes: string | null
+          player_id: string
+          signed_on: string | null
+          storage_path: string
+          team_id: string
+          title: string
+          updated_at: string
+          uploaded_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          document_type: string
+          expires_on?: string | null
+          id?: string
+          is_current?: boolean
+          notes?: string | null
+          player_id: string
+          signed_on?: string | null
+          storage_path: string
+          team_id: string
+          title: string
+          updated_at?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          document_type?: string
+          expires_on?: string | null
+          id?: string
+          is_current?: boolean
+          notes?: string | null
+          player_id?: string
+          signed_on?: string | null
+          storage_path?: string
+          team_id?: string
+          title?: string
+          updated_at?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_documents_document_type_fkey"
+            columns: ["document_type"]
+            isOneToOne: false
+            referencedRelation: "player_document_type"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "player_documents_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_documents_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       player_external_ids: {
         Row: {
           confidence: string | null
@@ -1482,6 +1974,57 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "player_external_ids_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_injury_flags: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          effective_from: string
+          effective_to: string | null
+          id: string
+          injury_slug: string
+          notes: string | null
+          player_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          injury_slug: string
+          notes?: string | null
+          player_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          injury_slug?: string
+          notes?: string | null
+          player_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_injury_flags_injury_slug_fkey"
+            columns: ["injury_slug"]
+            isOneToOne: false
+            referencedRelation: "injury_flag_catalog"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "player_injury_flags_player_id_fkey"
             columns: ["player_id"]
             isOneToOne: false
             referencedRelation: "players"
@@ -1779,6 +2322,7 @@ export type Database = {
           completed_at: string | null
           created_at: string
           drill_id: string | null
+          facility_id: string | null
           field_spaces: Database["public"]["Enums"]["practice_field_space"][]
           id: string
           notes: string | null
@@ -1797,6 +2341,7 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           drill_id?: string | null
+          facility_id?: string | null
           field_spaces?: Database["public"]["Enums"]["practice_field_space"][]
           id?: string
           notes?: string | null
@@ -1815,6 +2360,7 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           drill_id?: string | null
+          facility_id?: string | null
           field_spaces?: Database["public"]["Enums"]["practice_field_space"][]
           id?: string
           notes?: string | null
@@ -1832,6 +2378,13 @@ export type Database = {
             columns: ["drill_id"]
             isOneToOne: false
             referencedRelation: "practice_drills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_blocks_facility_id_fkey"
+            columns: ["facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
             referencedColumns: ["id"]
           },
           {
@@ -1976,6 +2529,55 @@ export type Database = {
           },
           {
             foreignKeyName: "practice_drill_deficit_tags_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_drill_focus_tags: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          drill_id: string
+          focus_slug: string
+          id: string
+          team_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          drill_id: string
+          focus_slug: string
+          id?: string
+          team_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          drill_id?: string
+          focus_slug?: string
+          id?: string
+          team_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_drill_focus_tags_drill_id_fkey"
+            columns: ["drill_id"]
+            isOneToOne: false
+            referencedRelation: "practice_drills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_drill_focus_tags_focus_slug_fkey"
+            columns: ["focus_slug"]
+            isOneToOne: false
+            referencedRelation: "drill_focus_catalog"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "practice_drill_focus_tags_team_id_fkey"
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
@@ -3288,7 +3890,100 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      v_pitcher_rolling_7d: {
+        Row: {
+          game_date: string | null
+          games_7d: number | null
+          pitches_7d: number | null
+          player_id: string | null
+          season_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pitch_counts_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pitch_counts_season_id_fkey"
+            columns: ["season_id"]
+            isOneToOne: false
+            referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_player_injury_flags_public: {
+        Row: {
+          created_at: string | null
+          effective_from: string | null
+          effective_to: string | null
+          id: string | null
+          injury_slug: string | null
+          player_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          id?: string | null
+          injury_slug?: string | null
+          player_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          id?: string | null
+          injury_slug?: string | null
+          player_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_injury_flags_injury_slug_fkey"
+            columns: ["injury_slug"]
+            isOneToOne: false
+            referencedRelation: "injury_flag_catalog"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "player_injury_flags_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_practice_volume_by_focus: {
+        Row: {
+          first_worked_at: string | null
+          focus_slug: string | null
+          last_worked_at: string | null
+          session_count: number | null
+          team_id: string | null
+          total_actual_minutes: number | null
+          total_planned_minutes: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_drill_focus_tags_focus_slug_fkey"
+            columns: ["focus_slug"]
+            isOneToOne: false
+            referencedRelation: "drill_focus_catalog"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "practices_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       can_edit_block: { Args: { p_block_id: string }; Returns: boolean }
@@ -3339,9 +4034,21 @@ export type Database = {
         Args: { p_external_id: string; p_service: string }
         Returns: string
       }
+      player_documents_path_uuid: {
+        Args: { p_name: string; p_segment: number }
+        Returns: string
+      }
       practice_reorder_blocks: {
         Args: { p_order: string[]; p_practice_id: string }
         Returns: undefined
+      }
+      recompute_catcher_innings_for_game: {
+        Args: { p_game_id: string }
+        Returns: undefined
+      }
+      resolve_compliance_rule_for_player: {
+        Args: { p_game_date?: string; p_player_id: string }
+        Returns: string
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
@@ -3356,6 +4063,16 @@ export type Database = {
       bats_throws: "right" | "left" | "switch"
       billable_entity_type: "team" | "league"
       channel_type: "announcement" | "topic" | "direct"
+      drill_focus_visibility: "system" | "team"
+      drill_injury_severity: "hard" | "caution"
+      facility_kind:
+        | "cage"
+        | "field"
+        | "bullpen"
+        | "gym"
+        | "classroom"
+        | "weight_room"
+        | "other"
       game_location_type: "home" | "away" | "neutral"
       game_status:
         | "scheduled"
@@ -3363,6 +4080,7 @@ export type Database = {
         | "completed"
         | "cancelled"
         | "postponed"
+      injury_flag_visibility: "system" | "team"
       league_role: "league_admin" | "league_manager"
       opponent_scouting_category:
         | "pitch_mix"
@@ -3372,6 +4090,7 @@ export type Database = {
         | "baserunning"
         | "defense"
       opponent_scouting_source: "manual" | "auto_derived"
+      player_document_visibility: "system" | "team"
       player_position:
         | "pitcher"
         | "catcher"
@@ -3622,6 +4341,17 @@ export const Constants = {
       bats_throws: ["right", "left", "switch"],
       billable_entity_type: ["team", "league"],
       channel_type: ["announcement", "topic", "direct"],
+      drill_focus_visibility: ["system", "team"],
+      drill_injury_severity: ["hard", "caution"],
+      facility_kind: [
+        "cage",
+        "field",
+        "bullpen",
+        "gym",
+        "classroom",
+        "weight_room",
+        "other",
+      ],
       game_location_type: ["home", "away", "neutral"],
       game_status: [
         "scheduled",
@@ -3630,6 +4360,7 @@ export const Constants = {
         "cancelled",
         "postponed",
       ],
+      injury_flag_visibility: ["system", "team"],
       league_role: ["league_admin", "league_manager"],
       opponent_scouting_category: [
         "pitch_mix",
@@ -3640,6 +4371,7 @@ export const Constants = {
         "defense",
       ],
       opponent_scouting_source: ["manual", "auto_derived"],
+      player_document_visibility: ["system", "team"],
       player_position: [
         "pitcher",
         "catcher",
