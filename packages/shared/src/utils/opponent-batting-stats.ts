@@ -87,10 +87,16 @@ export function computeOpponentBatting(
         continue;
       }
 
-      // Resolve opponent batter: check opponentBatterId first, then batterId if in map
+      // Resolve opponent batter: check opponentBatterId first, then batterId if in map.
+      // Reject the legacy 'unknown-batter' stub so it can never be taken from
+      // opponentBatterId and accumulate into a phantom row that the caller's
+      // roster filter would then silently drop (same class of bug fixed for
+      // our-team batting via batting-stats.ts normalizeBatterId).
+      const rawOppBatterId = payload.opponentBatterId as string | undefined;
+      const rawBatterId = payload.batterId as string | undefined;
       const batterId =
-        (payload.opponentBatterId as string | undefined) ??
-        (oppPlayerNameMap.has(payload.batterId as string) ? (payload.batterId as string) : undefined);
+        (rawOppBatterId && rawOppBatterId !== 'unknown-batter' ? rawOppBatterId : undefined) ??
+        (rawBatterId && rawBatterId !== 'unknown-batter' && oppPlayerNameMap.has(rawBatterId) ? rawBatterId : undefined);
 
       // Handle events without an opponent batter
       if (!batterId) {

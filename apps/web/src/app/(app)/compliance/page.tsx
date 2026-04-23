@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
-import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, weAreHome, filterResetAndReverted } from '@baseball/shared';
+import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, weAreHome, filterResetAndReverted, EventType } from '@baseball/shared';
 import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
 import { PitchingStatsTable } from './PitchingStatsTable';
 import { BattingStatsTable } from './BattingStatsTable';
@@ -19,28 +19,14 @@ import { hasFeature, Feature } from '@baseball/shared';
 
 export const metadata: Metadata = { title: 'Stats' };
 
-const RELEVANT_EVENT_TYPES = [
-  'pitch_thrown',
-  'hit',
-  'out',
-  'strikeout',
-  'walk',
-  'hit_by_pitch',
-  'score',
-  'pitching_change',
-  'inning_change',
-  'game_start',
-  'double_play',
-  'sacrifice_bunt',
-  'sacrifice_fly',
-  'field_error',
-  'stolen_base',
-  'caught_stealing',
-  'baserunner_advance',
-  'substitution',
-  'game_reset',
-  'pitch_reverted',
-] as const;
+// Every EventType value plus the 'game_reset' literal (not in the enum — it's
+// an internal correction marker appended by actions.ts when a game is reset).
+// Derived from the enum so adding a new event type never requires updating
+// this list again — the prior hand-maintained allowlist silently dropped
+// dropped_third_strike, catcher_interference, triple_play, balk,
+// pickoff_attempt, rundown, baserunner_out, event_voided, and game_end,
+// causing season-level stats to undercount PAs, outs, and pitcher events.
+const RELEVANT_EVENT_TYPES = [...Object.values(EventType), 'game_reset'] as const;
 
 export default async function CompliancePage({
   searchParams,

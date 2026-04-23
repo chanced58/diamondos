@@ -16,6 +16,17 @@ function isHardHit(hitType: string | undefined, trajectory: string | undefined, 
   return false;
 }
 
+// Legacy scoring sessions (pre-commit a071a02) stamped the literal string
+// 'unknown-batter' into payloads when no batter was selected. That stub is
+// truthy, so a plain `if (!batterId) continue` guard lets it through;
+// stats then accumulate against a phantom player whose ID isn't in any
+// roster, and the downstream `teamPlayerIds.has(s.playerId)` filter in the
+// stats and compliance pages silently drops the entire row. Mirror the
+// normalizePitcherId helper in pitching-stats so batting also drops the
+// stub cleanly instead of routing data to a hidden sink.
+const normalizeBatterId = (id: string | null | undefined): string | null =>
+  id && id !== 'unknown-batter' ? id : null;
+
 // FanGraphs 2023 wOBA linear weights
 const W_BB  = 0.69;
 const W_HBP = 0.72;
@@ -154,7 +165,8 @@ export function deriveBattingStats(
       // ── HIT ────────────────────────────────────────────────────────────────
       if (etype === EventType.HIT) {
         const p = payload as HitPayload;
-        const { batterId, hitType, trajectory, rbis, sprayY, fieldersChoice } = p;
+        const { hitType, trajectory, rbis, sprayY, fieldersChoice } = p;
+        const batterId = normalizeBatterId(p.batterId);
         if (!batterId) continue;
 
         markAppeared(batterId);
@@ -224,7 +236,8 @@ export function deriveBattingStats(
       // ── OUT ────────────────────────────────────────────────────────────────
       if (etype === EventType.OUT) {
         const p = payload as OutPayload;
-        const { batterId, outType, trajectory } = p;
+        const { outType, trajectory } = p;
+        const batterId = normalizeBatterId(p.batterId);
         if (!batterId) continue;
 
         markAppeared(batterId);
@@ -244,7 +257,7 @@ export function deriveBattingStats(
 
       // ── STRIKEOUT (explicit event) ─────────────────────────────────────────
       if (etype === EventType.STRIKEOUT) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = normalizeBatterId(payload?.batterId);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
@@ -256,7 +269,7 @@ export function deriveBattingStats(
 
       // ── DROPPED_THIRD_STRIKE ──────────────────────────────────────────────
       if (etype === EventType.DROPPED_THIRD_STRIKE) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = normalizeBatterId(payload?.batterId);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
@@ -271,7 +284,7 @@ export function deriveBattingStats(
 
       // ── WALK ───────────────────────────────────────────────────────────────
       if (etype === EventType.WALK) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = normalizeBatterId(payload?.batterId);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
@@ -288,7 +301,7 @@ export function deriveBattingStats(
 
       // ── CATCHER_INTERFERENCE ───────────────────────────────────────────────
       if (etype === EventType.CATCHER_INTERFERENCE) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = normalizeBatterId(payload?.batterId);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
@@ -304,7 +317,7 @@ export function deriveBattingStats(
 
       // ── HIT_BY_PITCH ───────────────────────────────────────────────────────
       if (etype === EventType.HIT_BY_PITCH) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = normalizeBatterId(payload?.batterId);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
@@ -320,7 +333,7 @@ export function deriveBattingStats(
 
       // ── SACRIFICE_FLY ──────────────────────────────────────────────────────
       if (etype === EventType.SACRIFICE_FLY) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = normalizeBatterId(payload?.batterId);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
@@ -338,7 +351,7 @@ export function deriveBattingStats(
 
       // ── SACRIFICE_BUNT ────────────────────────────────────────────────────
       if (etype === EventType.SACRIFICE_BUNT) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = normalizeBatterId(payload?.batterId);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
@@ -359,7 +372,7 @@ export function deriveBattingStats(
 
       // ── FIELD_ERROR ────────────────────────────────────────────────────────
       if (etype === EventType.FIELD_ERROR) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = normalizeBatterId(payload?.batterId);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
@@ -375,7 +388,7 @@ export function deriveBattingStats(
 
       // ── DOUBLE_PLAY ────────────────────────────────────────────────────────
       if (etype === EventType.DOUBLE_PLAY) {
-        const batterId: string | undefined = payload?.batterId;
+        const batterId = normalizeBatterId(payload?.batterId);
         if (!batterId) continue;
         markAppeared(batterId);
         const s = getStats(batterId);
@@ -388,6 +401,22 @@ export function deriveBattingStats(
         if (runnerOutBase === 1) r1 = null;
         else if (runnerOutBase === 2) r2 = null;
         else if (runnerOutBase === 3) r3 = null;
+        continue;
+      }
+
+      // ── TRIPLE_PLAY ────────────────────────────────────────────────────────
+      // Every triple play ends the half-inning (3 outs), so base state will
+      // be reset by the following INNING_CHANGE. We only need to credit the
+      // batter with a PA + AB — without this handler the batter's turn was
+      // silently dropped and batting stats undercounted relative to opponent
+      // batting (which does handle triple_play).
+      if (etype === EventType.TRIPLE_PLAY) {
+        const batterId = normalizeBatterId(payload?.batterId);
+        if (!batterId) continue;
+        markAppeared(batterId);
+        const s = getStats(batterId);
+        s.plateAppearances += 1;
+        s.atBats += 1;
         continue;
       }
 
