@@ -123,23 +123,29 @@ export function deriveGameState(
       case EventType.HIT: {
         const p = event.payload as HitPayload;
         const bases = hitTypeToBases(p.hitType);
-        if (bases === 4) {
-          // Home run: clear bases, score everyone
-          const runners = Object.values(state.runnersOnBase).filter(Boolean).length;
-          const runs = runners + 1;
-          addRuns(state, runs, state.isTopOfInning);
-          state.runnersOnBase = { first: null, second: null, third: null };
-        } else {
-          // Count runners who reach home on this hit before advancing the base state.
-          // Runner on 3rd always scores on any hit (3+bases >= 4 for all single/double/triple).
-          // Runner on 2nd scores on a double or triple (2+bases >= 4).
-          // Runner on 1st scores only on a triple (1+bases >= 4).
-          let runs = 0;
-          if (state.runnersOnBase.third)                    runs++;
-          if (state.runnersOnBase.second && 2 + bases >= 4) runs++;
-          if (state.runnersOnBase.first  && 1 + bases >= 4) runs++;
-          if (runs > 0) addRuns(state, runs, state.isTopOfInning);
-          state.runnersOnBase = advanceRunners(state.runnersOnBase, state.currentBatterId, bases);
+        // Guard runner advancement / run scoring when the inning is already
+        // over (e.g. a fielder's choice whose preceding BASERUNNER_OUT was
+        // the 3rd out). The batter still completes a PA + AB, so incrementPA
+        // runs unconditionally — mirrors the SACRIFICE_FLY shape above.
+        if (state.outs < OUTS_PER_INNING) {
+          if (bases === 4) {
+            // Home run: clear bases, score everyone
+            const runners = Object.values(state.runnersOnBase).filter(Boolean).length;
+            const runs = runners + 1;
+            addRuns(state, runs, state.isTopOfInning);
+            state.runnersOnBase = { first: null, second: null, third: null };
+          } else {
+            // Count runners who reach home on this hit before advancing the base state.
+            // Runner on 3rd always scores on any hit (3+bases >= 4 for all single/double/triple).
+            // Runner on 2nd scores on a double or triple (2+bases >= 4).
+            // Runner on 1st scores only on a triple (1+bases >= 4).
+            let runs = 0;
+            if (state.runnersOnBase.third)                    runs++;
+            if (state.runnersOnBase.second && 2 + bases >= 4) runs++;
+            if (state.runnersOnBase.first  && 1 + bases >= 4) runs++;
+            if (runs > 0) addRuns(state, runs, state.isTopOfInning);
+            state.runnersOnBase = advanceRunners(state.runnersOnBase, state.currentBatterId, bases);
+          }
         }
         state.balls = 0;
         state.strikes = 0;
