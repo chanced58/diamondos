@@ -50,8 +50,7 @@ describe('derivePitchingStats — real-ID game flow', () => {
       e(EventType.PITCH_THROWN, { pitcherId: 'home-p', batterId: 'b2', outcome: PitchOutcome.BALL }),
       e(EventType.PITCH_THROWN, { pitcherId: 'home-p', batterId: 'b2', outcome: PitchOutcome.BALL }),
       e(EventType.WALK, { pitcherId: 'home-p', batterId: 'b2' }),
-      // b3 singles — b2 stays at 1st → runner at 1st, batter at 1st impossible;
-      //   b2 forced to 2nd
+      // b3 singles; b2 is forced to 2nd
       e(EventType.PITCH_THROWN, { pitcherId: 'home-p', batterId: 'b3', outcome: PitchOutcome.IN_PLAY }),
       e(EventType.HIT, { pitcherId: 'home-p', batterId: 'b3', hitType: HitType.SINGLE }),
     ];
@@ -98,7 +97,7 @@ describe('derivePitchingStats — stub recovery via GAME_START cache', () => {
     expect(s.strikeouts).toBe(1);
   });
 
-  it('INNING_CHANGE rotates currentPitcherId to the opposite side cache', () => {
+  it("after INNING_CHANGE, outs are credited to the opposite side's cached starter", () => {
     const events: Evt[] = [
       e(EventType.GAME_START, { homeLineupPitcherId: 'home-p', awayLineupPitcherId: 'away-p' }),
       // Top of 1st — home pitches
@@ -150,7 +149,7 @@ describe('derivePitchingStats — PITCHING_CHANGE updates only the defending sid
 describe('derivePitchingStats — currentPitcherId resistance to stub pollution', () => {
   beforeEach(resetSeq);
 
-  it('does not let unknown-pitcher payload overwrite a known currentPitcherId', () => {
+  it('stub pitcherId does not displace the active pitcher on the mound', () => {
     const events: Evt[] = [
       e(EventType.GAME_START, { homeLineupPitcherId: 'home-p', awayLineupPitcherId: 'away-p' }),
       // Real pitch establishes currentPitcherId = home-p
@@ -196,6 +195,25 @@ describe('derivePitchingStats — earned vs unearned run attribution', () => {
       // b1 reaches on CI (no preceding PITCH for simplicity)
       e(EventType.CATCHER_INTERFERENCE, { batterId: 'b1', pitcherId: 'home-p' }),
       // b2 homers — b1 unearned, b2 earned
+      e(EventType.PITCH_THROWN, { pitcherId: 'home-p', batterId: 'b2', outcome: PitchOutcome.IN_PLAY }),
+      e(EventType.HIT, { pitcherId: 'home-p', batterId: 'b2', hitType: HitType.HOME_RUN, rbis: 2 }),
+    ];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = derivePitchingStats(events as any, players);
+    const s = stats.get('home-p')!;
+    expect(s.runsAllowed).toBe(2);
+    expect(s.earnedRunsAllowed).toBe(1);
+  });
+
+  it('still marks a CI runner unearned when the event is preceded by a real pitch', () => {
+    // Mirrors production flow: scorer records a pitch, then catcher
+    // interference is called on it. Attribution should still route the
+    // eventual run from the CI runner as unearned.
+    const events: Evt[] = [
+      e(EventType.GAME_START, { homeLineupPitcherId: 'home-p', awayLineupPitcherId: 'away-p' }),
+      e(EventType.PITCH_THROWN, { pitcherId: 'home-p', batterId: 'b1', outcome: PitchOutcome.IN_PLAY }),
+      e(EventType.CATCHER_INTERFERENCE, { batterId: 'b1', pitcherId: 'home-p' }),
       e(EventType.PITCH_THROWN, { pitcherId: 'home-p', batterId: 'b2', outcome: PitchOutcome.IN_PLAY }),
       e(EventType.HIT, { pitcherId: 'home-p', batterId: 'b2', hitType: HitType.HOME_RUN, rbis: 2 }),
     ];

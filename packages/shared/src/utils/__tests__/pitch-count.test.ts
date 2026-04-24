@@ -72,13 +72,19 @@ describe('countPitches', () => {
     expect(countPitches(events, 'opp-pit')).toBe(0);
   });
 
-  it("does not match the legacy 'unknown-pitcher' stub when a real pitcherId is queried", () => {
+  it("counts only exact-equality matches (the legacy 'unknown-pitcher' stub is isolated from real pitcher queries)", () => {
+    // countPitches is a plain exact-equality filter; stub-aware filtering
+    // lives in pitching-stats.ts / pitch-count-calculator. This test just
+    // documents that querying for a real pitcher won't accidentally pick
+    // up stub-stamped pitches, and querying for the stub itself returns
+    // only stub pitches.
     const events: GameEvent[] = [
       mkPitch('unknown-pitcher'),
       mkPitch('unknown-pitcher'),
       mkPitch('pit1'),
     ];
     expect(countPitches(events, 'pit1')).toBe(1);
+    expect(countPitches(events, 'unknown-pitcher')).toBe(2);
   });
 
   it('returns 0 for an empty event array', () => {
