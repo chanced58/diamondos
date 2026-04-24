@@ -11,6 +11,7 @@
  */
 
 import { UNKNOWN_BATTER_STUB } from './batting-stats';
+import { OUTS_PER_INNING } from '../constants/baseball';
 
 export type OppBattingRow = {
   playerId: string;
@@ -64,6 +65,12 @@ export function computeOpponentBatting(
     let r1: string | null = null;
     let r2: string | null = null;
     let r3: string | null = null;
+    // Per-half-inning out count; reset on inning_change. Used to guard run
+    // attribution on the HIT event so a fielder's choice whose preceding
+    // BASERUNNER_OUT was the 3rd out cannot credit R to runners or RBI to
+    // the batter after the inning is over. Mirrors deriveGameState's HIT
+    // guard in packages/shared/src/utils/game-state.ts.
+    let outsThisInning = 0;
 
     function clearBases() { r1 = null; r2 = null; r3 = null; }
 
@@ -86,6 +93,7 @@ export function computeOpponentBatting(
 
       if (etype === 'inning_change') {
         clearBases();
+        outsThisInning = 0;
         continue;
       }
 
@@ -132,6 +140,19 @@ export function computeOpponentBatting(
             else if (r2 === runnerId) r2 = null;
             else if (r3 === runnerId) r3 = null;
           }
+          outsThisInning++;
+        }
+        if (etype === 'baserunner_out') {
+          // Precedes a HIT(fieldersChoice:true); remove the runner from
+          // base state and count the out so the HIT handler below can
+          // short-circuit run attribution on a 3rd-out fielder's choice.
+          const runnerId = payload.runnerId as string | undefined;
+          if (runnerId) {
+            if (r1 === runnerId) r1 = null;
+            else if (r2 === runnerId) r2 = null;
+            else if (r3 === runnerId) r3 = null;
+          }
+          outsThisInning++;
         }
         if (etype === 'baserunner_advance') {
           const runnerId = payload.runnerId as string | undefined;
@@ -179,35 +200,41 @@ export function computeOpponentBatting(
           else if (hitType === 'home_run') s.hr++;
         }
 
-        const bases = hitType === 'home_run' ? 4
-          : hitType === 'triple' ? 3
-          : hitType === 'double' ? 2
-          : 1;
+        // When the inning is already over (e.g. a FC whose preceding
+        // BASERUNNER_OUT was the 3rd out), skip runner advancement and run
+        // attribution. The PA + AB above still count so the lineup
+        // advances. Mirrors deriveGameState's HIT guard.
+        if (outsThisInning < OUTS_PER_INNING) {
+          const bases = hitType === 'home_run' ? 4
+            : hitType === 'triple' ? 3
+            : hitType === 'double' ? 2
+            : 1;
 
-        // Count runs scored on this hit for auto-derived RBI (OBR 9.04).
-        let runsScored = 0;
-        if (bases === 4) {
-          if (r3) runsScored++;
-          if (r2) runsScored++;
-          if (r1) runsScored++;
-          runsScored++;
-          scoreRunner(r3); scoreRunner(r2); scoreRunner(r1);
-          scoreRunner(batterId);
-          clearBases();
-        } else {
-          if (r3) { scoreRunner(r3); runsScored++; }
-          if (r2 && 2 + bases >= 4) { scoreRunner(r2); runsScored++; }
-          if (r1 && 1 + bases >= 4) { scoreRunner(r1); runsScored++; }
-          if (bases === 1) {
-            r3 = r2 ?? null; r2 = r1; r1 = batterId;
-          } else if (bases === 2) {
-            r3 = r1 ?? null; r2 = batterId; r1 = null;
-          } else if (bases === 3) {
-            r3 = batterId; r2 = null; r1 = null;
+          // Count runs scored on this hit for auto-derived RBI (OBR 9.04).
+          let runsScored = 0;
+          if (bases === 4) {
+            if (r3) runsScored++;
+            if (r2) runsScored++;
+            if (r1) runsScored++;
+            runsScored++;
+            scoreRunner(r3); scoreRunner(r2); scoreRunner(r1);
+            scoreRunner(batterId);
+            clearBases();
+          } else {
+            if (r3) { scoreRunner(r3); runsScored++; }
+            if (r2 && 2 + bases >= 4) { scoreRunner(r2); runsScored++; }
+            if (r1 && 1 + bases >= 4) { scoreRunner(r1); runsScored++; }
+            if (bases === 1) {
+              r3 = r2 ?? null; r2 = r1; r1 = batterId;
+            } else if (bases === 2) {
+              r3 = r1 ?? null; r2 = batterId; r1 = null;
+            } else if (bases === 3) {
+              r3 = batterId; r2 = null; r1 = null;
+            }
           }
+          const explicitRbis = payload.rbis as number | undefined;
+          s.rbi += explicitRbis !== undefined ? explicitRbis : runsScored;
         }
-        const explicitRbis = payload.rbis as number | undefined;
-        s.rbi += explicitRbis !== undefined ? explicitRbis : runsScored;
       } else if (etype === 'out' || etype === 'double_play' || etype === 'triple_play') {
         const s = get(batterId);
         s.pa++; s.ab++;
@@ -222,10 +249,16 @@ export function computeOpponentBatting(
           if (runnerOutBase === 1) r1 = null;
           else if (runnerOutBase === 2) r2 = null;
           else if (runnerOutBase === 3) r3 = null;
+          outsThisInning += 2;
+        } else if (etype === 'triple_play') {
+          outsThisInning += 3;
+        } else {
+          outsThisInning++;
         }
       } else if (etype === 'strikeout') {
         const s = get(batterId);
         s.pa++; s.ab++; s.k++;
+        outsThisInning++;
       } else if (etype === 'walk') {
         const s = get(batterId);
         s.pa++; s.bb++;
@@ -259,6 +292,7 @@ export function computeOpponentBatting(
         if (r3) { scoreRunner(r3); r3 = null; }
         const explicitRbis = payload.rbis as number | undefined;
         s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
+        outsThisInning++;
       } else if (etype === 'sacrifice_bunt') {
         // OBR 9.08(a): advances runners one base; squeeze scores r3 for 1 RBI.
         const s = get(batterId);
@@ -270,11 +304,14 @@ export function computeOpponentBatting(
         r1 = null;
         const explicitRbis = payload.rbis as number | undefined;
         s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
+        outsThisInning++;
       } else if (etype === 'dropped_third_strike') {
         const s = get(batterId);
         s.pa++; s.ab++; s.k++;
         if (payload.outcome !== 'thrown_out') {
           forceAdvance(batterId);
+        } else {
+          outsThisInning++;
         }
       } else if (etype === 'field_error') {
         const s = get(batterId);

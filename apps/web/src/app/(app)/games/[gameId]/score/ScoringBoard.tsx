@@ -1145,25 +1145,16 @@ export function ScoringBoard({
     await recordEvent('pitch_thrown', { pitcherId, batterId, outcome: 'in_play', ...pitchExtra });
     resetAnnotations();
 
-    // If this fielder's choice was also the third out of the half-inning
-    // (e.g. runner retired at the plate with two outs already in the
-    // book), the subsequent synthetic HIT would still run through
-    // deriveGameState's hit handler — advancing any remaining runners
-    // and auto-deriving RBIs — even though the inning is over. Suppress
-    // the HIT in that case so the inning ends cleanly on the
-    // BASERUNNER_OUT.
-    const inningEndsOnThisOut = outRunnerId !== null && gameState.outs + 1 >= 3;
-
     if (outRunnerId) {
       await recordEvent('baserunner_out', { runnerId: outRunnerId, pitcherId, ...seqExtra });
     }
-    if (!inningEndsOnThisOut) {
-      // Batter reaches 1st; deriveGameState advances remaining runners and
-      // scores runner on 3rd. fieldersChoice:true makes the stats modules
-      // skip the hit increment — FC is a PA + AB but not a hit. RBI is
-      // still auto-derived from any runner who scored on the play.
-      await recordEvent('hit', { batterId, pitcherId, hitType: 'single', trajectory, fieldersChoice: true, ...sprayExtra });
-    }
+    // Always emit the HIT so the batter's PA is credited and the lineup
+    // advances — even when the BASERUNNER_OUT above was the 3rd out.
+    // deriveGameState's HIT handler guards runner advancement and run
+    // scoring behind `state.outs < OUTS_PER_INNING`, so no runners move
+    // after the inning is over. fieldersChoice:true makes the stats
+    // modules skip the hit increment — FC is a PA + AB but not a hit.
+    await recordEvent('hit', { batterId, pitcherId, hitType: 'single', trajectory, fieldersChoice: true, ...sprayExtra });
   }
 
   async function handleError(errorPosition: string) {

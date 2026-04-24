@@ -7,6 +7,7 @@ import {
   type OutPayload,
   type PitchingChangePayload,
 } from '../types/game-event';
+import { OUTS_PER_INNING } from '../constants/baseball';
 import type { CountStat, PitchingStats } from '../types/pitching';
 
 // All 12 valid ball-strike counts
@@ -183,6 +184,14 @@ export function derivePitchingStats(
     let r1: RunnerState = null, r2: RunnerState = null, r3: RunnerState = null;
     function clearRunners() { r1 = null; r2 = null; r3 = null; }
 
+    // Per-half-inning out count (reset on INNING_CHANGE). Distinct from
+    // the cumulative `inningsPitchedOuts` stat; used locally to guard the
+    // HIT handler's scoreRun() calls when a fielder's choice whose
+    // preceding BASERUNNER_OUT was the 3rd out would otherwise charge the
+    // pitcher with runs that never counted. Mirrors deriveGameState's
+    // HIT guard in packages/shared/src/utils/game-state.ts.
+    let outsThisInning = 0;
+
     /** Score a single run, checking if the runner reached on error (unearned). */
     function scoreRun(runner: RunnerState) {
       if (!currentPitcherId) return;
@@ -283,6 +292,7 @@ export function derivePitchingStats(
         atBatState.clear();
         pendingContact.clear();
         clearRunners();
+        outsThisInning = 0;
         // Flip the half-inning, then restore currentPitcherId from the cache
         // so out events at the top of the new half (before any PITCH_THROWN
         // re-seeds it) attribute to the right pitcher. If the cache is
@@ -429,26 +439,31 @@ export function derivePitchingStats(
           if (batterId) resetAtBat(batterId);
         }
         // ── Attribute runs from hit to current pitcher ──
-        const batterId2 = p.batterId ?? p.opponentBatterId ?? 'unknown';
-        const batterRunner: RunnerState = { id: batterId2, reachedOnError: false };
-        const bases = p.hitType === 'home_run' ? 4
-          : p.hitType === 'triple' ? 3
-          : p.hitType === 'double' ? 2
-          : 1;
-        if (bases === 4) {
-          // Home run: all runners + batter score
-          if (r3) scoreRun(r3);
-          if (r2) scoreRun(r2);
-          if (r1) scoreRun(r1);
-          scoreRun(batterRunner);
-          clearRunners();
-        } else {
-          if (r3) scoreRun(r3);
-          if (r2 && 2 + bases >= 4) scoreRun(r2);
-          if (r1 && 1 + bases >= 4) scoreRun(r1);
-          if (bases === 1) { r3 = (r2 && 2 + bases < 4) ? r2 : null; r2 = (r1 && 1 + bases < 4) ? r1 : null; r1 = batterRunner; }
-          else if (bases === 2) { r3 = (r1 && 1 + bases < 4) ? r1 : null; r2 = batterRunner; r1 = null; }
-          else if (bases === 3) { r3 = batterRunner; r2 = null; r1 = null; }
+        // No runs are charged when the inning is already over (e.g. a
+        // fielder's choice whose preceding BASERUNNER_OUT was the 3rd
+        // out). Matches deriveGameState's HIT guard.
+        if (outsThisInning < OUTS_PER_INNING) {
+          const batterId2 = p.batterId ?? p.opponentBatterId ?? 'unknown';
+          const batterRunner: RunnerState = { id: batterId2, reachedOnError: false };
+          const bases = p.hitType === 'home_run' ? 4
+            : p.hitType === 'triple' ? 3
+            : p.hitType === 'double' ? 2
+            : 1;
+          if (bases === 4) {
+            // Home run: all runners + batter score
+            if (r3) scoreRun(r3);
+            if (r2) scoreRun(r2);
+            if (r1) scoreRun(r1);
+            scoreRun(batterRunner);
+            clearRunners();
+          } else {
+            if (r3) scoreRun(r3);
+            if (r2 && 2 + bases >= 4) scoreRun(r2);
+            if (r1 && 1 + bases >= 4) scoreRun(r1);
+            if (bases === 1) { r3 = (r2 && 2 + bases < 4) ? r2 : null; r2 = (r1 && 1 + bases < 4) ? r1 : null; r1 = batterRunner; }
+            else if (bases === 2) { r3 = (r1 && 1 + bases < 4) ? r1 : null; r2 = batterRunner; r1 = null; }
+            else if (bases === 3) { r3 = batterRunner; r2 = null; r1 = null; }
+          }
         }
       }
 
@@ -475,6 +490,7 @@ export function derivePitchingStats(
           }
           if (batterId) resetAtBat(batterId);
         }
+        outsThisInning += 1;
       }
 
       // ── STRIKEOUT (explicit event) ──────────────────────────────────────
@@ -500,6 +516,7 @@ export function derivePitchingStats(
           }
           if (batterId) resetAtBat(batterId);
         }
+        outsThisInning += 1;
         strikeoutHandledByPitch = false;
       }
 
@@ -528,6 +545,9 @@ export function derivePitchingStats(
             s.wildPitches += 1;
           }
           if (batterId) resetAtBat(batterId);
+        }
+        if (payload?.outcome === 'thrown_out') {
+          outsThisInning += 1;
         }
         strikeoutHandledByPitch = false;
         if (payload?.outcome !== 'thrown_out' && batterId) {
@@ -609,6 +629,7 @@ export function derivePitchingStats(
           }
           const s = getStats(pitcherId);
           s.inningsPitchedOuts += outsRecorded;
+          outsThisInning += outsRecorded;
           if (batterId) {
             // Double plays ARE at-bats; sacrifices are NOT
             if (etype === EventType.DOUBLE_PLAY) {
@@ -691,6 +712,7 @@ export function derivePitchingStats(
         if (fromBase === 1) r1 = null;
         else if (fromBase === 2) r2 = null;
         else if (fromBase === 3) r3 = null;
+        outsThisInning += 1;
       }
 
       // ── BASERUNNER_OUT → runner called out (fielder's choice) ──────────
@@ -701,6 +723,7 @@ export function derivePitchingStats(
           else if (r2?.id === runnerId) r2 = null;
           else if (r3?.id === runnerId) r3 = null;
         }
+        outsThisInning += 1;
       }
 
       // ── PICKOFF_ATTEMPT → remove runner if out ─────────────────────────
@@ -711,6 +734,7 @@ export function derivePitchingStats(
           if (base === 1) r1 = null;
           else if (base === 2) r2 = null;
           else if (base === 3) r3 = null;
+          outsThisInning += 1;
         }
       }
 
@@ -730,6 +754,8 @@ export function derivePitchingStats(
           if (safeAtBase === 1) r1 = state;
           else if (safeAtBase === 2) r2 = state;
           else if (safeAtBase === 3) r3 = state;
+        } else if (outcome === 'out') {
+          outsThisInning += 1;
         }
       }
     }

@@ -304,6 +304,8 @@ Consistent naming helps avoid confusion between the codebase and baseball termin
 
 Extend this glossary as domain concepts are added to the codebase.
 
+For the authoritative baseball rules reference — MLB Official Baseball Rules structure, scoring conventions, fielder's-choice edge cases, and the NFHS / Little League / NCAA variants this app supports — see [`docs/baseball-rules.md`](docs/baseball-rules.md). Appendix B in that doc maps every `EventType` to its OBR citation.
+
 ---
 
 ## AI Assistant Guidelines
