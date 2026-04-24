@@ -9,6 +9,7 @@ import { weAreHome, buildGameHistoryTree, applyPitchRevertedTyped } from '@baseb
 import type { GameEvent, EventType } from '@baseball/shared';
 import { GameHistoryTree, type PlayerEntry } from '@/components/game/GameHistoryTree';
 import { RecalculateScoresForm } from '../GameDetailClient';
+import { RealtimeHistoryRefresh } from './RealtimeHistoryRefresh';
 
 export const metadata: Metadata = { title: 'Game History' };
 
@@ -160,6 +161,12 @@ export default async function GameHistoryPage({
 
   return (
     <div className="flex flex-col h-full">
+      {/* Auto-refresh the page when new events arrive during a live game.
+          Completed games won't see new events, so we skip the subscription. */}
+      <RealtimeHistoryRefresh
+        gameId={game.id}
+        enabled={game.status !== 'completed'}
+      />
       {/* Header */}
       <div className="px-4 pt-4 pb-3 border-b border-gray-200 bg-white">
         <Link href={`/games/${params.gameId}`} className="text-sm text-brand-700 hover:underline">

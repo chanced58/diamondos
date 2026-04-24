@@ -71,8 +71,16 @@ function makeEmptyStats(playerId: string, playerName: string): BattingStats {
     battedBalls: 0,
     hardHitBalls: 0,
     hardHitPct: NaN,
+    qab: 0,
+    qabPct: NaN,
   };
 }
+
+/**
+ * Minimum pitches seen in a plate appearance to credit a Quality At-Bat for
+ * "long at-bat" alone. 8 is the most common high-school standard.
+ */
+const QAB_PITCH_THRESHOLD = 8;
 
 /** Format a rate stat (0–1) as ".XXX" or "---" when NaN/Infinity. */
 export function formatBattingRate(value: number): string {
@@ -209,6 +217,47 @@ export function deriveBattingStats(
 
     function clearBases() { r1 = null; r2 = null; r3 = null; }
 
+    // ── QAB tracking state ───────────────────────────────────────────────
+    //
+    // Pitches thrown in the current PA, keyed by batterId. Reset on the
+    // PA-closing event for that batter. We count payload pitches rather
+    // than reading the ab.pitchNumber in pitching-stats so batting-stats
+    // can independently derive 8+ pitch QABs.
+    const pitchesInPA = new Map<string, number>();
+    // Outs accumulated so far in the current half-inning. Reset on
+    // INNING_CHANGE. Used to decide whether an out can count as a
+    // productive-out QAB (only when <2 outs before the event).
+    let outsThisInning = 0;
+    // Set after an OUT-type PA when <2 outs were recorded before it and a
+    // runner was on 2nd or 3rd. Cleared when a subsequent
+    // BASERUNNER_ADVANCE / SCORE moves that runner (crediting QAB) or when
+    // the next PA-closing event starts (in which case the out was not
+    // productive).
+    let productiveOutPending: {
+      batterId: string;
+      r2SnapshotId: string | null;
+      r3SnapshotId: string | null;
+    } | null = null;
+    // Credit QAB once per PA. Because multiple code paths (hit, walk,
+    // hard-hit, 8-pitch, productive out, etc.) can all want to credit the
+    // same PA, guard with a per-PA flag. The flag is reset at the START of
+    // each new PA-closing event (not in resetPAState) so that deferred
+    // productive-out credit — which fires on a later BASERUNNER_ADVANCE /
+    // SCORE after the OUT already ran — can't double-credit a PA that was
+    // already counted via hard-hit or 8+ pitch.
+    let qabCreditedThisPA = false;
+    const creditQAB = (batterId: string): void => {
+      if (qabCreditedThisPA) return;
+      getStats(batterId).qab += 1;
+      qabCreditedThisPA = true;
+    };
+    const resetPAState = (batterId: string): void => {
+      pitchesInPA.delete(batterId);
+      // Do NOT reset qabCreditedThisPA here — it must persist through the
+      // window where productiveOutPending can fire. The flag resets at the
+      // start of the next PA-closing event handler.
+    };
+
     function scoreRunner(runnerId: string | null) {
       if (runnerId) {
         getStats(runnerId).runs += 1;
@@ -235,6 +284,22 @@ export function deriveBattingStats(
       // ── INNING_CHANGE ──────────────────────────────────────────────────────
       if (etype === 'inning_change') {
         clearBases();
+        // Reset out count and clear any unresolved productive-out pending —
+        // the half-inning change ends the window in which a previous PA's
+        // runner advancement could still count.
+        outsThisInning = 0;
+        productiveOutPending = null;
+        pitchesInPA.clear();
+        continue;
+      }
+
+      // ── PITCH_THROWN ───────────────────────────────────────────────────
+      // We only use PITCH_THROWN to count pitches per PA for QAB detection;
+      // all other stat credit comes from PA-closing events.
+      if (etype === EventType.PITCH_THROWN) {
+        const batterId = resolveBatterId(payload?.batterId, isTop);
+        if (!batterId) continue;
+        pitchesInPA.set(batterId, (pitchesInPA.get(batterId) ?? 0) + 1);
         continue;
       }
 
@@ -245,6 +310,10 @@ export function deriveBattingStats(
         const batterId = resolveBatterId(p.batterId, isTop);
         if (!batterId) continue;
 
+        // New PA — clear any stale productive-out pending from the prior PA.
+        productiveOutPending = null;
+        qabCreditedThisPA = false;
+
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
@@ -254,6 +323,8 @@ export function deriveBattingStats(
 
         if (!fieldersChoice) {
           s.hits += 1;
+          // A non-FC hit always qualifies as a QAB.
+          creditQAB(batterId);
 
           if (isHardHit(hitType, trajectory, sprayY)) s.hardHitBalls += 1;
 
@@ -263,7 +334,18 @@ export function deriveBattingStats(
             case HitType.HOME_RUN:  s.homeRuns += 1;  break;
             default: break;  // single
           }
+        } else if (isHardHit(hitType, trajectory, sprayY)) {
+          // Fielder's choice that was struck hard still earns a QAB on
+          // quality of contact.
+          s.hardHitBalls += 1;
+          creditQAB(batterId);
         }
+
+        // 8+ pitch PA earns a QAB regardless of outcome.
+        if ((pitchesInPA.get(batterId) ?? 0) >= QAB_PITCH_THRESHOLD) {
+          creditQAB(batterId);
+        }
+        resetPAState(batterId);
 
         // ── Advance runners, attribute runs, and auto-derive RBI (OBR 9.04) ──
         const bases = hitType === 'home_run' ? 4
@@ -317,19 +399,51 @@ export function deriveBattingStats(
         const batterId = resolveBatterId(p.batterId, isTop);
         if (!batterId) continue;
 
+        // Capture pre-PA state for productive-out detection before we mutate.
+        const preOuts = outsThisInning;
+        const preR2 = r2;
+        const preR3 = r3;
+
+        productiveOutPending = null;
+        qabCreditedThisPA = false;
+
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
         creditOurPA(isTop);
 
-        if (outType === 'strikeout') {
+        const isStrikeout = outType === 'strikeout';
+        if (isStrikeout) {
           s.strikeouts += 1;
           s.atBats += 1;
         } else {
           s.atBats += 1;
           s.battedBalls += 1;
-          if (isHardHit(undefined, trajectory, payload?.sprayY as number | undefined)) s.hardHitBalls += 1;
+          if (isHardHit(undefined, trajectory, payload?.sprayY as number | undefined)) {
+            s.hardHitBalls += 1;
+            // Hard-hit out counts as a QAB even though the batter is out.
+            creditQAB(batterId);
+          }
         }
+
+        // 8+ pitch PAs credit QAB regardless of outcome.
+        if ((pitchesInPA.get(batterId) ?? 0) >= QAB_PITCH_THRESHOLD) {
+          creditQAB(batterId);
+        }
+
+        // Productive out candidate: non-strikeout out with <2 outs before
+        // this PA and a runner on 2nd or 3rd to potentially advance/score.
+        // Strikeouts are explicitly excluded per standard definition.
+        if (!isStrikeout && preOuts < 2 && (preR2 || preR3)) {
+          productiveOutPending = {
+            batterId,
+            r2SnapshotId: preR2,
+            r3SnapshotId: preR3,
+          };
+        }
+
+        outsThisInning += 1;
+        resetPAState(batterId);
         continue;
       }
 
@@ -337,12 +451,25 @@ export function deriveBattingStats(
       if (etype === EventType.STRIKEOUT) {
         const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
+
+        productiveOutPending = null;
+        qabCreditedThisPA = false;
+
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
         creditOurPA(isTop);
         s.atBats += 1;
         s.strikeouts += 1;
+
+        // Strikeouts never count as productive outs. An 8+ pitch strikeout
+        // is still a QAB though — the long PA is the quality indicator.
+        if ((pitchesInPA.get(batterId) ?? 0) >= QAB_PITCH_THRESHOLD) {
+          creditQAB(batterId);
+        }
+
+        outsThisInning += 1;
+        resetPAState(batterId);
         continue;
       }
 
@@ -350,12 +477,23 @@ export function deriveBattingStats(
       if (etype === EventType.DROPPED_THIRD_STRIKE) {
         const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
+
+        productiveOutPending = null;
+        qabCreditedThisPA = false;
+
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
         creditOurPA(isTop);
         s.atBats += 1;
         s.strikeouts += 1;
+        if ((pitchesInPA.get(batterId) ?? 0) >= QAB_PITCH_THRESHOLD) {
+          creditQAB(batterId);
+        }
+        if (payload?.outcome === 'thrown_out') {
+          outsThisInning += 1;
+        }
+        resetPAState(batterId);
         if (payload?.outcome !== 'thrown_out') {
           forceAdvance(batterId);
         }
@@ -366,17 +504,21 @@ export function deriveBattingStats(
       if (etype === EventType.WALK) {
         const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
+        productiveOutPending = null;
+        qabCreditedThisPA = false;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
         creditOurPA(isTop);
         s.walks += 1;
+        creditQAB(batterId);
         // Per OBR 9.04(a)(2): a base on balls with the bases loaded forces
         // the runner on third home and credits the batter with 1 RBI.
         const forcedRun = !!(r1 && r2 && r3);
         forceAdvance(batterId);
         const explicitRbis = payload?.rbis as number | undefined;
         s.rbi += explicitRbis !== undefined ? explicitRbis : (forcedRun ? 1 : 0);
+        resetPAState(batterId);
         continue;
       }
 
@@ -384,16 +526,20 @@ export function deriveBattingStats(
       if (etype === EventType.CATCHER_INTERFERENCE) {
         const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
+        productiveOutPending = null;
+        qabCreditedThisPA = false;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
         creditOurPA(isTop);
+        creditQAB(batterId);
         // Per OBR 9.02(a)(4) CI does NOT count as an at-bat.
         // Per OBR 9.04(a)(2), a bases-loaded CI forces a run and credits RBI.
         const forcedRun = !!(r1 && r2 && r3);
         forceAdvance(batterId);
         const explicitRbis = payload?.rbis as number | undefined;
         s.rbi += explicitRbis !== undefined ? explicitRbis : (forcedRun ? 1 : 0);
+        resetPAState(batterId);
         continue;
       }
 
@@ -401,16 +547,20 @@ export function deriveBattingStats(
       if (etype === EventType.HIT_BY_PITCH) {
         const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
+        productiveOutPending = null;
+        qabCreditedThisPA = false;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
         creditOurPA(isTop);
         s.hitByPitch += 1;
+        creditQAB(batterId);
         // Per OBR 9.04(a)(2): HBP with the bases loaded forces in a run.
         const forcedRun = !!(r1 && r2 && r3);
         forceAdvance(batterId);
         const explicitRbis = payload?.rbis as number | undefined;
         s.rbi += explicitRbis !== undefined ? explicitRbis : (forcedRun ? 1 : 0);
+        resetPAState(batterId);
         continue;
       }
 
@@ -418,18 +568,23 @@ export function deriveBattingStats(
       if (etype === EventType.SACRIFICE_FLY) {
         const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
+        productiveOutPending = null;
+        qabCreditedThisPA = false;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
         creditOurPA(isTop);
         s.sacrificeFlies += 1;
         s.battedBalls += 1;
+        creditQAB(batterId);
         // Per OBR 9.04(a)(1): a sacrifice fly that scores the runner from
         // third credits the batter with 1 RBI.
         const runScored = !!r3;
         if (r3) { scoreRunner(r3); r3 = null; }
         const explicitRbis = payload?.rbis as number | undefined;
         s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
+        outsThisInning += 1;
+        resetPAState(batterId);
         continue;
       }
 
@@ -437,12 +592,15 @@ export function deriveBattingStats(
       if (etype === EventType.SACRIFICE_BUNT) {
         const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
+        productiveOutPending = null;
+        qabCreditedThisPA = false;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
         creditOurPA(isTop);
         s.sacrificeHits += 1;
         s.battedBalls += 1;
+        creditQAB(batterId);
         // OBR 9.08(a): sac bunt advances runners one base; squeeze scores
         // the runner from third and credits the batter with 1 RBI.
         const runScored = !!r3;
@@ -452,6 +610,8 @@ export function deriveBattingStats(
         r1 = null;
         const explicitRbis = payload?.rbis as number | undefined;
         s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
+        outsThisInning += 1;
+        resetPAState(batterId);
         continue;
       }
 
@@ -459,6 +619,8 @@ export function deriveBattingStats(
       if (etype === EventType.FIELD_ERROR) {
         const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
+        productiveOutPending = null;
+        qabCreditedThisPA = false;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
@@ -467,8 +629,15 @@ export function deriveBattingStats(
         s.battedBalls += 1;
         const traj = payload?.trajectory as string | undefined;
         const sy = payload?.sprayY as number | undefined;
-        if (isHardHit(undefined, traj, sy)) s.hardHitBalls += 1;
+        if (isHardHit(undefined, traj, sy)) {
+          s.hardHitBalls += 1;
+          creditQAB(batterId);
+        }
+        if ((pitchesInPA.get(batterId) ?? 0) >= QAB_PITCH_THRESHOLD) {
+          creditQAB(batterId);
+        }
         forceAdvance(batterId);
+        resetPAState(batterId);
         continue;
       }
 
@@ -476,11 +645,18 @@ export function deriveBattingStats(
       if (etype === EventType.DOUBLE_PLAY) {
         const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
+        productiveOutPending = null;
+        qabCreditedThisPA = false;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
         creditOurPA(isTop);
         s.atBats += 1;
+        // Double plays can technically be long enough to earn the 8-pitch
+        // QAB, but by definition end the rally — never count as productive.
+        if ((pitchesInPA.get(batterId) ?? 0) >= QAB_PITCH_THRESHOLD) {
+          creditQAB(batterId);
+        }
         // Remove the forced runner from base tracking so stats that depend
         // on runner state (RBI auto-derive on the next hit, etc.) stay
         // consistent. The legacy "no runnerOutBase" case leaves state alone.
@@ -488,6 +664,8 @@ export function deriveBattingStats(
         if (runnerOutBase === 1) r1 = null;
         else if (runnerOutBase === 2) r2 = null;
         else if (runnerOutBase === 3) r3 = null;
+        outsThisInning += 2;
+        resetPAState(batterId);
         continue;
       }
 
@@ -500,11 +678,15 @@ export function deriveBattingStats(
       if (etype === EventType.TRIPLE_PLAY) {
         const batterId = resolveBatterId(payload?.batterId, isTop);
         if (!batterId) continue;
+        productiveOutPending = null;
+        qabCreditedThisPA = false;
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
         creditOurPA(isTop);
         s.atBats += 1;
+        outsThisInning += 3;
+        resetPAState(batterId);
         continue;
       }
 
@@ -513,6 +695,17 @@ export function deriveBattingStats(
         const scoringPlayerId: string | undefined = payload?.scoringPlayerId;
         if (!scoringPlayerId) continue;
         scoreRunner(scoringPlayerId);
+        // If a runner who was on 2nd or 3rd before the last out event
+        // scores, the out was productive — credit QAB to the batter from
+        // that PA. Check before clearing the scoring runner from bases so
+        // the snapshot comparison is accurate.
+        if (
+          productiveOutPending &&
+          (scoringPlayerId === productiveOutPending.r3SnapshotId ||
+            scoringPlayerId === productiveOutPending.r2SnapshotId)
+        ) {
+          creditQAB(productiveOutPending.batterId);
+        }
         // Remove from bases
         if (r3 === scoringPlayerId) r3 = null;
         else if (r2 === scoringPlayerId) r2 = null;
@@ -549,6 +742,21 @@ export function deriveBattingStats(
         const runnerId: string | undefined = payload?.runnerId;
         const toBase: number | undefined = payload?.toBase;
         if (!runnerId || !toBase) continue;
+        // Productive-out credit: if a runner from 2nd or 3rd (as snapshotted
+        // before the last out) advances on the play, the out was productive.
+        // Skip wild pitch / passed ball / balk / overthrow / error / voluntary
+        // advances — those are separate events not caused by the batter's
+        // at-bat. AdvanceReason.ON_PLAY and missing reason both count.
+        const reason = payload?.reason as string | undefined;
+        const isOnPlayAdvance = reason === undefined || reason === 'on_play';
+        if (
+          isOnPlayAdvance &&
+          productiveOutPending &&
+          (runnerId === productiveOutPending.r2SnapshotId ||
+            runnerId === productiveOutPending.r3SnapshotId)
+        ) {
+          creditQAB(productiveOutPending.batterId);
+        }
         if (r1 === runnerId) r1 = null;
         else if (r2 === runnerId) r2 = null;
         else if (r3 === runnerId) r3 = null;
@@ -631,6 +839,7 @@ export function deriveBattingStats(
       : NaN;
 
     s.hardHitPct = s.battedBalls > 0 ? s.hardHitBalls / s.battedBalls : NaN;
+    s.qabPct     = s.plateAppearances > 0 ? s.qab / s.plateAppearances : NaN;
   }
 
   return statsMap;

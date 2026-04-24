@@ -10,6 +10,7 @@ import {
   type PickoffPayload,
   type RundownPayload,
   type ScorePayload,
+  type DroppedThirdStrikePayload,
   PitchOutcome,
 } from '../types/game-event';
 
@@ -91,6 +92,8 @@ const TERMINAL_EVENT_TYPES = new Set<string>([
   EventType.FIELD_ERROR,
   EventType.DOUBLE_PLAY,
   EventType.TRIPLE_PLAY,
+  EventType.DROPPED_THIRD_STRIKE,
+  EventType.CATCHER_INTERFERENCE,
 ]);
 
 const BASE_NAMES: Record<number, string> = {
@@ -130,6 +133,8 @@ export function getEventCategory(eventType: EventType | string): EventCategory {
     case EventType.STOLEN_BASE:
     case EventType.FIELD_ERROR:
     case EventType.SCORE:
+    case EventType.CATCHER_INTERFERENCE:
+    case EventType.BASERUNNER_ADVANCE:
       return 'positive';
 
     case EventType.OUT:
@@ -140,6 +145,9 @@ export function getEventCategory(eventType: EventType | string): EventCategory {
     case EventType.SACRIFICE_BUNT:
     case EventType.SACRIFICE_FLY:
     case EventType.BASERUNNER_OUT:
+    case EventType.DROPPED_THIRD_STRIKE:
+      // Default to negative; buildGameHistoryTree overrides per-instance when
+      // the D3K payload carries a 'reached_*' outcome (batter reaches base).
       return 'negative';
 
     case EventType.SUBSTITUTION:
@@ -149,6 +157,7 @@ export function getEventCategory(eventType: EventType | string): EventCategory {
     case EventType.INNING_CHANGE:
     case EventType.GAME_START:
     case EventType.GAME_END:
+    case EventType.RUNDOWN:
       return 'info';
 
     default:
@@ -245,6 +254,23 @@ export function formatEventLabel(event: GameEvent, nameMap: Map<string, string>)
       const seq = formatFieldingSequence(p.fieldingSequence);
       return seq ? `Triple Play (${seq})` : 'Triple Play';
     }
+
+    case EventType.DROPPED_THIRD_STRIKE: {
+      const p = event.payload as DroppedThirdStrikePayload;
+      if (p.outcome === 'thrown_out') {
+        const seq = formatFieldingSequence(p.fieldingSequence);
+        return seq ? `Dropped 3rd Strike — out (${seq})` : 'Dropped 3rd Strike — out';
+      }
+      if (p.outcome === 'reached_on_error') {
+        const errPos = p.errorBy ? POSITION_NAMES[p.errorBy] ?? String(p.errorBy) : '';
+        return errPos ? `Dropped 3rd Strike — reached on error (${errPos})` : 'Dropped 3rd Strike — reached on error';
+      }
+      // reached_wild_pitch
+      return 'Dropped 3rd Strike — reached on wild pitch';
+    }
+
+    case EventType.CATCHER_INTERFERENCE:
+      return 'Catcher Interference';
 
     case EventType.STOLEN_BASE: {
       const p = event.payload as BaserunnerMovePayload;
@@ -643,7 +669,9 @@ export function buildGameHistoryTree(
       case EventType.SACRIFICE_FLY:
       case EventType.FIELD_ERROR:
       case EventType.DOUBLE_PLAY:
-      case EventType.TRIPLE_PLAY: {
+      case EventType.TRIPLE_PLAY:
+      case EventType.DROPPED_THIRD_STRIKE:
+      case EventType.CATCHER_INTERFERENCE: {
         // If no at-bat is open (e.g., walk without tracked pitches), create one
         if (!openAtBat) {
           const { batterId, pitcherId } = getBatterPitcherFromEvent(event);
@@ -696,12 +724,34 @@ export function buildGameHistoryTree(
             addRuns(1);
             runnerThird = false;
           }
+        } else if (event.eventType === EventType.CATCHER_INTERFERENCE) {
+          // CI awards the batter first base like a walk/HBP: runners forced
+          // to advance only when blocked (OBR 6.01(c) — catcher's
+          // interference; batter awarded first and forced runners advance).
+          forceAdvance();
+        } else if (event.eventType === EventType.DROPPED_THIRD_STRIKE) {
+          const p = event.payload as DroppedThirdStrikePayload;
+          if (p.outcome !== 'thrown_out') {
+            // OBR 5.09(a)(3): D3K lets the batter run only when 1st is
+            // unoccupied or with 2 outs, so in practice any pre-existing
+            // runner on 1st must vacate (they typically advance). Use
+            // forceAdvance so an existing r1 isn't silently lost when a
+            // scorekeeper omits the follow-up BASERUNNER_ADVANCE event.
+            forceAdvance();
+          }
+        }
+
+        // Per-instance category override: D3K's category depends on payload.
+        let resultCategory = getEventCategory(event.eventType);
+        if (event.eventType === EventType.DROPPED_THIRD_STRIKE) {
+          const p = event.payload as DroppedThirdStrikePayload;
+          resultCategory = p.outcome === 'thrown_out' ? 'negative' : 'positive';
         }
 
         openAtBat.result = {
           event,
           label: formatEventLabel(event, playerNameMap),
-          category: getEventCategory(event.eventType),
+          category: resultCategory,
         };
 
         closeAtBat();
@@ -773,10 +823,23 @@ export function buildGameHistoryTree(
           runnerFirst = false;
         }
 
+        // Per-instance category override for outcome-bearing events where a
+        // single enum value covers both a positive and a negative result.
+        // getEventCategory takes only the event type, so these overrides
+        // live here where the payload is available.
+        let category = getEventCategory(event.eventType);
+        if (event.eventType === EventType.RUNDOWN) {
+          const rp = event.payload as RundownPayload;
+          category = rp.outcome === 'out' ? 'negative' : 'positive';
+        } else if (event.eventType === EventType.PICKOFF_ATTEMPT) {
+          const pp = event.payload as PickoffPayload;
+          if (pp.outcome === 'out') category = 'negative';
+        }
+
         const node: HistoryEventNode = {
           event,
           label: formatEventLabel(event, playerNameMap),
-          category: getEventCategory(event.eventType),
+          category,
         };
 
         if (openAtBat) {
@@ -818,8 +881,27 @@ export function buildGameHistoryTree(
         break;
       }
 
-      default:
+      default: {
+        // Unknown event type — render as interstitial so the event stays
+        // visible in the history instead of being silently discarded. The
+        // previous `default: break` turned every new or unrecognized event
+        // type into a ghost; now the gap is at least discoverable to users
+        // and developers. `formatEventLabel` already provides a
+        // `capitalize(event.eventType)` fallback, so the label is safe.
+        const label = formatEventLabel(event, playerNameMap);
+        const category = getEventCategory(event.eventType);
+        if (openAtBat) {
+          openAtBat.midAtBatEvents.push({ event, label, category });
+        } else {
+          currentHalfInning.items.push({
+            type: 'interstitial',
+            event,
+            label,
+            category,
+          });
+        }
         break;
+      }
     }
   }
 

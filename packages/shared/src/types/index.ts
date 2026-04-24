@@ -9,6 +9,7 @@ export * from './messaging';
 export * from './compliance';
 export * from './pitching';
 export * from './batting';
+export * from './fielding';
 export * from './practice-drill';
 export * from './practice-template';
 export * from './practice';
