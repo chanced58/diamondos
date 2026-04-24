@@ -400,12 +400,14 @@ A run is scored when a runner legally advances to and touches first, second, thi
 The critical principle: **on any third out that is itself a force-out or that prevents the batter from legally reaching first, no run scores — even if another runner crossed the plate before the out.**
 
 **App behavior.** The reducer's `HIT` handler (as of the recent fix covered in this audit branch) guards run scoring behind `state.outs < OUTS_PER_INNING`:
+
 ```ts
 if (state.outs < OUTS_PER_INNING) {
   // count runs, advance runners
 }
 ```
-Other inning-enders are already guarded similarly (`SCORE` L154, `SACRIFICE_BUNT` L213, `SACRIFICE_FLY` L230). The companion `BASERUNNER_OUT` event (used for fielder's choice) increments outs *before* the guarded HIT logic runs, which is why the guard prevents runs-after-3rd-out in the FC case. See [§9.16(b)](#916-earned-runs-and-runs-allowed) for the earned-run computation, which is independent of whether the run counted on the scoreboard.
+
+Other inning-enders are already guarded similarly (`SCORE` L154, `SACRIFICE_BUNT` L213, `SACRIFICE_FLY` L230). The companion `BASERUNNER_OUT` event (used for fielder's choice) increments outs *before* the guarded HIT logic runs, which is why the guard prevents runs-after-3rd-out in the FC case. The same guard pattern is mirrored in the stats reducers (`batting-stats.ts`, `opponent-batting-stats.ts`, `pitching-stats.ts`), each of which tracks its own `outsThisInning` and skips run attribution on the HIT event when the inning is already over. See [§9.16(b)](#916-earned-runs-and-runs-allowed) for the earned-run computation, which is independent of whether the run counted on the scoreboard.
 
 ### 5.09 Making an Out
 
@@ -914,7 +916,7 @@ A player must meet a minimum playing time to qualify for a league championship:
 
 ### A.2 — Earned Run Decision Tree
 
-```
+```text
 Run scored
 ├── Did the play include any error? → No → EARNED
 │                                   → Yes → continue

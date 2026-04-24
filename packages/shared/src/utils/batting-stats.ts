@@ -1,4 +1,5 @@
 import { EventType, HitType, HitTrajectory, type GameEvent, type HitPayload, type OutPayload } from '../types/game-event';
+import { OUTS_PER_INNING } from '../constants/baseball';
 import type { BattingStats } from '../types/batting';
 
 /**
@@ -348,47 +349,54 @@ export function deriveBattingStats(
         resetPAState(batterId);
 
         // ── Advance runners, attribute runs, and auto-derive RBI (OBR 9.04) ──
-        const bases = hitType === 'home_run' ? 4
-          : hitType === 'triple' ? 3
-          : hitType === 'double' ? 2
-          : 1;
+        // When the inning is already over (e.g. a fielder's choice whose
+        // preceding BASERUNNER_OUT was the 3rd out), no runners advance and
+        // no runs/RBI are credited. The PA + AB above still count so the
+        // lineup advances — matches deriveGameState's HIT guard in
+        // packages/shared/src/utils/game-state.ts.
+        if (outsThisInning < OUTS_PER_INNING) {
+          const bases = hitType === 'home_run' ? 4
+            : hitType === 'triple' ? 3
+            : hitType === 'double' ? 2
+            : 1;
 
-        let runsScored = 0;
-        if (bases === 4) {
-          // Home run: all runners + batter score
-          if (r3) runsScored += 1;
-          if (r2) runsScored += 1;
-          if (r1) runsScored += 1;
-          runsScored += 1;
-          scoreRunner(r3); scoreRunner(r2); scoreRunner(r1);
-          scoreRunner(batterId);
-          clearBases();
-        } else {
-          // Determine which runners score
-          if (r3) { scoreRunner(r3); runsScored += 1; }                      // 3rd always scores
-          if (r2 && 2 + bases >= 4) { scoreRunner(r2); runsScored += 1; }    // scores on double+
-          if (r1 && 1 + bases >= 4) { scoreRunner(r1); runsScored += 1; }    // scores on triple
+          let runsScored = 0;
+          if (bases === 4) {
+            // Home run: all runners + batter score
+            if (r3) runsScored += 1;
+            if (r2) runsScored += 1;
+            if (r1) runsScored += 1;
+            runsScored += 1;
+            scoreRunner(r3); scoreRunner(r2); scoreRunner(r1);
+            scoreRunner(batterId);
+            clearBases();
+          } else {
+            // Determine which runners score
+            if (r3) { scoreRunner(r3); runsScored += 1; }                      // 3rd always scores
+            if (r2 && 2 + bases >= 4) { scoreRunner(r2); runsScored += 1; }    // scores on double+
+            if (r1 && 1 + bases >= 4) { scoreRunner(r1); runsScored += 1; }    // scores on triple
 
-          // Advance non-scoring runners
-          if (bases === 1) {
-            r3 = r2 ?? null; // r2 advances to 3rd; r3 already scored so clear it
-            r2 = r1;       // r1 advances to 2nd
-            r1 = batterId;
-          } else if (bases === 2) {
-            r3 = r1 ?? null; // r1 advances to 3rd
-            r2 = batterId;
-            r1 = null;
-          } else if (bases === 3) {
-            r3 = batterId;
-            r2 = null;
-            r1 = null;
+            // Advance non-scoring runners
+            if (bases === 1) {
+              r3 = r2 ?? null; // r2 advances to 3rd; r3 already scored so clear it
+              r2 = r1;       // r1 advances to 2nd
+              r1 = batterId;
+            } else if (bases === 2) {
+              r3 = r1 ?? null; // r1 advances to 3rd
+              r2 = batterId;
+              r1 = null;
+            } else if (bases === 3) {
+              r3 = batterId;
+              r2 = null;
+              r1 = null;
+            }
           }
-        }
 
-        // Explicit payload.rbis (including 0) overrides derivation — scorer
-        // may use this for OBR 9.04(b)(3) judgment calls where a run scored
-        // but only because of a fielding error.
-        s.rbi += rbis !== undefined ? rbis : runsScored;
+          // Explicit payload.rbis (including 0) overrides derivation — scorer
+          // may use this for OBR 9.04(b)(3) judgment calls where a run scored
+          // but only because of a fielding error.
+          s.rbi += rbis !== undefined ? rbis : runsScored;
+        }
         continue;
       }
 
@@ -734,6 +742,20 @@ export function deriveBattingStats(
         if (r1 === runnerId) r1 = null;
         else if (r2 === runnerId) r2 = null;
         else if (r3 === runnerId) r3 = null;
+        outsThisInning += 1;
+        continue;
+      }
+
+      // ── BASERUNNER_OUT ─────────────────────────────────────────────────────
+      // Emitted ahead of a HIT with fieldersChoice:true (the forced runner is
+      // retired first). Track the out locally so the HIT handler above can
+      // short-circuit run attribution when this was the 3rd out.
+      if (etype === 'baserunner_out') {
+        const runnerId: string | undefined = payload?.runnerId;
+        if (r1 === runnerId) r1 = null;
+        else if (r2 === runnerId) r2 = null;
+        else if (r3 === runnerId) r3 = null;
+        outsThisInning += 1;
         continue;
       }
 

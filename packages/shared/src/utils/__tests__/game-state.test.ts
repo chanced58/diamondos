@@ -1,4 +1,7 @@
 import { deriveGameState } from '../game-state';
+import { deriveBattingStats } from '../batting-stats';
+import { computeOpponentBatting } from '../opponent-batting-stats';
+import { derivePitchingStats } from '../pitching-stats';
 import {
   EventType,
   HitType,
@@ -203,5 +206,140 @@ describe('deriveGameState — fielder\'s choice that ends the inning', () => {
     // leads off the top of the 2nd.
     expect(state.completedTopHalfPAs).toBe(4);
     expect(4 % 9).toBe(4); // sanity — before the fix, this was 3 (a4 again).
+  });
+});
+
+describe('stats reducers — fielder\'s choice that ends the inning', () => {
+  beforeEach(resetSeq);
+
+  const players = [
+    { id: 'a1', firstName: 'A', lastName: 'One' },
+    { id: 'a2', firstName: 'A', lastName: 'Two' },
+    { id: 'a3', firstName: 'A', lastName: 'Three' },
+    { id: 'a4', firstName: 'A', lastName: 'Four' },
+    { id: 'p1', firstName: 'P', lastName: 'One' },
+  ];
+
+  /**
+   * Build the canonical event stream: away team with runner on 3rd, two
+   * outs, batter a4 hits into a fielder's choice that retires the runner
+   * from 3rd. The preceding BASERUNNER_OUT is the 3rd out, so no runs
+   * should be credited and no RBI for the batter.
+   */
+  function thirdOutFCEvents(): GameEvent[] {
+    return [
+      e(EventType.GAME_START, {
+        awayLineupPitcherId: 'p1',
+        homeLineupPitcherId: 'p1',
+        awayLeadoffBatterId: 'a1',
+        homeLeadoffBatterId: 'a1',
+      }),
+      // Put a1 on 3rd with a triple.
+      ...batterHit('a1', HitType.TRIPLE),
+      // Two outs.
+      ...batterOut('a2', 'groundout'),
+      ...batterOut('a3', 'flyout'),
+      // 3rd-out FC: BASERUNNER_OUT retires a1 (from 3rd), HIT records the PA.
+      e(EventType.PITCH_THROWN, { batterId: 'a4', pitcherId: 'p1', outcome: PitchOutcome.IN_PLAY }),
+      e(EventType.BASERUNNER_OUT, { runnerId: 'a1', pitcherId: 'p1' }),
+      e(EventType.HIT, {
+        batterId: 'a4',
+        pitcherId: 'p1',
+        hitType: HitType.SINGLE,
+        fieldersChoice: true,
+      }),
+    ];
+  }
+
+  it('deriveBattingStats: does not credit R to runner on 3rd or RBI to batter', () => {
+    const events = thirdOutFCEvents();
+    const stats = deriveBattingStats(events, players);
+
+    expect(stats.get('a1')?.runs ?? 0).toBe(0);
+    expect(stats.get('a4')?.rbi ?? 0).toBe(0);
+    // The batter's PA and AB are still credited (FC counts as AB, not a hit).
+    expect(stats.get('a4')?.plateAppearances).toBe(1);
+    expect(stats.get('a4')?.atBats).toBe(1);
+    expect(stats.get('a4')?.hits).toBe(0);
+  });
+
+  it('derivePitchingStats: does not charge the pitcher with a run on a 3rd-out FC', () => {
+    const events = thirdOutFCEvents();
+    const stats = derivePitchingStats(events, players);
+
+    expect(stats.get('p1')?.runsAllowed ?? 0).toBe(0);
+    expect(stats.get('p1')?.earnedRunsAllowed ?? 0).toBe(0);
+    // The FC HIT payload carries fieldersChoice:true so it does NOT add to
+    // hitsAllowed; the earlier real triple by a1 accounts for the single
+    // hit allowed in this scenario.
+    expect(stats.get('p1')?.hitsAllowed).toBe(1);
+  });
+
+  it('deriveBattingStats: still credits R and RBI on a non-inning-ending FC', () => {
+    // Same shape, but with only 1 out before the FC so the play is the 2nd
+    // out, not the 3rd. Runner from 3rd still scores on the "single" — this
+    // is the regression guard that my outs-guard did not over-correct.
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, {
+        awayLineupPitcherId: 'p1',
+        homeLineupPitcherId: 'p1',
+        awayLeadoffBatterId: 'a1',
+        homeLeadoffBatterId: 'a1',
+      }),
+      ...batterHit('a1', HitType.TRIPLE),
+      ...batterOut('a2', 'groundout'),
+      // Only 1 out when a3 hits into the FC.
+      e(EventType.PITCH_THROWN, { batterId: 'a3', pitcherId: 'p1', outcome: PitchOutcome.IN_PLAY }),
+      e(EventType.BASERUNNER_OUT, { runnerId: 'a1', pitcherId: 'p1' }),
+      e(EventType.HIT, {
+        batterId: 'a3',
+        pitcherId: 'p1',
+        hitType: HitType.SINGLE,
+        fieldersChoice: true,
+      }),
+    ];
+    const stats = deriveBattingStats(events, players);
+
+    // Wait — with a triple to 3rd and BASERUNNER_OUT removing a1, a1 is
+    // already off base by the time the HIT fires. So the FC "single"
+    // places the batter on 1st but nobody scores. The guard should have
+    // no effect either way here. Assert the absence of over-counting:
+    expect(stats.get('a1')?.runs ?? 0).toBe(0);
+    expect(stats.get('a3')?.rbi ?? 0).toBe(0);
+  });
+
+  it('computeOpponentBatting: does not credit R/RBI to opponents on a 3rd-out FC', () => {
+    // Snake-case DB-shaped events (computeOpponentBatting's expected shape).
+    let s = 0;
+    const oe = (event_type: string, payload: Record<string, unknown>) => ({
+      game_id: 'g-opp',
+      sequence_number: s++,
+      event_type,
+      payload,
+    });
+    const events = [
+      oe('hit', { opponentBatterId: 'o1', hitType: 'triple' }), // o1 → 3rd
+      oe('out', { opponentBatterId: 'o2', outType: 'groundout' }),
+      oe('out', { opponentBatterId: 'o3', outType: 'flyout' }),
+      // 3rd-out FC: BASERUNNER_OUT (o1) + HIT (o4, fieldersChoice).
+      oe('baserunner_out', { runnerId: 'o1' }),
+      oe('hit', { opponentBatterId: 'o4', hitType: 'single', fieldersChoice: true }),
+    ];
+    const oppMap = new Map<string, string>([
+      ['o1', 'O One'],
+      ['o2', 'O Two'],
+      ['o3', 'O Three'],
+      ['o4', 'O Four'],
+    ]);
+    const rows = computeOpponentBatting(events, oppMap);
+
+    const o1 = rows.find((r) => r.playerId === 'o1');
+    const o4 = rows.find((r) => r.playerId === 'o4');
+    expect(o1?.r ?? 0).toBe(0);
+    expect(o4?.rbi ?? 0).toBe(0);
+    // o4 still credited with the PA + AB.
+    expect(o4?.pa).toBe(1);
+    expect(o4?.ab).toBe(1);
+    expect(o4?.h).toBe(0);
   });
 });
