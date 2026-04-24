@@ -95,7 +95,14 @@ function computeTotals(rows: BattingStats[]): BattingStats {
     hbp: acc.hbp + s.hitByPitch, sf: acc.sf + s.sacrificeFlies, sh: acc.sh + s.sacrificeHits,
     batted: acc.batted + s.battedBalls, hhb: acc.hhb + s.hardHitBalls,
     qab: acc.qab + s.qab,
-  }), { g: 0, pa: 0, ab: 0, r: 0, h: 0, d: 0, tr: 0, hr: 0, rbi: 0, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, batted: 0, hhb: 0, qab: 0 });
+    // QAB% denominator must only count rows that actually track QAB.
+    // Opponent rows set qabPct to NaN (we don't derive QAB for opponent
+    // batters), and including their PAs would dilute the total percentage.
+    qabTrackedPA: acc.qabTrackedPA + (isNaN(s.qabPct) ? 0 : s.plateAppearances),
+  }), {
+    g: 0, pa: 0, ab: 0, r: 0, h: 0, d: 0, tr: 0, hr: 0, rbi: 0, bb: 0,
+    k: 0, hbp: 0, sf: 0, sh: 0, batted: 0, hhb: 0, qab: 0, qabTrackedPA: 0,
+  });
 
   const singles = t.h - t.d - t.tr - t.hr;
   const tb = singles + 2 * t.d + 3 * t.tr + 4 * t.hr;
@@ -125,7 +132,7 @@ function computeTotals(rows: BattingStats[]): BattingStats {
     battedBalls: t.batted, hardHitBalls: t.hhb,
     hardHitPct: t.batted > 0 ? t.hhb / t.batted : NaN,
     qab: t.qab,
-    qabPct: t.pa > 0 ? t.qab / t.pa : NaN,
+    qabPct: t.qabTrackedPA > 0 ? t.qab / t.qabTrackedPA : NaN,
   };
 }
 

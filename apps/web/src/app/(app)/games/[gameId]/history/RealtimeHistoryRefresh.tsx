@@ -1,8 +1,13 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
+
+/** Trailing-edge debounce window — bursts of events within this window
+ *  collapse into one refresh. 250ms keeps the UI feeling live while
+ *  still coalescing rapid-fire inserts (e.g. a full PA of pitches). */
+const REFRESH_DEBOUNCE_MS = 250;
 
 interface RealtimeHistoryRefreshProps {
   gameId: string;
@@ -28,6 +33,7 @@ export function RealtimeHistoryRefresh({
 }: RealtimeHistoryRefreshProps): null {
   const router = useRouter();
   const supabase = createBrowserClient();
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
@@ -43,16 +49,25 @@ export function RealtimeHistoryRefresh({
           filter: `game_id=eq.${gameId}`,
         },
         () => {
-          // `router.refresh()` re-runs the server component and streams the
-          // new HTML. Next.js dedupes concurrent refresh calls so rapid-fire
-          // events (e.g. a batter seeing 6 pitches in a row) don't storm
-          // the server; the net effect is at most one refetch per micro-task.
-          router.refresh();
+          // Each INSERT fires its own handler, so a rapid burst of events
+          // (e.g. one full plate appearance = pitch + pitch + ... + outcome)
+          // would otherwise trigger N server refetches. Coalesce via a
+          // trailing-edge timer: the latest event wins, and we refresh
+          // once REFRESH_DEBOUNCE_MS after activity settles.
+          if (debounceTimer.current) clearTimeout(debounceTimer.current);
+          debounceTimer.current = setTimeout(() => {
+            debounceTimer.current = null;
+            router.refresh();
+          }, REFRESH_DEBOUNCE_MS);
         },
       )
       .subscribe();
 
     return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+        debounceTimer.current = null;
+      }
       supabase.removeChannel(channel);
     };
   }, [gameId, enabled, router, supabase]);
