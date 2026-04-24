@@ -1099,6 +1099,25 @@ export function ScoringBoard({
       ? { outAssignments: assignments }
       : {};
 
+    // Derive `runnerOutBase` from the out assignments — it's the base of the
+    // first retired baserunner (not the batter). The reducer + stats modules
+    // all read `runnerOutBase` to clear the forced runner from base state
+    // (OBR 5.09(b), 9.11): game-state.ts, batting-stats.ts,
+    // opponent-batting-stats.ts, pitching-stats.ts. Keeping `outAssignments`
+    // alongside preserves the richer web-only payload for future use.
+    const runnerOutBase: 1 | 2 | 3 | undefined = (() => {
+      if (!assignments) return undefined;
+      for (const playerId of assignments) {
+        if (!playerId || playerId === batterId) continue;
+        if (playerId === gameState.runnersOnBase.first) return 1;
+        if (playerId === gameState.runnersOnBase.second) return 2;
+        if (playerId === gameState.runnersOnBase.third) return 3;
+      }
+      return undefined;
+    })();
+    const runnerOutExtra: Record<string, unknown> =
+      runnerOutBase !== undefined ? { runnerOutBase } : {};
+
     if (result === 'out' || result === 'field_choice') {
       const outTypeMap: Record<string, string> = {
         ground_ball: 'groundout',
@@ -1108,9 +1127,9 @@ export function ScoringBoard({
       const outType = outTypeMap[trajectory] ?? 'other';
       await recordEvent('out', { batterId, pitcherId, outType, trajectory, ...sprayExtra, ...seqExtra });
     } else if (result === 'double_play') {
-      await recordEvent('double_play', { batterId, pitcherId, trajectory, ...sprayExtra, ...seqExtra, ...assignExtra });
+      await recordEvent('double_play', { batterId, pitcherId, trajectory, ...sprayExtra, ...seqExtra, ...assignExtra, ...runnerOutExtra });
     } else if (result === 'triple_play') {
-      await recordEvent('triple_play', { batterId, pitcherId, trajectory, ...sprayExtra, ...seqExtra, ...assignExtra });
+      await recordEvent('triple_play', { batterId, pitcherId, trajectory, ...sprayExtra, ...seqExtra, ...assignExtra, ...runnerOutExtra });
     } else {
       // Omit rbis so batting-stats / maxpreps-export auto-derive RBI from
       // runners scoring on the hit (OBR 9.04). An explicit 0 here would
@@ -1157,7 +1176,7 @@ export function ScoringBoard({
     await recordEvent('hit', { batterId, pitcherId, hitType: 'single', trajectory, fieldersChoice: true, ...sprayExtra });
   }
 
-  async function handleError(errorPosition: string) {
+  async function handleError(errorBy: number) {
     setInPlayPending(false);
     setErrorPending(false);
     const batterId = activeBatterId ?? undefined;
@@ -1178,8 +1197,10 @@ export function ScoringBoard({
 
     await recordEvent('pitch_thrown', { pitcherId, batterId, outcome: 'in_play', ...pitchExtra });
     resetAnnotations();
+    // OBR 9.12 — `errorBy` is the numeric fielder position (1–9);
+    // fielding-stats.ts reads `payload.errorBy` to charge the error.
     await recordEvent('field_error', {
-      batterId, pitcherId, errorPosition,
+      batterId, pitcherId, errorBy,
       ...(trajectory ? { trajectory } : {}),
       ...sprayExtra,
     });
@@ -1218,7 +1239,8 @@ export function ScoringBoard({
     const toBase = (fromBase + 1) as 2 | 3 | 4;
     await recordEvent('stolen_base', { runnerId, fromBase, toBase });
     if (toBase === 4) {
-      await recordEvent('score', { scoringPlayerId: runnerId, rbis: 1 });
+      // OBR 9.07(d): a stolen base never earns the batter an RBI.
+      await recordEvent('score', { scoringPlayerId: runnerId, rbis: 0 });
     }
   }
 
@@ -1288,7 +1310,11 @@ export function ScoringBoard({
     if (relatedEventId) payload.relatedEventId = relatedEventId;
     await recordEvent('baserunner_advance', payload);
     if (toBase === 4) {
-      await recordEvent('score', { scoringPlayerId: runnerId, rbis: 1 });
+      // OBR 9.04(b)(1): no RBI when a runner scores on a wild pitch, passed
+      // ball, balk, or error. The BASERUNNER_ADVANCE path is used for those
+      // reasons; RBI-eligible runs go through the HIT / SAC / walk-forced
+      // handlers which derive RBI at the PA-closing event.
+      await recordEvent('score', { scoringPlayerId: runnerId, rbis: 0 });
     }
     setPendingAdvance(null);
     setAdvanceErrorBy(null);
@@ -2044,13 +2070,13 @@ export function ScoringBoard({
                       Who made the error?
                     </p>
                     <div className="grid grid-cols-3 gap-2">
-                      {['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF'].map((pos) => (
+                      {FIELDING_POSITION_NUMBERS.map(({ number, abbr }) => (
                         <button
-                          key={pos}
-                          onClick={() => handleError(pos)}
+                          key={number}
+                          onClick={() => handleError(number)}
                           className="py-2 text-sm font-medium rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
                         >
-                          {pos}
+                          {number} — {abbr}
                         </button>
                       ))}
                     </div>
