@@ -172,7 +172,13 @@ describe('deriveFieldingStats — defensive half-inning filter', () => {
     ];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const stats = deriveFieldingStats(events as any, players, ctxMap());
-    expect(stats.size).toBe(0);
+    // Starters are seeded with gamesAppeared=1 regardless of half-inning,
+    // but no PO/A/E should be credited for events during our bat.
+    const totalChances = Array.from(stats.values()).reduce(
+      (sum, s) => sum + s.putouts + s.assists + s.errors,
+      0,
+    );
+    expect(totalChances).toBe(0);
   });
 
   it('credits events during our fielding half-inning when we are the visitor (top = bat)', () => {
@@ -188,6 +194,20 @@ describe('deriveFieldingStats — defensive half-inning filter', () => {
     const stats = deriveFieldingStats(events as any, players, new Map([[GAME, visitorAlignment]]));
     expect(stats.get('p-1b')!.putouts).toBe(1);
     expect(stats.get('p-ss')!.assists).toBe(1);
+  });
+});
+
+describe('deriveFieldingStats — starter gamesAppeared', () => {
+  beforeEach(resetSeq);
+
+  it('marks every starter as appeared even when they record no PO/A/E', () => {
+    // No fielding events at all — starters should still all have gamesAppeared=1.
+    const stats = deriveFieldingStats([], players, ctxMap());
+    for (const pid of ['p-p', 'p-c', 'p-1b', 'p-2b', 'p-3b', 'p-ss', 'p-lf', 'p-cf', 'p-rf']) {
+      expect(stats.get(pid)?.gamesAppeared).toBe(1);
+    }
+    // The substitute never entered the game.
+    expect(stats.get('p-sub')).toBeUndefined();
   });
 });
 
@@ -208,6 +228,40 @@ describe('deriveFieldingStats — position tracking across substitutions', () =>
     const stats = deriveFieldingStats(events as any, players, ctxMap());
     expect(stats.get('p-sub')!.assists).toBe(1);
     expect(stats.get('p-ss')?.assists ?? 0).toBe(0);
+  });
+
+  it('ignores opponent substitutions so our position map is not overwritten', () => {
+    const events: Evt[] = [
+      e('substitution', {
+        inPlayerId: 'opp-sub',
+        outPlayerId: 'p-ss',
+        substitutionType: 'defensive',
+        newPosition: 'SS',
+        isOpponentSubstitution: true,
+      }, true),
+      e(EventType.OUT, { outType: 'groundout', fieldingSequence: [6, 3] }, true),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveFieldingStats(events as any, players, ctxMap());
+    // Our SS keeps the assist because opponent sub never touched our map.
+    expect(stats.get('p-ss')!.assists).toBe(1);
+    // Opponent player was never introduced — no stats row should exist.
+    expect(stats.get('opp-sub')).toBeUndefined();
+  });
+
+  it('accepts long-form position names like "Shortstop" via normalization', () => {
+    const events: Evt[] = [
+      e('substitution', {
+        inPlayerId: 'p-sub',
+        outPlayerId: 'p-ss',
+        substitutionType: 'defensive',
+        newPosition: 'Shortstop',
+      }, true),
+      e(EventType.OUT, { outType: 'groundout', fieldingSequence: [6, 3] }, true),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveFieldingStats(events as any, players, ctxMap());
+    expect(stats.get('p-sub')!.assists).toBe(1);
   });
 
   it('rotates the pitcher position on PITCHING_CHANGE', () => {

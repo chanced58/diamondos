@@ -22,7 +22,25 @@ const POSITION_NUMBER_BY_NAME: Record<string, number> = {
   P: 1, C: 2,
   '1B': 3, '2B': 4, '3B': 5, SS: 6,
   LF: 7, CF: 8, RF: 9,
+  // Common long-form / snake_case aliases emitted by some scorer paths.
+  PITCHER: 1, CATCHER: 2,
+  FIRST_BASE: 3, SECOND_BASE: 4, THIRD_BASE: 5, SHORTSTOP: 6,
+  LEFT_FIELD: 7, CENTER_FIELD: 8, RIGHT_FIELD: 9,
 };
+
+/**
+ * Normalize a free-form position string (e.g. 'SS', 'ss', 'Shortstop',
+ * ' shortstop ', 'first_base') to a canonical number, or null when
+ * unrecognized. Unrecognized input returns null silently — the shared
+ * package is environment-agnostic (runs in tests, mobile, and browser)
+ * so we don't call console here; surface bad scorer input at the UI
+ * layer instead.
+ */
+function positionNumberFrom(raw: string | undefined | null): number | null {
+  if (!raw) return null;
+  const key = raw.trim().toUpperCase().replace(/\s+/g, '_');
+  return POSITION_NUMBER_BY_NAME[key] ?? null;
+}
 
 function makeEmpty(playerId: string, playerName: string): FieldingStats {
   return {
@@ -72,26 +90,31 @@ export function deriveFieldingStats(
   );
   const statsMap = new Map<string, FieldingStats>();
 
-  function getStats(playerId: string): FieldingStats {
+  const getStats = (playerId: string): FieldingStats => {
     if (!statsMap.has(playerId)) {
       const name = nameMap.get(playerId) ?? 'Unknown';
       statsMap.set(playerId, makeEmpty(playerId, name));
     }
     return statsMap.get(playerId)!;
-  }
+  };
 
-  // Group events by game_id preserving sequence order.
+  // Group events by game_id preserving sequence order. Events with no
+  // resolvable gameId are dropped rather than bucketed under `undefined`.
   const gameMap = new Map<string, GameEvent[]>();
   for (const event of events) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const gameId = (event as any).game_id ?? event.gameId;
+    const gameId: string | undefined = (event as any).game_id ?? event.gameId;
+    if (!gameId) continue;
     if (!gameMap.has(gameId)) gameMap.set(gameId, []);
     gameMap.get(gameId)!.push(event);
   }
 
-  for (const [gameId, gameEvents] of gameMap.entries()) {
-    const alignment = alignmentByGameId.get(gameId);
-    if (!alignment) continue;
+  // Drive the outer loop from the alignment map, not the event map — callers
+  // who supply an alignment for a game but no events still want the starters
+  // credited with gamesAppeared (they played defense; absence of fielding
+  // chances doesn't mean absence of participation).
+  for (const [gameId, alignment] of alignmentByGameId.entries()) {
+    const gameEvents = gameMap.get(gameId) ?? [];
 
     gameEvents.sort((a, b) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -102,54 +125,60 @@ export function deriveFieldingStats(
     });
 
     // Track which players have been credited with an appearance this game.
+    // Arrow function so it satisfies no-inner-declarations while still
+    // closing over appearedThisGame and getStats.
     const appearedThisGame = new Set<string>();
-    function markAppeared(playerId: string) {
+    const markAppeared = (playerId: string): void => {
       if (!appearedThisGame.has(playerId)) {
         appearedThisGame.add(playerId);
         getStats(playerId).gamesAppeared += 1;
       }
-    }
+    };
 
     // Mutable position → player map (cloned so the context passed in by the
     // caller isn't mutated across iterations).
     const positions = new Map<number, string>(alignment.startingPositions);
 
-    // Resolve the player currently at a given position. Returns null when
-    // the position is unknown — caller should skip crediting in that case.
-    function playerAtPosition(posNum: number): string | null {
-      return positions.get(posNum) ?? null;
+    // Seed gamesAppeared for every starter — even those who never see a PO,
+    // A, or E. "Played defensively" is appearance enough; without this,
+    // shutout games look empty for solid-defense utility fielders.
+    for (const playerId of alignment.startingPositions.values()) {
+      markAppeared(playerId);
     }
+
+    const playerAtPosition = (posNum: number): string | null =>
+      positions.get(posNum) ?? null;
 
     const isOurDefensiveHalf = (isTop: boolean): boolean =>
       alignment.isHome ? isTop : !isTop;
 
-    function creditPO(posNum: number) {
+    const creditPO = (posNum: number): void => {
       const playerId = playerAtPosition(posNum);
       if (!playerId) return;
       markAppeared(playerId);
       getStats(playerId).putouts += 1;
-    }
+    };
 
-    function creditAssist(posNum: number) {
+    const creditAssist = (posNum: number): void => {
       const playerId = playerAtPosition(posNum);
       if (!playerId) return;
       markAppeared(playerId);
       getStats(playerId).assists += 1;
-    }
+    };
 
-    function creditError(posNum: number) {
+    const creditError = (posNum: number): void => {
       const playerId = playerAtPosition(posNum);
       if (!playerId) return;
       markAppeared(playerId);
       getStats(playerId).errors += 1;
-    }
+    };
 
     /**
      * Credit a fielding play from a `fieldingSequence` of position numbers.
      * `outsRecorded` tells us how many putouts to award — the last N positions
      * in the sequence each get +1 PO; every non-last position also gets +1 A.
      */
-    function creditFieldingSequence(seq: number[] | undefined, outsRecorded: number) {
+    const creditFieldingSequence = (seq: number[] | undefined, outsRecorded: number): void => {
       if (!seq || seq.length === 0) return;
       const putoutCount = Math.min(outsRecorded, seq.length);
       // Putouts are the last `putoutCount` positions.
@@ -162,7 +191,7 @@ export function deriveFieldingStats(
       for (let i = 0; i < seq.length - 1; i++) {
         creditAssist(seq[i]);
       }
-    }
+    };
 
     for (const event of gameEvents) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -172,22 +201,32 @@ export function deriveFieldingStats(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const isTop: boolean = (event as any).is_top_of_inning ?? event.isTopOfInning ?? true;
 
+      // Hoist the fieldingSequence read once per event — four event types
+      // below consume it, and centralizing the cast makes future schema
+      // changes a single-line edit.
+      const fieldingSequence = payload?.fieldingSequence as number[] | undefined;
+
       // ── Position tracking (apply regardless of half-inning) ────────────
       // These substitutions happen during our fielding half-inning, but the
       // event itself is logged with the half-inning state at the time of
       // recording. Apply unconditionally so the map stays correct.
       if (etype === 'substitution') {
         const isOpponentSub = payload?.isOpponentSubstitution === true;
-        if (!isOpponentSub && typeof payload?.newPosition === 'string' && payload?.inPlayerId) {
-          const posNum = POSITION_NUMBER_BY_NAME[payload.newPosition as string];
-          if (posNum) positions.set(posNum, payload.inPlayerId as string);
+        if (!isOpponentSub && payload?.inPlayerId) {
+          const inId = payload.inPlayerId as string;
+          const posNum = positionNumberFrom(payload?.newPosition as string | undefined);
+          if (posNum) positions.set(posNum, inId);
+          // Mark defensive sub as appeared even if they never record a PO/A/E.
+          markAppeared(inId);
         }
         continue;
       }
       if (etype === 'pitching_change') {
         const isOpponentChange = payload?.isOpponentChange === true;
         if (!isOpponentChange && typeof payload?.newPitcherId === 'string') {
-          positions.set(1, payload.newPitcherId as string);
+          const newPitcherId = payload.newPitcherId as string;
+          positions.set(1, newPitcherId);
+          markAppeared(newPitcherId);
         }
         continue;
       }
@@ -196,7 +235,7 @@ export function deriveFieldingStats(
       if (!isOurDefensiveHalf(isTop)) continue;
 
       if (etype === EventType.OUT) {
-        creditFieldingSequence(payload?.fieldingSequence as number[] | undefined, 1);
+        creditFieldingSequence(fieldingSequence, 1);
         continue;
       }
 
@@ -209,7 +248,7 @@ export function deriveFieldingStats(
       if (etype === EventType.DROPPED_THIRD_STRIKE) {
         const outcome = payload?.outcome as string | undefined;
         if (outcome === 'thrown_out') {
-          creditFieldingSequence(payload?.fieldingSequence as number[] | undefined, 1);
+          creditFieldingSequence(fieldingSequence, 1);
         } else if (outcome === 'reached_on_error') {
           const errPos = payload?.errorBy as number | undefined;
           if (typeof errPos === 'number') creditError(errPos);
@@ -219,17 +258,17 @@ export function deriveFieldingStats(
       }
 
       if (etype === 'caught_stealing') {
-        creditFieldingSequence(payload?.fieldingSequence as number[] | undefined, 1);
+        creditFieldingSequence(fieldingSequence, 1);
         continue;
       }
 
       if (etype === EventType.DOUBLE_PLAY) {
-        creditFieldingSequence(payload?.fieldingSequence as number[] | undefined, 2);
+        creditFieldingSequence(fieldingSequence, 2);
         continue;
       }
 
       if (etype === EventType.TRIPLE_PLAY) {
-        creditFieldingSequence(payload?.fieldingSequence as number[] | undefined, 3);
+        creditFieldingSequence(fieldingSequence, 3);
         continue;
       }
 
@@ -246,7 +285,7 @@ export function deriveFieldingStats(
       // regular OUT (one out recorded). If no sequence is provided, no one
       // gets credit — that's a scorer data-quality concern.
       if (etype === EventType.SACRIFICE_FLY || etype === EventType.SACRIFICE_BUNT) {
-        creditFieldingSequence(payload?.fieldingSequence as number[] | undefined, 1);
+        creditFieldingSequence(fieldingSequence, 1);
         continue;
       }
     }
