@@ -53,4 +53,13 @@ export interface BattingStats {
   hardHitBalls: number;
   /** HHB rate: hardHitBalls / battedBalls; NaN when battedBalls === 0 */
   hardHitPct: number;
+
+  // Quality At-Bats — standard 7-outcome high-school definition:
+  //   hit, walk, HBP, sacrifice fly, sacrifice bunt, 8+ pitch PA,
+  //   hard-hit ball (even if out), productive out (runner advanced from
+  //   2nd/3rd with <2 outs, or runner scored on the out).
+  /** Count of plate appearances that qualified as a Quality At-Bat. */
+  qab: number;
+  /** qab / plateAppearances; NaN when plateAppearances === 0. */
+  qabPct: number;
 }

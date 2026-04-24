@@ -1,5 +1,5 @@
 import { deriveBattingStats, type BattingLineupContext } from '../batting-stats';
-import { EventType, HitType } from '../../types/game-event';
+import { EventType, HitType, HitTrajectory, PitchOutcome } from '../../types/game-event';
 
 type Evt = {
   game_id: string;
@@ -220,5 +220,153 @@ describe('deriveBattingStats — TRIPLE_PLAY handler', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const stats = deriveBattingStats(events as any, players);
     expect(stats.has('unknown-batter')).toBe(false);
+  });
+});
+
+describe('deriveBattingStats — Quality At-Bats (QAB)', () => {
+  beforeEach(resetSeq);
+
+  const basicPitch = (pitcherId: string, batterId: string, outcome = PitchOutcome.BALL) =>
+    e(EventType.PITCH_THROWN, { pitcherId, batterId, outcome });
+
+  it('credits a QAB for any hit (non fielders-choice)', () => {
+    const events = [
+      e(EventType.HIT, { batterId: 'p1', hitType: HitType.SINGLE }),
+      e(EventType.HIT, { batterId: 'p2', hitType: HitType.DOUBLE }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    expect(stats.get('p1')!.qab).toBe(1);
+    expect(stats.get('p2')!.qab).toBe(1);
+  });
+
+  it('does not credit a QAB for a fielders-choice hit', () => {
+    const events = [e(EventType.HIT, { batterId: 'p1', hitType: HitType.SINGLE, fieldersChoice: true })];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    expect(stats.get('p1')!.qab).toBe(0);
+  });
+
+  it('credits a QAB for walk, HBP, sacrifice fly, and sacrifice bunt', () => {
+    const events = [
+      e(EventType.WALK, { batterId: 'p1' }),
+      e(EventType.HIT_BY_PITCH, { batterId: 'p2' }),
+      e(EventType.SACRIFICE_FLY, { batterId: 'p1' }),
+      e(EventType.SACRIFICE_BUNT, { batterId: 'p2' }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    expect(stats.get('p1')!.qab).toBe(2);
+    expect(stats.get('p2')!.qab).toBe(2);
+  });
+
+  it('credits a QAB for an 8+ pitch plate appearance ending in a strikeout', () => {
+    // Build 8 pitches then a strikeout
+    const events = [
+      basicPitch('pit1', 'p1', PitchOutcome.BALL),
+      basicPitch('pit1', 'p1', PitchOutcome.FOUL),
+      basicPitch('pit1', 'p1', PitchOutcome.FOUL),
+      basicPitch('pit1', 'p1', PitchOutcome.BALL),
+      basicPitch('pit1', 'p1', PitchOutcome.FOUL),
+      basicPitch('pit1', 'p1', PitchOutcome.BALL),
+      basicPitch('pit1', 'p1', PitchOutcome.FOUL),
+      basicPitch('pit1', 'p1', PitchOutcome.SWINGING_STRIKE),
+      e(EventType.STRIKEOUT, { batterId: 'p1', pitcherId: 'pit1' }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    expect(stats.get('p1')!.qab).toBe(1);
+  });
+
+  it('does not credit QAB for a 7-pitch strikeout (below 8-pitch threshold)', () => {
+    const events = [
+      basicPitch('pit1', 'p1', PitchOutcome.SWINGING_STRIKE),
+      basicPitch('pit1', 'p1', PitchOutcome.BALL),
+      basicPitch('pit1', 'p1', PitchOutcome.FOUL),
+      basicPitch('pit1', 'p1', PitchOutcome.BALL),
+      basicPitch('pit1', 'p1', PitchOutcome.FOUL),
+      basicPitch('pit1', 'p1', PitchOutcome.BALL),
+      basicPitch('pit1', 'p1', PitchOutcome.SWINGING_STRIKE),
+      e(EventType.STRIKEOUT, { batterId: 'p1', pitcherId: 'pit1' }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    expect(stats.get('p1')!.qab).toBe(0);
+  });
+
+  it('credits a QAB for a hard-hit out (line drive or deep fly)', () => {
+    const events = [
+      e(EventType.OUT, { batterId: 'p1', outType: 'lineout', trajectory: HitTrajectory.LINE_DRIVE }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    expect(stats.get('p1')!.qab).toBe(1);
+  });
+
+  it('credits a QAB for a productive out (<2 outs, runner on 2nd advances)', () => {
+    // p1 singles (reach 1st), p2 singles (p1→2nd, p2 on 1st), then p3 groundout
+    // with 0 outs and runner on 2nd advances to 3rd → productive out.
+    const events = [
+      e(EventType.HIT, { batterId: 'p1', hitType: HitType.SINGLE }),
+      e(EventType.HIT, { batterId: 'p2', hitType: HitType.SINGLE }),
+      e(EventType.OUT, { batterId: 'p3', outType: 'groundout' }),
+      e('baserunner_advance', { runnerId: 'p1', fromBase: 2, toBase: 3, reason: 'on_play' }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    expect(stats.get('p3')!.qab).toBe(1);
+  });
+
+  it('credits a QAB for an out that scores a runner from 3rd', () => {
+    // p1 triples (reach 3rd), p2 groundout, runner from 3rd scores
+    const events = [
+      e(EventType.HIT, { batterId: 'p1', hitType: HitType.TRIPLE }),
+      e(EventType.OUT, { batterId: 'p2', outType: 'groundout' }),
+      e(EventType.SCORE, { scoringPlayerId: 'p1' }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    expect(stats.get('p2')!.qab).toBe(1);
+  });
+
+  it('does not credit productive out for a strikeout', () => {
+    // Runner on 2nd, 0 outs, strikeout → not productive
+    const events = [
+      e(EventType.HIT, { batterId: 'p1', hitType: HitType.DOUBLE }),
+      e(EventType.STRIKEOUT, { batterId: 'p2' }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    expect(stats.get('p2')!.qab).toBe(0);
+  });
+
+  it('does not credit productive out when there are already 2 outs', () => {
+    // 2 outs via two groundouts, then runner advance on 3rd out → not productive
+    const events = [
+      e(EventType.OUT, { batterId: 'p1', outType: 'groundout' }),
+      e(EventType.OUT, { batterId: 'p2', outType: 'groundout' }),
+      e(EventType.HIT, { batterId: 'p3', hitType: HitType.DOUBLE }), // runner on 2nd
+      e(EventType.OUT, { batterId: 'p1', outType: 'groundout' }),
+      e('baserunner_advance', { runnerId: 'p3', fromBase: 2, toBase: 3, reason: 'on_play' }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    // p1's second PA: 2 outs, so advance does not trigger QAB
+    expect(stats.get('p1')!.qab).toBe(0);
+  });
+
+  it('computes qabPct as qab / plateAppearances', () => {
+    const events = [
+      e(EventType.HIT, { batterId: 'p1', hitType: HitType.SINGLE }),
+      e(EventType.STRIKEOUT, { batterId: 'p1' }),
+      e(EventType.OUT, { batterId: 'p1', outType: 'groundout' }),
+      e(EventType.WALK, { batterId: 'p1' }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    const s = stats.get('p1')!;
+    expect(s.plateAppearances).toBe(4);
+    expect(s.qab).toBe(2); // hit + walk
+    expect(s.qabPct).toBeCloseTo(0.5, 5);
   });
 });

@@ -202,6 +202,10 @@ export default async function LeagueStatsPage({
         battedBalls: 0,
         hardHitBalls: 0,
         hardHitPct: NaN,
+        // Opponent QAB isn't tracked — set to 0 / NaN so the column is
+        // blank rather than showing stale values from another schema.
+        qab: 0,
+        qabPct: NaN,
       });
     }
 

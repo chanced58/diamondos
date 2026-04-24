@@ -33,6 +33,8 @@ const ALL_COLUMNS: { key: SortKey; label: string; title: string }[] = [
   { key: 'woba',            label: 'wOBA',    title: 'Weighted on-base average (FanGraphs 2023 weights)' },
   { key: 'hardHitBalls',    label: 'HHB',     title: 'Hard Hit Balls — line drives, deep fly balls, and home runs' },
   { key: 'hardHitPct',      label: 'HHB%',    title: 'Hard Hit Ball rate (HHB / total batted balls)' },
+  { key: 'qab',             label: 'QAB',     title: 'Quality At-Bats — hit, walk, HBP, sacrifice, 8+ pitch PA, hard-hit ball, or productive out' },
+  { key: 'qabPct',          label: 'QAB%',    title: 'Quality At-Bat rate (QAB / PA)' },
 ];
 
 // Which columns are visible at each tier
@@ -47,7 +49,7 @@ const TIER_KEYS: Record<StatTier, Set<SortKey>> = {
     'runs', 'hits', 'doubles', 'triples', 'homeRuns', 'rbi',
     'walks', 'strikeouts', 'hitByPitch', 'sacrificeFlies',
     'avg', 'obp', 'slg', 'ops', 'iso', 'babip',
-    'kPct', 'bbPct', 'woba', 'hardHitPct',
+    'kPct', 'bbPct', 'woba', 'hardHitPct', 'qab', 'qabPct',
   ]),
   college: new Set<SortKey>(ALL_COLUMNS.map((c) => c.key)),
 };
@@ -70,13 +72,13 @@ function displayStat(s: BattingStats, key: SortKey): string {
   const intKeys: SortKey[] = [
     'gamesAppeared', 'plateAppearances', 'atBats', 'runs', 'hits',
     'doubles', 'triples', 'homeRuns', 'rbi', 'walks', 'strikeouts',
-    'hitByPitch', 'sacrificeFlies', 'battedBalls', 'hardHitBalls',
+    'hitByPitch', 'sacrificeFlies', 'battedBalls', 'hardHitBalls', 'qab',
   ];
   if (intKeys.includes(key)) {
     return String(s[key as keyof typeof s]);
   }
 
-  const pctKeys: SortKey[] = ['kPct', 'bbPct', 'hardHitPct'];
+  const pctKeys: SortKey[] = ['kPct', 'bbPct', 'hardHitPct', 'qabPct'];
   if (pctKeys.includes(key)) {
     return formatBattingPct(s[key as keyof typeof s] as number);
   }
@@ -92,7 +94,8 @@ function computeTotals(rows: BattingStats[]): BattingStats {
     rbi: acc.rbi + s.rbi, bb: acc.bb + s.walks, k: acc.k + s.strikeouts,
     hbp: acc.hbp + s.hitByPitch, sf: acc.sf + s.sacrificeFlies, sh: acc.sh + s.sacrificeHits,
     batted: acc.batted + s.battedBalls, hhb: acc.hhb + s.hardHitBalls,
-  }), { g: 0, pa: 0, ab: 0, r: 0, h: 0, d: 0, tr: 0, hr: 0, rbi: 0, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, batted: 0, hhb: 0 });
+    qab: acc.qab + s.qab,
+  }), { g: 0, pa: 0, ab: 0, r: 0, h: 0, d: 0, tr: 0, hr: 0, rbi: 0, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, batted: 0, hhb: 0, qab: 0 });
 
   const singles = t.h - t.d - t.tr - t.hr;
   const tb = singles + 2 * t.d + 3 * t.tr + 4 * t.hr;
@@ -121,6 +124,8 @@ function computeTotals(rows: BattingStats[]): BattingStats {
     woba,
     battedBalls: t.batted, hardHitBalls: t.hhb,
     hardHitPct: t.batted > 0 ? t.hhb / t.batted : NaN,
+    qab: t.qab,
+    qabPct: t.pa > 0 ? t.qab / t.pa : NaN,
   };
 }
 
