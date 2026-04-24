@@ -138,6 +138,63 @@ describe('buildGameHistoryTree — CATCHER_INTERFERENCE rendering', () => {
     const event = mkEvent(EventType.CATCHER_INTERFERENCE, { batterId: 'p1', pitcherId: 'pit1' });
     expect(formatEventLabel(event, players)).toMatch(/Catcher Interference/i);
   });
+
+  it('forces runners home on a bases-loaded CATCHER_INTERFERENCE', () => {
+    // Seed bases by hitting three singles, then CI forces home from 3rd.
+    const events: GameEvent[] = [
+      mkEvent(EventType.GAME_START, {}),
+      mkEvent(EventType.PITCH_THROWN, { pitcherId: 'pit1', batterId: 'p1', outcome: PitchOutcome.IN_PLAY }),
+      mkEvent(EventType.HIT, { batterId: 'p1', pitcherId: 'pit1', hitType: HitType.SINGLE }),
+      mkEvent(EventType.PITCH_THROWN, { pitcherId: 'pit1', batterId: 'p2', outcome: PitchOutcome.IN_PLAY }),
+      mkEvent(EventType.HIT, { batterId: 'p2', pitcherId: 'pit1', hitType: HitType.SINGLE }),
+      mkEvent(EventType.PITCH_THROWN, { pitcherId: 'pit1', batterId: 'p1', outcome: PitchOutcome.IN_PLAY }),
+      mkEvent(EventType.HIT, { batterId: 'p1', pitcherId: 'pit1', hitType: HitType.SINGLE }),
+      // Bases loaded — CI forces runner from 3rd to score
+      mkEvent(EventType.PITCH_THROWN, { pitcherId: 'pit1', batterId: 'p2', outcome: PitchOutcome.IN_PLAY }),
+      mkEvent(EventType.CATCHER_INTERFERENCE, { batterId: 'p2', pitcherId: 'pit1' }),
+    ];
+
+    const tree = buildGameHistoryTree(events, players);
+    const top = tree.innings[0].top!;
+    // 4 at-bats; the CI is terminal + positive
+    expect(top.items.length).toBe(4);
+    const ci = top.items[3];
+    expect(ci.type).toBe('at-bat');
+    if (ci.type !== 'at-bat') throw new Error('expected at-bat');
+    expect(ci.result!.event.eventType).toBe(EventType.CATCHER_INTERFERENCE);
+    expect(ci.result!.category).toBe('positive');
+    // CI with bases loaded = 1 forced run
+    expect(top.awayScore).toBe(1);
+  });
+});
+
+describe('buildGameHistoryTree — D3K reached_on_error force advance', () => {
+  beforeEach(resetSeq);
+
+  it('pushes an existing runner from 1st to 2nd when the batter reaches on D3K', () => {
+    const events: GameEvent[] = [
+      mkEvent(EventType.GAME_START, {}),
+      mkEvent(EventType.PITCH_THROWN, { pitcherId: 'pit1', batterId: 'p1', outcome: PitchOutcome.IN_PLAY }),
+      mkEvent(EventType.HIT, { batterId: 'p1', pitcherId: 'pit1', hitType: HitType.SINGLE }),
+      // Now p1 on 1st. D3K reached_on_error for p2 should push p1 to 2nd,
+      // not silently overwrite r1 and lose p1.
+      mkEvent(EventType.PITCH_THROWN, { pitcherId: 'pit1', batterId: 'p2', outcome: PitchOutcome.SWINGING_STRIKE }),
+      mkEvent(EventType.DROPPED_THIRD_STRIKE, {
+        batterId: 'p2',
+        pitcherId: 'pit1',
+        outcome: 'reached_on_error',
+        errorBy: 2,
+      }),
+      // p3 homers — should score both p1 (pushed to 2nd) and p2 (on 1st) + batter = 3 runs
+      mkEvent(EventType.PITCH_THROWN, { pitcherId: 'pit1', batterId: 'p2', outcome: PitchOutcome.IN_PLAY }),
+      mkEvent(EventType.HIT, { batterId: 'p2', pitcherId: 'pit1', hitType: HitType.HOME_RUN, rbis: 3 }),
+    ];
+
+    const tree = buildGameHistoryTree(events, players);
+    // 3 runs confirms forceAdvance was applied (otherwise p1 would've been
+    // overwritten and HR would score only 2 runs — HR batter + p2).
+    expect(tree.innings[0].top!.awayScore).toBe(3);
+  });
 });
 
 describe('buildGameHistoryTree — defensive default case', () => {
@@ -157,6 +214,21 @@ describe('buildGameHistoryTree — defensive default case', () => {
     expect(top.items[0].event.eventType).toBe('some_future_type');
     // Label should fall back to capitalized type name
     expect(top.items[0].label).toMatch(/Some Future Type/i);
+  });
+
+  it('renders PITCH_REVERTED and EVENT_VOIDED as interstitials when passed in un-filtered', () => {
+    // Pins behavior for callers who forget applyPitchRevertedTyped — we
+    // surface these correction events via the defensive default rather
+    // than silently swallowing them, so the data-quality issue is visible.
+    const events: GameEvent[] = [
+      mkEvent(EventType.GAME_START, {}),
+      mkEvent(EventType.PITCH_REVERTED, { revertToSequenceNumber: 5 }),
+      mkEvent(EventType.EVENT_VOIDED, { voidedEventId: 'e1', voidedSequenceNumber: 4 }),
+    ];
+    const tree = buildGameHistoryTree(events, players);
+    const top = tree.innings[0].top!;
+    expect(top.items.length).toBe(2);
+    expect(top.items.every((item) => item.type === 'interstitial')).toBe(true);
   });
 });
 

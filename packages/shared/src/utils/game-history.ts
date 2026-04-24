@@ -726,15 +726,18 @@ export function buildGameHistoryTree(
           }
         } else if (event.eventType === EventType.CATCHER_INTERFERENCE) {
           // CI awards the batter first base like a walk/HBP: runners forced
-          // to advance only when blocked (MLB rule 6.08(c)).
+          // to advance only when blocked (OBR 6.01(c) — catcher's
+          // interference; batter awarded first and forced runners advance).
           forceAdvance();
         } else if (event.eventType === EventType.DROPPED_THIRD_STRIKE) {
           const p = event.payload as DroppedThirdStrikePayload;
           if (p.outcome !== 'thrown_out') {
-            // Batter reaches first. Existing runners do not auto-advance —
-            // a scorekeeper logs a BASERUNNER_ADVANCE for each runner who
-            // chose to advance on the wild pitch / passed ball.
-            runnerFirst = true;
+            // OBR 5.09(a)(3): D3K lets the batter run only when 1st is
+            // unoccupied or with 2 outs, so in practice any pre-existing
+            // runner on 1st must vacate (they typically advance). Use
+            // forceAdvance so an existing r1 isn't silently lost when a
+            // scorekeeper omits the follow-up BASERUNNER_ADVANCE event.
+            forceAdvance();
           }
         }
 
@@ -820,10 +823,23 @@ export function buildGameHistoryTree(
           runnerFirst = false;
         }
 
+        // Per-instance category override for outcome-bearing events where a
+        // single enum value covers both a positive and a negative result.
+        // getEventCategory takes only the event type, so these overrides
+        // live here where the payload is available.
+        let category = getEventCategory(event.eventType);
+        if (event.eventType === EventType.RUNDOWN) {
+          const rp = event.payload as RundownPayload;
+          category = rp.outcome === 'out' ? 'negative' : 'positive';
+        } else if (event.eventType === EventType.PICKOFF_ATTEMPT) {
+          const pp = event.payload as PickoffPayload;
+          if (pp.outcome === 'out') category = 'negative';
+        }
+
         const node: HistoryEventNode = {
           event,
           label: formatEventLabel(event, playerNameMap),
-          category: getEventCategory(event.eventType),
+          category,
         };
 
         if (openAtBat) {
