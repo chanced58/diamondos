@@ -355,6 +355,38 @@ describe('deriveBattingStats — Quality At-Bats (QAB)', () => {
     expect(stats.get('p1')!.qab).toBe(0);
   });
 
+  it('credits QAB only once when a PA qualifies by multiple criteria', () => {
+    // Hard-hit line-drive OUT that also advances runner from 2nd on the play.
+    // Should credit QAB exactly once despite qualifying via hard-hit AND
+    // productive-out.
+    const events = [
+      e(EventType.HIT, { batterId: 'p1', hitType: HitType.DOUBLE }), // runner to 2nd
+      e(EventType.OUT, {
+        batterId: 'p2',
+        outType: 'lineout',
+        trajectory: HitTrajectory.LINE_DRIVE,
+      }),
+      e('baserunner_advance', { runnerId: 'p1', fromBase: 2, toBase: 3, reason: 'on_play' }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    expect(stats.get('p2')!.qab).toBe(1);
+  });
+
+  it('does not credit productive-out QAB when the runner advanced on a wild pitch', () => {
+    // Groundout with runner on 2nd, then wild-pitch advance. The advance
+    // isn't caused by the at-bat so the OUT shouldn't earn a productive-out
+    // QAB.
+    const events = [
+      e(EventType.HIT, { batterId: 'p1', hitType: HitType.DOUBLE }),
+      e(EventType.OUT, { batterId: 'p2', outType: 'groundout' }),
+      e('baserunner_advance', { runnerId: 'p1', fromBase: 2, toBase: 3, reason: 'wild_pitch' }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    expect(stats.get('p2')!.qab).toBe(0);
+  });
+
   it('computes qabPct as qab / plateAppearances', () => {
     const events = [
       e(EventType.HIT, { batterId: 'p1', hitType: HitType.SINGLE }),

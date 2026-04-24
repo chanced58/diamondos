@@ -239,18 +239,24 @@ export function deriveBattingStats(
       r3SnapshotId: string | null;
     } | null = null;
     // Credit QAB once per PA. Because multiple code paths (hit, walk,
-    // hard-hit, 8-pitch, etc.) can all want to credit the same PA, guard
-    // with a per-PA flag that resets at the start of each PA.
+    // hard-hit, 8-pitch, productive out, etc.) can all want to credit the
+    // same PA, guard with a per-PA flag. The flag is reset at the START of
+    // each new PA-closing event (not in resetPAState) so that deferred
+    // productive-out credit — which fires on a later BASERUNNER_ADVANCE /
+    // SCORE after the OUT already ran — can't double-credit a PA that was
+    // already counted via hard-hit or 8+ pitch.
     let qabCreditedThisPA = false;
-    function creditQAB(batterId: string) {
+    const creditQAB = (batterId: string): void => {
       if (qabCreditedThisPA) return;
       getStats(batterId).qab += 1;
       qabCreditedThisPA = true;
-    }
-    function resetPAState(batterId: string) {
+    };
+    const resetPAState = (batterId: string): void => {
       pitchesInPA.delete(batterId);
-      qabCreditedThisPA = false;
-    }
+      // Do NOT reset qabCreditedThisPA here — it must persist through the
+      // window where productiveOutPending can fire. The flag resets at the
+      // start of the next PA-closing event handler.
+    };
 
     function scoreRunner(runnerId: string | null) {
       if (runnerId) {
@@ -737,8 +743,14 @@ export function deriveBattingStats(
         const toBase: number | undefined = payload?.toBase;
         if (!runnerId || !toBase) continue;
         // Productive-out credit: if a runner from 2nd or 3rd (as snapshotted
-        // before the last out) advances, the out was productive.
+        // before the last out) advances on the play, the out was productive.
+        // Skip wild pitch / passed ball / balk / overthrow / error / voluntary
+        // advances — those are separate events not caused by the batter's
+        // at-bat. AdvanceReason.ON_PLAY and missing reason both count.
+        const reason = payload?.reason as string | undefined;
+        const isOnPlayAdvance = reason === undefined || reason === 'on_play';
         if (
+          isOnPlayAdvance &&
           productiveOutPending &&
           (runnerId === productiveOutPending.r2SnapshotId ||
             runnerId === productiveOutPending.r3SnapshotId)
