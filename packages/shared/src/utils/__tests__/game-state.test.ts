@@ -343,3 +343,96 @@ describe('stats reducers — fielder\'s choice that ends the inning', () => {
     expect(o4?.h).toBe(0);
   });
 });
+
+describe('deriveGameState — DROPPED_THIRD_STRIKE', () => {
+  beforeEach(resetSeq);
+
+  const startEvents: GameEvent[] = [];
+  const start = () => [
+    e(EventType.GAME_START, {
+      awayLineupPitcherId: 'home-p',
+      homeLineupPitcherId: 'away-p',
+      awayLeadoffBatterId: 'a1',
+      homeLeadoffBatterId: 'h1',
+    }),
+  ];
+  void startEvents;
+
+  it('thrown_out increments outs and resets the count', () => {
+    const events: GameEvent[] = [
+      ...start(),
+      e(EventType.PITCH_THROWN, { batterId: 'a1', outcome: PitchOutcome.SWINGING_STRIKE }),
+      e(EventType.PITCH_THROWN, { batterId: 'a1', outcome: PitchOutcome.SWINGING_STRIKE }),
+      e(EventType.DROPPED_THIRD_STRIKE, {
+        batterId: 'a1',
+        pitcherId: 'home-p',
+        outcome: 'thrown_out',
+        fieldingSequence: [2, 3],
+      }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    expect(state.outs).toBe(1);
+    expect(state.balls).toBe(0);
+    expect(state.strikes).toBe(0);
+    expect(state.runnersOnBase.first).toBe(null);
+    expect(state.completedTopHalfPAs).toBe(1);
+  });
+
+  it('reached_on_error places batter on first and does not increment outs', () => {
+    const events: GameEvent[] = [
+      ...start(),
+      e(EventType.PITCH_THROWN, { batterId: 'a1', outcome: PitchOutcome.SWINGING_STRIKE }),
+      e(EventType.DROPPED_THIRD_STRIKE, {
+        batterId: 'a1',
+        pitcherId: 'home-p',
+        outcome: 'reached_on_error',
+        errorBy: 2,
+      }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    expect(state.outs).toBe(0);
+    expect(state.runnersOnBase.first).toBe('a1');
+    expect(state.completedTopHalfPAs).toBe(1);
+  });
+
+  it('reached_wild_pitch places batter on first and does not increment outs', () => {
+    const events: GameEvent[] = [
+      ...start(),
+      e(EventType.PITCH_THROWN, { batterId: 'a1', outcome: PitchOutcome.SWINGING_STRIKE }),
+      e(EventType.DROPPED_THIRD_STRIKE, {
+        batterId: 'a1',
+        pitcherId: 'home-p',
+        outcome: 'reached_wild_pitch',
+        isWildPitch: true,
+      }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    expect(state.outs).toBe(0);
+    expect(state.runnersOnBase.first).toBe('a1');
+  });
+
+  it('force-scores a run when bases were loaded and the batter reaches', () => {
+    const events: GameEvent[] = [
+      ...start(),
+      // Load the bases via three walks.
+      e(EventType.WALK, { batterId: 'a1' }),
+      e(EventType.WALK, { batterId: 'a2' }),
+      e(EventType.WALK, { batterId: 'a3' }),
+      // a4 reaches on D3K reached-on-error → bases-loaded force-in.
+      e(EventType.PITCH_THROWN, { batterId: 'a4', outcome: PitchOutcome.SWINGING_STRIKE }),
+      e(EventType.DROPPED_THIRD_STRIKE, {
+        batterId: 'a4',
+        pitcherId: 'home-p',
+        outcome: 'reached_on_error',
+        errorBy: 2,
+      }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    expect(state.awayScore).toBe(1);
+    expect(state.outs).toBe(0);
+    // a1 (forced home), a2 → 3rd, a3 → 2nd, a4 → 1st.
+    expect(state.runnersOnBase.first).toBe('a4');
+    expect(state.runnersOnBase.second).toBe('a3');
+    expect(state.runnersOnBase.third).toBe('a2');
+  });
+});

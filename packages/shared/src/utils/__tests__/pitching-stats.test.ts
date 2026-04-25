@@ -225,3 +225,102 @@ describe('derivePitchingStats — earned vs unearned run attribution', () => {
     expect(s.earnedRunsAllowed).toBe(1);
   });
 });
+
+describe('derivePitchingStats — DROPPED_THIRD_STRIKE', () => {
+  beforeEach(resetSeq);
+
+  it('credits a K to the pitcher even when the batter reaches on a D3K error', () => {
+    const events: Evt[] = [
+      e(EventType.GAME_START, { homeLineupPitcherId: 'home-p', awayLineupPitcherId: 'away-p' }),
+      e(EventType.DROPPED_THIRD_STRIKE, {
+        pitcherId: 'home-p',
+        batterId: 'b1',
+        outcome: 'reached_on_error',
+        errorBy: 2,
+      }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = derivePitchingStats(events as any, players);
+    const s = stats.get('home-p')!;
+    expect(s.strikeouts).toBe(1);
+    // Batter reached, so this isn't an out for IP purposes.
+    expect(s.inningsPitchedOuts).toBe(0);
+  });
+
+  it('does not double-count K when pitch progression already credited the strikeout', () => {
+    // Three strike pitches credit the K via pitch progression; the
+    // DROPPED_THIRD_STRIKE event must not add another K on top.
+    const events: Evt[] = [
+      e(EventType.GAME_START, { homeLineupPitcherId: 'home-p', awayLineupPitcherId: 'away-p' }),
+      e(EventType.PITCH_THROWN, { pitcherId: 'home-p', batterId: 'b1', outcome: PitchOutcome.SWINGING_STRIKE }),
+      e(EventType.PITCH_THROWN, { pitcherId: 'home-p', batterId: 'b1', outcome: PitchOutcome.SWINGING_STRIKE }),
+      e(EventType.PITCH_THROWN, { pitcherId: 'home-p', batterId: 'b1', outcome: PitchOutcome.SWINGING_STRIKE }),
+      e(EventType.DROPPED_THIRD_STRIKE, {
+        pitcherId: 'home-p',
+        batterId: 'b1',
+        outcome: 'thrown_out',
+        fieldingSequence: [2, 3],
+      }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = derivePitchingStats(events as any, players);
+    const s = stats.get('home-p')!;
+    expect(s.strikeouts).toBe(1);
+    expect(s.inningsPitchedOuts).toBe(1);
+  });
+
+  it('counts a wild pitch when D3K outcome is reached_wild_pitch with isWildPitch=true', () => {
+    const events: Evt[] = [
+      e(EventType.GAME_START, { homeLineupPitcherId: 'home-p', awayLineupPitcherId: 'away-p' }),
+      e(EventType.DROPPED_THIRD_STRIKE, {
+        pitcherId: 'home-p',
+        batterId: 'b1',
+        outcome: 'reached_wild_pitch',
+        isWildPitch: true,
+      }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = derivePitchingStats(events as any, players);
+    const s = stats.get('home-p')!;
+    expect(s.strikeouts).toBe(1);
+    expect(s.wildPitches).toBe(1);
+  });
+
+  it('does not count a wild pitch when isWildPitch is false (passed ball)', () => {
+    const events: Evt[] = [
+      e(EventType.GAME_START, { homeLineupPitcherId: 'home-p', awayLineupPitcherId: 'away-p' }),
+      e(EventType.DROPPED_THIRD_STRIKE, {
+        pitcherId: 'home-p',
+        batterId: 'b1',
+        outcome: 'reached_wild_pitch',
+        isWildPitch: false,
+      }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = derivePitchingStats(events as any, players);
+    const s = stats.get('home-p')!;
+    expect(s.strikeouts).toBe(1);
+    expect(s.wildPitches).toBe(0);
+  });
+
+  it('marks a run scored by a D3K-error baserunner as unearned for the pitcher', () => {
+    // b1 reaches on a D3K error charged to the catcher. b2 then homers.
+    // Run by b1 is unearned (reached on error); run by b2 is earned.
+    const events: Evt[] = [
+      e(EventType.GAME_START, { homeLineupPitcherId: 'home-p', awayLineupPitcherId: 'away-p' }),
+      e(EventType.DROPPED_THIRD_STRIKE, {
+        pitcherId: 'home-p',
+        batterId: 'b1',
+        outcome: 'reached_on_error',
+        errorBy: 2,
+      }),
+      e(EventType.PITCH_THROWN, { pitcherId: 'home-p', batterId: 'b2', outcome: PitchOutcome.IN_PLAY }),
+      e(EventType.HIT, { pitcherId: 'home-p', batterId: 'b2', hitType: HitType.HOME_RUN, rbis: 2 }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = derivePitchingStats(events as any, players);
+    const s = stats.get('home-p')!;
+    expect(s.runsAllowed).toBe(2);
+    expect(s.earnedRunsAllowed).toBe(1);
+  });
+});

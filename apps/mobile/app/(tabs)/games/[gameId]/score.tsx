@@ -67,6 +67,10 @@ export default function ScoringScreen() {
   const currentPitcherId = gameState?.currentPitcherId ?? undefined;
   const currentBatterId = gameState?.currentBatterId ?? undefined;
   const [showLineupModal, setShowLineupModal] = useState(false);
+  // Dropped-third-strike modal — opened either by the manual button in
+  // PitchInput, or automatically by handlePitch when a 3rd-strike pitch is
+  // recorded with D3K eligibility (first base empty or two outs).
+  const [showD3KModal, setShowD3KModal] = useState(false);
 
   async function handlePitch(outcome: PitchOutcome, pitchType?: PitchType) {
     if (!gameState) return;
@@ -82,6 +86,29 @@ export default function ScoringScreen() {
       gameState.isTopOfInning,
       payload,
     );
+
+    // Auto-complete walks and strikeouts from pitch progression so the scorer
+    // doesn't need to tap a separate button. gameState here is the pre-pitch
+    // value; +1 reflects the increment this pitch will produce.
+    if (outcome === PitchOutcome.BALL && gameState.balls + 1 >= 4) {
+      await handleWalk();
+      return;
+    }
+    const isStrikePitch =
+      outcome === PitchOutcome.SWINGING_STRIKE ||
+      outcome === PitchOutcome.CALLED_STRIKE ||
+      outcome === PitchOutcome.FOUL_TIP;
+    if (isStrikePitch && gameState.strikes + 1 >= 3) {
+      // Per OBR 5.05(a)(2): D3K only applies when first base is unoccupied
+      // or there are two outs. Otherwise the batter is out regardless.
+      const eligible =
+        gameState.outs === 2 || !gameState.runnersOnBase.first;
+      if (eligible) {
+        setShowD3KModal(true);
+      } else {
+        await handleStrikeout();
+      }
+    }
   }
 
   async function handleHit(hitType: HitType) {
@@ -516,7 +543,6 @@ export default function ScoringScreen() {
         onRecordPitch={handlePitch}
         onRecordHit={handleHit}
         onRecordOut={handleOut}
-        onRecordWalk={handleWalk}
         onRecordStrikeout={handleStrikeout}
         onRecordError={handleError}
         onRecordCatcherInterference={handleCatcherInterference}
@@ -535,6 +561,8 @@ export default function ScoringScreen() {
         runnersOnBase={runnersOnBase}
         onRecordDroppedThirdStrike={handleDroppedThirdStrike}
         droppedThirdStrikeEligible={droppedThirdStrikeEligible}
+        d3kModalOpen={showD3KModal}
+        setD3KModalOpen={setShowD3KModal}
       />
     </View>
   );
