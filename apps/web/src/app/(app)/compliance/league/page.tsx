@@ -7,8 +7,8 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueTeamIds, getLeagueOpponentTeamIds } from '@baseball/database';
-import { derivePitchingStats, deriveBattingStats, computeOpponentBatting } from '@baseball/shared';
-import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
+import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, filterResetAndReverted, weAreHome } from '@baseball/shared';
+import type { PitchingStats, BattingStats, StatTier, BattingLineupContext } from '@baseball/shared';
 import { PitchingStatsTable } from '../PitchingStatsTable';
 import { BattingStatsTable } from '../BattingStatsTable';
 import { TierToggle } from '../TierToggle';
@@ -61,7 +61,7 @@ export default async function LeagueStatsPage({
   // this page shows individual player stats, not W-L-T standings
   const { data: gamesData, error: gamesError } = await db
     .from('games')
-    .select('id, team_id')
+    .select('id, team_id, location_type, neutral_home_team')
     .in('team_id', teamIds)
     .in('status', ['completed', 'in_progress']);
   if (gamesError) throw new Error(`Failed to fetch league games: ${gamesError.message}`);
@@ -109,13 +109,44 @@ export default async function LeagueStatsPage({
 
   const allPlayerIds = new Set(playerList.map((p) => p.id));
 
+  // Build per-game lineup context so deriveBattingStats can recover stub
+  // batter IDs during our team's half-inning (mirrors compliance/page.tsx).
+  const lineupsByGameId = new Map<string, BattingLineupContext>();
+  if (gameIds.length > 0) {
+    const { data: lineupRows } = await db
+      .from('game_lineups')
+      .select('game_id, player_id, batting_order')
+      .in('game_id', gameIds);
+    const byGame = new Map<string, { playerId: string; battingOrder: number }[]>();
+    for (const row of lineupRows ?? []) {
+      if (!row.player_id || typeof row.batting_order !== 'number' || row.batting_order <= 0) continue;
+      const list = byGame.get(row.game_id) ?? [];
+      list.push({ playerId: row.player_id as string, battingOrder: row.batting_order });
+      byGame.set(row.game_id, list);
+    }
+    for (const g of gamesData ?? []) {
+      const ourLineup = byGame.get(g.id) ?? [];
+      if (ourLineup.length === 0) continue;
+      lineupsByGameId.set(g.id, {
+        ourLineup,
+        isHome: weAreHome(g.location_type as string, g.neutral_home_team as string | null),
+      });
+    }
+  }
+
+  // Filter reverted/reset events before deriving platform stats. The opponent
+  // branch below appends more events to rawEvents and re-runs the derivers,
+  // which re-applies the filter — filterResetAndReverted is idempotent.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const platformFilteredEvents: any[] = filterResetAndReverted(rawEvents) as any[];
+
   // Compute platform player stats
-  const pitchingStatsMap = derivePitchingStats(rawEvents, playerList);
+  const pitchingStatsMap = derivePitchingStats(platformFilteredEvents, playerList);
   const allPitchingStats: PitchingStats[] = Array.from(pitchingStatsMap.values())
     .filter((s) => allPlayerIds.has(s.playerId))
     .sort((a, b) => b.inningsPitchedOuts - a.inningsPitchedOuts);
 
-  const battingStatsMap = deriveBattingStats(rawEvents, playerList);
+  const battingStatsMap = deriveBattingStats(platformFilteredEvents, playerList, lineupsByGameId);
   const allBattingStats: BattingStats[] = Array.from(battingStatsMap.values())
     .filter((s) => allPlayerIds.has(s.playerId))
     .sort((a, b) => b.plateAppearances - a.plateAppearances);
@@ -168,8 +199,13 @@ export default async function LeagueStatsPage({
       (oppPlayers ?? []).map((p) => [p.id, p.opponent_team_id]),
     );
 
+    // Refilter the now-expanded rawEvents (includes opponent-team games)
+    // before computing opponent stats. filterResetAndReverted is idempotent.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allFilteredEvents: any[] = filterResetAndReverted(rawEvents) as any[];
+
     // Opponent batting stats — map OppBattingRow to BattingStats shape
-    const oppBattingRows = computeOpponentBatting(rawEvents, oppPlayerNameMap);
+    const oppBattingRows = computeOpponentBatting(allFilteredEvents, oppPlayerNameMap);
     for (const row of oppBattingRows) {
       const oppTeamId = oppPlayerTeamMap.get(row.playerId);
       const teamName = oppTeamId ? oppTeamNameMap.get(oppTeamId) : 'Unknown';
@@ -215,7 +251,7 @@ export default async function LeagueStatsPage({
       firstName: p.first_name,
       lastName: `${p.last_name} (${oppTeamNameMap.get(p.opponent_team_id) ?? 'Unknown'})`,
     }));
-    const oppPitchingMap = derivePitchingStats(rawEvents, oppPlayerList);
+    const oppPitchingMap = derivePitchingStats(allFilteredEvents, oppPlayerList);
     const oppPlayerIds = new Set((oppPlayers ?? []).map((p) => p.id));
     for (const [, s] of oppPitchingMap) {
       if (oppPlayerIds.has(s.playerId) && s.totalPitches > 0) {

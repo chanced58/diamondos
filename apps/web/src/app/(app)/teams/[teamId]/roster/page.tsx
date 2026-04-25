@@ -9,24 +9,20 @@ import {
   POSITION_ABBREVIATIONS,
   deriveBattingStats,
   derivePitchingStats,
+  filterResetAndReverted,
   formatBattingRate,
   formatInningsPitched,
+  weAreHome,
 } from '@baseball/shared';
-import type { BattingStats, PitchingStats } from '@baseball/shared';
+import type { BattingStats, BattingLineupContext, PitchingStats } from '@baseball/shared';
 import { RosterRowActions } from './RosterRowActions';
 import { StaffSection } from './StaffSection';
 import { ParentSection } from './ParentSection';
 import { DisabledPlayersSection } from './DisabledPlayersSection';
+import { RELEVANT_EVENT_TYPES } from '../../../compliance/constants';
 
 export const metadata: Metadata = { title: 'Roster' };
 export const dynamic = 'force-dynamic';
-
-const SEASON_EVENT_TYPES = [
-  'pitch_thrown', 'hit', 'out', 'strikeout', 'walk',
-  'hit_by_pitch', 'score', 'pitching_change', 'inning_change',
-  'game_start', 'double_play', 'sacrifice_bunt', 'sacrifice_fly',
-  'field_error',
-];
 
 const STAFF_ROLES = ['head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper', 'staff'];
 
@@ -364,16 +360,19 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     });
   }
 
-  // Fetch season stats
+  // Fetch season stats. Falls back to "all games" when no active season
+  // exists so coaches with rolling-roster setups still see player stats.
   const battingMap = new Map<string, BattingStats>();
   const pitchingMap = new Map<string, PitchingStats>();
 
-  if (season && players.length > 0) {
-    const { data: games } = await db
+  if (players.length > 0) {
+    let gamesQuery = db
       .from('games')
-      .select('id')
+      .select('id, location_type, neutral_home_team')
       .eq('team_id', params.teamId)
-      .eq('season_id', season.id);
+      .in('status', ['completed', 'in_progress']);
+    if (season) gamesQuery = gamesQuery.eq('season_id', season.id);
+    const { data: games } = await gamesQuery;
 
     const gameIds = (games ?? []).map((g) => g.id);
 
@@ -382,23 +381,51 @@ export default async function RosterPage({ params }: { params: { teamId: string 
         .from('game_events')
         .select('*')
         .in('game_id', gameIds)
-        .in('event_type', SEASON_EVENT_TYPES)
+        .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
         .order('game_id')
         .order('sequence_number');
 
       if (events && events.length > 0) {
+        // Strip reverted/reset events so undone pitches and resets don't
+        // leak into season totals (matches /compliance behavior).
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const filteredEvents: any[] = filterResetAndReverted(events) as any[];
+
+        // Build per-game lineup context so deriveBattingStats can recover
+        // stub batter IDs during our team's half-inning.
+        const lineupsByGameId = new Map<string, BattingLineupContext>();
+        const { data: lineupRows } = await db
+          .from('game_lineups')
+          .select('game_id, player_id, batting_order')
+          .in('game_id', gameIds);
+        const byGame = new Map<string, { playerId: string; battingOrder: number }[]>();
+        for (const row of lineupRows ?? []) {
+          if (!row.player_id || typeof row.batting_order !== 'number' || row.batting_order <= 0) continue;
+          const list = byGame.get(row.game_id) ?? [];
+          list.push({ playerId: row.player_id as string, battingOrder: row.batting_order });
+          byGame.set(row.game_id, list);
+        }
+        for (const g of games ?? []) {
+          const ourLineup = byGame.get(g.id) ?? [];
+          if (ourLineup.length === 0) continue;
+          lineupsByGameId.set(g.id, {
+            ourLineup,
+            isHome: weAreHome(g.location_type as string, g.neutral_home_team as string | null),
+          });
+        }
+
         const playerList = players.map((p) => ({
           id: p.id,
           firstName: p.first_name,
           lastName: p.last_name,
         }));
 
-        const bMap = deriveBattingStats(events, playerList);
+        const bMap = deriveBattingStats(filteredEvents, playerList, lineupsByGameId);
         for (const [id, s] of bMap) {
           if (s.plateAppearances > 0) battingMap.set(id, s);
         }
 
-        const pMap = derivePitchingStats(events, playerList);
+        const pMap = derivePitchingStats(filteredEvents, playerList);
         for (const [id, s] of pMap) {
           if (s.totalPitches > 0) pitchingMap.set(id, s);
         }

@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
-import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, weAreHome, filterResetAndReverted, EventType } from '@baseball/shared';
+import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, weAreHome, filterResetAndReverted } from '@baseball/shared';
 import type { PitchingStats, BattingStats, StatTier, BattingLineupContext } from '@baseball/shared';
 import { PitchingStatsTable } from './PitchingStatsTable';
 import { BattingStatsTable } from './BattingStatsTable';
@@ -17,17 +17,9 @@ import { TierToggle } from './TierToggle';
 import { getActiveLeague } from '@/lib/active-league';
 import { getTeamTier } from '@/lib/team-tier';
 import { hasFeature, Feature } from '@baseball/shared';
+import { RELEVANT_EVENT_TYPES } from './constants';
 
 export const metadata: Metadata = { title: 'Stats' };
-
-// Every EventType value plus the 'game_reset' literal (not in the enum — it's
-// an internal correction marker appended by actions.ts when a game is reset).
-// Derived from the enum so adding a new event type never requires updating
-// this list again — the prior hand-maintained allowlist silently dropped
-// dropped_third_strike, catcher_interference, triple_play, balk,
-// pickoff_attempt, rundown, baserunner_out, event_voided, and game_end,
-// causing season-level stats to undercount PAs, outs, and pitcher events.
-const RELEVANT_EVENT_TYPES = [...Object.values(EventType), 'game_reset'] as const;
 
 export default async function CompliancePage({
   searchParams,
