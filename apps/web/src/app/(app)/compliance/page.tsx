@@ -6,8 +6,9 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, weAreHome, filterResetAndReverted } from '@baseball/shared';
-import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
+import type { PitchingStats, BattingStats, StatTier, GameEvent } from '@baseball/shared';
 import { buildLineupsByGameId } from '@/lib/stats/lineups';
+import { fetchAllEventsForGames } from '@/lib/stats/fetch-events';
 import { PitchingStatsTable } from './PitchingStatsTable';
 import { BattingStatsTable } from './BattingStatsTable';
 import { OpponentsStatsTable } from './OpponentsStatsTable';
@@ -104,23 +105,22 @@ export default async function CompliancePage({
   const { data: gamesData } = await gamesQuery;
   const gameIds = (gamesData ?? []).map((g) => g.id);
 
-  // Get all relevant events for those games
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase select('*') returns untyped rows
-  const rawEvents: any[] = [];
-  if (gameIds.length > 0) {
-    const { data: events } = await db
-      .from('game_events')
-      .select('*')
-      .in('game_id', gameIds)
-      .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
-      .order('game_id')
-      .order('sequence_number');
-    for (const e of events ?? []) rawEvents.push(e);
-  }
+  // Get all relevant events for those games. Paginated: a season with
+  // 12+ scored games easily exceeds Supabase's default 1000-row PostgREST
+  // limit, which would otherwise silently truncate the events feed and
+  // the deriver would render ~20% of the correct stats.
+  const rawEvents = await fetchAllEventsForGames(
+    db,
+    gameIds,
+    RELEVANT_EVENT_TYPES as unknown as readonly string[],
+  );
 
-  // Filter out reverted/reset events per game
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const filteredEvents: any[] = filterResetAndReverted(rawEvents) as any[];
+  // Filter out reverted/reset events per game. The deriver signatures take
+  // GameEvent[] but internally read both camelCase and snake_case fields,
+  // so a single `as unknown as GameEvent[]` cast at each derive boundary
+  // (rather than typing the whole pipeline as any[]) keeps the
+  // intermediate fetch + filter strictly typed.
+  const filteredEvents = filterResetAndReverted(rawEvents);
 
   // Fetch per-game lineups so deriveBattingStats can infer the batter when a
   // PA-closing event carries a missing or 'unknown-batter' stub. Best-effort:
@@ -170,14 +170,19 @@ export default async function CompliancePage({
   // of pitcherId ?? opponentPitcherId, and any misattributed batting IDs).
   const teamPlayerIds = new Set(playerList.map((p) => p.id));
 
+  // derivePitchingStats / deriveBattingStats are typed as GameEvent[] but
+  // internally read snake_case + camelCase fields. computeOpponentBatting
+  // already accepts Record<string, unknown>[]. Cast only where needed.
+  const derivableEvents = filteredEvents as unknown as GameEvent[];
+
   // Compute pitching stats
-  const pitchingStatsMap = derivePitchingStats(filteredEvents, playerList);
+  const pitchingStatsMap = derivePitchingStats(derivableEvents, playerList);
   const allPitchingStats: PitchingStats[] = Array.from(pitchingStatsMap.values())
     .filter((s) => teamPlayerIds.has(s.playerId))
     .sort((a, b) => b.inningsPitchedOuts - a.inningsPitchedOuts);
 
   // Compute batting stats
-  const battingStatsMap = deriveBattingStats(filteredEvents, playerList, lineupsByGameId);
+  const battingStatsMap = deriveBattingStats(derivableEvents, playerList, lineupsByGameId);
   const allBattingStats: BattingStats[] = Array.from(battingStatsMap.values())
     .filter((s) => teamPlayerIds.has(s.playerId))
     .sort((a, b) => b.plateAppearances - a.plateAppearances);
@@ -291,7 +296,9 @@ export default async function CompliancePage({
         oppPlayers.map((p) => [p.id, p.opponent_team_id]),
       );
 
-      // Compute opponent batting across all games
+      // Compute opponent batting across all games. computeOpponentBatting's
+      // signature is Record<string, unknown>[], so pass filteredEvents
+      // directly (no GameEvent cast needed).
       const oppBattingRows = computeOpponentBatting(filteredEvents, oppPlayerNameMap);
 
       // Compute opponent pitching across all games
@@ -300,7 +307,7 @@ export default async function CompliancePage({
         firstName: p.first_name,
         lastName: p.last_name,
       }));
-      const oppPitchingMap = derivePitchingStats(filteredEvents, oppPlayerList);
+      const oppPitchingMap = derivePitchingStats(derivableEvents, oppPlayerList);
       const oppPlayerIds = new Set(oppPlayers.map((p) => p.id));
       const oppPitchingRows: PitchingStats[] = Array.from(oppPitchingMap.values())
         .filter((s) => oppPlayerIds.has(s.playerId) && s.totalPitches > 0);

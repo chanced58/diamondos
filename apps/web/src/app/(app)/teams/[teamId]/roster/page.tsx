@@ -13,13 +13,14 @@ import {
   formatBattingRate,
   formatInningsPitched,
 } from '@baseball/shared';
-import type { BattingStats, PitchingStats } from '@baseball/shared';
+import type { BattingStats, GameEvent, PitchingStats } from '@baseball/shared';
 import { RosterRowActions } from './RosterRowActions';
 import { StaffSection } from './StaffSection';
 import { ParentSection } from './ParentSection';
 import { DisabledPlayersSection } from './DisabledPlayersSection';
 import { RELEVANT_EVENT_TYPES } from '../../../compliance/constants';
 import { buildLineupsByGameId } from '@/lib/stats/lineups';
+import { fetchAllEventsForGames } from '@/lib/stats/fetch-events';
 
 export const metadata: Metadata = { title: 'Roster' };
 export const dynamic = 'force-dynamic';
@@ -377,19 +378,18 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     const gameIds = (games ?? []).map((g) => g.id);
 
     if (gameIds.length > 0) {
-      const { data: events } = await db
-        .from('game_events')
-        .select('*')
-        .in('game_id', gameIds)
-        .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
-        .order('game_id')
-        .order('sequence_number');
+      // Paginated to avoid Supabase's default 1000-row PostgREST cutoff
+      // silently truncating long seasons.
+      const events = await fetchAllEventsForGames(
+        db,
+        gameIds,
+        RELEVANT_EVENT_TYPES as unknown as readonly string[],
+      );
 
-      if (events && events.length > 0) {
+      if (events.length > 0) {
         // Strip reverted/reset events so undone pitches and resets don't
         // leak into season totals (matches /compliance behavior).
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const filteredEvents: any[] = filterResetAndReverted(events) as any[];
+        const filteredEvents = filterResetAndReverted(events) as unknown as GameEvent[];
 
         // Build per-game lineup context so deriveBattingStats can recover
         // stub batter IDs during our team's half-inning. Best-effort.

@@ -8,8 +8,9 @@ import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueTeamIds, getLeagueOpponentTeamIds } from '@baseball/database';
 import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, filterResetAndReverted } from '@baseball/shared';
-import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
+import type { PitchingStats, BattingStats, StatTier, GameEvent } from '@baseball/shared';
 import { buildLineupsByGameId } from '@/lib/stats/lineups';
+import { fetchAllEventsForGames } from '@/lib/stats/fetch-events';
 import { PitchingStatsTable } from '../PitchingStatsTable';
 import { BattingStatsTable } from '../BattingStatsTable';
 import { TierToggle } from '../TierToggle';
@@ -69,22 +70,14 @@ export default async function LeagueStatsPage({
 
   const gameIds = (gamesData ?? []).map((g) => g.id);
 
-  // Get all relevant events — fetch in batches to avoid OOM/timeout for large leagues
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rawEvents: any[] = [];
-  const BATCH_SIZE = 200;
-  for (let i = 0; i < gameIds.length; i += BATCH_SIZE) {
-    const batchGameIds = gameIds.slice(i, i + BATCH_SIZE);
-    const { data: events, error: eventsError } = await db
-      .from('game_events')
-      .select('*')
-      .in('game_id', batchGameIds)
-      .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
-      .order('game_id')
-      .order('sequence_number');
-    if (eventsError) throw eventsError;
-    for (const e of events ?? []) rawEvents.push(e);
-  }
+  // Get all relevant events. The helper paginates through Supabase's
+  // default 1000-row PostgREST limit so large leagues' events don't get
+  // silently truncated.
+  const rawEvents = await fetchAllEventsForGames(
+    db,
+    gameIds,
+    RELEVANT_EVENT_TYPES as unknown as readonly string[],
+  );
 
   // Get all players across all league teams
   const { data: allPlayers, error: playersError } = await db
@@ -121,16 +114,15 @@ export default async function LeagueStatsPage({
   // Filter reverted/reset events before deriving platform stats. The opponent
   // branch below appends more events to rawEvents and re-runs the derivers,
   // which re-applies the filter — filterResetAndReverted is idempotent.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const platformFilteredEvents: any[] = filterResetAndReverted(rawEvents) as any[];
+  const platformFilteredEvents = filterResetAndReverted(rawEvents);
 
   // Compute platform player stats
-  const pitchingStatsMap = derivePitchingStats(platformFilteredEvents, playerList);
+  const pitchingStatsMap = derivePitchingStats(platformFilteredEvents as unknown as GameEvent[], playerList);
   const allPitchingStats: PitchingStats[] = Array.from(pitchingStatsMap.values())
     .filter((s) => allPlayerIds.has(s.playerId))
     .sort((a, b) => b.inningsPitchedOuts - a.inningsPitchedOuts);
 
-  const battingStatsMap = deriveBattingStats(platformFilteredEvents, playerList, lineupsByGameId);
+  const battingStatsMap = deriveBattingStats(platformFilteredEvents as unknown as GameEvent[], playerList, lineupsByGameId);
   const allBattingStats: BattingStats[] = Array.from(battingStatsMap.values())
     .filter((s) => allPlayerIds.has(s.playerId))
     .sort((a, b) => b.plateAppearances - a.plateAppearances);
@@ -146,20 +138,18 @@ export default async function LeagueStatsPage({
       .in('status', ['completed', 'in_progress']);
     const oppGameIds = (oppGamesData ?? []).map((g) => g.id);
 
-    // Fetch events for opponent games not already fetched (dedup)
-    const missingGameIds = oppGameIds.filter((id) => !gameIds.includes(id));
+    // Fetch events for opponent games not already fetched (dedup). Set
+    // lookup keeps this O(n+m) instead of O(n·m); safe-append avoids ever
+    // tripping the JS engine's argument-count cap on `.push(...arr)`.
+    const gameIdSet = new Set(gameIds);
+    const missingGameIds = oppGameIds.filter((id) => !gameIdSet.has(id));
     if (missingGameIds.length > 0) {
-      for (let i = 0; i < missingGameIds.length; i += BATCH_SIZE) {
-        const batch = missingGameIds.slice(i, i + BATCH_SIZE);
-        const { data: events } = await db
-          .from('game_events')
-          .select('*')
-          .in('game_id', batch)
-          .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
-          .order('game_id')
-          .order('sequence_number');
-        for (const e of events ?? []) rawEvents.push(e);
-      }
+      const missingEvents = await fetchAllEventsForGames(
+        db,
+        missingGameIds,
+        RELEVANT_EVENT_TYPES as unknown as readonly string[],
+      );
+      Array.prototype.push.apply(rawEvents, missingEvents);
     }
 
     // Fetch opponent players
@@ -185,10 +175,10 @@ export default async function LeagueStatsPage({
 
     // Refilter the now-expanded rawEvents (includes opponent-team games)
     // before computing opponent stats. filterResetAndReverted is idempotent.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const allFilteredEvents: any[] = filterResetAndReverted(rawEvents) as any[];
+    const allFilteredEvents = filterResetAndReverted(rawEvents);
 
-    // Opponent batting stats — map OppBattingRow to BattingStats shape
+    // Opponent batting stats — map OppBattingRow to BattingStats shape.
+    // computeOpponentBatting takes Record<string, unknown>[] directly.
     const oppBattingRows = computeOpponentBatting(allFilteredEvents, oppPlayerNameMap);
     for (const row of oppBattingRows) {
       const oppTeamId = oppPlayerTeamMap.get(row.playerId);
@@ -235,7 +225,7 @@ export default async function LeagueStatsPage({
       firstName: p.first_name,
       lastName: `${p.last_name} (${oppTeamNameMap.get(p.opponent_team_id) ?? 'Unknown'})`,
     }));
-    const oppPitchingMap = derivePitchingStats(allFilteredEvents, oppPlayerList);
+    const oppPitchingMap = derivePitchingStats(allFilteredEvents as unknown as GameEvent[], oppPlayerList);
     const oppPlayerIds = new Set((oppPlayers ?? []).map((p) => p.id));
     for (const [, s] of oppPitchingMap) {
       if (oppPlayerIds.has(s.playerId) && s.totalPitches > 0) {
