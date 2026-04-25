@@ -455,11 +455,6 @@ export default function ScoringScreen() {
     await recordEvent(EventType.DROPPED_THIRD_STRIKE, gameState.inning, gameState.isTopOfInning, payload);
   }
 
-  // Dropped third strike is eligible when first base is unoccupied or there are 2 outs
-  const droppedThirdStrikeEligible = gameState
-    ? gameState.outs === 2 || !gameState.runnersOnBase.first
-    : false;
-
   // Runners currently on base — passed to PitchInput for the FC picker.
   // Memoised on the three runner IDs so a new array identity only
   // propagates when the underlying state actually changes; otherwise
@@ -560,7 +555,6 @@ export default function ScoringScreen() {
         onUndoLastEvent={handleUndo}
         runnersOnBase={runnersOnBase}
         onRecordDroppedThirdStrike={handleDroppedThirdStrike}
-        droppedThirdStrikeEligible={droppedThirdStrikeEligible}
         d3kModalOpen={showD3KModal}
         setD3KModalOpen={setShowD3KModal}
       />

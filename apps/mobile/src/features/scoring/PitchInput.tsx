@@ -44,10 +44,8 @@ interface PitchInputProps {
   onUndoLastEvent: () => void;
   runnersOnBase: { base: Base; runnerId: string }[];
   onRecordDroppedThirdStrike?: (details: DroppedThirdStrikeDetails) => void;
-  droppedThirdStrikeEligible?: boolean;
   // Controlled modal state — parent opens the modal automatically when a
-  // 3rd-strike pitch is recorded with D3K eligibility, and from the manual
-  // "Dropped 3rd K" button below.
+  // 3rd-strike pitch is recorded with D3K eligibility (per OBR 5.05(a)(2)).
   d3kModalOpen?: boolean;
   setD3KModalOpen?: (open: boolean) => void;
 }
@@ -115,7 +113,6 @@ export function PitchInput({
   onUndoLastEvent,
   runnersOnBase,
   onRecordDroppedThirdStrike,
-  droppedThirdStrikeEligible = false,
   d3kModalOpen = false,
   setD3KModalOpen,
 }: PitchInputProps) {
@@ -284,14 +281,6 @@ export function PitchInput({
           <OutcomeButton label="Triple Play" emoji="TP" onPress={onRecordTriplePlay} color="bg-zinc-800" />
           <OutcomeButton label="Pinch Hitter" emoji="PH" onPress={() => setSubModal('pinch_hitter')} color="bg-sky-700" />
           <OutcomeButton label="Pitching Change" emoji="🔄" onPress={() => setSubModal('pitching_change')} color="bg-sky-800" />
-          {droppedThirdStrikeEligible && onRecordDroppedThirdStrike && (
-            <OutcomeButton
-              label="Dropped 3rd K"
-              emoji="K!"
-              onPress={() => setShowD3KModal(true)}
-              color="bg-amber-600"
-            />
-          )}
         </View>
       </View>
 
