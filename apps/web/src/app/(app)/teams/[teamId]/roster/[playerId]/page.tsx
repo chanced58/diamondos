@@ -9,6 +9,7 @@ import {
   POSITION_ABBREVIATIONS,
   formatDate,
   derivePitchingStats,
+  filterResetAndReverted,
   formatInningsPitched,
   formatAverage,
   deriveBattingStats,
@@ -18,6 +19,8 @@ import {
 import type { PitchingStats, BattingStats } from '@baseball/shared';
 import { EditPlayerForm, DeactivatePlayerForm, ReactivatePlayerForm } from './EditPlayerForm';
 import { DrillRecommendations } from './DrillRecommendations';
+import { RELEVANT_EVENT_TYPES } from '../../../../compliance/constants';
+import { buildLineupsByGameId } from '@/lib/stats/lineups';
 
 export const metadata: Metadata = { title: 'Player Profile' };
 
@@ -108,6 +111,8 @@ export default async function PlayerPage({
   }
 
   // ── Season stats for this player (pitching + batting) ────────────────────
+  // Falls back to "all games" when no active season exists so coaches with
+  // rolling-roster setups still see player stats.
   let pitchingStats: PitchingStats | null = null;
   let battingStats: BattingStats | null = null;
   {
@@ -118,41 +123,49 @@ export default async function PlayerPage({
       .eq('is_active', true)
       .maybeSingle();
 
-    if (season) {
-      const { data: games } = await db
-        .from('games')
-        .select('id')
-        .eq('team_id', params.teamId)
-        .eq('season_id', season.id);
+    let gamesQuery = db
+      .from('games')
+      .select('id, location_type, neutral_home_team')
+      .eq('team_id', params.teamId)
+      .in('status', ['completed', 'in_progress']);
+    if (season) gamesQuery = gamesQuery.eq('season_id', season.id);
+    const { data: games } = await gamesQuery;
 
-      const gameIds = (games ?? []).map((g) => g.id);
+    const gameIds = (games ?? []).map((g) => g.id);
 
-      if (gameIds.length > 0) {
-        const { data: events } = await db
-          .from('game_events')
-          .select('*')
-          .in('game_id', gameIds)
-          .in('event_type', [
-            'pitch_thrown', 'hit', 'out', 'strikeout', 'walk',
-            'hit_by_pitch', 'score', 'pitching_change', 'inning_change',
-            'game_start', 'double_play', 'sacrifice_bunt', 'sacrifice_fly',
-            'field_error',
-          ])
-          .order('game_id')
-          .order('sequence_number');
+    if (gameIds.length > 0) {
+      const { data: events } = await db
+        .from('game_events')
+        .select('*')
+        .in('game_id', gameIds)
+        .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
+        .order('game_id')
+        .order('sequence_number');
 
-        if (events && events.length > 0) {
-          const playerEntry = [
-            { id: player.id, firstName: player.first_name, lastName: player.last_name },
-          ];
+      if (events && events.length > 0) {
+        // Strip reverted/reset events so they don't leak into totals.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const filteredEvents: any[] = filterResetAndReverted(events) as any[];
 
-          const pitchingMap = derivePitchingStats(events, playerEntry);
-          pitchingStats = pitchingMap.get(player.id) ?? null;
+        // Build per-game lineup context for stub-batter recovery during our
+        // team's half-inning. Pulls the full team roster (not just this
+        // player) so the lineup covers every batting slot. Best-effort.
+        const lineupsByGameId = await buildLineupsByGameId(db, (games ?? []).map((g) => ({
+          id: g.id,
+          location_type: g.location_type as string,
+          neutral_home_team: g.neutral_home_team as string | null,
+        })));
 
-          const battingMap = deriveBattingStats(events, playerEntry);
-          const bStats = battingMap.get(player.id) ?? null;
-          battingStats = bStats && bStats.plateAppearances > 0 ? bStats : null;
-        }
+        const playerEntry = [
+          { id: player.id, firstName: player.first_name, lastName: player.last_name },
+        ];
+
+        const pitchingMap = derivePitchingStats(filteredEvents, playerEntry);
+        pitchingStats = pitchingMap.get(player.id) ?? null;
+
+        const battingMap = deriveBattingStats(filteredEvents, playerEntry, lineupsByGameId);
+        const bStats = battingMap.get(player.id) ?? null;
+        battingStats = bStats && bStats.plateAppearances > 0 ? bStats : null;
       }
     }
   }

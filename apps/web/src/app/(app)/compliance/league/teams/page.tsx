@@ -7,7 +7,8 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueTeams, leagueMemberName } from '@baseball/database';
-import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, weAreHome } from '@baseball/shared';
+import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, filterResetAndReverted, weAreHome } from '@baseball/shared';
+import { buildLineupsByGameId } from '@/lib/stats/lineups';
 import { RELEVANT_EVENT_TYPES } from '../../constants';
 
 export const metadata: Metadata = { title: 'Team Comparison' };
@@ -87,6 +88,17 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
     for (const e of events ?? []) rawEvents.push(e);
   }
 
+  // Filter reverted/reset events before any per-team derivation.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const filteredEvents: any[] = filterResetAndReverted(rawEvents) as any[];
+
+  // Build per-game lineup context for all platform-team games. Best-effort.
+  const lineupsByGameId = await buildLineupsByGameId(db, ((allGames ?? []) as any[]).map((g) => ({
+    id: g.id as string,
+    location_type: g.location_type as string,
+    neutral_home_team: g.neutral_home_team as string | null,
+  })));
+
   // Get all platform players
   const { data: allPlayers } = platformIds.length > 0
     ? await db.from('players').select('id, team_id, first_name, last_name').in('team_id', platformIds)
@@ -117,13 +129,13 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
       else ties++;
     }
 
-    const teamEvents = rawEvents.filter((e: any) => teamGameIds.has(e.game_id));
+    const teamEvents = filteredEvents.filter((e: any) => teamGameIds.has(e.game_id));
     const teamPlayers = (allPlayers ?? [])
       .filter((p: any) => p.team_id === tid)
       .map((p: any) => ({ id: p.id, firstName: p.first_name, lastName: p.last_name }));
     const teamPlayerIds = new Set(teamPlayers.map((p: any) => p.id));
 
-    const battingMap = deriveBattingStats(teamEvents, teamPlayers);
+    const battingMap = deriveBattingStats(teamEvents, teamPlayers, lineupsByGameId);
     let totalHits = 0, totalAB = 0;
     for (const [, s] of battingMap) {
       if (!teamPlayerIds.has(s.playerId)) continue;
@@ -172,7 +184,7 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
       else ties++;
     }
 
-    const oppEvents = rawEvents.filter((e: any) => oppGameIds.has(e.game_id));
+    const oppEvents = filteredEvents.filter((e: any) => oppGameIds.has(e.game_id));
     const thisOppPlayers = (oppPlayers ?? []).filter((p: any) => p.opponent_team_id === otId);
     const oppPlayerNameMap = new Map<string, string>(
       thisOppPlayers.map((p: any) => [p.id, `${p.first_name} ${p.last_name}`]),

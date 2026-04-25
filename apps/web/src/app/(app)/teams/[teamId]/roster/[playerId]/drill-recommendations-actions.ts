@@ -4,11 +4,14 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
   deriveBattingStats,
   derivePitchingStats,
+  filterResetAndReverted,
   formatBattingRate,
   type AiDrillRecommendations,
   type PracticeDrill,
   type PracticeDrillVisibility,
 } from '@baseball/shared';
+import { RELEVANT_EVENT_TYPES } from '../../../../compliance/constants';
+import { buildLineupsByGameId } from '@/lib/stats/lineups';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
 import {
@@ -211,38 +214,45 @@ async function loadPlayerContext(
   let recentPitchingLine: string | null = null;
   const seasonId = seasonResult.data?.id as string | undefined;
 
-  if (seasonId) {
-    const { data: games } = await db
+  // Falls back to "all games" when no active season exists so drill
+  // signals stay aligned with what the player profile page displays.
+  {
+    let gamesQuery = db
       .from('games')
-      .select('id')
+      .select('id, location_type, neutral_home_team')
       .eq('team_id', teamId)
-      .eq('season_id', seasonId);
-    const gameIds = ((games ?? []) as Array<{ id: string }>).map((g) => g.id);
+      .in('status', ['completed', 'in_progress']);
+    if (seasonId) gamesQuery = gamesQuery.eq('season_id', seasonId);
+    const { data: games } = await gamesQuery;
+    const gameIds = ((games ?? []) as Array<{ id: string; location_type: string; neutral_home_team: string | null }>).map((g) => g.id);
     if (gameIds.length > 0) {
       const { data: events } = await db
         .from('game_events')
         .select('*')
         .in('game_id', gameIds)
-        .in('event_type', [
-          'pitch_thrown',
-          'hit',
-          'out',
-          'strikeout',
-          'walk',
-          'hit_by_pitch',
-          'score',
-          'pitching_change',
-          'inning_change',
-          'game_start',
-          'double_play',
-          'sacrifice_bunt',
-          'sacrifice_fly',
-          'field_error',
-        ])
+        .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
         .order('game_id')
         .order('sequence_number');
 
       if (events && events.length > 0) {
+        // Strip reverted/reset events so undone pitches don't skew recent
+        // batting/pitching focus signals.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const filteredEvents: any[] = filterResetAndReverted(events) as any[];
+
+        // Build per-game lineup context so deriveBattingStats can recover
+        // stub batter IDs during our team's half-inning. Best-effort: a DB
+        // error logs and yields an empty Map rather than aborting the
+        // recommendation flow.
+        const lineupsByGameId = await buildLineupsByGameId(
+          db,
+          ((games ?? []) as Array<{ id: string; location_type: string; neutral_home_team: string | null }>).map((g) => ({
+            id: g.id,
+            location_type: g.location_type,
+            neutral_home_team: g.neutral_home_team,
+          })),
+        );
+
         const playerEntry = [
           {
             id: player.id,
@@ -251,7 +261,7 @@ async function loadPlayerContext(
           },
         ];
 
-        const battingMap = deriveBattingStats(events, playerEntry);
+        const battingMap = deriveBattingStats(filteredEvents, playerEntry, lineupsByGameId);
         const bs = battingMap.get(player.id);
         if (bs && bs.plateAppearances > 0) {
           recentBattingLine = `${formatBattingRate(bs.avg)}/${formatBattingRate(bs.obp)}/${formatBattingRate(bs.slg)} · PA ${bs.plateAppearances} · K% ${(bs.kPct * 100).toFixed(0)}% · BB% ${(bs.bbPct * 100).toFixed(0)}%`;
@@ -271,7 +281,7 @@ async function loadPlayerContext(
           }
         }
 
-        const pitchingMap = derivePitchingStats(events, playerEntry);
+        const pitchingMap = derivePitchingStats(filteredEvents, playerEntry);
         const ps = pitchingMap.get(player.id);
         if (ps && ps.totalPAs > 0) {
           recentPitchingLine = `ERA ${isFinite(ps.era) ? ps.era.toFixed(2) : '---'} · WHIP ${isFinite(ps.whip) ? ps.whip.toFixed(2) : '---'} · K ${ps.strikeouts} · BB ${ps.walksAllowed} · STR% ${(ps.strikePercentage * 100).toFixed(0)}%`;

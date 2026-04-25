@@ -5,8 +5,9 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
-import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, weAreHome, filterResetAndReverted, EventType } from '@baseball/shared';
-import type { PitchingStats, BattingStats, StatTier, BattingLineupContext } from '@baseball/shared';
+import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, weAreHome, filterResetAndReverted } from '@baseball/shared';
+import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
+import { buildLineupsByGameId } from '@/lib/stats/lineups';
 import { PitchingStatsTable } from './PitchingStatsTable';
 import { BattingStatsTable } from './BattingStatsTable';
 import { OpponentsStatsTable } from './OpponentsStatsTable';
@@ -17,17 +18,9 @@ import { TierToggle } from './TierToggle';
 import { getActiveLeague } from '@/lib/active-league';
 import { getTeamTier } from '@/lib/team-tier';
 import { hasFeature, Feature } from '@baseball/shared';
+import { RELEVANT_EVENT_TYPES } from './constants';
 
 export const metadata: Metadata = { title: 'Stats' };
-
-// Every EventType value plus the 'game_reset' literal (not in the enum — it's
-// an internal correction marker appended by actions.ts when a game is reset).
-// Derived from the enum so adding a new event type never requires updating
-// this list again — the prior hand-maintained allowlist silently dropped
-// dropped_third_strike, catcher_interference, triple_play, balk,
-// pickoff_attempt, rundown, baserunner_out, event_voided, and game_end,
-// causing season-level stats to undercount PAs, outs, and pitcher events.
-const RELEVANT_EVENT_TYPES = [...Object.values(EventType), 'game_reset'] as const;
 
 export default async function CompliancePage({
   searchParams,
@@ -130,32 +123,14 @@ export default async function CompliancePage({
   const filteredEvents: any[] = filterResetAndReverted(rawEvents) as any[];
 
   // Fetch per-game lineups so deriveBattingStats can infer the batter when a
-  // PA-closing event carries a missing or 'unknown-batter' stub. The
-  // inference only fires during our team's half-inning — if the lineup is
-  // absent for a game, the aggregator falls back to dropping the event
-  // (same behavior as before this parameter existed).
-  const lineupsByGameId = new Map<string, BattingLineupContext>();
-  if (gameIds.length > 0) {
-    const { data: lineupRows } = await db
-      .from('game_lineups')
-      .select('game_id, player_id, batting_order')
-      .in('game_id', gameIds);
-    const byGame = new Map<string, { playerId: string; battingOrder: number }[]>();
-    for (const row of lineupRows ?? []) {
-      if (!row.player_id || typeof row.batting_order !== 'number' || row.batting_order <= 0) continue;
-      const list = byGame.get(row.game_id) ?? [];
-      list.push({ playerId: row.player_id as string, battingOrder: row.batting_order });
-      byGame.set(row.game_id, list);
-    }
-    for (const g of gamesData ?? []) {
-      const ourLineup = byGame.get(g.id) ?? [];
-      if (ourLineup.length === 0) continue;
-      lineupsByGameId.set(g.id, {
-        ourLineup,
-        isHome: weAreHome(g.location_type as string, g.neutral_home_team as string | null),
-      });
-    }
-  }
+  // PA-closing event carries a missing or 'unknown-batter' stub. Best-effort:
+  // returns an empty Map on DB error so stats still derive (without stub
+  // recovery) instead of 500ing the page.
+  const lineupsByGameId = await buildLineupsByGameId(db, (gamesData ?? []).map((g) => ({
+    id: g.id,
+    location_type: g.location_type as string,
+    neutral_home_team: g.neutral_home_team as string | null,
+  })));
 
   // Fetch ALL players (not just active) so deactivated players who
   // participated in past games still resolve their names in stats.
