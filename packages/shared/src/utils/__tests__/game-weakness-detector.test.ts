@@ -9,6 +9,7 @@ import {
   detectWeaknesses,
   WEAKNESS_THRESHOLDS,
 } from '../game-weakness-detector';
+import { applyPitchRevertedTyped } from '../game-history';
 
 let sequenceCounter = 0;
 
@@ -214,6 +215,41 @@ describe('detectWeaknesses — walks_issued', () => {
     }
     const signals = detectWeaknesses(events, CTX);
     expect(signals.find((s) => s.code === WeaknessCode.WALKS_ISSUED)).toBeUndefined();
+  });
+
+  it('does not double-count walks that were undone via pitch_reverted', () => {
+    // Simulates: scorer logs a 4-ball pitch that auto-records a WALK, hits
+    // Undo (which inserts a PITCH_REVERTED back to before the 4th ball), then
+    // re-scores the at-bat with a different outcome that also walks. Without
+    // applyPitchRevertedTyped, both WALK events count and walks_issued is
+    // inflated. The query layer (getGameWeaknesses) MUST filter first.
+    const events: GameEvent[] = [];
+    for (let i = 0; i < WEAKNESS_THRESHOLDS.walksIssued; i++) {
+      const pitchSeq = sequenceCounter + 1;
+      events.push(
+        event({
+          eventType: EventType.PITCH_THROWN,
+          payload: { outcome: PitchOutcome.BALL, pitcherId: 'p-us-1', opponentBatterId: 'opp-1' },
+        }),
+      );
+      events.push(event({ eventType: EventType.WALK, payload: { pitcherId: 'p-us-1', opponentBatterId: 'opp-1' } }));
+      events.push(event({ eventType: EventType.PITCH_REVERTED, payload: { revertToSequenceNumber: pitchSeq - 1 } }));
+      events.push(
+        event({
+          eventType: EventType.PITCH_THROWN,
+          payload: { outcome: PitchOutcome.BALL, pitcherId: 'p-us-1', opponentBatterId: 'opp-1' },
+        }),
+      );
+      events.push(event({ eventType: EventType.WALK, payload: { pitcherId: 'p-us-1', opponentBatterId: 'opp-1' } }));
+    }
+
+    const unfiltered = detectWeaknesses(events, CTX);
+    const unfilteredWalks = unfiltered.find((s) => s.code === WeaknessCode.WALKS_ISSUED);
+    expect(unfilteredWalks?.evidence.value).toBe(WEAKNESS_THRESHOLDS.walksIssued * 2);
+
+    const filtered = detectWeaknesses(applyPitchRevertedTyped(events), CTX);
+    const filteredWalks = filtered.find((s) => s.code === WeaknessCode.WALKS_ISSUED);
+    expect(filteredWalks?.evidence.value).toBe(WEAKNESS_THRESHOLDS.walksIssued);
   });
 });
 
