@@ -1,4 +1,5 @@
 import {
+  applyPitchRevertedTyped,
   detectWeaknesses,
   EventType,
   type GameEvent,
@@ -37,7 +38,7 @@ export async function getGameWeaknesses(
     ((playerRows ?? []) as unknown as Array<{ id: string }>).map((p) => p.id),
   );
 
-  const events: GameEvent[] = ((eventRows ?? []) as unknown as Array<{
+  const rawEvents: GameEvent[] = ((eventRows ?? []) as unknown as Array<{
     id: string;
     game_id: string;
     sequence_number: number;
@@ -60,6 +61,13 @@ export async function getGameWeaknesses(
     createdBy: r.created_by,
     deviceId: r.device_id,
   }));
+
+  // Apply pitch_reverted / event_voided markers so undone events don't
+  // get double-counted by the detectors. Without this, an at-bat that
+  // ended in a walk, was Undo'd, and re-scored produces two WALK events
+  // in the raw log even though only one walk was actually issued —
+  // inflating walks_issued (and other) signals.
+  const events = applyPitchRevertedTyped(rawEvents);
 
   const signals = detectWeaknesses(events, { ourPlayerIds });
   if (signals.length === 0) return [];
