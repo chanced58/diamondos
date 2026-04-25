@@ -88,6 +88,8 @@ export async function getLinkedGameForPractice(
   const { data, error } = await supabase
     .from('practices')
     .select('id, linked_game_id, prep_focus_summary, games:linked_game_id(opponent_name, scheduled_at)')
+    // (opponent_name may be null when the linked game is a TBD playoff slot;
+    //  the caller falls back to "TBD" at line ~109.)
     .eq('id', practiceId)
     .maybeSingle();
   if (error) throw error;
@@ -97,7 +99,7 @@ export async function getLinkedGameForPractice(
     id: string;
     linked_game_id: string | null;
     prep_focus_summary: string | null;
-    games: { opponent_name: string; scheduled_at: string } | null;
+    games: { opponent_name: string | null; scheduled_at: string } | null;
   };
 
   if (!row.linked_game_id || !row.games) return null;
@@ -106,7 +108,7 @@ export async function getLinkedGameForPractice(
     practiceId: row.id,
     linkedGameId: row.linked_game_id,
     prepFocusSummary: row.prep_focus_summary ?? undefined,
-    opponentName: row.games.opponent_name,
+    opponentName: row.games.opponent_name ?? 'TBD',
     scheduledAt: row.games.scheduled_at,
   };
 }

@@ -14,7 +14,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const supabase = createServerClient();
   const game = await getGameById(supabase, params.gameId).catch(() => null);
   if (!game) return { title: 'Live Game' };
-  return { title: `Live: ${game.opponent_name}` };
+  return { title: `Live: ${game.opponent_name ?? 'TBD'}` };
 }
 
 export default async function LiveGamePage({ params }: Props): Promise<JSX.Element | null> {

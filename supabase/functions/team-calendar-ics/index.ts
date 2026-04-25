@@ -85,6 +85,10 @@ Deno.serve(async (req: Request) => {
       .from('games')
       .select('id, scheduled_at, opponent_name, venue_name, location_type, status')
       .eq('team_id', teamId)
+      // TBD-opponent games (NULL opponent_name) are excluded from the public
+      // calendar feed — a "vs ?" entry isn't useful to subscribers, and the
+      // game gets included automatically once the coach sets the opponent.
+      .not('opponent_name', 'is', null)
       .gte('scheduled_at', startIso)
       .lte('scheduled_at', endIso),
   ]);

@@ -12,7 +12,7 @@ function CancelButton({ gameName }: { gameName: string }) {
       disabled={pending}
       className="text-sm text-red-600 hover:text-red-800 underline disabled:opacity-50"
       onClick={(e) => {
-        if (!confirm(`Cancel the game against ${gameName}?`)) e.preventDefault();
+        if (!confirm(`Cancel the game against ${gameName || 'TBD opponent'}?`)) e.preventDefault();
       }}
     >
       {pending ? 'Cancelling...' : 'Cancel game'}

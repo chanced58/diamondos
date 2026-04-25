@@ -189,6 +189,10 @@ function buildFocusSummary(
   weaknesses: HydratedWeaknessSignal[],
   tendencies: DerivedScoutingTag[],
 ): string {
+  // Defensive: getNextGameForTeam filters out TBD opponents, so this should
+  // never be called with an empty name. The fallback keeps the summary
+  // grammatical if a caller bypasses that filter.
+  const name = opponentName || 'opponent';
   const parts: string[] = [];
   if (weaknesses.length > 0) {
     const labels = weaknesses.slice(0, 3).map((w) => w.label.toLowerCase());
@@ -196,10 +200,10 @@ function buildFocusSummary(
   }
   if (tendencies.length > 0) {
     const tendencyLabels = tendencies.slice(0, 3).map((t) => t.tagValue);
-    parts.push(`Accounting for ${opponentName} tendencies: ${tendencyLabels.join(', ')}.`);
+    parts.push(`Accounting for ${name} tendencies: ${tendencyLabels.join(', ')}.`);
   }
   if (parts.length === 0) {
-    return `Prep for ${opponentName} — no specific tendencies or weaknesses detected yet.`;
+    return `Prep for ${name} — no specific tendencies or weaknesses detected yet.`;
   }
-  return `Prep for ${opponentName}. ${parts.join(' ')}`;
+  return `Prep for ${name}. ${parts.join(' ')}`;
 }

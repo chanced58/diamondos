@@ -20,7 +20,8 @@ type SupabaseClient = ReturnType<typeof createClient>;
 interface GameRow {
   id: string;
   team_id: string;
-  opponent_name: string;
+  // Nullable in DB (TBD slots) — callers must guard before using.
+  opponent_name: string | null;
   scheduled_at: string;
   home_score: number;
   away_score: number;
@@ -66,6 +67,9 @@ async function fetchCompletedGamesForSeason(
     `)
     .eq('season_id', seasonId)
     .eq('status', 'completed')
+    // MaxPreps requires a real opponent — TBD slots that somehow ended up
+    // completed (shouldn't happen, but be defensive) are excluded.
+    .not('opponent_name', 'is', null)
     .order('scheduled_at', { ascending: true });
 
   if (error) throw error;
@@ -106,7 +110,8 @@ function buildTxtForSingleGame(
 ): string {
   const gameDate = new Date(game.scheduled_at).toLocaleDateString('en-US');
   const teamName = game.seasons?.teams?.name ?? 'Team';
-  const opponent = game.opponent_name;
+  // Caller already 400'd on null opponent; the fallback only satisfies TS.
+  const opponent = game.opponent_name ?? '';
   const homeScore = game.home_score;
   const awayScore = game.away_score;
 
@@ -167,7 +172,7 @@ function buildAggregatedGame(
     gameId: game.id,
     gameDate: game.scheduled_at,
     teamName,
-    opponentName: game.opponent_name,
+    opponentName: game.opponent_name ?? '',
     homeScore: game.home_score,
     awayScore: game.away_score,
     players,
@@ -206,6 +211,9 @@ Deno.serve(async (req: Request) => {
   if (body.gameId) {
     const game = await fetchGame(supabase, body.gameId);
     if (!game) return jsonError(404, 'Game not found');
+    if (!game.opponent_name) {
+      return jsonError(400, 'Cannot export a game with a TBD opponent — set the opponent first.');
+    }
 
     const { playerStats, players } = await aggregateOneGame(supabase, game);
 

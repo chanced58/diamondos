@@ -19,6 +19,9 @@ export async function getNextGameForTeam(
     .select('*')
     .eq('team_id', teamId)
     .in('status', [GameStatus.SCHEDULED, GameStatus.POSTPONED])
+    // TBD-opponent games (opponent_name IS NULL) are excluded from prep — there
+    // is nothing to prepare for until the bracket fills in.
+    .not('opponent_name', 'is', null)
     .gt('scheduled_at', fromIso)
     .order('scheduled_at', { ascending: true })
     .limit(10);
@@ -32,7 +35,7 @@ interface RawGameRow {
   id: string;
   season_id: string;
   team_id: string;
-  opponent_name: string;
+  opponent_name: string | null;
   opponent_team_id: string | null;
   scheduled_at: string;
   location_type: string;

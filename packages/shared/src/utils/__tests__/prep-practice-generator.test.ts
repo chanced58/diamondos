@@ -90,7 +90,7 @@ describe('generatePrepPractice', () => {
   it('always includes warmup + stretch blocks', () => {
     const result = generatePrepPractice({
       nextGame: NEXT_GAME,
-      opponentName: NEXT_GAME.opponentName,
+      opponentName: NEXT_GAME.opponentName ?? '',
       tendencies: [],
       weaknesses: [],
       drills: [],
@@ -112,7 +112,7 @@ describe('generatePrepPractice', () => {
 
     const result = generatePrepPractice({
       nextGame: NEXT_GAME,
-      opponentName: NEXT_GAME.opponentName,
+      opponentName: NEXT_GAME.opponentName ?? '',
       tendencies: [],
       weaknesses: [weakness(WeaknessCode.K_VS_OFFSPEED, 'Ks on off-speed', 0.8, ['def-1'])],
       drills,
@@ -132,7 +132,7 @@ describe('generatePrepPractice', () => {
 
     const result = generatePrepPractice({
       nextGame: NEXT_GAME,
-      opponentName: NEXT_GAME.opponentName,
+      opponentName: NEXT_GAME.opponentName ?? '',
       tendencies: [],
       weaknesses: [weakness(WeaknessCode.RISP_FAILURE, 'RISP', 0.7, ['def-1'])],
       drills,
@@ -146,7 +146,7 @@ describe('generatePrepPractice', () => {
   it('reports hasGaps=true when weaknesses have no matching drill', () => {
     const result = generatePrepPractice({
       nextGame: NEXT_GAME,
-      opponentName: NEXT_GAME.opponentName,
+      opponentName: NEXT_GAME.opponentName ?? '',
       tendencies: [],
       weaknesses: [weakness(WeaknessCode.K_VS_OFFSPEED, 'Ks', 0.8, ['nonexistent'])],
       drills: [],
@@ -167,7 +167,7 @@ describe('generatePrepPractice', () => {
 
     const result = generatePrepPractice({
       nextGame: NEXT_GAME,
-      opponentName: NEXT_GAME.opponentName,
+      opponentName: NEXT_GAME.opponentName ?? '',
       tendencies: [],
       weaknesses: [
         weakness(WeaknessCode.WALKS_ISSUED, 'Low', 0.3, ['def-low']),
@@ -208,7 +208,7 @@ describe('generatePrepPractice', () => {
 
     const result = generatePrepPractice({
       nextGame: NEXT_GAME,
-      opponentName: NEXT_GAME.opponentName,
+      opponentName: NEXT_GAME.opponentName ?? '',
       tendencies: [],
       weaknesses: Array.from({ length: 10 }, (_, i) =>
         weakness(WeaknessCode.K_VS_OFFSPEED, 'Ks', 0.9 - i * 0.05, [`def-${i}`]),

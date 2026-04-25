@@ -151,7 +151,7 @@ export default async function GameDetailPage({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
-              {vsAt} {game.opponent_name}
+              {vsAt} {game.opponent_name ?? 'TBD'}
             </h1>
             <p className="text-gray-500 text-sm mt-1">
               {formatDate(game.scheduled_at)} · {formatTime(game.scheduled_at)}
@@ -216,7 +216,7 @@ export default async function GameDetailPage({
         <div className="mb-6">
           <EditGameButton
             gameId={game.id}
-            opponentName={game.opponent_name}
+            opponentName={game.opponent_name ?? ''}
             opponentTeamId={game.opponent_team_id ?? ''}
             opponentTeams={uniqueOpponentTeams}
             scheduledDate={scheduledDate}
@@ -244,7 +244,7 @@ export default async function GameDetailPage({
             </div>
             <div className="text-2xl text-gray-300 font-light">—</div>
             <div>
-              <p className="text-sm text-gray-500 mb-1">{game.opponent_name}</p>
+              <p className="text-sm text-gray-500 mb-1">{game.opponent_name ?? 'TBD'}</p>
               <p className="text-5xl font-bold text-gray-900">
                 {isHome ? game.away_score : game.home_score}
               </p>
@@ -308,7 +308,7 @@ export default async function GameDetailPage({
           <LocationMap
             latitude={game.latitude}
             longitude={game.longitude}
-            label={game.venue_name ?? game.opponent_name}
+            label={game.venue_name ?? game.opponent_name ?? 'TBD'}
             placeId={game.place_id ?? undefined}
           />
         </div>
@@ -321,21 +321,32 @@ export default async function GameDetailPage({
           <p className="text-sm text-gray-500 mb-4">
             Set your lineup, then start the game to begin pitch-by-pitch scoring.
           </p>
-          <div className="flex flex-wrap gap-2 mb-3">
-            <Link
-              href={`/games/${game.id}/lineup`}
-              className="inline-block text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium transition-colors"
-            >
-              {hasLineup ? 'Edit Lineup' : 'Set Lineup'}
-            </Link>
-            <Link
-              href={`/games/${game.id}/opponent-lineup`}
-              className="inline-block text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium transition-colors"
-            >
-              {hasOpponentLineup ? 'Edit Opponent Lineup' : 'Set Opponent Lineup'}
-            </Link>
-          </div>
-          {hasLineup && <StartGameForm gameId={game.id} />}
+          {!game.opponent_name ? (
+            // TBD opponents block scoring — startGameAction would fail trying to
+            // auto-create an opponent_teams row with a NULL name. The banner
+            // above already prompts the coach to fill in the opponent first.
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Set the opponent above before configuring lineups or starting the game.
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2 mb-3">
+                <Link
+                  href={`/games/${game.id}/lineup`}
+                  className="inline-block text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  {hasLineup ? 'Edit Lineup' : 'Set Lineup'}
+                </Link>
+                <Link
+                  href={`/games/${game.id}/opponent-lineup`}
+                  className="inline-block text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  {hasOpponentLineup ? 'Edit Opponent Lineup' : 'Set Opponent Lineup'}
+                </Link>
+              </div>
+              {hasLineup && <StartGameForm gameId={game.id} />}
+            </>
+          )}
         </div>
       )}
 
@@ -384,7 +395,7 @@ export default async function GameDetailPage({
               </div>
               <CancelGameForm
                 gameId={game.id}
-                opponentName={game.opponent_name}
+                opponentName={game.opponent_name ?? ''}
                 currentStatus={game.status}
               />
             </div>

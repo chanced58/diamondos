@@ -697,7 +697,7 @@ export type Database = {
           longitude: number | null
           neutral_home_team: string | null
           notes: string | null
-          opponent_name: string
+          opponent_name: string | null
           opponent_team_id: string | null
           outs: number
           place_id: string | null
@@ -724,7 +724,7 @@ export type Database = {
           longitude?: number | null
           neutral_home_team?: string | null
           notes?: string | null
-          opponent_name: string
+          opponent_name?: string | null
           opponent_team_id?: string | null
           outs?: number
           place_id?: string | null
@@ -751,7 +751,7 @@ export type Database = {
           longitude?: number | null
           neutral_home_team?: string | null
           notes?: string | null
-          opponent_name?: string
+          opponent_name?: string | null
           opponent_team_id?: string | null
           outs?: number
           place_id?: string | null

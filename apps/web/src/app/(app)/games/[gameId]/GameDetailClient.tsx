@@ -14,6 +14,7 @@ type OpponentTeamOption = {
 
 type GameEditProps = {
   gameId: string;
+  /** Empty string when opponent is TBD. */
   opponentName: string;
   opponentTeamId: string;
   opponentTeams: OpponentTeamOption[];
@@ -27,9 +28,30 @@ type GameEditProps = {
 
 export function EditGameButton(props: GameEditProps): JSX.Element {
   const [editing, setEditing] = useState(false);
+  // Show the TBD-opponent banner only when not actively editing — once the
+  // form is open the prompt has already been satisfied.
+  const showTbdBanner = !props.opponentName && !editing;
 
   return (
     <>
+      {showTbdBanner && (
+        <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-amber-900">Opponent not yet set</p>
+            <p className="text-xs text-amber-700">
+              This game was scheduled as a TBD slot. Set the opponent once the bracket is decided.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="shrink-0 text-sm font-medium text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-4 py-2 rounded-lg transition-colors"
+          >
+            Set opponent
+          </button>
+        </div>
+      )}
+
       {!editing && (
         <button
           onClick={() => setEditing(true)}

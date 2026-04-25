@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { GameLocationType } from '../types/game';
 
 export const createGameSchema = z.object({
-  opponentName: z.string().min(1, 'Opponent name is required').max(100),
+  // null = TBD opponent (playoff brackets where the opponent isn't decided yet).
+  opponentName: z.string().min(1).max(100).nullable(),
   scheduledAt: z.string().datetime(),
   locationType: z.nativeEnum(GameLocationType),
   venueName: z.string().max(100).optional(),
