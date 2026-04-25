@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
 import { HitType, PitchOutcome, PitchType } from '@baseball/shared';
-import type { DroppedThirdStrikeOutcome } from '@baseball/shared';
+import type { DefensiveLineup, DroppedThirdStrikeOutcome } from '@baseball/shared';
+import { DefensiveDiamond } from './DefensiveDiamond';
 
 interface DroppedThirdStrikeDetails {
   outcome: DroppedThirdStrikeOutcome;
@@ -18,6 +19,11 @@ export type RosterPlayer = {
   id: string;
   name: string;
   jerseyNumber?: number;
+  /** Optional split-name fields for richer display (e.g., on the defensive diamond). */
+  firstName?: string;
+  lastName?: string;
+  /** Player's primary defensive position (e.g., 'SS', 'CF'). Seeds the defensive alignment. */
+  primaryPosition?: string | null;
 };
 
 interface PitchInputProps {
@@ -40,6 +46,12 @@ interface PitchInputProps {
   onRecordTriplePlay: () => void;
   onRecordPitchingChange: (newPitcherId: string) => void;
   onRecordPinchHitter: (newBatterId: string) => void;
+  /** Defensive substitution: replace one fielder with another, optionally taking a new position. */
+  onRecordDefensiveSub?: (outPlayerId: string, inPlayerId: string, newPosition?: string) => void;
+  /** Position change: same player moves to a new defensive position. */
+  onRecordPositionChange?: (playerId: string, newPosition: string) => void;
+  /** Current defensive alignment, shown above the defensive-sub / position-change pickers. */
+  defensiveLineup?: DefensiveLineup | null;
   roster: RosterPlayer[];
   onUndoLastEvent: () => void;
   runnersOnBase: { base: Base; runnerId: string }[];
@@ -109,6 +121,9 @@ export function PitchInput({
   onRecordTriplePlay,
   onRecordPitchingChange,
   onRecordPinchHitter,
+  onRecordDefensiveSub,
+  onRecordPositionChange,
+  defensiveLineup,
   roster,
   onUndoLastEvent,
   runnersOnBase,
@@ -122,7 +137,13 @@ export function PitchInput({
   const [showOutModal, setShowOutModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showDPModal, setShowDPModal] = useState(false);
-  const [subModal, setSubModal] = useState<null | 'pinch_hitter' | 'pitching_change'>(null);
+  const [subModal, setSubModal] = useState<
+    null | 'pinch_hitter' | 'pitching_change' | 'defensive' | 'position_change'
+  >(null);
+  // Defensive-sub / position-change picker state.
+  const [defSubOutId, setDefSubOutId] = useState<string>('');
+  const [defSubInId, setDefSubInId] = useState<string>('');
+  const [defSubPosition, setDefSubPosition] = useState<string>('');
   const [selectedPitchType, setSelectedPitchType] = useState<PitchType | null>(null);
   const fcEligible = runnersOnBase.length > 0;
 
@@ -155,6 +176,31 @@ export function PitchInput({
     setSubModal(null);
     if (mode === 'pinch_hitter') onRecordPinchHitter(playerId);
     else if (mode === 'pitching_change') onRecordPitchingChange(playerId);
+  }
+
+  function openDefensiveSubModal() {
+    setDefSubOutId('');
+    setDefSubInId('');
+    setDefSubPosition('');
+    setSubModal('defensive');
+  }
+
+  function openPositionChangeModal() {
+    setDefSubOutId('');
+    setDefSubPosition('');
+    setSubModal('position_change');
+  }
+
+  function submitDefensiveSub() {
+    if (!onRecordDefensiveSub || !defSubOutId || !defSubInId) return;
+    onRecordDefensiveSub(defSubOutId, defSubInId, defSubPosition || undefined);
+    setSubModal(null);
+  }
+
+  function submitPositionChange() {
+    if (!onRecordPositionChange || !defSubOutId || !defSubPosition) return;
+    onRecordPositionChange(defSubOutId, defSubPosition);
+    setSubModal(null);
   }
 
   function handleFCPick(runnerId: string, fromBase: Base) {
@@ -281,6 +327,12 @@ export function PitchInput({
           <OutcomeButton label="Triple Play" emoji="TP" onPress={onRecordTriplePlay} color="bg-zinc-800" />
           <OutcomeButton label="Pinch Hitter" emoji="PH" onPress={() => setSubModal('pinch_hitter')} color="bg-sky-700" />
           <OutcomeButton label="Pitching Change" emoji="🔄" onPress={() => setSubModal('pitching_change')} color="bg-sky-800" />
+          {onRecordDefensiveSub && (
+            <OutcomeButton label="Defensive Sub" emoji="DS" onPress={openDefensiveSubModal} color="bg-sky-900" />
+          )}
+          {onRecordPositionChange && (
+            <OutcomeButton label="Position Change" emoji="↔" onPress={openPositionChangeModal} color="bg-indigo-700" />
+          )}
         </View>
       </View>
 
@@ -443,7 +495,7 @@ export function PitchInput({
         </View>
       </Modal>
 
-      {/* Substitution / pitching change: scorer picks incoming player */}
+      {/* Substitution / pitching change / defensive sub / position change */}
       <Modal
         visible={subModal !== null}
         transparent
@@ -451,40 +503,116 @@ export function PitchInput({
         onRequestClose={() => setSubModal(null)}
       >
         <View className="flex-1 justify-end bg-black/50">
-          <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '75%' }}>
+          <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '90%' }}>
             <Text className="text-lg font-bold text-gray-900 mb-1">
-              {subModal === 'pinch_hitter' ? 'Pinch Hitter' : 'Pitching Change'}
+              {subModal === 'pinch_hitter'   ? 'Pinch Hitter' :
+               subModal === 'pitching_change' ? 'Pitching Change' :
+               subModal === 'defensive'       ? 'Defensive Substitution' :
+               subModal === 'position_change' ? 'Position Change' : ''}
             </Text>
             <Text className="text-sm text-gray-500 mb-4">
               {subModal === 'pinch_hitter'
                 ? 'Who is coming in to bat?'
-                : 'Who is coming in to pitch?'}
+                : subModal === 'pitching_change'
+                ? 'Who is coming in to pitch?'
+                : subModal === 'defensive'
+                ? 'Replace a fielder with a player from the roster.'
+                : subModal === 'position_change'
+                ? 'Move a player to a different defensive position.'
+                : ''}
             </Text>
 
-            {roster.length === 0 ? (
-              <Text className="text-gray-500 text-sm py-4">
-                No players loaded. Sync the roster first.
-              </Text>
-            ) : (
-              <ScrollView className="max-h-96">
-                <View className="gap-2">
-                  {roster.map((p) => (
-                    <TouchableOpacity
-                      key={p.id}
-                      className="bg-sky-700 rounded-xl px-4 py-3 flex-row items-center"
-                      onPress={() => handleSubPick(p.id)}
-                    >
-                      <Text className="text-white font-semibold text-base">
-                        {p.jerseyNumber !== undefined ? `#${p.jerseyNumber} ` : ''}
-                        {p.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+            <ScrollView style={{ maxHeight: 540 }}>
+              {(subModal === 'defensive' || subModal === 'position_change') && defensiveLineup && (
+                <View className="mb-4">
+                  <DefensiveDiamond lineup={defensiveLineup} />
                 </View>
-              </ScrollView>
+              )}
+
+              {(subModal === 'pinch_hitter' || subModal === 'pitching_change') && (
+                roster.length === 0 ? (
+                  <Text className="text-gray-500 text-sm py-4">
+                    No players loaded. Sync the roster first.
+                  </Text>
+                ) : (
+                  <View className="gap-2">
+                    {roster.map((p) => (
+                      <TouchableOpacity
+                        key={p.id}
+                        className="bg-sky-700 rounded-xl px-4 py-3 flex-row items-center"
+                        onPress={() => handleSubPick(p.id)}
+                      >
+                        <Text className="text-white font-semibold text-base">
+                          {p.jerseyNumber !== undefined ? `#${p.jerseyNumber} ` : ''}
+                          {p.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )
+              )}
+
+              {subModal === 'defensive' && (
+                <>
+                  <PlayerPickerSection
+                    label="Out (leaving the game)"
+                    selectedId={defSubOutId}
+                    onSelect={setDefSubOutId}
+                    roster={roster}
+                  />
+                  <PlayerPickerSection
+                    label="In (entering the game)"
+                    selectedId={defSubInId}
+                    onSelect={setDefSubInId}
+                    roster={roster.filter((r) => r.id !== defSubOutId)}
+                  />
+                  <PositionPickerSection
+                    label="New position (optional)"
+                    selectedAbbr={defSubPosition}
+                    onSelect={setDefSubPosition}
+                    optional
+                  />
+                </>
+              )}
+
+              {subModal === 'position_change' && (
+                <>
+                  <PlayerPickerSection
+                    label="Player"
+                    selectedId={defSubOutId}
+                    onSelect={setDefSubOutId}
+                    roster={roster}
+                  />
+                  <PositionPickerSection
+                    label="New position"
+                    selectedAbbr={defSubPosition}
+                    onSelect={setDefSubPosition}
+                  />
+                </>
+              )}
+            </ScrollView>
+
+            {(subModal === 'defensive' || subModal === 'position_change') && (
+              <View className="flex-row gap-3 mt-4">
+                <TouchableOpacity
+                  className={`flex-1 rounded-xl py-3 items-center ${
+                    (subModal === 'defensive' ? defSubOutId && defSubInId : defSubOutId && defSubPosition)
+                      ? 'bg-gray-900'
+                      : 'bg-gray-300'
+                  }`}
+                  disabled={
+                    subModal === 'defensive'
+                      ? !defSubOutId || !defSubInId
+                      : !defSubOutId || !defSubPosition
+                  }
+                  onPress={subModal === 'defensive' ? submitDefensiveSub : submitPositionChange}
+                >
+                  <Text className="text-white font-semibold">Record</Text>
+                </TouchableOpacity>
+              </View>
             )}
 
-            <TouchableOpacity className="mt-4 py-3 items-center" onPress={() => setSubModal(null)}>
+            <TouchableOpacity className="mt-3 py-3 items-center" onPress={() => setSubModal(null)}>
               <Text className="text-gray-500 font-semibold">Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -600,5 +728,95 @@ function OutcomeButton({
       <Text className="text-white text-base">{emoji}</Text>
       <Text className="text-white font-semibold">{label}</Text>
     </TouchableOpacity>
+  );
+}
+
+function PlayerPickerSection({
+  label,
+  selectedId,
+  onSelect,
+  roster,
+}: {
+  label: string;
+  selectedId: string;
+  onSelect: (id: string) => void;
+  roster: RosterPlayer[];
+}) {
+  return (
+    <View className="mb-4">
+      <Text className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">{label}</Text>
+      {roster.length === 0 ? (
+        <Text className="text-gray-500 text-sm py-2">No players available.</Text>
+      ) : (
+        <View className="flex-row flex-wrap gap-2">
+          {roster.map((p) => {
+            const selected = p.id === selectedId;
+            return (
+              <TouchableOpacity
+                key={p.id}
+                onPress={() => onSelect(p.id)}
+                className={`rounded-lg px-3 py-2 border ${
+                  selected ? 'bg-brand-700 border-brand-500' : 'bg-white border-gray-300'
+                }`}
+              >
+                <Text className={`text-sm font-medium ${selected ? 'text-white' : 'text-gray-700'}`}>
+                  {p.jerseyNumber !== undefined ? `#${p.jerseyNumber} ` : ''}
+                  {p.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function PositionPickerSection({
+  label,
+  selectedAbbr,
+  onSelect,
+  optional,
+}: {
+  label: string;
+  selectedAbbr: string;
+  onSelect: (abbr: string) => void;
+  optional?: boolean;
+}) {
+  const positions = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH'];
+  return (
+    <View className="mb-4">
+      <Text className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">{label}</Text>
+      <View className="flex-row flex-wrap gap-2">
+        {optional && (
+          <TouchableOpacity
+            onPress={() => onSelect('')}
+            className={`rounded-lg px-3 py-2 border ${
+              selectedAbbr === '' ? 'bg-gray-700 border-gray-800' : 'bg-white border-gray-300'
+            }`}
+          >
+            <Text className={`text-sm font-medium ${selectedAbbr === '' ? 'text-white' : 'text-gray-500'}`}>
+              keep
+            </Text>
+          </TouchableOpacity>
+        )}
+        {positions.map((p) => {
+          const selected = p === selectedAbbr;
+          return (
+            <TouchableOpacity
+              key={p}
+              onPress={() => onSelect(p)}
+              className={`rounded-lg px-3 py-2 border ${
+                selected ? 'bg-brand-700 border-brand-500' : 'bg-white border-gray-300'
+              }`}
+            >
+              <Text className={`text-sm font-semibold ${selected ? 'text-white' : 'text-gray-700'}`}>
+                {p}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
   );
 }
