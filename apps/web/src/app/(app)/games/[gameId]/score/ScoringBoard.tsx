@@ -2309,12 +2309,11 @@ export function ScoringBoard({
 
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Plate result</p>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {[
                       { label: 'In Play', outcome: 'in_play', handler: () => handlePitch('in_play'), disabled: !pitchAnnotationsReady || !canRecord },
                       { label: 'HBP', outcome: 'hbp', handler: handleHBP, disabled: !pitchAnnotationsReady || !canRecord },
                       { label: 'Balk', outcome: 'balk', handler: handleBalk, disabled: !canRecord },
-                      { label: 'Dropped 3rd K', outcome: 'd3k', handler: () => setShowD3KModal(true), disabled: !droppedThirdStrikeEligible || !canRecord },
                     ].map(({ label, outcome, handler, disabled }) => (
                       <button
                         key={outcome}
