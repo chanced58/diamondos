@@ -8,7 +8,7 @@ import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueTeams, leagueMemberName } from '@baseball/database';
 import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, filterResetAndReverted, weAreHome } from '@baseball/shared';
-import type { BattingLineupContext } from '@baseball/shared';
+import { buildLineupsByGameId } from '@/lib/stats/lineups';
 import { RELEVANT_EVENT_TYPES } from '../../constants';
 
 export const metadata: Metadata = { title: 'Team Comparison' };
@@ -92,31 +92,12 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const filteredEvents: any[] = filterResetAndReverted(rawEvents) as any[];
 
-  // Build per-game lineup context for all platform-team games (mirrors
-  // compliance/page.tsx). Pass into deriveBattingStats so stub-batter PA
-  // events are credited correctly during our team's half-inning.
-  const lineupsByGameId = new Map<string, BattingLineupContext>();
-  if (gameIds.length > 0) {
-    const { data: lineupRows } = await db
-      .from('game_lineups')
-      .select('game_id, player_id, batting_order')
-      .in('game_id', gameIds);
-    const byGame = new Map<string, { playerId: string; battingOrder: number }[]>();
-    for (const row of lineupRows ?? []) {
-      if (!row.player_id || typeof row.batting_order !== 'number' || row.batting_order <= 0) continue;
-      const list = byGame.get(row.game_id) ?? [];
-      list.push({ playerId: row.player_id as string, battingOrder: row.batting_order });
-      byGame.set(row.game_id, list);
-    }
-    for (const g of (allGames ?? []) as any[]) {
-      const ourLineup = byGame.get(g.id) ?? [];
-      if (ourLineup.length === 0) continue;
-      lineupsByGameId.set(g.id, {
-        ourLineup,
-        isHome: weAreHome(g.location_type as string, g.neutral_home_team as string | null),
-      });
-    }
-  }
+  // Build per-game lineup context for all platform-team games. Best-effort.
+  const lineupsByGameId = await buildLineupsByGameId(db, ((allGames ?? []) as any[]).map((g) => ({
+    id: g.id as string,
+    location_type: g.location_type as string,
+    neutral_home_team: g.neutral_home_team as string | null,
+  })));
 
   // Get all platform players
   const { data: allPlayers } = platformIds.length > 0

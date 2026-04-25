@@ -6,13 +6,12 @@ import {
   derivePitchingStats,
   filterResetAndReverted,
   formatBattingRate,
-  weAreHome,
   type AiDrillRecommendations,
-  type BattingLineupContext,
   type PracticeDrill,
   type PracticeDrillVisibility,
 } from '@baseball/shared';
 import { RELEVANT_EVENT_TYPES } from '../../../../compliance/constants';
+import { buildLineupsByGameId } from '@/lib/stats/lineups';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
 import {
@@ -242,27 +241,17 @@ async function loadPlayerContext(
         const filteredEvents: any[] = filterResetAndReverted(events) as any[];
 
         // Build per-game lineup context so deriveBattingStats can recover
-        // stub batter IDs during our team's half-inning.
-        const lineupsByGameId = new Map<string, BattingLineupContext>();
-        const { data: lineupRows } = await db
-          .from('game_lineups')
-          .select('game_id, player_id, batting_order')
-          .in('game_id', gameIds);
-        const byGame = new Map<string, { playerId: string; battingOrder: number }[]>();
-        for (const row of (lineupRows ?? []) as Array<{ game_id: string; player_id: string | null; batting_order: number | null }>) {
-          if (!row.player_id || typeof row.batting_order !== 'number' || row.batting_order <= 0) continue;
-          const list = byGame.get(row.game_id) ?? [];
-          list.push({ playerId: row.player_id, battingOrder: row.batting_order });
-          byGame.set(row.game_id, list);
-        }
-        for (const g of (games ?? []) as Array<{ id: string; location_type: string; neutral_home_team: string | null }>) {
-          const ourLineup = byGame.get(g.id) ?? [];
-          if (ourLineup.length === 0) continue;
-          lineupsByGameId.set(g.id, {
-            ourLineup,
-            isHome: weAreHome(g.location_type, g.neutral_home_team),
-          });
-        }
+        // stub batter IDs during our team's half-inning. Best-effort: a DB
+        // error logs and yields an empty Map rather than aborting the
+        // recommendation flow.
+        const lineupsByGameId = await buildLineupsByGameId(
+          db,
+          ((games ?? []) as Array<{ id: string; location_type: string; neutral_home_team: string | null }>).map((g) => ({
+            id: g.id,
+            location_type: g.location_type,
+            neutral_home_team: g.neutral_home_team,
+          })),
+        );
 
         const playerEntry = [
           {

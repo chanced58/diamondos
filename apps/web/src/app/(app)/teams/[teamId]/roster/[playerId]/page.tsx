@@ -15,12 +15,12 @@ import {
   deriveBattingStats,
   formatBattingRate,
   formatBattingPct,
-  weAreHome,
 } from '@baseball/shared';
-import type { PitchingStats, BattingStats, BattingLineupContext } from '@baseball/shared';
+import type { PitchingStats, BattingStats } from '@baseball/shared';
 import { EditPlayerForm, DeactivatePlayerForm, ReactivatePlayerForm } from './EditPlayerForm';
 import { DrillRecommendations } from './DrillRecommendations';
 import { RELEVANT_EVENT_TYPES } from '../../../../compliance/constants';
+import { buildLineupsByGameId } from '@/lib/stats/lineups';
 
 export const metadata: Metadata = { title: 'Player Profile' };
 
@@ -148,28 +148,13 @@ export default async function PlayerPage({
         const filteredEvents: any[] = filterResetAndReverted(events) as any[];
 
         // Build per-game lineup context for stub-batter recovery during our
-        // team's half-inning. We need the full team roster (not just this
-        // player) so the lineup map covers every batting slot.
-        const lineupsByGameId = new Map<string, BattingLineupContext>();
-        const { data: lineupRows } = await db
-          .from('game_lineups')
-          .select('game_id, player_id, batting_order')
-          .in('game_id', gameIds);
-        const byGame = new Map<string, { playerId: string; battingOrder: number }[]>();
-        for (const row of lineupRows ?? []) {
-          if (!row.player_id || typeof row.batting_order !== 'number' || row.batting_order <= 0) continue;
-          const list = byGame.get(row.game_id) ?? [];
-          list.push({ playerId: row.player_id as string, battingOrder: row.batting_order });
-          byGame.set(row.game_id, list);
-        }
-        for (const g of games ?? []) {
-          const ourLineup = byGame.get(g.id) ?? [];
-          if (ourLineup.length === 0) continue;
-          lineupsByGameId.set(g.id, {
-            ourLineup,
-            isHome: weAreHome(g.location_type as string, g.neutral_home_team as string | null),
-          });
-        }
+        // team's half-inning. Pulls the full team roster (not just this
+        // player) so the lineup covers every batting slot. Best-effort.
+        const lineupsByGameId = await buildLineupsByGameId(db, (games ?? []).map((g) => ({
+          id: g.id,
+          location_type: g.location_type as string,
+          neutral_home_team: g.neutral_home_team as string | null,
+        })));
 
         const playerEntry = [
           { id: player.id, firstName: player.first_name, lastName: player.last_name },

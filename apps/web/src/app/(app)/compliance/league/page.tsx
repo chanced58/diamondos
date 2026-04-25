@@ -7,8 +7,9 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueTeamIds, getLeagueOpponentTeamIds } from '@baseball/database';
-import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, filterResetAndReverted, weAreHome } from '@baseball/shared';
-import type { PitchingStats, BattingStats, StatTier, BattingLineupContext } from '@baseball/shared';
+import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, filterResetAndReverted } from '@baseball/shared';
+import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
+import { buildLineupsByGameId } from '@/lib/stats/lineups';
 import { PitchingStatsTable } from '../PitchingStatsTable';
 import { BattingStatsTable } from '../BattingStatsTable';
 import { TierToggle } from '../TierToggle';
@@ -110,29 +111,12 @@ export default async function LeagueStatsPage({
   const allPlayerIds = new Set(playerList.map((p) => p.id));
 
   // Build per-game lineup context so deriveBattingStats can recover stub
-  // batter IDs during our team's half-inning (mirrors compliance/page.tsx).
-  const lineupsByGameId = new Map<string, BattingLineupContext>();
-  if (gameIds.length > 0) {
-    const { data: lineupRows } = await db
-      .from('game_lineups')
-      .select('game_id, player_id, batting_order')
-      .in('game_id', gameIds);
-    const byGame = new Map<string, { playerId: string; battingOrder: number }[]>();
-    for (const row of lineupRows ?? []) {
-      if (!row.player_id || typeof row.batting_order !== 'number' || row.batting_order <= 0) continue;
-      const list = byGame.get(row.game_id) ?? [];
-      list.push({ playerId: row.player_id as string, battingOrder: row.batting_order });
-      byGame.set(row.game_id, list);
-    }
-    for (const g of gamesData ?? []) {
-      const ourLineup = byGame.get(g.id) ?? [];
-      if (ourLineup.length === 0) continue;
-      lineupsByGameId.set(g.id, {
-        ourLineup,
-        isHome: weAreHome(g.location_type as string, g.neutral_home_team as string | null),
-      });
-    }
-  }
+  // batter IDs during our team's half-inning. Best-effort.
+  const lineupsByGameId = await buildLineupsByGameId(db, (gamesData ?? []).map((g) => ({
+    id: g.id,
+    location_type: g.location_type as string,
+    neutral_home_team: g.neutral_home_team as string | null,
+  })));
 
   // Filter reverted/reset events before deriving platform stats. The opponent
   // branch below appends more events to rawEvents and re-runs the derivers,
