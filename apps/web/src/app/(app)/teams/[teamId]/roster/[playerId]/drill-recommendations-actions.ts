@@ -7,6 +7,7 @@ import {
   filterResetAndReverted,
   formatBattingRate,
   type AiDrillRecommendations,
+  type GameEvent,
   type PracticeDrill,
   type PracticeDrillVisibility,
 } from '@baseball/shared';
@@ -238,8 +239,7 @@ async function loadPlayerContext(
       if (events.length > 0) {
         // Strip reverted/reset events so undone pitches don't skew recent
         // batting/pitching focus signals.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const filteredEvents: any[] = filterResetAndReverted(events) as any[];
+        const filteredEvents = filterResetAndReverted(events) as unknown as GameEvent[];
 
         // Build per-game lineup context so deriveBattingStats can recover
         // stub batter IDs during our team's half-inning. Best-effort: a DB

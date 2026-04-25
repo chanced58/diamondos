@@ -13,7 +13,7 @@ import {
   formatBattingRate,
   formatInningsPitched,
 } from '@baseball/shared';
-import type { BattingStats, PitchingStats } from '@baseball/shared';
+import type { BattingStats, GameEvent, PitchingStats } from '@baseball/shared';
 import { RosterRowActions } from './RosterRowActions';
 import { StaffSection } from './StaffSection';
 import { ParentSection } from './ParentSection';
@@ -389,8 +389,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       if (events.length > 0) {
         // Strip reverted/reset events so undone pitches and resets don't
         // leak into season totals (matches /compliance behavior).
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const filteredEvents: any[] = filterResetAndReverted(events) as any[];
+        const filteredEvents = filterResetAndReverted(events) as unknown as GameEvent[];
 
         // Build per-game lineup context so deriveBattingStats can recover
         // stub batter IDs during our team's half-inning. Best-effort.

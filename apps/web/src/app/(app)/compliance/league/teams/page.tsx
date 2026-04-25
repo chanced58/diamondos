@@ -8,6 +8,7 @@ import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueTeams, leagueMemberName } from '@baseball/database';
 import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, filterResetAndReverted, weAreHome } from '@baseball/shared';
+import type { GameEvent } from '@baseball/shared';
 import { buildLineupsByGameId } from '@/lib/stats/lineups';
 import { fetchAllEventsForGames } from '@/lib/stats/fetch-events';
 import { RELEVANT_EVENT_TYPES } from '../../constants';
@@ -81,8 +82,7 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
   );
 
   // Filter reverted/reset events before any per-team derivation.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const filteredEvents: any[] = filterResetAndReverted(rawEvents) as any[];
+  const filteredEvents = filterResetAndReverted(rawEvents);
 
   // Build per-game lineup context for all platform-team games. Best-effort.
   const lineupsByGameId = await buildLineupsByGameId(db, ((allGames ?? []) as any[]).map((g) => ({
@@ -121,7 +121,7 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
       else ties++;
     }
 
-    const teamEvents = filteredEvents.filter((e: any) => teamGameIds.has(e.game_id));
+    const teamEvents = filteredEvents.filter((e) => teamGameIds.has(e.game_id as string)) as unknown as GameEvent[];
     const teamPlayers = (allPlayers ?? [])
       .filter((p: any) => p.team_id === tid)
       .map((p: any) => ({ id: p.id, firstName: p.first_name, lastName: p.last_name }));
@@ -176,14 +176,14 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
       else ties++;
     }
 
-    const oppEvents = filteredEvents.filter((e: any) => oppGameIds.has(e.game_id));
+    const oppEvents = filteredEvents.filter((e) => oppGameIds.has(e.game_id as string));
     const thisOppPlayers = (oppPlayers ?? []).filter((p: any) => p.opponent_team_id === otId);
     const oppPlayerNameMap = new Map<string, string>(
       thisOppPlayers.map((p: any) => [p.id, `${p.first_name} ${p.last_name}`]),
     );
     const oppPlayerIds = new Set(thisOppPlayers.map((p: any) => p.id));
 
-    // Opponent batting via computeOpponentBatting
+    // Opponent batting via computeOpponentBatting (takes Record<string,unknown>[])
     const oppBatting = computeOpponentBatting(oppEvents, oppPlayerNameMap);
     let totalHits = 0, totalAB = 0;
     for (const s of oppBatting) {
@@ -191,11 +191,11 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
       totalAB += s.ab;
     }
 
-    // Opponent pitching via derivePitchingStats
+    // Opponent pitching via derivePitchingStats (takes GameEvent[])
     const oppPlayerList = thisOppPlayers.map((p: any) => ({
       id: p.id, firstName: p.first_name, lastName: p.last_name,
     }));
-    const oppPitchingMap = derivePitchingStats(oppEvents, oppPlayerList);
+    const oppPitchingMap = derivePitchingStats(oppEvents as unknown as GameEvent[], oppPlayerList);
     let totalOuts = 0, totalRuns = 0, totalK = 0;
     for (const [, s] of oppPitchingMap) {
       if (!oppPlayerIds.has(s.playerId)) continue;

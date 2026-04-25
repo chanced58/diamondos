@@ -16,7 +16,7 @@ import {
   formatBattingRate,
   formatBattingPct,
 } from '@baseball/shared';
-import type { PitchingStats, BattingStats } from '@baseball/shared';
+import type { PitchingStats, BattingStats, GameEvent } from '@baseball/shared';
 import { EditPlayerForm, DeactivatePlayerForm, ReactivatePlayerForm } from './EditPlayerForm';
 import { DrillRecommendations } from './DrillRecommendations';
 import { RELEVANT_EVENT_TYPES } from '../../../../compliance/constants';
@@ -145,8 +145,7 @@ export default async function PlayerPage({
 
       if (events.length > 0) {
         // Strip reverted/reset events so they don't leak into totals.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const filteredEvents: any[] = filterResetAndReverted(events) as any[];
+        const filteredEvents = filterResetAndReverted(events) as unknown as GameEvent[];
 
         // Build per-game lineup context for stub-batter recovery during our
         // team's half-inning. Pulls the full team roster (not just this
