@@ -68,8 +68,10 @@ async function fetchCompletedGamesForSeason(
     .eq('season_id', seasonId)
     .eq('status', 'completed')
     // MaxPreps requires a real opponent — TBD slots that somehow ended up
-    // completed (shouldn't happen, but be defensive) are excluded.
+    // completed (shouldn't happen, but be defensive) are excluded. Match the
+    // single-game guard's truthy check by filtering both NULL and ''.
     .not('opponent_name', 'is', null)
+    .neq('opponent_name', '')
     .order('scheduled_at', { ascending: true });
 
   if (error) throw error;

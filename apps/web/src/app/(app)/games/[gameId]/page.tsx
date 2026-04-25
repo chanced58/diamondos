@@ -109,6 +109,12 @@ export default async function GameDetailPage({
     : `Neutral site (${game.neutral_home_team === 'opponent' ? 'away' : 'home'})`;
   const vsAt = isHome ? 'vs' : '@';
   const isCompleted = game.status === 'completed';
+  // Treat NULL, empty, and whitespace-only opponent names as TBD. opponentForChild
+  // is the empty-string normalisation passed to client components that key TBD
+  // off `!opponentName`.
+  const opponentTrimmed = game.opponent_name?.trim() ?? '';
+  const opponentDisplay = opponentTrimmed || 'TBD';
+  const opponentForChild = opponentTrimmed;
 
   // Tier 6 F2: compute weakness takeaways for completed games when the viewer is a coach.
   let weaknesses: Awaited<ReturnType<typeof getGameWeaknesses>> = [];
@@ -151,7 +157,7 @@ export default async function GameDetailPage({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
-              {vsAt} {game.opponent_name ?? 'TBD'}
+              {vsAt} {opponentDisplay}
             </h1>
             <p className="text-gray-500 text-sm mt-1">
               {formatDate(game.scheduled_at)} · {formatTime(game.scheduled_at)}
@@ -216,7 +222,7 @@ export default async function GameDetailPage({
         <div className="mb-6">
           <EditGameButton
             gameId={game.id}
-            opponentName={game.opponent_name ?? ''}
+            opponentName={opponentForChild}
             opponentTeamId={game.opponent_team_id ?? ''}
             opponentTeams={uniqueOpponentTeams}
             scheduledDate={scheduledDate}
@@ -244,7 +250,7 @@ export default async function GameDetailPage({
             </div>
             <div className="text-2xl text-gray-300 font-light">—</div>
             <div>
-              <p className="text-sm text-gray-500 mb-1">{game.opponent_name ?? 'TBD'}</p>
+              <p className="text-sm text-gray-500 mb-1">{opponentDisplay}</p>
               <p className="text-5xl font-bold text-gray-900">
                 {isHome ? game.away_score : game.home_score}
               </p>
@@ -308,7 +314,7 @@ export default async function GameDetailPage({
           <LocationMap
             latitude={game.latitude}
             longitude={game.longitude}
-            label={game.venue_name ?? game.opponent_name ?? 'TBD'}
+            label={game.venue_name ?? opponentDisplay}
             placeId={game.place_id ?? undefined}
           />
         </div>
@@ -321,9 +327,9 @@ export default async function GameDetailPage({
           <p className="text-sm text-gray-500 mb-4">
             Set your lineup, then start the game to begin pitch-by-pitch scoring.
           </p>
-          {!game.opponent_name ? (
+          {!opponentTrimmed ? (
             // TBD opponents block scoring — startGameAction would fail trying to
-            // auto-create an opponent_teams row with a NULL name. The banner
+            // auto-create an opponent_teams row with a NULL/empty name. The banner
             // above already prompts the coach to fill in the opponent first.
             <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
               Set the opponent above before configuring lineups or starting the game.
@@ -395,7 +401,7 @@ export default async function GameDetailPage({
               </div>
               <CancelGameForm
                 gameId={game.id}
-                opponentName={game.opponent_name ?? ''}
+                opponentName={opponentForChild}
                 currentStatus={game.status}
               />
             </div>

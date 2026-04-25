@@ -348,7 +348,7 @@ export async function updateGameAction(
 
   const { data: game } = await supabase
     .from('games')
-    .select('team_id')
+    .select('team_id, status')
     .eq('id', gameId)
     .single();
   if (!game) return 'Game not found.';
@@ -381,6 +381,13 @@ export async function updateGameAction(
   const opponentTeamIdRaw = (formData.get('opponentTeamId') as string)?.trim() || null;
   if (!opponentTbd && !opponent) return 'Opponent name is required.';
   if (!date)                     return 'Game date is required.';
+
+  // Once a game is in_progress or completed, the opponent is locked in — clearing
+  // it back to TBD would orphan game_events, stats, and any opponent_teams row.
+  // Cancelled/postponed games may still be re-edited; only block once play started.
+  if (opponentTbd && (game.status === 'in_progress' || game.status === 'completed')) {
+    return 'Cannot clear the opponent on a game that has started or completed.';
+  }
 
   // Validate opponent team belongs to this team or its league.
   // (TBD games skip this — there's no opponent team to validate.)
