@@ -608,6 +608,10 @@ export function ScoringBoard({
   const [wildPitchPending, setWildPitchPending] = useState(false);
   const [passedBallPending, setPassedBallPending] = useState(false);
 
+  // Dropped third strike modal — opened either by manual button tap or
+  // automatically when a 3rd strike is recorded with D3K eligibility.
+  const [showD3KModal, setShowD3KModal] = useState(false);
+
   // Jersey number prompt state for opponent batters without a jersey number
   const [jerseyOverrides, setJerseyOverrides] = useState<Record<string, string>>({});
   const [jerseyPromptValue, setJerseyPromptValue] = useState('');
@@ -1061,12 +1065,19 @@ export function ScoringBoard({
 
     // Walk via 4th ball
     if (outcome === 'ball' && gameState.balls + 1 >= 4) {
-      await recordEvent('walk', { batterId, pitcherId });
+      await handleWalk();
     }
-    // Strikeout via swinging/called strike on 2-strike count
+    // Strikeout via swinging/called strike on 2-strike count.
+    // When D3K is eligible (first base empty or two outs per OBR 5.05(a)(2)),
+    // open the dropped-third-strike modal so the scorer picks the outcome.
+    // Otherwise the batter is out regardless of catch — auto-emit STRIKEOUT.
     if ((outcome === 'swinging_strike' || outcome === 'called_strike' || outcome === 'foul_tip') &&
         gameState.strikes + 1 >= 3) {
-      await recordEvent('strikeout', { batterId, pitcherId, outType: 'strikeout' });
+      if (droppedThirdStrikeEligible) {
+        setShowD3KModal(true);
+      } else {
+        await handleStrikeout();
+      }
     }
   }
 
@@ -1218,6 +1229,31 @@ export function ScoringBoard({
     const batterId = activeBatterId ?? undefined;
     const pitcherId = activePitcherId ?? undefined;
     await recordEvent('strikeout', { batterId, pitcherId, outType: 'strikeout' });
+  }
+
+  // Eligibility per OBR 5.05(a)(2): the batter may become a runner on an uncaught
+  // third strike only when first base is unoccupied OR there are two outs.
+  const droppedThirdStrikeEligible =
+    gameState.outs === 2 || !gameState.runnersOnBase.first;
+
+  async function handleDroppedThirdStrike(details: {
+    outcome: 'thrown_out' | 'reached_on_error' | 'reached_wild_pitch';
+    fieldingSequence?: number[];
+    errorBy?: number;
+    isWildPitch?: boolean;
+  }) {
+    setShowD3KModal(false);
+    if (!canRecord) return;
+    const batterId = activeBatterId ?? undefined;
+    const pitcherId = activePitcherId ?? undefined;
+    await recordEvent('dropped_third_strike', {
+      batterId,
+      pitcherId,
+      outcome: details.outcome,
+      fieldingSequence: details.fieldingSequence,
+      errorBy: details.errorBy,
+      isWildPitch: details.isWildPitch,
+    });
   }
 
   async function handleHBP() {
@@ -2277,8 +2313,8 @@ export function ScoringBoard({
                     {[
                       { label: 'In Play', outcome: 'in_play', handler: () => handlePitch('in_play'), disabled: !pitchAnnotationsReady || !canRecord },
                       { label: 'HBP', outcome: 'hbp', handler: handleHBP, disabled: !pitchAnnotationsReady || !canRecord },
-                      { label: 'Walk', outcome: 'walk', handler: handleWalk, disabled: gameState.balls < 3 || !canRecord },
-                      { label: 'Strikeout', outcome: 'strikeout', handler: handleStrikeout, disabled: gameState.strikes < 2 || !canRecord },
+                      { label: 'Balk', outcome: 'balk', handler: handleBalk, disabled: !canRecord },
+                      { label: 'Dropped 3rd K', outcome: 'd3k', handler: () => setShowD3KModal(true), disabled: !droppedThirdStrikeEligible || !canRecord },
                     ].map(({ label, outcome, handler, disabled }) => (
                       <button
                         key={outcome}
@@ -2689,16 +2725,6 @@ export function ScoringBoard({
           </div>
         )}
 
-        {/* ── Balk ──────────────────────────────────────────────────── */}
-        {isCoach && (
-          <button
-            onClick={handleBalk}
-            className="w-full text-sm text-gray-500 hover:text-gray-700 py-2"
-          >
-            Balk
-          </button>
-        )}
-
         {/* ── Substitution ───────────────────────────────────────────── */}
         {isCoach && !showSubstitution && (
           <button
@@ -2983,6 +3009,84 @@ export function ScoringBoard({
                 currentBalls={gameState.balls}
                 currentStrikes={gameState.strikes}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Dropped Third Strike Modal ───────────────────────────── */}
+      {showD3KModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          onClick={() => setShowD3KModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-md shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 pt-4 pb-2 border-b border-gray-100">
+              <p className="font-semibold text-gray-900 text-sm">Third Strike</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Did the catcher catch the third strike, or did it get away?
+              </p>
+            </div>
+            <div className="p-4 flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  setShowD3KModal(false);
+                  void handleStrikeout();
+                }}
+                className="w-full text-left px-4 py-3 rounded-lg border border-brand-200 bg-brand-50 hover:bg-brand-100 transition-colors"
+              >
+                <div className="text-sm font-semibold text-brand-700">Caught (regular K)</div>
+                <div className="text-xs text-brand-600/80 mt-0.5">
+                  Catcher caught the third strike — batter is out.
+                </div>
+              </button>
+              <button
+                onClick={() => handleDroppedThirdStrike({ outcome: 'thrown_out', fieldingSequence: [2, 3] })}
+                className="w-full text-left px-4 py-3 rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <div className="text-sm font-semibold text-gray-800">Batter Out (K 2-3)</div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  Catcher dropped it but threw the batter out at first.
+                </div>
+              </button>
+              <button
+                onClick={() => handleDroppedThirdStrike({ outcome: 'reached_on_error', errorBy: 2 })}
+                className="w-full text-left px-4 py-3 rounded-lg border border-orange-200 bg-orange-50 hover:bg-orange-100 transition-colors"
+              >
+                <div className="text-sm font-semibold text-orange-700">Safe — Reached on Error (E2)</div>
+                <div className="text-xs text-orange-600/80 mt-0.5">
+                  Batter reached on the catcher&apos;s error.
+                </div>
+              </button>
+              <button
+                onClick={() => handleDroppedThirdStrike({ outcome: 'reached_wild_pitch', isWildPitch: true })}
+                className="w-full text-left px-4 py-3 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors"
+              >
+                <div className="text-sm font-semibold text-amber-700">Safe — Wild Pitch</div>
+                <div className="text-xs text-amber-600/80 mt-0.5">
+                  Batter reached because the pitch got past the catcher (pitcher&apos;s fault).
+                </div>
+              </button>
+              <button
+                onClick={() => handleDroppedThirdStrike({ outcome: 'reached_wild_pitch', isWildPitch: false })}
+                className="w-full text-left px-4 py-3 rounded-lg border border-yellow-200 bg-yellow-50 hover:bg-yellow-100 transition-colors"
+              >
+                <div className="text-sm font-semibold text-yellow-700">Safe — Passed Ball</div>
+                <div className="text-xs text-yellow-600/80 mt-0.5">
+                  Batter reached because the catcher mishandled a catchable pitch.
+                </div>
+              </button>
+            </div>
+            <div className="px-4 pb-4">
+              <button
+                onClick={() => setShowD3KModal(false)}
+                className="w-full py-2 text-sm font-medium text-gray-500 hover:text-gray-700"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>

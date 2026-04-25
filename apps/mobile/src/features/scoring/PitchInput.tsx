@@ -24,7 +24,9 @@ interface PitchInputProps {
   onRecordPitch: (outcome: PitchOutcome, pitchType?: PitchType) => void;
   onRecordHit: (hitType: HitType) => void;
   onRecordOut: (outType: BattedOutType) => void;
-  onRecordWalk: () => void;
+  // Walk and Strikeout no longer have manual buttons — auto-completion lives
+  // in the parent's pitch handler. handleStrikeout is still passed because the
+  // D3K modal's "Caught (regular K)" option resolves to a regular STRIKEOUT.
   onRecordStrikeout: () => void;
   onRecordError: (errorBy: number) => void;
   onRecordCatcherInterference: () => void;
@@ -43,6 +45,11 @@ interface PitchInputProps {
   runnersOnBase: { base: Base; runnerId: string }[];
   onRecordDroppedThirdStrike?: (details: DroppedThirdStrikeDetails) => void;
   droppedThirdStrikeEligible?: boolean;
+  // Controlled modal state — parent opens the modal automatically when a
+  // 3rd-strike pitch is recorded with D3K eligibility, and from the manual
+  // "Dropped 3rd K" button below.
+  d3kModalOpen?: boolean;
+  setD3KModalOpen?: (open: boolean) => void;
 }
 
 const PITCH_TYPES: Array<{ label: string; value: PitchType }> = [
@@ -91,7 +98,6 @@ export function PitchInput({
   onRecordPitch,
   onRecordHit,
   onRecordOut,
-  onRecordWalk,
   onRecordStrikeout,
   onRecordError,
   onRecordCatcherInterference,
@@ -110,8 +116,11 @@ export function PitchInput({
   runnersOnBase,
   onRecordDroppedThirdStrike,
   droppedThirdStrikeEligible = false,
+  d3kModalOpen = false,
+  setD3KModalOpen,
 }: PitchInputProps) {
-  const [showD3KModal, setShowD3KModal] = useState(false);
+  const showD3KModal = d3kModalOpen;
+  const setShowD3KModal = setD3KModalOpen ?? (() => {});
   const [showFCModal, setShowFCModal] = useState(false);
   const [showOutModal, setShowOutModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
@@ -258,8 +267,6 @@ export function PitchInput({
         </Text>
         <View className="flex-row flex-wrap gap-2">
           <OutcomeButton label="Out" emoji="✋" onPress={() => setShowOutModal(true)} color="bg-gray-600" />
-          <OutcomeButton label="Walk (BB)" emoji="🚶" onPress={onRecordWalk} color="bg-green-600" />
-          <OutcomeButton label="Strikeout" emoji="K" onPress={onRecordStrikeout} color="bg-red-600" />
           <OutcomeButton label="Error" emoji="E" onPress={() => setShowErrorModal(true)} color="bg-orange-600" />
           <OutcomeButton label="Catcher Int." emoji="CI" onPress={onRecordCatcherInterference} color="bg-rose-500" />
           <OutcomeButton label="Sac Fly" emoji="SF" onPress={onRecordSacFly} color="bg-teal-600" />
@@ -298,13 +305,26 @@ export function PitchInput({
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
             <Text className="text-lg font-bold text-gray-900 mb-1">
-              Dropped Third Strike
+              Third Strike
             </Text>
             <Text className="text-sm text-gray-500 mb-4">
-              What happened after the dropped third strike?
+              Did the catcher catch it, or did it get away?
             </Text>
 
             <View className="gap-3">
+              <TouchableOpacity
+                className="bg-red-600 rounded-xl px-5 py-4"
+                onPress={() => {
+                  setShowD3KModal(false);
+                  onRecordStrikeout();
+                }}
+              >
+                <Text className="text-white font-semibold">Caught (regular K)</Text>
+                <Text className="text-white/70 text-xs mt-0.5">
+                  Catcher caught the third strike — batter is out
+                </Text>
+              </TouchableOpacity>
+
               <TouchableOpacity
                 className="bg-gray-600 rounded-xl px-5 py-4"
                 onPress={() => handleD3KOutcome({

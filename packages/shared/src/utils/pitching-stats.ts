@@ -551,7 +551,13 @@ export function derivePitchingStats(
         }
         strikeoutHandledByPitch = false;
         if (payload?.outcome !== 'thrown_out' && batterId) {
-          forceAdvanceRunners({ id: batterId, reachedOnError: false });
+          // Per OBR 9.16(a): runs scored by a runner who reached on an error
+          // are unearned. A D3K reached_on_error puts the batter on first via
+          // a charged error; track that so any subsequent run is unearned.
+          // reached_wild_pitch (WP or PB) is not a charged error here — the
+          // batter reached on a pitching/catching lapse, not a fielding error.
+          const reachedOnError = payload?.outcome === 'reached_on_error';
+          forceAdvanceRunners({ id: batterId, reachedOnError });
         }
       }
 

@@ -402,3 +402,58 @@ describe('deriveBattingStats — Quality At-Bats (QAB)', () => {
     expect(s.qabPct).toBeCloseTo(0.5, 5);
   });
 });
+
+describe('deriveBattingStats — DROPPED_THIRD_STRIKE', () => {
+  beforeEach(resetSeq);
+
+  it('credits K + PA + AB on a thrown_out D3K (still an out)', () => {
+    const events = [
+      e(EventType.DROPPED_THIRD_STRIKE, {
+        batterId: 'p1',
+        outcome: 'thrown_out',
+        fieldingSequence: [2, 3],
+      }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    const s = stats.get('p1')!;
+    expect(s.plateAppearances).toBe(1);
+    expect(s.atBats).toBe(1);
+    expect(s.strikeouts).toBe(1);
+    expect(s.hits).toBe(0);
+  });
+
+  it('credits K + PA + AB on a reached_on_error D3K — batter is not credited with a hit', () => {
+    const events = [
+      e(EventType.DROPPED_THIRD_STRIKE, {
+        batterId: 'p1',
+        outcome: 'reached_on_error',
+        errorBy: 2,
+      }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    const s = stats.get('p1')!;
+    expect(s.plateAppearances).toBe(1);
+    expect(s.atBats).toBe(1);
+    expect(s.strikeouts).toBe(1);
+    expect(s.hits).toBe(0);
+  });
+
+  it('credits K + PA + AB on a reached_wild_pitch D3K — batter is not credited with a hit', () => {
+    const events = [
+      e(EventType.DROPPED_THIRD_STRIKE, {
+        batterId: 'p1',
+        outcome: 'reached_wild_pitch',
+        isWildPitch: true,
+      }),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players);
+    const s = stats.get('p1')!;
+    expect(s.plateAppearances).toBe(1);
+    expect(s.atBats).toBe(1);
+    expect(s.strikeouts).toBe(1);
+    expect(s.hits).toBe(0);
+  });
+});
