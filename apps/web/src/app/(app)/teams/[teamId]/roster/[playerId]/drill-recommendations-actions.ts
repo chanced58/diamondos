@@ -12,6 +12,7 @@ import {
 } from '@baseball/shared';
 import { RELEVANT_EVENT_TYPES } from '../../../../compliance/constants';
 import { buildLineupsByGameId } from '@/lib/stats/lineups';
+import { fetchAllEventsForGames } from '@/lib/stats/fetch-events';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
 import {
@@ -226,15 +227,15 @@ async function loadPlayerContext(
     const { data: games } = await gamesQuery;
     const gameIds = ((games ?? []) as Array<{ id: string; location_type: string; neutral_home_team: string | null }>).map((g) => g.id);
     if (gameIds.length > 0) {
-      const { data: events } = await db
-        .from('game_events')
-        .select('*')
-        .in('game_id', gameIds)
-        .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
-        .order('game_id')
-        .order('sequence_number');
+      // Paginated to avoid Supabase's default 1000-row PostgREST cutoff
+      // silently truncating long seasons.
+      const events = await fetchAllEventsForGames(
+        db,
+        gameIds,
+        RELEVANT_EVENT_TYPES as unknown as readonly string[],
+      );
 
-      if (events && events.length > 0) {
+      if (events.length > 0) {
         // Strip reverted/reset events so undone pitches don't skew recent
         // batting/pitching focus signals.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

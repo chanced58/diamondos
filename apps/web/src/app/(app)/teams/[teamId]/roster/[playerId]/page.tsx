@@ -21,6 +21,7 @@ import { EditPlayerForm, DeactivatePlayerForm, ReactivatePlayerForm } from './Ed
 import { DrillRecommendations } from './DrillRecommendations';
 import { RELEVANT_EVENT_TYPES } from '../../../../compliance/constants';
 import { buildLineupsByGameId } from '@/lib/stats/lineups';
+import { fetchAllEventsForGames } from '@/lib/stats/fetch-events';
 
 export const metadata: Metadata = { title: 'Player Profile' };
 
@@ -134,15 +135,15 @@ export default async function PlayerPage({
     const gameIds = (games ?? []).map((g) => g.id);
 
     if (gameIds.length > 0) {
-      const { data: events } = await db
-        .from('game_events')
-        .select('*')
-        .in('game_id', gameIds)
-        .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
-        .order('game_id')
-        .order('sequence_number');
+      // Paginated to avoid Supabase's default 1000-row PostgREST cutoff
+      // silently truncating long seasons.
+      const events = await fetchAllEventsForGames(
+        db,
+        gameIds,
+        RELEVANT_EVENT_TYPES as unknown as readonly string[],
+      );
 
-      if (events && events.length > 0) {
+      if (events.length > 0) {
         // Strip reverted/reset events so they don't leak into totals.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const filteredEvents: any[] = filterResetAndReverted(events) as any[];

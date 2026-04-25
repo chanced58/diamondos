@@ -10,6 +10,7 @@ import { getLeagueTeamIds, getLeagueOpponentTeamIds } from '@baseball/database';
 import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, filterResetAndReverted } from '@baseball/shared';
 import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
 import { buildLineupsByGameId } from '@/lib/stats/lineups';
+import { fetchAllEventsForGames } from '@/lib/stats/fetch-events';
 import { PitchingStatsTable } from '../PitchingStatsTable';
 import { BattingStatsTable } from '../BattingStatsTable';
 import { TierToggle } from '../TierToggle';
@@ -69,22 +70,14 @@ export default async function LeagueStatsPage({
 
   const gameIds = (gamesData ?? []).map((g) => g.id);
 
-  // Get all relevant events — fetch in batches to avoid OOM/timeout for large leagues
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rawEvents: any[] = [];
-  const BATCH_SIZE = 200;
-  for (let i = 0; i < gameIds.length; i += BATCH_SIZE) {
-    const batchGameIds = gameIds.slice(i, i + BATCH_SIZE);
-    const { data: events, error: eventsError } = await db
-      .from('game_events')
-      .select('*')
-      .in('game_id', batchGameIds)
-      .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
-      .order('game_id')
-      .order('sequence_number');
-    if (eventsError) throw eventsError;
-    for (const e of events ?? []) rawEvents.push(e);
-  }
+  // Get all relevant events. The helper paginates through Supabase's
+  // default 1000-row PostgREST limit so large leagues' events don't get
+  // silently truncated.
+  const rawEvents = await fetchAllEventsForGames(
+    db,
+    gameIds,
+    RELEVANT_EVENT_TYPES as unknown as readonly string[],
+  );
 
   // Get all players across all league teams
   const { data: allPlayers, error: playersError } = await db
@@ -149,17 +142,12 @@ export default async function LeagueStatsPage({
     // Fetch events for opponent games not already fetched (dedup)
     const missingGameIds = oppGameIds.filter((id) => !gameIds.includes(id));
     if (missingGameIds.length > 0) {
-      for (let i = 0; i < missingGameIds.length; i += BATCH_SIZE) {
-        const batch = missingGameIds.slice(i, i + BATCH_SIZE);
-        const { data: events } = await db
-          .from('game_events')
-          .select('*')
-          .in('game_id', batch)
-          .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
-          .order('game_id')
-          .order('sequence_number');
-        for (const e of events ?? []) rawEvents.push(e);
-      }
+      const missingEvents = await fetchAllEventsForGames(
+        db,
+        missingGameIds,
+        RELEVANT_EVENT_TYPES as unknown as readonly string[],
+      );
+      rawEvents.push(...missingEvents);
     }
 
     // Fetch opponent players

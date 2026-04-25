@@ -8,6 +8,7 @@ import { getActiveTeam } from '@/lib/active-team';
 import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, weAreHome, filterResetAndReverted } from '@baseball/shared';
 import type { PitchingStats, BattingStats, StatTier } from '@baseball/shared';
 import { buildLineupsByGameId } from '@/lib/stats/lineups';
+import { fetchAllEventsForGames } from '@/lib/stats/fetch-events';
 import { PitchingStatsTable } from './PitchingStatsTable';
 import { BattingStatsTable } from './BattingStatsTable';
 import { OpponentsStatsTable } from './OpponentsStatsTable';
@@ -104,19 +105,15 @@ export default async function CompliancePage({
   const { data: gamesData } = await gamesQuery;
   const gameIds = (gamesData ?? []).map((g) => g.id);
 
-  // Get all relevant events for those games
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase select('*') returns untyped rows
-  const rawEvents: any[] = [];
-  if (gameIds.length > 0) {
-    const { data: events } = await db
-      .from('game_events')
-      .select('*')
-      .in('game_id', gameIds)
-      .in('event_type', RELEVANT_EVENT_TYPES as unknown as string[])
-      .order('game_id')
-      .order('sequence_number');
-    for (const e of events ?? []) rawEvents.push(e);
-  }
+  // Get all relevant events for those games. Paginated: a season with
+  // 12+ scored games easily exceeds Supabase's default 1000-row PostgREST
+  // limit, which would otherwise silently truncate the events feed and
+  // the deriver would render ~20% of the correct stats.
+  const rawEvents = await fetchAllEventsForGames(
+    db,
+    gameIds,
+    RELEVANT_EVENT_TYPES as unknown as readonly string[],
+  );
 
   // Filter out reverted/reset events per game
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
