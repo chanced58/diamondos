@@ -3,8 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-
-const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
+import { getUserAccess } from '@/lib/user-access';
 
 const POSITION_TO_DB: Record<string, string> = {
   P: 'pitcher',
@@ -41,13 +40,8 @@ async function getCoachContext(gameId: string) {
     .single();
   if (!game) return null;
 
-  const { data: membership } = await db
-    .from('team_members')
-    .select('role')
-    .eq('team_id', game.team_id)
-    .eq('user_id', user.id)
-    .single();
-  if (!membership || !COACH_ROLES.includes(membership.role)) return null;
+  const { isCoach } = await getUserAccess(game.team_id, user.id);
+  if (!isCoach) return null;
 
   return { user, game, db };
 }

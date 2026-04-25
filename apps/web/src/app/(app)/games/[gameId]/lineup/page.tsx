@@ -4,12 +4,11 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { getUserAccess } from '@/lib/user-access';
 import { weAreHome } from '@baseball/shared';
 import { LineupBuilder } from './LineupBuilder';
 
 export const metadata: Metadata = { title: 'Set Lineup' };
-
-const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
 /** Map database enum values back to UI abbreviations. */
 const DB_TO_POSITION: Record<string, string> = {
@@ -46,14 +45,8 @@ export default async function LineupPage({ params }: { params: { gameId: string 
 
   if (!game) notFound();
 
-  const { data: membership } = await db
-    .from('team_members')
-    .select('role')
-    .eq('team_id', game.team_id)
-    .eq('user_id', user.id)
-    .single();
-
-  if (!membership || !COACH_ROLES.includes(membership.role)) {
+  const { isCoach } = await getUserAccess(game.team_id, user.id);
+  if (!isCoach) {
     redirect(`/games/${params.gameId}`);
   }
 

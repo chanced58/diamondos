@@ -3,8 +3,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-
-const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
+import { getUserAccess } from '@/lib/user-access';
 
 /** Map UI abbreviations to the player_position database enum values. */
 const POSITION_TO_DB: Record<string, string> = {
@@ -44,14 +43,8 @@ export async function saveLineupAction(
 
   if (!game) return 'Game not found.';
 
-  const { data: membership } = await supabase
-    .from('team_members')
-    .select('role')
-    .eq('team_id', game.team_id)
-    .eq('user_id', user.id)
-    .single();
-
-  if (!membership || !COACH_ROLES.includes(membership.role)) {
+  const { isCoach } = await getUserAccess(game.team_id, user.id);
+  if (!isCoach) {
     return 'Only coaches can set the lineup.';
   }
 
