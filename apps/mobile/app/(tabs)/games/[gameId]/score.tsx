@@ -7,6 +7,7 @@ import { ScoreBoard } from '../../../../src/features/scoring/ScoreBoard';
 import { CountDisplay } from '../../../../src/features/scoring/CountDisplay';
 import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDisplay';
 import { PitchInput } from '../../../../src/features/scoring/PitchInput';
+import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
 import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome } from '@baseball/shared';
@@ -53,6 +54,9 @@ export default function ScoringScreen() {
           id: p.remoteId,
           name: p.fullName,
           jerseyNumber: p.jerseyNumber,
+          firstName: p.firstName,
+          lastName: p.lastName,
+          primaryPosition: p.primaryPosition ?? null,
         })),
       );
     })();
@@ -66,6 +70,7 @@ export default function ScoringScreen() {
   // the starting values via the "Set Lineup" modal below.
   const currentPitcherId = gameState?.currentPitcherId ?? undefined;
   const currentBatterId = gameState?.currentBatterId ?? undefined;
+  const defensiveLineup = useDefensiveLineup(gameId, roster);
   const [showLineupModal, setShowLineupModal] = useState(false);
   // Dropped-third-strike modal — opened either by the manual button in
   // PitchInput, or automatically by handlePitch when a 3rd-strike pitch is
@@ -324,6 +329,32 @@ export default function ScoringScreen() {
     await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
   }
 
+  async function handleDefensiveSub(outPlayerId: string, inPlayerId: string, newPosition?: string) {
+    if (!gameState) return;
+    const payload: SubstitutionPayload = {
+      inPlayerId,
+      outPlayerId,
+      substitutionType: SubstitutionType.DEFENSIVE,
+      ...(newPosition ? { newPosition } : {}),
+    };
+    await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
+  }
+
+  async function handlePositionChange(playerId: string, newPosition: string) {
+    if (!gameState) return;
+    // Position change keeps the same player on the field; we model it as a
+    // SUBSTITUTION with substitutionType=position_change. inPlayerId is the
+    // same player (no roster change), so we mirror the convention used by the
+    // web ScoringBoard: inPlayerId === outPlayerId === the moving player.
+    const payload: SubstitutionPayload = {
+      inPlayerId: playerId,
+      outPlayerId: playerId,
+      substitutionType: SubstitutionType.POSITION_CHANGE,
+      newPosition,
+    };
+    await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
+  }
+
   // Only scan this far back when searching for an event to void. Typical
   // scorer Undo use lives within the last few events; a 64-event trailing
   // window covers well over an inning of activity while keeping the query
@@ -551,6 +582,9 @@ export default function ScoringScreen() {
         onRecordTriplePlay={handleTriplePlay}
         onRecordPitchingChange={handlePitchingChange}
         onRecordPinchHitter={handlePinchHitter}
+        onRecordDefensiveSub={handleDefensiveSub}
+        onRecordPositionChange={handlePositionChange}
+        defensiveLineup={defensiveLineup}
         roster={roster}
         onUndoLastEvent={handleUndo}
         runnersOnBase={runnersOnBase}

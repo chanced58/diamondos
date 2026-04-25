@@ -5,9 +5,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome } from '@baseball/shared';
+import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome } from '@baseball/shared';
 import type { GameEvent } from '@baseball/shared';
 import { endGameAction } from '../actions';
+import { DefensiveDiamond } from './DefensiveDiamond';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -2792,8 +2793,27 @@ export function ScoringBoard({
                   : lineup.map((l) => l.playerId),
               );
 
+              const showDiamond = subType === 'defensive' || subType === 'position_change';
+              const defensiveLineup = showDiamond
+                ? deriveDefensiveLineup(
+                    isOpp ? localOpponentLineup : lineup,
+                    currentRoster,
+                    effectiveEventRows.map((r) => ({
+                      event_type: r.event_type as string,
+                      payload: (r.payload ?? null) as Record<string, unknown> | null,
+                    })),
+                    isOpp,
+                  )
+                : null;
+
               return (
                 <>
+                  {defensiveLineup && (
+                    <DefensiveDiamond
+                      lineup={defensiveLineup}
+                      teamLabel={isOpp ? 'Opponent' : 'Our Team'}
+                    />
+                  )}
                   {subType === 'position_change' ? (
                     <>
                       {/* Position change: single player selector (must be in lineup) */}
