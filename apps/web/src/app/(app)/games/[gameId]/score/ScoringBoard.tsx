@@ -1332,6 +1332,21 @@ export function ScoringBoard({
     });
   }
 
+  // Runner thrown out advancing during a play (e.g., on a hit, sac fly,
+  // wild pitch). Distinct from caught stealing (which implies a steal
+  // attempt independent of the batter) and pickoff (off-base when the
+  // pitcher held the ball). game-state.ts treats BASERUNNER_OUT as a
+  // single out and removes the runner; stats engines count the out
+  // without crediting CS to the catcher.
+  async function handleBaserunnerOutAdvancing(runnerId: string, fromBase: 1 | 2 | 3) {
+    if (!canRecord) return;
+    const pitcherId = activePitcherId ?? undefined;
+    setPendingAdvance(null);
+    setAdvanceErrorBy(null);
+    setAdvancePendingReason(null);
+    await recordEvent('baserunner_out', { runnerId, fromBase, pitcherId });
+  }
+
   function handleAdvanceClick(runnerId: string, fromBase: 1 | 2 | 3, toBase: 2 | 3 | 4) {
     setPendingCSPickoff(null);
     setCsPickoffFieldingSeq([]);
@@ -2379,6 +2394,13 @@ export function ScoringBoard({
                         title="Pickoff attempt — runner safe"
                       >
                         PO Safe
+                      </button>
+                      <button
+                        onClick={() => handleBaserunnerOutAdvancing(runnerId!, base)}
+                        className="px-2 py-1 text-xs font-medium rounded border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors whitespace-nowrap"
+                        title="Runner thrown out advancing during the play"
+                      >
+                        Out Adv
                       </button>
                       {base < 3 && (
                         <button

@@ -39,6 +39,9 @@ interface PitchInputProps {
   onRecordSacFly: () => void;
   onRecordSacBunt: () => void;
   onRecordFieldersChoice: (runnerId: string, fromBase: Base) => void;
+  /** Runner thrown out advancing during a play (e.g., on a hit, sac fly,
+   *  wild pitch). Records BASERUNNER_OUT for the chosen runner. */
+  onRecordRunnerOut: (runnerId: string, fromBase: Base) => void;
   onRecordWildPitch: () => void;
   onRecordPassedBall: () => void;
   onRecordBalk: () => void;
@@ -114,6 +117,7 @@ export function PitchInput({
   onRecordSacFly,
   onRecordSacBunt,
   onRecordFieldersChoice,
+  onRecordRunnerOut,
   onRecordWildPitch,
   onRecordPassedBall,
   onRecordBalk,
@@ -134,6 +138,7 @@ export function PitchInput({
   const showD3KModal = d3kModalOpen;
   const setShowD3KModal = setD3KModalOpen ?? (() => {});
   const [showFCModal, setShowFCModal] = useState(false);
+  const [showRunnerOutModal, setShowRunnerOutModal] = useState(false);
   const [showOutModal, setShowOutModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showDPModal, setShowDPModal] = useState(false);
@@ -206,6 +211,11 @@ export function PitchInput({
   function handleFCPick(runnerId: string, fromBase: Base) {
     setShowFCModal(false);
     onRecordFieldersChoice(runnerId, fromBase);
+  }
+
+  function handleRunnerOutPick(runnerId: string, fromBase: Base) {
+    setShowRunnerOutModal(false);
+    onRecordRunnerOut(runnerId, fromBase);
   }
 
   function handleOutPick(outType: BattedOutType) {
@@ -320,6 +330,14 @@ export function PitchInput({
               emoji="FC"
               onPress={() => setShowFCModal(true)}
               color="bg-purple-700"
+            />
+          )}
+          {fcEligible && (
+            <OutcomeButton
+              label="Runner Out"
+              emoji="RO"
+              onPress={() => setShowRunnerOutModal(true)}
+              color="bg-rose-700"
             />
           )}
           <OutcomeButton label="Balk" emoji="BK" onPress={onRecordBalk} color="bg-pink-600" />
@@ -691,6 +709,48 @@ export function PitchInput({
             <TouchableOpacity
               className="mt-4 py-3 items-center"
               onPress={() => setShowFCModal(false)}
+            >
+              <Text className="text-gray-500 font-semibold">Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Runner thrown out advancing — records BASERUNNER_OUT for the
+       *  picked runner. Use after a play (hit, sac, wild pitch, etc.)
+       *  when a runner was thrown out trying to take an extra base. */}
+      <Modal
+        visible={showRunnerOutModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowRunnerOutModal(false)}
+      >
+        <View className="flex-1 justify-end bg-black/50">
+          <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
+            <Text className="text-lg font-bold text-gray-900 mb-1">
+              Runner Thrown Out
+            </Text>
+            <Text className="text-sm text-gray-500 mb-4">
+              Which runner was thrown out advancing during the play?
+            </Text>
+
+            <View className="gap-3">
+              {runnersOnBase.map(({ base, runnerId }) => (
+                <TouchableOpacity
+                  key={base}
+                  className="bg-rose-700 rounded-xl px-5 py-4"
+                  onPress={() => handleRunnerOutPick(runnerId, base)}
+                >
+                  <Text className="text-white font-semibold">
+                    Runner on {baseLabel(base)} thrown out
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              className="mt-4 py-3 items-center"
+              onPress={() => setShowRunnerOutModal(false)}
             >
               <Text className="text-gray-500 font-semibold">Cancel</Text>
             </TouchableOpacity>
