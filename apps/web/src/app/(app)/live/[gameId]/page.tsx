@@ -15,17 +15,11 @@ interface Props {
   params: { gameId: string };
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!serviceRoleKey) return { title: 'Live Game' };
-  const db = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey);
-  const { data: game } = await db
-    .from('games')
-    .select('opponent_name')
-    .eq('id', params.gameId)
-    .maybeSingle();
-  if (!game) return { title: 'Live Game' };
-  return { title: `Live: ${game.opponent_name ?? 'TBD'}` };
+export function generateMetadata(_: Props): Metadata {
+  // Don't query the DB here: generateMetadata runs before the page-level
+  // auth check, so any per-game detail (opponent name, team, etc.) would
+  // leak via the document title to unauthorized viewers.
+  return { title: 'Live Game' };
 }
 
 export default async function LiveGamePage({ params }: Props): Promise<JSX.Element | null> {

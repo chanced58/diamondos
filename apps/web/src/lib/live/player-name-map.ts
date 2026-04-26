@@ -18,14 +18,36 @@ export async function buildLivePlayerNameMap(
   const [teamPlayersRes, opponentPlayersRes] = await Promise.all([
     teamIds.length > 0
       ? db.from('players').select('id, last_name, jersey_number').in('team_id', teamIds)
-      : Promise.resolve({ data: [] as Array<{ id: string; last_name: string; jersey_number: number | null }> }),
+      : Promise.resolve({
+          data: [] as Array<{ id: string; last_name: string; jersey_number: number | null }>,
+          error: null,
+        }),
     opponentTeamIds.length > 0
       ? db
           .from('opponent_players')
           .select('id, last_name, jersey_number')
           .in('opponent_team_id', opponentTeamIds)
-      : Promise.resolve({ data: [] as Array<{ id: string; last_name: string; jersey_number: string | null }> }),
+      : Promise.resolve({
+          data: [] as Array<{ id: string; last_name: string; jersey_number: string | null }>,
+          error: null,
+        }),
   ]);
+
+  // Failures are non-fatal here — the live panel still functions with '—'
+  // for unresolved names. Surface them in logs so coverage gaps don't go
+  // silently unnoticed.
+  if ('error' in teamPlayersRes && teamPlayersRes.error) {
+    console.error(
+      `[player-name-map] Failed to load players for teamIds=${teamIds.join(',')}:`,
+      teamPlayersRes.error,
+    );
+  }
+  if ('error' in opponentPlayersRes && opponentPlayersRes.error) {
+    console.error(
+      `[player-name-map] Failed to load opponent_players for opponentTeamIds=${opponentTeamIds.join(',')}:`,
+      opponentPlayersRes.error,
+    );
+  }
 
   for (const p of (teamPlayersRes.data ?? []) as Array<{
     id: string;

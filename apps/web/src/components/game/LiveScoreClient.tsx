@@ -61,6 +61,17 @@ export function LiveScoreClient({
   const supabase = createBrowserClient();
 
   useEffect(() => {
+    let cancelled = false;
+
+    const mergeRow = (next: EventRow) => {
+      setEvents((prev) => {
+        if (prev.some((e) => e.id === next.id)) return prev;
+        return [...prev, next].sort(
+          (a, b) => a.sequence_number - b.sequence_number,
+        );
+      });
+    };
+
     const channel = supabase
       .channel(`live-game-${gameId}`)
       .on(
@@ -71,15 +82,7 @@ export function LiveScoreClient({
           table: 'game_events',
           filter: `game_id=eq.${gameId}`,
         },
-        (payload) => {
-          const next = payload.new as EventRow;
-          setEvents((prev) => {
-            if (prev.some((e) => e.id === next.id)) return prev;
-            return [...prev, next].sort(
-              (a, b) => a.sequence_number - b.sequence_number,
-            );
-          });
-        },
+        (payload) => mergeRow(payload.new as EventRow),
       )
       .on(
         'postgres_changes',
@@ -93,11 +96,38 @@ export function LiveScoreClient({
           setGame(payload.new as Game);
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        // Close the SSR-to-subscribe gap: events inserted while we were
+        // hydrating + opening the channel won't arrive over realtime.
+        // Once subscribed, fetch anything past our current high-water mark
+        // and merge it through the same dedupe path.
+        if (status !== 'SUBSCRIBED' || cancelled) return;
+        const highWater = events.length > 0
+          ? events[events.length - 1].sequence_number
+          : 0;
+        void supabase
+          .from('game_events')
+          .select('*')
+          .eq('game_id', gameId)
+          .gt('sequence_number', highWater)
+          .order('sequence_number')
+          .then(({ data, error }) => {
+            if (cancelled) return;
+            if (error) {
+              console.error(`[LiveScoreClient] Failed backfill for gameId=${gameId}:`, error);
+              return;
+            }
+            for (const row of (data ?? []) as EventRow[]) mergeRow(row);
+          });
+      });
 
     return () => {
+      cancelled = true;
       supabase.removeChannel(channel);
     };
+    // `events` intentionally omitted: only the value at subscribe time
+    // matters (read inside the SUBSCRIBED callback). Re-running on every
+    // event would tear down + recreate the channel.
   }, [gameId, supabase]);
 
   const state = useMemo<LiveGameState>(() => {
@@ -107,15 +137,27 @@ export function LiveScoreClient({
     return deriveGameState(game.id, filtered.map(rowToGameEvent), game.team_id);
   }, [events, game.id, game.team_id]);
 
-  // Latest non-filtered event drives the ticker line.
-  const latestEvent = events.length > 0 ? events[events.length - 1] : null;
-  const tickerText = useMemo(
-    () => (latestEvent ? formatEventTicker(latestEvent, playerNameMap) : null),
-    [latestEvent, playerNameMap],
-  );
+  // Walk backwards through events to find the most recent renderable
+  // ticker line. Some event types (PITCH_REVERTED, EVENT_VOIDED, etc.)
+  // intentionally produce no ticker — without this walk-back the panel
+  // would unmount whenever one of those was the latest event.
+  const { tickerText, tickerEventId } = useMemo<{
+    tickerText: string | null;
+    tickerEventId: string | null;
+  }>(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const text = formatEventTicker(events[i], playerNameMap);
+      if (text !== null) return { tickerText: text, tickerEventId: events[i].id };
+    }
+    return { tickerText: null, tickerEventId: null };
+  }, [events, playerNameMap]);
 
   // ─── Animation diff: pulse new base arrivals + flash count on changes ───
   const prevState = useRef<LiveGameState | null>(null);
+  // Hold the pulse-reset timer in a ref so subsequent state changes
+  // (e.g. count updates that re-run this effect) don't tear it down via
+  // useEffect cleanup mid-pulse.
+  const pulseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pulseBases, setPulseBases] = useState<{ first: boolean; second: boolean; third: boolean }>({
     first: false,
     second: false,
@@ -132,12 +174,12 @@ export function LiveScoreClient({
         third: !before.runnersOnBase.third && !!state.runnersOnBase.third,
       };
       if (next.first || next.second || next.third) {
+        if (pulseTimeoutRef.current !== null) clearTimeout(pulseTimeoutRef.current);
         setPulseBases(next);
-        const t = setTimeout(
-          () => setPulseBases({ first: false, second: false, third: false }),
-          750,
-        );
-        return () => clearTimeout(t);
+        pulseTimeoutRef.current = setTimeout(() => {
+          setPulseBases({ first: false, second: false, third: false });
+          pulseTimeoutRef.current = null;
+        }, 750);
       }
       if (
         before.balls !== state.balls ||
@@ -148,8 +190,13 @@ export function LiveScoreClient({
       }
     }
     prevState.current = state;
-    return undefined;
   }, [state]);
+
+  useEffect(() => {
+    return () => {
+      if (pulseTimeoutRef.current !== null) clearTimeout(pulseTimeoutRef.current);
+    };
+  }, []);
 
   const halfLabel = state.isTopOfInning ? 'Top' : 'Bot';
   const usName = teamName ?? 'Our team';
@@ -296,7 +343,7 @@ export function LiveScoreClient({
 
           {tickerText && (
             <div
-              key={latestEvent?.id ?? 'no-event'}
+              key={tickerEventId ?? 'no-event'}
               className="event-ticker-in"
               style={{
                 gridColumn: '1 / -1',

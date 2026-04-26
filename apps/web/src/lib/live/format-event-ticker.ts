@@ -138,11 +138,16 @@ export function formatEventTicker(event: EventLike, names: PlayerNameMap): strin
     case EventType.DOUBLE_PLAY: return 'Double play';
     case EventType.TRIPLE_PLAY: return 'Triple play';
     case EventType.FIELD_ERROR: return 'Fielding error';
+    case EventType.CATCHER_INTERFERENCE: return 'Catcher interference';
     case EventType.BALK: return 'Balk';
     case EventType.RUNDOWN: return 'Rundown';
     case EventType.INNING_CHANGE: return 'Inning change';
     case EventType.GAME_START: return 'Play ball!';
     case EventType.GAME_END: return 'Final';
+    // Correction events shouldn't surface as the "Last play" line — the
+    // caller should walk back to the previous renderable event.
+    case EventType.PITCH_REVERTED: return null;
+    case EventType.EVENT_VOIDED: return null;
     default: return null;
   }
 }
