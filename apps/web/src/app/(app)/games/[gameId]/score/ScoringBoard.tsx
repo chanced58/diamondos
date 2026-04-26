@@ -558,6 +558,12 @@ export function ScoringBoard({
   const [fieldingSequence, setFieldingSequence] = useState<number[]>([]);
   // Stashed result/trajectory for the fielding sequence step (so pendingResult can be cleared)
   const [stashedOutResult, setStashedOutResult] = useState<string | null>(null);
+  // Sacrifice follow-up: after the scorer records a plain Out (incl. fielding
+  // sequence), they get one more prompt — was this a sacrifice fly or bunt?
+  // The fielding sequence already collected for the out is stashed here so
+  // the sacrifice path can carry the same context onto its event payload.
+  const [sacChoicePending, setSacChoicePending] = useState(false);
+  const [stashedSacFieldingSequence, setStashedSacFieldingSequence] = useState<number[]>([]);
   // Out-assignment step for DP/TP: maps each out slot to a player ID
   const [outAssignmentPending, setOutAssignmentPending] = useState(false);
   const [outAssignments, setOutAssignments] = useState<(string | null)[]>([]);
@@ -703,6 +709,8 @@ export function ScoringBoard({
     setFieldingSequencePending(false);
     setFieldingSequence([]);
     setStashedOutResult(null);
+    setSacChoicePending(false);
+    setStashedSacFieldingSequence([]);
     setWildPitchPending(false);
     setPassedBallPending(false);
     setOutAssignmentPending(false);
@@ -1150,6 +1158,53 @@ export function ScoringBoard({
     }
   }
 
+  // Sacrifice fly / sacrifice bunt path that funnels through the in-play Out
+  // flow — the scorer recorded a plain out (with a trajectory + fielding
+  // sequence already chosen) and then upgraded it to a sacrifice on the
+  // follow-up prompt. We keep the same prologue as handleInPlay (record the
+  // in-play pitch, capture spray + sequence context) and emit a sacrifice_fly
+  // / sacrifice_bunt event instead of an `out` event. Stats and game-state
+  // engines already handle these event types per OBR 9.08(a)/(b).
+  async function handleInPlaySacrifice(
+    sacrificeType: 'sacrifice_fly' | 'sacrifice_bunt',
+    trajectory: string,
+    sequence?: number[],
+  ) {
+    if (!canRecord) return;
+    setInPlayPending(false);
+    setSacChoicePending(false);
+    setPendingResult(null);
+    setStashedOutResult(null);
+    setStashedSacFieldingSequence([]);
+    const batterId = activeBatterId ?? undefined;
+    const pitcherId = activePitcherId ?? undefined;
+
+    const pitchExtra: Record<string, unknown> = {};
+    if (pitchType) pitchExtra.pitchType = pitchType;
+    if (zoneLocation !== null) pitchExtra.zoneLocation = zoneLocation;
+    if (wildPitchPending) pitchExtra.isWildPitch = true;
+    if (passedBallPending) pitchExtra.isPassedBall = true;
+
+    const sprayExtra: Record<string, unknown> = sprayPoint
+      ? { sprayX: sprayPoint.x, sprayY: sprayPoint.y }
+      : {};
+
+    await recordEvent('pitch_thrown', { pitcherId, batterId, outcome: 'in_play', ...pitchExtra });
+    resetAnnotations();
+
+    const seqExtra: Record<string, unknown> = sequence && sequence.length > 0
+      ? { fieldingSequence: sequence }
+      : {};
+
+    await recordEvent(sacrificeType, {
+      batterId,
+      pitcherId,
+      trajectory,
+      ...sprayExtra,
+      ...seqExtra,
+    });
+  }
+
   // Fielder's choice: the identified runner is called out, batter reaches 1st,
   // and deriveGameState's HIT(single) case naturally advances remaining runners
   // and scores any runner who was on third.
@@ -1459,6 +1514,8 @@ export function ScoringBoard({
     setFieldingSequencePending(false);
     setFieldingSequence([]);
     setStashedOutResult(null);
+    setSacChoicePending(false);
+    setStashedSacFieldingSequence([]);
     setOutAssignmentPending(false);
     setOutAssignments([]);
     setFcRunnerOutPending(false);
@@ -2024,6 +2081,68 @@ export function ScoringBoard({
                       </div>
                     );
                   })()
+                ) : sacChoicePending ? (
+                  /* ── Step 4 (out only): was this a sacrifice? ── */
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                      Was this a sacrifice?
+                    </p>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Tag this {(pendingTrajectory ?? 'out').replace('_', ' ')} as a sacrifice (PA but
+                      not an AB) or record it as a regular out.
+                    </p>
+                    <div className="grid grid-cols-1 gap-2">
+                      <button
+                        onClick={() =>
+                          handleInPlay(
+                            'out',
+                            pendingTrajectory ?? 'ground_ball',
+                            stashedSacFieldingSequence,
+                          )
+                        }
+                        className="py-2 text-sm font-semibold rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 transition-colors"
+                      >
+                        Regular out
+                      </button>
+                      <button
+                        onClick={() =>
+                          handleInPlaySacrifice(
+                            'sacrifice_fly',
+                            pendingTrajectory ?? 'fly_ball',
+                            stashedSacFieldingSequence,
+                          )
+                        }
+                        className="py-2 text-sm font-semibold rounded-lg border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 transition-colors"
+                      >
+                        Sacrifice fly
+                      </button>
+                      <button
+                        onClick={() =>
+                          handleInPlaySacrifice(
+                            'sacrifice_bunt',
+                            pendingTrajectory ?? 'ground_ball',
+                            stashedSacFieldingSequence,
+                          )
+                        }
+                        className="py-2 text-sm font-semibold rounded-lg border border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100 transition-colors"
+                      >
+                        Sacrifice bunt
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => {
+                        // Send the user back to the fielding-sequence step with
+                        // the sequence they had collected restored.
+                        setSacChoicePending(false);
+                        setFieldingSequence(stashedSacFieldingSequence);
+                        setStashedSacFieldingSequence([]);
+                        setFieldingSequencePending(true);
+                      }}
+                      className="text-xs text-gray-400 hover:text-gray-600 mt-2 block"
+                    >
+                      ← Back to fielding sequence
+                    </button>
+                  </div>
                 ) : fieldingSequencePending && stashedOutResult ? (
                   /* ── Step 3: Fielding sequence picker (for outs) ── */
                   <div>
@@ -2071,6 +2190,13 @@ export function ScoringBoard({
                             setFcOutRunnerId(null);
                             setFcRunnerOutPending(true);
                             setFieldingSequencePending(false);
+                          } else if (stashedOutResult === 'out') {
+                            // Stash the sequence and ask whether this was a sacrifice
+                            // before recording. handleInPlay / handleInPlaySacrifice
+                            // will own the actual event emission.
+                            setStashedSacFieldingSequence(fieldingSequence);
+                            setFieldingSequencePending(false);
+                            setSacChoicePending(true);
                           } else {
                             handleInPlay(stashedOutResult, pendingTrajectory ?? 'ground_ball', fieldingSequence);
                           }
@@ -2096,6 +2222,11 @@ export function ScoringBoard({
                             setFcOutRunnerId(null);
                             setFcRunnerOutPending(true);
                             setFieldingSequencePending(false);
+                          } else if (stashedOutResult === 'out') {
+                            // No fielding sequence captured — still ask the sac question.
+                            setStashedSacFieldingSequence([]);
+                            setFieldingSequencePending(false);
+                            setSacChoicePending(true);
                           } else {
                             handleInPlay(stashedOutResult, pendingTrajectory ?? 'ground_ball');
                           }

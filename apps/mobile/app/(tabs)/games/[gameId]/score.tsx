@@ -194,6 +194,38 @@ export default function ScoringScreen() {
     });
   }
 
+  // Sacrifice path that came from the Out modal — the scorer first picked
+  // a trajectory, then upgraded it to a sacrifice. We carry the trajectory
+  // on the payload so the play preserves the context the scorer already
+  // identified (e.g. flyout → sac fly retains FLY_BALL).
+  function trajectoryForOutType(outType: BattedOutType): HitTrajectory | undefined {
+    return outType === 'groundout' ? HitTrajectory.GROUND_BALL
+      : outType === 'flyout' ? HitTrajectory.FLY_BALL
+      : outType === 'lineout' ? HitTrajectory.LINE_DRIVE
+      : outType === 'popout' ? HitTrajectory.FLY_BALL
+      : undefined;
+  }
+
+  async function handleSacrificeFlyFromOut(outType: BattedOutType) {
+    if (!gameState) return;
+    const trajectory = trajectoryForOutType(outType);
+    await recordEvent(EventType.SACRIFICE_FLY, gameState.inning, gameState.isTopOfInning, {
+      batterId: currentBatterId,
+      pitcherId: currentPitcherId,
+      ...(trajectory ? { trajectory } : {}),
+    });
+  }
+
+  async function handleSacrificeBuntFromOut(outType: BattedOutType) {
+    if (!gameState) return;
+    const trajectory = trajectoryForOutType(outType);
+    await recordEvent(EventType.SACRIFICE_BUNT, gameState.inning, gameState.isTopOfInning, {
+      batterId: currentBatterId,
+      pitcherId: currentPitcherId,
+      ...(trajectory ? { trajectory } : {}),
+    });
+  }
+
   async function handleStolenBase(fromBase: 1 | 2 | 3, runnerId: string) {
     if (!gameState) return;
     const toBase = (fromBase + 1) as 2 | 3 | 4;
@@ -587,6 +619,8 @@ export default function ScoringScreen() {
         onRecordCatcherInterference={handleCatcherInterference}
         onRecordSacFly={handleSacrificeFly}
         onRecordSacBunt={handleSacrificeBunt}
+        onRecordSacFlyFromOut={handleSacrificeFlyFromOut}
+        onRecordSacBuntFromOut={handleSacrificeBuntFromOut}
         onRecordFieldersChoice={handleFieldersChoice}
         onRecordRunnerOut={handleRunnerOut}
         onRecordWildPitch={handleWildPitch}

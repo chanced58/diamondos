@@ -179,6 +179,22 @@ export interface OutPayload {
   fieldingSequence?: number[];
 }
 
+/** Payload for SACRIFICE_FLY and SACRIFICE_BUNT events. All fields optional;
+ *  fast-path top-level buttons emit just batterId+pitcherId, while the
+ *  in-play "Out → was this a sacrifice?" follow-up carries the trajectory
+ *  the scorer initially identified plus any spray / fielding context that
+ *  was already captured before re-classifying the play. */
+export interface SacrificePayload {
+  batterId?: string;
+  pitcherId?: string;
+  opponentBatterId?: string;
+  opponentPitcherId?: string;
+  trajectory?: HitTrajectory;
+  sprayX?: number;
+  sprayY?: number;
+  fieldingSequence?: number[];
+}
+
 export interface SubstitutionPayload {
   inPlayerId: string;
   /** Optional: the slot may have had no known occupant yet (initial lineup setup). */
@@ -279,6 +295,7 @@ export type GameEventPayload =
   | PitchThrownPayload
   | HitPayload
   | OutPayload
+  | SacrificePayload
   | SubstitutionPayload
   | PitchingChangePayload
   | ScorePayload

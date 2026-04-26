@@ -38,6 +38,12 @@ interface PitchInputProps {
   onRecordCatcherInterference: () => void;
   onRecordSacFly: () => void;
   onRecordSacBunt: () => void;
+  /** Sacrifice fly chosen via the in-Out follow-up — carries the trajectory
+   *  the scorer initially picked (groundout/flyout/lineout/popout/other) so
+   *  the recorded payload preserves that context. */
+  onRecordSacFlyFromOut?: (outType: BattedOutType) => void;
+  /** Sacrifice bunt chosen via the in-Out follow-up — same trajectory carry-over. */
+  onRecordSacBuntFromOut?: (outType: BattedOutType) => void;
   onRecordFieldersChoice: (runnerId: string, fromBase: Base) => void;
   /** Runner thrown out advancing during a play (e.g., on a hit, sac fly,
    *  wild pitch). Records BASERUNNER_OUT for the chosen runner. */
@@ -116,6 +122,8 @@ export function PitchInput({
   onRecordCatcherInterference,
   onRecordSacFly,
   onRecordSacBunt,
+  onRecordSacFlyFromOut,
+  onRecordSacBuntFromOut,
   onRecordFieldersChoice,
   onRecordRunnerOut,
   onRecordWildPitch,
@@ -140,6 +148,9 @@ export function PitchInput({
   const [showFCModal, setShowFCModal] = useState(false);
   const [showRunnerOutModal, setShowRunnerOutModal] = useState(false);
   const [showOutModal, setShowOutModal] = useState(false);
+  // Two-step Out modal: step 1 picks trajectory, step 2 asks "was this a sac?".
+  // null = step 1 visible; non-null = step 2 visible with the picked trajectory.
+  const [pendingOutType, setPendingOutType] = useState<BattedOutType | null>(null);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showDPModal, setShowDPModal] = useState(false);
   const [subModal, setSubModal] = useState<
@@ -218,9 +229,43 @@ export function PitchInput({
     onRecordRunnerOut(runnerId, fromBase);
   }
 
+  // Step 1: scorer picks the trajectory of the out. We stash it and advance
+  // to step 2 where the scorer confirms it was a regular out or upgrades it
+  // to a sacrifice fly/bunt.
   function handleOutPick(outType: BattedOutType) {
+    setPendingOutType(outType);
+  }
+
+  // Step 2 (regular path): confirm the stashed trajectory as a plain OUT.
+  function confirmRegularOut() {
+    if (!pendingOutType) return;
+    const t = pendingOutType;
+    closeOutModal();
+    onRecordOut(t);
+  }
+
+  // Step 2 (sac fly path): record SACRIFICE_FLY, carrying the trajectory
+  // the scorer just picked as additional payload context.
+  function confirmSacFlyFromOut() {
+    if (!pendingOutType) return;
+    const t = pendingOutType;
+    closeOutModal();
+    if (onRecordSacFlyFromOut) onRecordSacFlyFromOut(t);
+    else onRecordSacFly();
+  }
+
+  // Step 2 (sac bunt path): record SACRIFICE_BUNT with trajectory context.
+  function confirmSacBuntFromOut() {
+    if (!pendingOutType) return;
+    const t = pendingOutType;
+    closeOutModal();
+    if (onRecordSacBuntFromOut) onRecordSacBuntFromOut(t);
+    else onRecordSacBunt();
+  }
+
+  function closeOutModal() {
     setShowOutModal(false);
-    onRecordOut(outType);
+    setPendingOutType(null);
   }
 
   function handleD3KOutcome(details: DroppedThirdStrikeDetails) {
@@ -637,41 +682,100 @@ export function PitchInput({
         </View>
       </Modal>
 
-      {/* Out type picker: scorer picks the trajectory of the batted-ball out */}
+      {/* Out picker — two-step:
+       *   Step 1: trajectory of the batted-ball out
+       *   Step 2: was it a sacrifice (fly / bunt) or a regular out?
+       *  Step 2 lets the scorer upgrade the play after seeing how it unfolded
+       *  (e.g. tapped Flyout, then realized the runner from 3rd scored). */}
       <Modal
         visible={showOutModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowOutModal(false)}
+        onRequestClose={closeOutModal}
       >
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
-            <Text className="text-lg font-bold text-gray-900 mb-1">Out</Text>
-            <Text className="text-sm text-gray-500 mb-4">
-              How was the batter retired?
-            </Text>
+            {pendingOutType === null ? (
+              <>
+                <Text className="text-lg font-bold text-gray-900 mb-1">Out</Text>
+                <Text className="text-sm text-gray-500 mb-4">
+                  How was the batter retired?
+                </Text>
 
-            <View className="gap-3">
-              <TouchableOpacity className="bg-gray-600 rounded-xl px-5 py-4" onPress={() => handleOutPick('groundout')}>
-                <Text className="text-white font-semibold">Groundout</Text>
-              </TouchableOpacity>
-              <TouchableOpacity className="bg-gray-600 rounded-xl px-5 py-4" onPress={() => handleOutPick('flyout')}>
-                <Text className="text-white font-semibold">Flyout</Text>
-              </TouchableOpacity>
-              <TouchableOpacity className="bg-gray-600 rounded-xl px-5 py-4" onPress={() => handleOutPick('lineout')}>
-                <Text className="text-white font-semibold">Lineout</Text>
-              </TouchableOpacity>
-              <TouchableOpacity className="bg-gray-600 rounded-xl px-5 py-4" onPress={() => handleOutPick('popout')}>
-                <Text className="text-white font-semibold">Popout</Text>
-              </TouchableOpacity>
-              <TouchableOpacity className="bg-gray-500 rounded-xl px-5 py-4" onPress={() => handleOutPick('other')}>
-                <Text className="text-white font-semibold">Other</Text>
-              </TouchableOpacity>
-            </View>
+                <View className="gap-3">
+                  <TouchableOpacity className="bg-gray-600 rounded-xl px-5 py-4" onPress={() => handleOutPick('groundout')}>
+                    <Text className="text-white font-semibold">Groundout</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity className="bg-gray-600 rounded-xl px-5 py-4" onPress={() => handleOutPick('flyout')}>
+                    <Text className="text-white font-semibold">Flyout</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity className="bg-gray-600 rounded-xl px-5 py-4" onPress={() => handleOutPick('lineout')}>
+                    <Text className="text-white font-semibold">Lineout</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity className="bg-gray-600 rounded-xl px-5 py-4" onPress={() => handleOutPick('popout')}>
+                    <Text className="text-white font-semibold">Popout</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity className="bg-gray-500 rounded-xl px-5 py-4" onPress={() => handleOutPick('other')}>
+                    <Text className="text-white font-semibold">Other</Text>
+                  </TouchableOpacity>
+                </View>
 
-            <TouchableOpacity className="mt-4 py-3 items-center" onPress={() => setShowOutModal(false)}>
-              <Text className="text-gray-500 font-semibold">Cancel</Text>
-            </TouchableOpacity>
+                <TouchableOpacity className="mt-4 py-3 items-center" onPress={closeOutModal}>
+                  <Text className="text-gray-500 font-semibold">Cancel</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text className="text-lg font-bold text-gray-900 mb-1">
+                  {outTypeLabel(pendingOutType)} — sacrifice?
+                </Text>
+                <Text className="text-sm text-gray-500 mb-4">
+                  Tag this {outTypeLabel(pendingOutType).toLowerCase()} as a
+                  sacrifice fly or bunt, or record it as a regular out.
+                </Text>
+
+                <View className="gap-3">
+                  <TouchableOpacity
+                    className="bg-gray-700 rounded-xl px-5 py-4"
+                    onPress={confirmRegularOut}
+                  >
+                    <Text className="text-white font-semibold">Regular out</Text>
+                    <Text className="text-white/70 text-xs mt-0.5">
+                      Records a normal {outTypeLabel(pendingOutType).toLowerCase()} (counts as an at-bat)
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    className="bg-teal-600 rounded-xl px-5 py-4"
+                    onPress={confirmSacFlyFromOut}
+                  >
+                    <Text className="text-white font-semibold">Sacrifice fly</Text>
+                    <Text className="text-white/70 text-xs mt-0.5">
+                      Runner scored from 3rd on the catch — PA but not an AB
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    className="bg-teal-700 rounded-xl px-5 py-4"
+                    onPress={confirmSacBuntFromOut}
+                  >
+                    <Text className="text-white font-semibold">Sacrifice bunt</Text>
+                    <Text className="text-white/70 text-xs mt-0.5">
+                      Bunt out that intentionally advanced a runner — PA but not an AB
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View className="flex-row justify-between items-center mt-4">
+                  <TouchableOpacity className="py-3" onPress={() => setPendingOutType(null)}>
+                    <Text className="text-gray-500 font-semibold">← Back</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity className="py-3" onPress={closeOutModal}>
+                    <Text className="text-gray-500 font-semibold">Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -766,6 +870,16 @@ function baseLabel(base: Base): string {
     case 1: return '1st';
     case 2: return '2nd';
     case 3: return '3rd';
+  }
+}
+
+function outTypeLabel(outType: BattedOutType): string {
+  switch (outType) {
+    case 'groundout': return 'Groundout';
+    case 'flyout':    return 'Flyout';
+    case 'lineout':   return 'Lineout';
+    case 'popout':    return 'Popout';
+    case 'other':     return 'Out';
   }
 }
 
