@@ -31,8 +31,8 @@ function formatPlayer(map: PlayerNameMap, id: string | null): string {
   if (!id) return '—';
   const p = map[id];
   if (!p) return '—';
-  const jersey = p.jerseyNumber != null ? `#${p.jerseyNumber} ` : '';
-  return `${jersey}${p.lastName}`;
+  const jersey = p.jerseyNumber != null ? `#${p.jerseyNumber}` : '#—';
+  return `${p.lastName} ${jersey}`;
 }
 
 function rowToGameEvent(r: EventRow): GameEvent {
