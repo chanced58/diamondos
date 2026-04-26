@@ -8,7 +8,7 @@ import { getUserAccess } from '@/lib/user-access';
 import { formatTime, weAreHome } from '@baseball/shared';
 import { NewAnnouncementForm } from '../messages/NewAnnouncementForm';
 import { getActiveLeague } from '@/lib/active-league';
-import { getLeagueTeamIds } from '@baseball/database';
+import { getLeagueTeamIds, type Database } from '@baseball/database';
 import { CardHero } from '@/components/ui/Card';
 import { StatTile } from '@/components/ui/StatTile';
 import { Badge } from '@/components/ui/Badge';
@@ -16,6 +16,9 @@ import { DiamondField } from '@/components/ui/DiamondField';
 import { LiveGameCard } from '@/components/dashboard/LiveGameCard';
 
 export const metadata: Metadata = { title: 'Dashboard' };
+
+type GameRow = Database['public']['Tables']['games']['Row'];
+type EventRow = Database['public']['Tables']['game_events']['Row'];
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   meeting: 'Meeting',
@@ -153,20 +156,23 @@ export default async function DashboardPage({
       .eq('channel_type', 'announcement'),
   ]);
 
-  const liveGames = liveGamesResult.data ?? [];
-  const liveGameEventsByGameId: Record<string, unknown[]> = {};
+  const liveGames: GameRow[] = (liveGamesResult.data ?? []) as GameRow[];
+  const liveGameEventsByGameId: Record<string, EventRow[]> = {};
   if (liveGames.length > 0) {
-    const eventsResults = await Promise.all(
-      liveGames.map((g: { id: string }) =>
-        db.from('game_events')
-          .select('*')
-          .eq('game_id', g.id)
-          .order('sequence_number'),
-      ),
-    );
-    liveGames.forEach((g: { id: string }, idx) => {
-      liveGameEventsByGameId[g.id] = eventsResults[idx].data ?? [];
-    });
+    const liveGameIds = liveGames.map((g) => g.id);
+    const { data: liveEventRows } = await db
+      .from('game_events')
+      .select('*')
+      .in('game_id', liveGameIds)
+      .order('sequence_number');
+    for (const row of (liveEventRows ?? []) as EventRow[]) {
+      const bucket = liveGameEventsByGameId[row.game_id];
+      if (bucket) {
+        bucket.push(row);
+      } else {
+        liveGameEventsByGameId[row.game_id] = [row];
+      }
+    }
   }
 
   const { role } = await getUserAccess(activeTeam.id, user.id);
@@ -312,11 +318,11 @@ export default async function DashboardPage({
               {liveGames.length} game{liveGames.length === 1 ? '' : 's'} in progress
             </span>
           </div>
-          {liveGames.map((g: any) => (
+          {liveGames.map((g) => (
             <LiveGameCard
               key={g.id}
               game={g}
-              initialEvents={(liveGameEventsByGameId[g.id] ?? []) as any}
+              initialEvents={liveGameEventsByGameId[g.id] ?? []}
               teamName={teamNameMap[g.team_id] ?? activeTeam.name}
             />
           ))}
