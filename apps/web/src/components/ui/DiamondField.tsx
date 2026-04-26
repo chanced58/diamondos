@@ -1,16 +1,19 @@
 import { useId, type JSX } from 'react';
 
 export type Runners = { first: boolean; second: boolean; third: boolean };
+export type PulseBases = { first?: boolean; second?: boolean; third?: boolean };
 export type FieldVariant = 'utilitarian' | 'editorial' | 'energetic';
 
 interface DiamondFieldProps {
   runners?: Runners;
+  pulseBases?: PulseBases;
   size?: number;
   variant?: FieldVariant;
 }
 
 export function DiamondField({
   runners = { first: false, second: false, third: false },
+  pulseBases,
   size = 220,
   variant = 'editorial',
 }: DiamondFieldProps): JSX.Element {
@@ -24,10 +27,10 @@ export function DiamondField({
   const glowId = `diamond-glow-${reactId}`;
 
   const bases = [
-    { x: 120, y: 200, k: 'home' as const, on: false },
-    { x: 195, y: 125, k: 'first' as const, on: runners.first },
-    { x: 120, y: 50,  k: 'second' as const, on: runners.second },
-    { x: 45,  y: 125, k: 'third' as const, on: runners.third },
+    { x: 120, y: 200, k: 'home' as const, on: false, pulse: false },
+    { x: 195, y: 125, k: 'first' as const, on: runners.first, pulse: !!pulseBases?.first },
+    { x: 120, y: 50,  k: 'second' as const, on: runners.second, pulse: !!pulseBases?.second },
+    { x: 45,  y: 125, k: 'third' as const, on: runners.third, pulse: !!pulseBases?.third },
   ];
 
   return (
@@ -61,6 +64,18 @@ export function DiamondField({
 
       {bases.map((b) => (
         <g key={b.k} transform={`translate(${b.x} ${b.y}) rotate(45)`}>
+          {b.pulse && (
+            <rect
+              className="diamond-base-pulse"
+              x="-18"
+              y="-18"
+              width="36"
+              height="36"
+              fill="var(--brand-500)"
+              rx="3"
+              filter={`url(#${glowId})`}
+            />
+          )}
           {b.on && isEnergetic && (
             <rect x="-16" y="-16" width="32" height="32" fill="var(--brand-500)" opacity=".4" filter={`url(#${glowId})`} />
           )}
