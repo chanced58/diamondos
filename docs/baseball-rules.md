@@ -1019,8 +1019,8 @@ All app-level game events in `packages/shared/src/types/game-event.ts` map to sp
 | `HIT_BY_PITCH` | §5.05(b)(2), §9.14 | same as WALK; records as HBP not BB |
 | `CATCHER_INTERFERENCE` | §5.05(b)(3) | same as WALK; PA, no AB |
 | `DROPPED_THIRD_STRIKE` | §5.05(a)(2) | `deriveGameState` L186; K credited to pitcher regardless of reach/out |
-| `SACRIFICE_BUNT` | §9.08(a) | `deriveGameState` L206; PA but not AB |
-| `SACRIFICE_FLY` | §9.08(b) | `deriveGameState` L227; PA but not AB; scores runner from 3rd |
+| `SACRIFICE_BUNT` | §9.08(a) | `deriveGameState` L206; PA but not AB. Entry: top-level "Sac Bunt" button (mobile) or in-play **Out → "was this a sacrifice?"** follow-up (mobile + web) |
+| `SACRIFICE_FLY` | §9.08(b) | `deriveGameState` L227; PA but not AB; scores runner from 3rd. Entry: top-level "Sac Fly" button (mobile) or in-play **Out → "was this a sacrifice?"** follow-up (mobile + web) |
 | `FIELD_ERROR` | §9.12 | `deriveGameState` L160; batter reaches; stats credit error to fielder |
 | `DOUBLE_PLAY` | §9.11(a) | `deriveGameState` L240; 2 outs |
 | `TRIPLE_PLAY` | §9.11(b) | `deriveGameState` L257; 3 outs |
