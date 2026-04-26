@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type JSX } from 'react';
+import { useEffect, useMemo, useState, type JSX, type ReactNode } from 'react';
 import Link from 'next/link';
 import {
   deriveGameState,
@@ -17,11 +17,22 @@ import { LiveChip } from '@/components/ui/LiveChip';
 
 type GameRow = Database['public']['Tables']['games']['Row'];
 type EventRow = Database['public']['Tables']['game_events']['Row'];
+type PlayerName = { lastName: string; jerseyNumber: string | number | null };
+type PlayerNameMap = Record<string, PlayerName>;
 
 interface LiveGameCardProps {
   game: GameRow;
   initialEvents: EventRow[];
   teamName: string;
+  playerNameMap: PlayerNameMap;
+}
+
+function formatPlayer(map: PlayerNameMap, id: string | null): string {
+  if (!id) return '—';
+  const p = map[id];
+  if (!p) return '—';
+  const jersey = p.jerseyNumber != null ? `#${p.jerseyNumber} ` : '';
+  return `${jersey}${p.lastName}`;
 }
 
 function rowToGameEvent(r: EventRow): GameEvent {
@@ -44,6 +55,7 @@ export function LiveGameCard({
   game: initialGame,
   initialEvents,
   teamName,
+  playerNameMap,
 }: LiveGameCardProps): JSX.Element | null {
   const [game, setGame] = useState<GameRow>(initialGame);
   const [events, setEvents] = useState<EventRow[]>(initialEvents);
@@ -191,44 +203,48 @@ export function LiveGameCard({
           marginTop: 18,
           display: 'grid',
           gridTemplateColumns: 'auto 1fr auto',
-          gap: 20,
+          gap: 24,
           alignItems: 'center',
-          padding: '14px 0 0',
+          padding: '16px 0 0',
           borderTop: '1px solid rgba(255,255,255,.1)',
         }}
       >
-        <DiamondField runners={runners} size={120} variant="energetic" />
-        <div style={{ minWidth: 0 }}>
-          <div className="eyebrow" style={{ color: 'var(--turf-200)' }}>
-            Count
-          </div>
-          <div
-            className="display"
-            style={{ fontSize: 26, color: 'white', marginTop: 4 }}
-          >
-            <span className="mono">
-              {state.balls}-{state.strikes}
-            </span>
-            <span
+        <DiamondField runners={runners} size={140} variant="energetic" />
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+            gap: '14px 22px',
+            minWidth: 0,
+          }}
+        >
+          <Stat label="At bat" value={formatPlayer(playerNameMap, state.currentBatterId)} />
+          <Stat label="Pitching" value={formatPlayer(playerNameMap, state.currentPitcherId)} />
+          <Stat label="On base">
+            <div
               style={{
-                opacity: 0.55,
-                fontWeight: 500,
-                marginLeft: 12,
-                fontSize: 18,
+                display: 'grid',
+                gap: 2,
+                fontSize: 13,
+                color: 'rgba(255,255,255,.85)',
+                lineHeight: 1.35,
               }}
             >
-              {state.outs} out{state.outs === 1 ? '' : 's'}
-            </span>
-          </div>
-          <div
-            style={{
-              color: 'rgba(255,255,255,.6)',
-              marginTop: 6,
-              fontSize: 12,
-            }}
-          >
-            Live updates refresh automatically.
-          </div>
+              <BaseRow base="1B" name={formatPlayer(playerNameMap, state.runnersOnBase.first)} />
+              <BaseRow base="2B" name={formatPlayer(playerNameMap, state.runnersOnBase.second)} />
+              <BaseRow base="3B" name={formatPlayer(playerNameMap, state.runnersOnBase.third)} />
+            </div>
+          </Stat>
+          <Stat label="Count">
+            <div style={{ marginTop: 2 }}>
+              <span className="mono" style={{ fontSize: 18, color: 'white', fontWeight: 700 }}>
+                {state.balls}-{state.strikes}
+              </span>
+              <span style={{ opacity: 0.6, marginLeft: 8, fontSize: 13 }}>
+                · {state.outs} out{state.outs === 1 ? '' : 's'}
+              </span>
+            </div>
+          </Stat>
         </div>
         <Link
           href={`/live/${game.id}`}
@@ -238,6 +254,79 @@ export function LiveGameCard({
           Watch live →
         </Link>
       </div>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value?: string;
+  children?: ReactNode;
+}): JSX.Element {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div
+        className="eyebrow"
+        style={{
+          color: 'var(--turf-200)',
+          fontSize: 10,
+          letterSpacing: '.12em',
+        }}
+      >
+        {label}
+      </div>
+      {value !== undefined ? (
+        <div
+          style={{
+            color: 'white',
+            marginTop: 4,
+            fontSize: 15,
+            fontWeight: 600,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {value}
+        </div>
+      ) : (
+        children
+      )}
+    </div>
+  );
+}
+
+function BaseRow({ base, name }: { base: string; name: string }): JSX.Element {
+  const empty = name === '—';
+  return (
+    <div style={{ display: 'flex', gap: 10 }}>
+      <span
+        className="mono"
+        style={{
+          color: 'rgba(255,255,255,.55)',
+          fontSize: 11,
+          width: 22,
+          flexShrink: 0,
+          paddingTop: 1,
+        }}
+      >
+        {base}
+      </span>
+      <span
+        style={{
+          color: empty ? 'rgba(255,255,255,.4)' : 'white',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          minWidth: 0,
+        }}
+      >
+        {name}
+      </span>
     </div>
   );
 }
