@@ -19,6 +19,7 @@ export const metadata: Metadata = { title: 'Dashboard' };
 
 type GameRow = Database['public']['Tables']['games']['Row'];
 type EventRow = Database['public']['Tables']['game_events']['Row'];
+type PlayerName = { lastName: string; jerseyNumber: string | number | null };
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   meeting: 'Meeting',
@@ -158,20 +159,60 @@ export default async function DashboardPage({
 
   const liveGames: GameRow[] = (liveGamesResult.data ?? []) as GameRow[];
   const liveGameEventsByGameId: Record<string, EventRow[]> = {};
+  const livePlayerNameMap: Record<string, PlayerName> = {};
   if (liveGames.length > 0) {
     const liveGameIds = liveGames.map((g) => g.id);
-    const { data: liveEventRows } = await db
-      .from('game_events')
-      .select('*')
-      .in('game_id', liveGameIds)
-      .order('sequence_number');
-    for (const row of (liveEventRows ?? []) as EventRow[]) {
+    const liveTeamIds = [...new Set(liveGames.map((g) => g.team_id))];
+    const liveOpponentTeamIds = [
+      ...new Set(
+        liveGames
+          .map((g) => g.opponent_team_id)
+          .filter((id): id is string => id != null),
+      ),
+    ];
+
+    const [liveEventRowsRes, teamPlayersRes, opponentPlayersRes] = await Promise.all([
+      db.from('game_events')
+        .select('*')
+        .in('game_id', liveGameIds)
+        .order('sequence_number'),
+      db.from('players')
+        .select('id, last_name, jersey_number')
+        .in('team_id', liveTeamIds),
+      liveOpponentTeamIds.length > 0
+        ? db.from('opponent_players')
+            .select('id, last_name, jersey_number')
+            .in('opponent_team_id', liveOpponentTeamIds)
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    for (const row of (liveEventRowsRes.data ?? []) as EventRow[]) {
       const bucket = liveGameEventsByGameId[row.game_id];
       if (bucket) {
         bucket.push(row);
       } else {
         liveGameEventsByGameId[row.game_id] = [row];
       }
+    }
+    for (const p of (teamPlayersRes.data ?? []) as Array<{
+      id: string;
+      last_name: string;
+      jersey_number: number | null;
+    }>) {
+      livePlayerNameMap[p.id] = {
+        lastName: p.last_name,
+        jerseyNumber: p.jersey_number,
+      };
+    }
+    for (const p of (opponentPlayersRes.data ?? []) as Array<{
+      id: string;
+      last_name: string;
+      jersey_number: string | null;
+    }>) {
+      livePlayerNameMap[p.id] = {
+        lastName: p.last_name,
+        jerseyNumber: p.jersey_number,
+      };
     }
   }
 
@@ -324,6 +365,7 @@ export default async function DashboardPage({
               game={g}
               initialEvents={liveGameEventsByGameId[g.id] ?? []}
               teamName={teamNameMap[g.team_id] ?? activeTeam.name}
+              playerNameMap={livePlayerNameMap}
             />
           ))}
         </section>
