@@ -1338,8 +1338,11 @@ export function ScoringBoard({
   // pitcher held the ball). game-state.ts treats BASERUNNER_OUT as a
   // single out and removes the runner; stats engines count the out
   // without crediting CS to the catcher.
+  // No `canRecord` guard — baserunner-only handlers (StolenBase,
+  // CaughtStealing, Pickoff, RunnerAdvance) don't require an active
+  // batter, only an active runner, which is enforced by the per-runner
+  // button rendering.
   async function handleBaserunnerOutAdvancing(runnerId: string, fromBase: 1 | 2 | 3) {
-    if (!canRecord) return;
     const pitcherId = activePitcherId ?? undefined;
     setPendingAdvance(null);
     setAdvanceErrorBy(null);
