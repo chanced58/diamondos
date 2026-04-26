@@ -8,13 +8,17 @@ import { getUserAccess } from '@/lib/user-access';
 import { formatTime, weAreHome } from '@baseball/shared';
 import { NewAnnouncementForm } from '../messages/NewAnnouncementForm';
 import { getActiveLeague } from '@/lib/active-league';
-import { getLeagueTeamIds } from '@baseball/database';
+import { getLeagueTeamIds, type Database } from '@baseball/database';
 import { CardHero } from '@/components/ui/Card';
 import { StatTile } from '@/components/ui/StatTile';
 import { Badge } from '@/components/ui/Badge';
 import { DiamondField } from '@/components/ui/DiamondField';
+import { LiveGameCard } from '@/components/dashboard/LiveGameCard';
 
 export const metadata: Metadata = { title: 'Dashboard' };
+
+type GameRow = Database['public']['Tables']['games']['Row'];
+type EventRow = Database['public']['Tables']['game_events']['Row'];
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   meeting: 'Meeting',
@@ -109,6 +113,7 @@ export default async function DashboardPage({
 
   const [
     upcomingGamesResult,
+    liveGamesResult,
     practicesResult,
     teamEventsResult,
     recentGamesResult,
@@ -117,10 +122,15 @@ export default async function DashboardPage({
     db.from('games')
       .select('id, team_id, opponent_name, scheduled_at, location_type, neutral_home_team, venue_name')
       .in('team_id', scopeTeamIds)
-      .in('status', ['scheduled', 'in_progress'])
+      .eq('status', 'scheduled')
       .gte('scheduled_at', now)
       .lte('scheduled_at', fourWeeksOut)
       .order('scheduled_at'),
+    db.from('games')
+      .select('*')
+      .in('team_id', scopeTeamIds)
+      .eq('status', 'in_progress')
+      .order('started_at', { ascending: true, nullsFirst: false }),
     db.from('practices')
       .select('id, team_id, scheduled_at, location, duration_minutes')
       .eq('team_id', activeTeam.id)
@@ -145,6 +155,25 @@ export default async function DashboardPage({
       .eq('team_id', activeTeam.id)
       .eq('channel_type', 'announcement'),
   ]);
+
+  const liveGames: GameRow[] = (liveGamesResult.data ?? []) as GameRow[];
+  const liveGameEventsByGameId: Record<string, EventRow[]> = {};
+  if (liveGames.length > 0) {
+    const liveGameIds = liveGames.map((g) => g.id);
+    const { data: liveEventRows } = await db
+      .from('game_events')
+      .select('*')
+      .in('game_id', liveGameIds)
+      .order('sequence_number');
+    for (const row of (liveEventRows ?? []) as EventRow[]) {
+      const bucket = liveGameEventsByGameId[row.game_id];
+      if (bucket) {
+        bucket.push(row);
+      } else {
+        liveGameEventsByGameId[row.game_id] = [row];
+      }
+    }
+  }
 
   const { role } = await getUserAccess(activeTeam.id, user.id);
   const canPostAnnouncement = ['head_coach', 'assistant_coach', 'athletic_director'].includes(role ?? '');
@@ -181,6 +210,9 @@ export default async function DashboardPage({
       href: `/games/events/${e.id}`,
     })),
   ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  const upcomingGameItems = upcomingItems.filter((i) => i.kind === 'game');
+  const upcomingNonGameItems = upcomingItems.filter((i) => i.kind !== 'game');
 
   const recentGames: RecentGame[] = (recentGamesResult.data ?? []).map((g: any) => {
     const isHome = weAreHome(g.location_type, g.neutral_home_team);
@@ -270,6 +302,33 @@ export default async function DashboardPage({
         )}
       </div>
 
+      {liveGames.length > 0 && (
+        <section
+          style={{
+            display: 'grid',
+            gap: 'var(--gap-md)',
+            marginBottom: 20,
+          }}
+        >
+          <div className="between" style={{ flexWrap: 'wrap', gap: 8 }}>
+            <h2 className="display" style={{ fontSize: 22 }}>
+              Live <em className="display-it" style={{ color: 'var(--turf-500)' }}>now</em>
+            </h2>
+            <span className="eyebrow" style={{ color: 'var(--app-fg-muted)' }}>
+              {liveGames.length} game{liveGames.length === 1 ? '' : 's'} in progress
+            </span>
+          </div>
+          {liveGames.map((g) => (
+            <LiveGameCard
+              key={g.id}
+              game={g}
+              initialEvents={liveGameEventsByGameId[g.id] ?? []}
+              teamName={teamNameMap[g.team_id] ?? activeTeam.name}
+            />
+          ))}
+        </section>
+      )}
+
       <div className="dashboard-summary-grid">
         {nextGame ? (
           <CardHero style={{ padding: 28 }}>
@@ -337,71 +396,21 @@ export default async function DashboardPage({
       </div>
 
       <div className="dashboard-content-grid">
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div className="between" style={{ padding: '16px 20px', borderBottom: '1px solid var(--app-border)' }}>
-            <h2 className="display" style={{ fontSize: 18 }}>Upcoming</h2>
-            <Link href="/games" style={{ fontSize: 12, color: 'var(--app-brand-2)', textDecoration: 'none' }}>
-              View all →
-            </Link>
-          </div>
-          {upcomingItems.length === 0 ? (
-            <p style={{ padding: '18px 20px', color: 'var(--app-fg-muted)', fontSize: 14 }}>
-              Nothing scheduled in the next 4 weeks.{' '}
-              <Link href="/games/new" style={{ color: 'var(--app-brand-2)' }}>Schedule a game →</Link>
-            </p>
-          ) : (
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-              {upcomingItems.map((item) => {
-                const d = new Date(item.date);
-                const tones = { game: 'info', practice: 'safe', event: 'clay' } as const;
-                const kindLabel = { game: 'Game', practice: 'Practice', event: item.sublabel ?? 'Event' };
-                return (
-                  <li key={`${item.kind}-${item.id}`} style={{ borderTop: '1px solid var(--app-border)' }}>
-                    <Link
-                      href={item.href}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 16,
-                        padding: '14px 20px',
-                        textDecoration: 'none',
-                        color: 'inherit',
-                        transition: 'background var(--mo) var(--ease)',
-                      }}
-                    >
-                      <div style={{ width: 44, textAlign: 'center', flexShrink: 0 }}>
-                        <div
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: 'var(--app-fg-muted)',
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.08,
-                          }}
-                        >
-                          {d.toLocaleDateString('en-US', { month: 'short' })}
-                        </div>
-                        <div
-                          className="display"
-                          style={{ fontSize: 22, color: 'var(--app-fg)', letterSpacing: '-0.02em' }}
-                        >
-                          {d.getDate()}
-                        </div>
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>{item.label}</div>
-                        <div style={{ fontSize: 12, color: 'var(--app-fg-muted)' }}>
-                          {formatTime(item.date)}
-                          {item.sublabel && <span> · {item.sublabel}</span>}
-                        </div>
-                      </div>
-                      <Badge tone={tones[item.kind]}>{kindLabel[item.kind]}</Badge>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+        <div style={{ display: 'grid', gap: 'var(--gap-md)', minWidth: 0 }}>
+          <UpcomingListCard
+            title="Upcoming Games"
+            items={upcomingGameItems}
+            emptyText="No games scheduled in the next 4 weeks."
+            emptyLink={{ href: '/games/new', text: 'Schedule a game →' }}
+            viewAllHref="/games"
+          />
+          <UpcomingListCard
+            title="Practices & Events"
+            items={upcomingNonGameItems}
+            emptyText="No practices or events scheduled."
+            emptyLink={null}
+            viewAllHref="/practices"
+          />
         </div>
 
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -509,6 +518,94 @@ export default async function DashboardPage({
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+function UpcomingListCard({
+  title,
+  items,
+  emptyText,
+  emptyLink,
+  viewAllHref,
+}: {
+  title: string;
+  items: UpcomingItem[];
+  emptyText: string;
+  emptyLink: { href: string; text: string } | null;
+  viewAllHref: string;
+}): JSX.Element {
+  const tones = { game: 'info', practice: 'safe', event: 'clay' } as const;
+  return (
+    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div className="between" style={{ padding: '16px 20px', borderBottom: '1px solid var(--app-border)' }}>
+        <h2 className="display" style={{ fontSize: 18 }}>{title}</h2>
+        <Link href={viewAllHref} style={{ fontSize: 12, color: 'var(--app-brand-2)', textDecoration: 'none' }}>
+          View all →
+        </Link>
+      </div>
+      {items.length === 0 ? (
+        <p style={{ padding: '18px 20px', color: 'var(--app-fg-muted)', fontSize: 14 }}>
+          {emptyText}
+          {emptyLink && (
+            <>
+              {' '}
+              <Link href={emptyLink.href} style={{ color: 'var(--app-brand-2)' }}>{emptyLink.text}</Link>
+            </>
+          )}
+        </p>
+      ) : (
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+          {items.map((item) => {
+            const d = new Date(item.date);
+            const kindLabel = { game: 'Game', practice: 'Practice', event: item.sublabel ?? 'Event' };
+            return (
+              <li key={`${item.kind}-${item.id}`} style={{ borderTop: '1px solid var(--app-border)' }}>
+                <Link
+                  href={item.href}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '14px 20px',
+                    textDecoration: 'none',
+                    color: 'inherit',
+                    transition: 'background var(--mo) var(--ease)',
+                  }}
+                >
+                  <div style={{ width: 44, textAlign: 'center', flexShrink: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: 'var(--app-fg-muted)',
+                        textTransform: 'uppercase',
+                        letterSpacing: 0.08,
+                      }}
+                    >
+                      {d.toLocaleDateString('en-US', { month: 'short' })}
+                    </div>
+                    <div
+                      className="display"
+                      style={{ fontSize: 22, color: 'var(--app-fg)', letterSpacing: '-0.02em' }}
+                    >
+                      {d.getDate()}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{item.label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--app-fg-muted)' }}>
+                      {formatTime(item.date)}
+                      {item.sublabel && <span> · {item.sublabel}</span>}
+                    </div>
+                  </div>
+                  <Badge tone={tones[item.kind]}>{kindLabel[item.kind]}</Badge>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
