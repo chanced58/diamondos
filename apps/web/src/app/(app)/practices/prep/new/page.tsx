@@ -91,7 +91,9 @@ export default async function PrepNewPage({ searchParams }: PageProps): Promise<
 
   const generation = generatePrepPractice({
     nextGame,
-    opponentName: nextGame.opponentName,
+    // getNextGameForTeam filters out TBD opponents, so this is non-null in practice;
+    // the empty-string fallback satisfies TS.
+    opponentName: nextGame.opponentName ?? '',
     tendencies,
     weaknesses,
     drills: drillsWithTags.drills,

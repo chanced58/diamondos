@@ -84,7 +84,8 @@ export async function cancelGameAction(_prevState: string | null | undefined, fo
 
   if (error) return `Failed to cancel game: ${error.message}`;
 
-  if (formData.get('notifyTeam') === 'on') {
+  // Skip the announcement when opponent is TBD — "Game vs. null" helps no one.
+  if (game.opponent_name && formData.get('notifyTeam') === 'on') {
     const msg = `⚠️ Game vs. ${game.opponent_name} on ${formatDate(game.scheduled_at)} has been cancelled.`;
     await postEventAlert(supabase, game.team_id, user.id, msg);
   }
@@ -111,6 +112,13 @@ export async function startGameAction(_prevState: string | null | undefined, for
 
   if (game.status !== 'scheduled' && game.status !== 'in_progress') {
     return 'Game is not in a schedulable state.';
+  }
+
+  // TBD opponents must be filled in before scoring can start. The opponent-team
+  // auto-create path below would otherwise insert a NULL opponent_teams.name
+  // and violate that table's NOT NULL constraint.
+  if (!game.opponent_name) {
+    return 'Set the opponent on this game before starting it.';
   }
 
   // Fetch existing events once — used for both the idempotency check and nextSeq.
@@ -340,7 +348,7 @@ export async function updateGameAction(
 
   const { data: game } = await supabase
     .from('games')
-    .select('team_id')
+    .select('team_id, status')
     .eq('id', gameId)
     .single();
   if (!game) return 'Game not found.';
@@ -366,16 +374,25 @@ export async function updateGameAction(
 
   if (!isCoach) return 'Only coaches can edit games.';
 
+  const opponentTbd = formData.get('opponentTbd') === 'on';
   const opponent = (formData.get('opponent') as string)?.trim();
   const date     = formData.get('date') as string;
   const time     = (formData.get('time') as string) || '12:00';
   const opponentTeamIdRaw = (formData.get('opponentTeamId') as string)?.trim() || null;
-  if (!opponent) return 'Opponent name is required.';
-  if (!date)     return 'Game date is required.';
+  if (!opponentTbd && !opponent) return 'Opponent name is required.';
+  if (!date)                     return 'Game date is required.';
 
-  // Validate opponent team belongs to this team or its league
+  // Once a game is in_progress or completed, the opponent is locked in — clearing
+  // it back to TBD would orphan game_events, stats, and any opponent_teams row.
+  // Cancelled/postponed games may still be re-edited; only block once play started.
+  if (opponentTbd && (game.status === 'in_progress' || game.status === 'completed')) {
+    return 'Cannot clear the opponent on a game that has started or completed.';
+  }
+
+  // Validate opponent team belongs to this team or its league.
+  // (TBD games skip this — there's no opponent team to validate.)
   let opponentTeamId: string | null = null;
-  if (opponentTeamIdRaw) {
+  if (!opponentTbd && opponentTeamIdRaw) {
     // Check team-owned
     const { data: teamOwned } = await supabase
       .from('opponent_teams')
@@ -429,8 +446,8 @@ export async function updateGameAction(
   const { error } = await supabase
     .from('games')
     .update({
-      opponent_name:     opponent,
-      opponent_team_id:  opponentTeamId,
+      opponent_name:     opponentTbd ? null : opponent,
+      opponent_team_id:  opponentTbd ? null : opponentTeamId,
       scheduled_at:      scheduledAt,
       location_type:     locationType,
       neutral_home_team: neutralHomeTeam,

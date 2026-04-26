@@ -42,6 +42,7 @@ export function AddGameForm({
   const [locationType, setLocationType] = useState('home');
   const [selectedOpponentTeamId, setSelectedOpponentTeamId] = useState('');
   const [opponentName, setOpponentName] = useState('');
+  const [opponentTbd, setOpponentTbd] = useState(false);
 
   function handleOpponentTeamChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const id = e.target.value;
@@ -52,13 +53,38 @@ export function AddGameForm({
     }
   }
 
+  function handleTbdToggle(checked: boolean) {
+    setOpponentTbd(checked);
+    if (checked) {
+      setSelectedOpponentTeamId('');
+      setOpponentName('');
+    }
+  }
+
   return (
     <form action={formAction} className="space-y-5">
       <input type="hidden" name="teamId" value={teamId} />
       <input type="hidden" name="opponentTeamId" value={selectedOpponentTeamId} />
+      <input type="hidden" name="opponentTbd" value={opponentTbd ? 'on' : ''} />
+
+      {/* TBD opponent toggle — for playoff brackets where the opponent isn't decided yet */}
+      <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={opponentTbd}
+            onChange={(e) => handleTbdToggle(e.target.checked)}
+            className="rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+          />
+          <div>
+            <p className="text-sm font-medium text-amber-900">Opponent TBD (playoff bracket)</p>
+            <p className="text-xs text-amber-700">Schedule the slot now, set the opponent once it&apos;s decided.</p>
+          </div>
+        </label>
+      </div>
 
       {/* Opponent team selection */}
-      {opponentTeams.length > 0 && (
+      {!opponentTbd && opponentTeams.length > 0 && (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Select Opponent Team
@@ -82,23 +108,25 @@ export function AddGameForm({
       )}
 
       {/* Opponent name */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Opponent {!selectedOpponentTeamId && <span className="text-red-500">*</span>}
-        </label>
-        <input
-          type="text"
-          name="opponent"
-          required
-          value={opponentName}
-          onChange={(e) => {
-            setOpponentName(e.target.value);
-            if (selectedOpponentTeamId) setSelectedOpponentTeamId('');
-          }}
-          placeholder="e.g. Central High School"
-          className={inputClass}
-        />
-      </div>
+      {!opponentTbd && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Opponent {!selectedOpponentTeamId && <span className="text-red-500">*</span>}
+          </label>
+          <input
+            type="text"
+            name="opponent"
+            required
+            value={opponentName}
+            onChange={(e) => {
+              setOpponentName(e.target.value);
+              if (selectedOpponentTeamId) setSelectedOpponentTeamId('');
+            }}
+            placeholder="e.g. Central High School"
+            className={inputClass}
+          />
+        </div>
+      )}
 
       {/* Date + Time */}
       <div className="grid grid-cols-2 gap-4">

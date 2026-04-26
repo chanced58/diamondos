@@ -18,7 +18,8 @@ export interface Game {
   id: string;
   seasonId: string;
   teamId: string;
-  opponentName: string;
+  /** NULL means TBD — game scheduled before the opponent is known (e.g. playoff bracket). */
+  opponentName: string | null;
   /** Optional FK to a structured opponent_teams record. */
   opponentTeamId?: string;
   scheduledAt: string;

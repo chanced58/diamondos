@@ -111,10 +111,11 @@ export default async function SchedulePage({
     for (const g of gamesResult.data ?? []) {
       const loc = weAreHome(g.location_type, g.neutral_home_team) ? 'vs' : '@';
       const teamLabel = isLeagueView && g.team_id !== activeTeam.id ? teamNameMap[g.team_id] : null;
+      const opponent = g.opponent_name ?? 'TBD';
       events.push({
         id:      g.id,
         type:    'game',
-        title:   teamLabel ? `${teamLabel}: ${loc} ${g.opponent_name}` : `${loc} ${g.opponent_name}`,
+        title:   teamLabel ? `${teamLabel}: ${loc} ${opponent}` : `${loc} ${opponent}`,
         dateKey: toDateKey(g.scheduled_at),
         time:    toTimeLabel(g.scheduled_at),
         url:     `/games/${g.id}`,

@@ -90,7 +90,7 @@ describe('generatePrepPractice', () => {
   it('always includes warmup + stretch blocks', () => {
     const result = generatePrepPractice({
       nextGame: NEXT_GAME,
-      opponentName: NEXT_GAME.opponentName,
+      opponentName: NEXT_GAME.opponentName ?? '',
       tendencies: [],
       weaknesses: [],
       drills: [],
@@ -112,7 +112,7 @@ describe('generatePrepPractice', () => {
 
     const result = generatePrepPractice({
       nextGame: NEXT_GAME,
-      opponentName: NEXT_GAME.opponentName,
+      opponentName: NEXT_GAME.opponentName ?? '',
       tendencies: [],
       weaknesses: [weakness(WeaknessCode.K_VS_OFFSPEED, 'Ks on off-speed', 0.8, ['def-1'])],
       drills,
@@ -132,7 +132,7 @@ describe('generatePrepPractice', () => {
 
     const result = generatePrepPractice({
       nextGame: NEXT_GAME,
-      opponentName: NEXT_GAME.opponentName,
+      opponentName: NEXT_GAME.opponentName ?? '',
       tendencies: [],
       weaknesses: [weakness(WeaknessCode.RISP_FAILURE, 'RISP', 0.7, ['def-1'])],
       drills,
@@ -146,7 +146,7 @@ describe('generatePrepPractice', () => {
   it('reports hasGaps=true when weaknesses have no matching drill', () => {
     const result = generatePrepPractice({
       nextGame: NEXT_GAME,
-      opponentName: NEXT_GAME.opponentName,
+      opponentName: NEXT_GAME.opponentName ?? '',
       tendencies: [],
       weaknesses: [weakness(WeaknessCode.K_VS_OFFSPEED, 'Ks', 0.8, ['nonexistent'])],
       drills: [],
@@ -167,7 +167,7 @@ describe('generatePrepPractice', () => {
 
     const result = generatePrepPractice({
       nextGame: NEXT_GAME,
-      opponentName: NEXT_GAME.opponentName,
+      opponentName: NEXT_GAME.opponentName ?? '',
       tendencies: [],
       weaknesses: [
         weakness(WeaknessCode.WALKS_ISSUED, 'Low', 0.3, ['def-low']),
@@ -196,6 +196,25 @@ describe('generatePrepPractice', () => {
     expect(result.focusSummary.toLowerCase()).toContain('ks on off-speed');
   });
 
+  it('falls back to a generic "opponent" label when opponentName is empty', () => {
+    // Defensive path in buildFocusSummary — getNextGameForTeam filters TBD
+    // games out before the generator is called, but this guards against any
+    // future caller that bypasses that filter.
+    const result = generatePrepPractice({
+      nextGame: NEXT_GAME,
+      opponentName: '',
+      tendencies: [],
+      weaknesses: [weakness(WeaknessCode.K_VS_OFFSPEED, 'Ks on off-speed', 0.8, ['def-1'])],
+      drills: [],
+      drillDeficitTags: new Map(),
+      durationMinutes: 60,
+    });
+    expect(result.focusSummary.toLowerCase()).toContain('opponent');
+    expect(result.focusSummary.toLowerCase()).not.toContain('eastside');
+    // Sanity: the summary still includes the weakness label so prep stays useful.
+    expect(result.focusSummary.toLowerCase()).toContain('ks on off-speed');
+  });
+
   it('does not exceed the requested duration budget, even with more matching drills than fit', () => {
     // Each drill is tagged with its OWN deficit (def-0..def-9), and each
     // weakness suggests the matching deficit — so the generator can choose
@@ -208,7 +227,7 @@ describe('generatePrepPractice', () => {
 
     const result = generatePrepPractice({
       nextGame: NEXT_GAME,
-      opponentName: NEXT_GAME.opponentName,
+      opponentName: NEXT_GAME.opponentName ?? '',
       tendencies: [],
       weaknesses: Array.from({ length: 10 }, (_, i) =>
         weakness(WeaknessCode.K_VS_OFFSPEED, 'Ks', 0.9 - i * 0.05, [`def-${i}`]),

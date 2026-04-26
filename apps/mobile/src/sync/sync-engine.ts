@@ -262,7 +262,10 @@ function mapGame(r: Record<string, unknown>) {
     remote_id: r.id,
     season_id: r.season_id,
     team_id: r.team_id,
-    opponent_name: r.opponent_name,
+    // Coerce TBD opponents (NULL on the server) to '' so the WatermelonDB
+    // schema can keep its required-string column. Display sites render an
+    // empty value as 'TBD'.
+    opponent_name: r.opponent_name ?? '',
     scheduled_at: new Date(r.scheduled_at as string).getTime(),
     location_type: r.location_type,
     neutral_home_team: r.neutral_home_team ?? null,

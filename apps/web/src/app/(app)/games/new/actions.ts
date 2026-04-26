@@ -12,6 +12,7 @@ export async function createGameAction(_prevState: string | null | undefined, fo
   if (!user) return 'Not authenticated — please log in again.';
 
   const teamId       = formData.get('teamId') as string;
+  const opponentTbd  = formData.get('opponentTbd') === 'on';
   const opponent     = (formData.get('opponent') as string)?.trim();
   const opponentTeamId = (formData.get('opponentTeamId') as string)?.trim() || null;
   const date         = formData.get('date') as string;
@@ -31,9 +32,9 @@ export async function createGameAction(_prevState: string | null | undefined, fo
   const latitude  = latRaw  ? parseFloat(latRaw)  : null;
   const longitude = lngRaw  ? parseFloat(lngRaw)  : null;
 
-  if (!teamId)    return 'Missing team ID.';
-  if (!opponent)  return 'Opponent name is required.';
-  if (!date)      return 'Game date is required.';
+  if (!teamId)                   return 'Missing team ID.';
+  if (!opponentTbd && !opponent) return 'Opponent name is required.';
+  if (!date)                     return 'Game date is required.';
 
   const scheduledAt = new Date(`${date}T${time}`).toISOString();
 
@@ -57,9 +58,10 @@ export async function createGameAction(_prevState: string | null | undefined, fo
 
   if (!isCoach) return 'Only coaches can schedule games.';
 
-  // Validate opponentTeamId belongs to this team or the team's league
+  // Validate opponentTeamId belongs to this team or the team's league.
+  // (TBD games skip this entirely — no opponent team to validate.)
   let validatedOpponentTeamId: string | null = null;
-  if (opponentTeamId) {
+  if (!opponentTbd && opponentTeamId) {
     const { data: opponentTeam, error: otError } = await supabase
       .from('opponent_teams')
       .select('id, team_id')
@@ -113,8 +115,8 @@ export async function createGameAction(_prevState: string | null | undefined, fo
     .from('games')
     .insert({
       team_id:       teamId,
-      opponent_name: opponent,
-      opponent_team_id: validatedOpponentTeamId,
+      opponent_name: opponentTbd ? null : opponent,
+      opponent_team_id: opponentTbd ? null : validatedOpponentTeamId,
       scheduled_at:  scheduledAt,
       location_type:     locationType,
       neutral_home_team: neutralHomeTeam,
@@ -132,7 +134,9 @@ export async function createGameAction(_prevState: string | null | undefined, fo
 
   if (error) return `Failed to create game: ${error.message}`;
 
-  if (formData.get('notifyTeam') === 'on') {
+  // Skip the announcement for TBD opponents — "New game scheduled: vs. TBD"
+  // adds noise without information; coaches should announce once the bracket fills in.
+  if (!opponentTbd && formData.get('notifyTeam') === 'on') {
     const locationLabel =
       locationType === 'home' ? 'Home' : locationType === 'away' ? 'Away' : 'Neutral site';
     const msg = `📅 New game scheduled: vs. ${opponent} — ${formatDate(scheduledAt)} at ${formatTime(scheduledAt)} (${locationLabel})`;

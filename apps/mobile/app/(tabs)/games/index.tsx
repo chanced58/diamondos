@@ -36,14 +36,14 @@ function GamesList({ games }: GamesListProps) {
                 pathname: '/(tabs)/games/[gameId]/score',
                 params: {
                   gameId: game.remoteId,
-                  opponentName: game.opponentName,
+                  opponentName: game.opponentName || 'TBD',
                 },
               });
             }
           }}
         >
           <View className="flex-row justify-between items-start mb-1">
-            <Text className="font-semibold text-gray-900 text-base">vs {game.opponentName}</Text>
+            <Text className="font-semibold text-gray-900 text-base">vs {game.opponentName || 'TBD'}</Text>
             <StatusBadge status={game.status} />
           </View>
           <Text className="text-gray-500 text-sm">

@@ -51,8 +51,9 @@ export function LiveScoreClient({ gameId, initialGame, teamName }: LiveScoreClie
   const isLive = game.status === 'in_progress';
   const isComplete = game.status === 'completed';
   const weHome = weAreHome(game.location_type, game.neutral_home_team);
-  const awaySub = weHome ? game.opponent_name : usName;
-  const homeSub = weHome ? usName : game.opponent_name;
+  const opponentLabel = game.opponent_name ?? 'TBD';
+  const awaySub = weHome ? opponentLabel : usName;
+  const homeSub = weHome ? usName : opponentLabel;
 
   return (
     <div className="card card-hero" style={{ padding: 24, borderRadius: 18 }}>
@@ -78,7 +79,7 @@ export function LiveScoreClient({ gameId, initialGame, teamName }: LiveScoreClie
             >
               vs
             </span>{' '}
-            {game.opponent_name}
+            {opponentLabel}
           </div>
           <div style={{ color: 'rgba(255,255,255,.7)', marginTop: 4, fontSize: 13 }}>
             {game.venue_name ?? 'Venue TBD'} ·{' '}
