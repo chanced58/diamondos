@@ -582,3 +582,45 @@
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: none; }
 }
+
+/* Watch Live: pulse a base when a runner arrives. The rect is placed
+   inside the rotated base group, so we scale around its own center. */
+@keyframes diamond-base-pulse {
+  0%   { transform: scale(0.6); opacity: 0.85; }
+  60%  { transform: scale(1.45); opacity: 0.25; }
+  100% { transform: scale(1.7);  opacity: 0; }
+}
+.diamond-base-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: diamond-base-pulse 700ms ease-out forwards;
+  pointer-events: none;
+}
+
+/* Brief flash on the count cell when balls/strikes/outs change. */
+@keyframes count-flash {
+  0%   { background-color: rgba(34,197,94,.32); }
+  100% { background-color: rgba(34,197,94,0); }
+}
+.count-flash { animation: count-flash 350ms ease-out; border-radius: 6px; }
+
+/* Slide the latest-event ticker line in from below. */
+@keyframes event-ticker-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.event-ticker-in { animation: event-ticker-in 280ms ease-out; }
+
+/* Fade-swap for batter / pitcher labels. */
+@keyframes player-fade-in {
+  from { opacity: 0.2; transform: translateY(2px); }
+  to   { opacity: 1;   transform: none; }
+}
+.player-fade-in { animation: player-fade-in 250ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .diamond-base-pulse,
+  .count-flash,
+  .event-ticker-in,
+  .player-fade-in { animation: none !important; }
+}
