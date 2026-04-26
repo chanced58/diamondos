@@ -317,6 +317,19 @@ export default function ScoringScreen() {
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, hitPayload);
   }
 
+  // Runner thrown out advancing during a play (e.g., on a hit, sac fly,
+  // wild pitch). Standalone BASERUNNER_OUT — the play itself is recorded
+  // separately. game-state.ts removes the runner from the base and
+  // increments outs; stats modules count it as an out without crediting CS.
+  async function handleRunnerOut(runnerId: string, fromBase: 1 | 2 | 3) {
+    if (!gameState) return;
+    await recordEvent(EventType.BASERUNNER_OUT, gameState.inning, gameState.isTopOfInning, {
+      runnerId,
+      fromBase,
+      pitcherId: currentPitcherId,
+    });
+  }
+
   async function handleStartGame(pitcherId: string, batterId: string) {
     if (!gameState) return;
     // Which team are we scoring? Check the Game row's locationType /
@@ -609,6 +622,7 @@ export default function ScoringScreen() {
         onRecordSacFlyFromOut={handleSacrificeFlyFromOut}
         onRecordSacBuntFromOut={handleSacrificeBuntFromOut}
         onRecordFieldersChoice={handleFieldersChoice}
+        onRecordRunnerOut={handleRunnerOut}
         onRecordWildPitch={handleWildPitch}
         onRecordPassedBall={handlePassedBall}
         onRecordBalk={handleBalk}
