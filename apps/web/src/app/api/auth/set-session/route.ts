@@ -69,6 +69,14 @@ export async function POST(request: NextRequest) {
     refresh_token: refreshToken,
   });
 
+  // TEMP DIAG: remove after magic-link bounce bug is resolved
+  console.log(
+    '[auth/set-session] setSession',
+    error ? `error: ${error.message}` : 'ok',
+    'response cookies:',
+    response.cookies.getAll().map((c) => c.name),
+  );
+
   if (error) {
     console.error('[auth/set-session] setSession failed:', error.message);
     // Return a fresh NextResponse — not `response` — to avoid leaking any
