@@ -29,7 +29,21 @@ export async function middleware(request: NextRequest) {
   );
 
   // Refresh session (do not remove this line)
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user }, error } = await supabase.auth.getUser();
+
+  // TEMP DIAG: remove after magic-link bounce bug is resolved.
+  // Surfaces which sb-* cookies arrived and whether getUser rejected them.
+  const sbCookies = request.cookies
+    .getAll()
+    .filter((c) => c.name.startsWith('sb-'))
+    .map((c) => ({ name: c.name, len: c.value.length }));
+  console.log(
+    '[middleware]',
+    request.nextUrl.pathname,
+    'sbCookies:', sbCookies,
+    'user:', user?.id ?? null,
+    'error:', error?.message ?? null,
+  );
 
   // Redirect unauthenticated users from protected routes to login
   const pathname = request.nextUrl.pathname;

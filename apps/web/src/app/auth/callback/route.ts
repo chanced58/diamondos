@@ -73,6 +73,15 @@ export async function GET(request: NextRequest) {
         setAll(
           cookiesToSet: { name: string; value: string; options: CookieOptions }[],
         ) {
+          // TEMP DIAG: remove after magic-link bounce bug is resolved
+          console.log(
+            '[auth/callback] setAll',
+            cookiesToSet.map((c) => ({
+              name: c.name,
+              len: c.value.length,
+              options: c.options,
+            })),
+          );
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value),
           );
@@ -185,5 +194,12 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // TEMP DIAG: remove after magic-link bounce bug is resolved
+  console.log(
+    '[auth/callback] returning redirect',
+    redirectUrl.toString(),
+    'cookies:',
+    response.cookies.getAll().map((c) => c.name),
+  );
   return response;
 }
