@@ -15,6 +15,14 @@ const nextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      { source: '/sign-on', destination: '/login', permanent: true },
+      { source: '/signon', destination: '/login', permanent: true },
+      { source: '/sign-in', destination: '/login', permanent: true },
+      { source: '/signin', destination: '/login', permanent: true },
+    ];
+  },
 };
 
 module.exports = withPWA({
