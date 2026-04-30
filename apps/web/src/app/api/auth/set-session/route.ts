@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { processInvite } from '@/lib/auth/process-invite';
+import { getAppOrigin } from '@/lib/auth/app-url';
 
 /**
  * Accepts an access/refresh token pair extracted from an implicit-flow URL
@@ -16,7 +17,7 @@ const JWT_SHAPE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
 export async function POST(request: NextRequest) {
   const origin = request.headers.get('origin');
-  const expectedOrigin = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL;
+  const expectedOrigin = getAppOrigin() || null;
   const secFetchSite = request.headers.get('sec-fetch-site');
 
   if (secFetchSite !== 'same-origin' && origin !== expectedOrigin) {

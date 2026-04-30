@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import { HANDLE_REGEX } from '@baseball/shared';
+import { getAppOrigin } from '@/lib/auth/app-url';
 
 /**
  * Self-signup endpoint for Player Pro accounts.
@@ -67,13 +68,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'That handle is already taken.' }, { status: 409 });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL;
-  if (!appUrl) {
+  const appOrigin = getAppOrigin();
+  if (!appOrigin) {
     console.error('[player-signup] NEXT_PUBLIC_APP_URL / APP_URL is not set');
     return NextResponse.json({ error: 'Server configuration error.' }, { status: 500 });
   }
 
-  const redirectTo = `${appUrl}/auth/callback?intent=player&next=/players/me`;
+  const redirectTo = `${appOrigin}/auth/callback?intent=player&next=/players/me`;
 
   const metadata: Record<string, unknown> = {
     intent: 'player',
