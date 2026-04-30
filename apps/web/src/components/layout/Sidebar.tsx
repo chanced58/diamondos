@@ -8,6 +8,7 @@ import { createBrowserClient } from '@/lib/supabase/client';
 import { SubscriptionTier, hasFeature, Feature } from '@baseball/shared';
 import { BrandMark } from '@/components/ui/BrandMark';
 import { Icon } from '@/components/ui/icons';
+import { useSidebar } from '@/components/providers/SidebarProvider';
 
 interface SidebarProps {
   teamName?: string;
@@ -53,6 +54,7 @@ export function Sidebar({
 }: SidebarProps): JSX.Element | null {
   const pathname = usePathname();
   const router = useRouter();
+  const { collapsed, toggle } = useSidebar();
 
   const isAdminPanel = isPlatformAdmin && pathname.startsWith('/admin');
 
@@ -129,7 +131,7 @@ export function Sidebar({
         ) : (
           <BrandMark />
         )}
-        <div style={{ minWidth: 0 }}>
+        <div className="sb-brand-text" style={{ minWidth: 0 }}>
           <div className="sb-team">
             {isAdminPanel ? 'Platform Admin' : (teamName ?? 'DiamondOS')}
           </div>
@@ -137,6 +139,16 @@ export function Sidebar({
             {isAdminPanel ? 'System Administration' : (teamOrg ?? 'Coach dashboard')}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!collapsed}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          className="sb-collapse"
+        >
+          <Icon.chev style={{ transform: collapsed ? 'rotate(0deg)' : 'rotate(180deg)' }} />
+        </button>
       </div>
 
       {!isAdminPanel && (
@@ -167,6 +179,8 @@ export function Sidebar({
               href={item.href}
               className={`sb-item ${isActive ? 'active' : ''}`}
               style={{ textDecoration: 'none' }}
+              title={item.label}
+              aria-label={item.label}
             >
               <span className="ico">{item.icon}</span>
               <span>{item.label}</span>
@@ -188,7 +202,7 @@ export function Sidebar({
         {isAdminPanel && teamId && (
           <>
             <div style={{ height: 1, background: 'rgba(255,255,255,.08)', margin: '10px 4px' }} />
-            <Link href="/dashboard" className="sb-item" style={{ textDecoration: 'none' }}>
+            <Link href="/dashboard" className="sb-item" style={{ textDecoration: 'none' }} title="Back to Team" aria-label="Back to Team">
               <span className="ico"><Icon.chev style={{ transform: 'rotate(180deg)' }} /></span>
               <span>Back to Team</span>
             </Link>
@@ -198,7 +212,7 @@ export function Sidebar({
         {!isAdminPanel && isPlatformAdmin && (
           <>
             <div style={{ height: 1, background: 'rgba(255,255,255,.08)', margin: '10px 4px' }} />
-            <Link href="/admin" className="sb-item" style={{ textDecoration: 'none' }}>
+            <Link href="/admin" className="sb-item" style={{ textDecoration: 'none' }} title="Platform Admin" aria-label="Platform Admin">
               <span className="ico"><Icon.gear /></span>
               <span>Platform Admin</span>
             </Link>
@@ -206,7 +220,7 @@ export function Sidebar({
         )}
 
         {!isAdminPanel && (
-          <Link href="/settings/appearance" className="sb-item" style={{ textDecoration: 'none' }}>
+          <Link href="/settings/appearance" className="sb-item" style={{ textDecoration: 'none' }} title="Appearance" aria-label="Appearance">
             <span className="ico"><Icon.gear /></span>
             <span>Appearance</span>
           </Link>
@@ -215,7 +229,7 @@ export function Sidebar({
 
       <div className="sb-foot">
         <div className="avatar">{userInitials ?? userName.slice(0, 1).toUpperCase()}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="sb-foot-text" style={{ flex: 1, minWidth: 0 }}>
           <div className="name">{userName}</div>
           <div className="role">{userRole ?? (isPlatformAdmin ? 'Admin' : 'Head Coach')}</div>
         </div>
