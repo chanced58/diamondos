@@ -180,6 +180,7 @@ export function Sidebar({
               className={`sb-item ${isActive ? 'active' : ''}`}
               style={{ textDecoration: 'none' }}
               title={item.label}
+              aria-label={item.label}
             >
               <span className="ico">{item.icon}</span>
               <span>{item.label}</span>
@@ -201,7 +202,7 @@ export function Sidebar({
         {isAdminPanel && teamId && (
           <>
             <div style={{ height: 1, background: 'rgba(255,255,255,.08)', margin: '10px 4px' }} />
-            <Link href="/dashboard" className="sb-item" style={{ textDecoration: 'none' }} title="Back to Team">
+            <Link href="/dashboard" className="sb-item" style={{ textDecoration: 'none' }} title="Back to Team" aria-label="Back to Team">
               <span className="ico"><Icon.chev style={{ transform: 'rotate(180deg)' }} /></span>
               <span>Back to Team</span>
             </Link>
@@ -211,7 +212,7 @@ export function Sidebar({
         {!isAdminPanel && isPlatformAdmin && (
           <>
             <div style={{ height: 1, background: 'rgba(255,255,255,.08)', margin: '10px 4px' }} />
-            <Link href="/admin" className="sb-item" style={{ textDecoration: 'none' }} title="Platform Admin">
+            <Link href="/admin" className="sb-item" style={{ textDecoration: 'none' }} title="Platform Admin" aria-label="Platform Admin">
               <span className="ico"><Icon.gear /></span>
               <span>Platform Admin</span>
             </Link>
@@ -219,7 +220,7 @@ export function Sidebar({
         )}
 
         {!isAdminPanel && (
-          <Link href="/settings/appearance" className="sb-item" style={{ textDecoration: 'none' }} title="Appearance">
+          <Link href="/settings/appearance" className="sb-item" style={{ textDecoration: 'none' }} title="Appearance" aria-label="Appearance">
             <span className="ico"><Icon.gear /></span>
             <span>Appearance</span>
           </Link>

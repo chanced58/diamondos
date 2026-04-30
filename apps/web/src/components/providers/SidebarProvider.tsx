@@ -38,8 +38,11 @@ function safeRead(key: string): string | null {
 function safeWrite(key: string, value: string): void {
   try {
     localStorage.setItem(key, value);
-  } catch {
-    // ignore quota / private mode
+  } catch (err) {
+    // Quota exceeded or private/incognito mode — non-fatal, but log so a
+    // "my collapsed state isn't sticking" report has a diagnostic trail.
+    // eslint-disable-next-line no-console
+    console.warn(`[SidebarProvider] safeWrite failed for key="${key}" value="${value}"`, err);
   }
 }
 
