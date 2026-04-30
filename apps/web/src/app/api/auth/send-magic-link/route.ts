@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
+import { getAppOrigin } from '@/lib/auth/app-url';
 
 /**
  * Invite-only magic link endpoint.
@@ -38,9 +39,11 @@ export async function POST(request: NextRequest) {
   }
 
   // Send OTP server-side (single email, no PKCE cookie needed since
-  // the email template uses token_hash directly)
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL;
-  if (!appUrl) {
+  // the email template uses token_hash directly).
+  // getAppOrigin defensively strips any /auth/callback suffix so a misconfigured
+  // env var can't double the path in the email redirect URL.
+  const appOrigin = getAppOrigin();
+  if (!appOrigin) {
     console.error('[send-magic-link] NEXT_PUBLIC_APP_URL / APP_URL is not set');
     return NextResponse.json(
       { error: 'Server configuration error. Please contact an administrator.' },
@@ -52,7 +55,7 @@ export async function POST(request: NextRequest) {
     email: normalizedEmail,
     options: {
       shouldCreateUser: false,
-      emailRedirectTo: `${appUrl}/auth/callback`,
+      emailRedirectTo: `${appOrigin}/auth/callback`,
     },
   });
 

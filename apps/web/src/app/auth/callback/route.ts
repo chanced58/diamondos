@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { createClient, type EmailOtpType } from '@supabase/supabase-js';
 import { type NextRequest, NextResponse } from 'next/server';
 import { processInvite } from '@/lib/auth/process-invite';
+import { getAppOrigin } from '@/lib/auth/app-url';
 
 /**
  * Server-side auth callback route handler.
@@ -41,7 +42,8 @@ export async function GET(request: NextRequest) {
 
   // Use the public app URL for redirects. In hosted environments like Render,
   // request.url resolves to the internal address (e.g. 0.0.0.0:PORT).
-  const origin = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? request.nextUrl.origin;
+  // getAppOrigin defensively strips any /auth/callback suffix from the env var.
+  const origin = getAppOrigin(request.nextUrl.origin);
 
   const next = (nextParam.startsWith('/') && !nextParam.startsWith('//'))
     ? nextParam
