@@ -6,6 +6,10 @@ import {
   AppearanceBootstrap,
   ThemeProvider,
 } from '@/components/providers/ThemeProvider';
+import {
+  SidebarBootstrap,
+  SidebarProvider,
+} from '@/components/providers/SidebarProvider';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -42,14 +46,18 @@ export default function RootLayout({ children }: { children: ReactNode }): JSX.E
       data-density="comfortable"
       data-motion="on"
       data-tone="editorial"
+      data-sidebar="expanded"
       suppressHydrationWarning
     >
       <head>
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
         <AppearanceBootstrap />
+        <SidebarBootstrap />
       </head>
       <body className={inter.className}>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <SidebarProvider>{children}</SidebarProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
