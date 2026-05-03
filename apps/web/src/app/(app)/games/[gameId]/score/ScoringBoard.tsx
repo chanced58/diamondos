@@ -740,6 +740,12 @@ export function ScoringBoard({
   const events = effectiveEventRows.map(mapRowToEvent);
   const gameState = deriveGameState(game.id, events, game.teamId);
 
+  // Sac fly is only valid when a runner is on 2nd or 3rd (must be able to
+  // score on the catch). Sac bunt stays unconditional — it can advance a
+  // runner from 1st per OBR 9.08.
+  const sacFlyEligible =
+    !!gameState.runnersOnBase.second || !!gameState.runnersOnBase.third;
+
   // Sorted starters for batting order cycling
   const starters = lineup
     .filter((l) => l.battingOrder >= 1 && l.battingOrder <= 9)
@@ -2104,18 +2110,20 @@ export function ScoringBoard({
                       >
                         Regular out
                       </button>
-                      <button
-                        onClick={() =>
-                          handleInPlaySacrifice(
-                            'sacrifice_fly',
-                            pendingTrajectory ?? 'fly_ball',
-                            stashedSacFieldingSequence,
-                          )
-                        }
-                        className="py-2 text-sm font-semibold rounded-lg border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 transition-colors"
-                      >
-                        Sacrifice fly
-                      </button>
+                      {sacFlyEligible && (
+                        <button
+                          onClick={() =>
+                            handleInPlaySacrifice(
+                              'sacrifice_fly',
+                              pendingTrajectory ?? 'fly_ball',
+                              stashedSacFieldingSequence,
+                            )
+                          }
+                          className="py-2 text-sm font-semibold rounded-lg border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 transition-colors"
+                        >
+                          Sacrifice fly
+                        </button>
+                      )}
                       <button
                         onClick={() =>
                           handleInPlaySacrifice(
