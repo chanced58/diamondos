@@ -740,13 +740,15 @@ export function ScoringBoard({
   const events = effectiveEventRows.map(mapRowToEvent);
   const gameState = deriveGameState(game.id, events, game.teamId);
 
-  // Sac fly requires a runner who can score on the catch (must be on 2nd or
-  // 3rd) AND fewer than 2 outs (with 2 outs the catch is the third out and
-  // no run can score on tag-up). Sac bunt stays unconditional — it can
-  // advance a runner from 1st per OBR 9.08.
+  // Per OBR 9.08, no sacrifice is credited with 2 outs (the inning ends on
+  // the play, so there's no productive purpose). Sac fly additionally
+  // requires a runner who can score on the catch (2nd or 3rd).
+  const sacrificeAllowed = gameState.outs < 2;
   const sacFlyEligible =
-    gameState.outs < 2 &&
+    sacrificeAllowed &&
     (!!gameState.runnersOnBase.second || !!gameState.runnersOnBase.third);
+  const sacBuntEligible = sacrificeAllowed;
+  const anySacEligible = sacFlyEligible || sacBuntEligible;
 
   // Sorted starters for batting order cycling
   const starters = lineup
@@ -2126,18 +2128,20 @@ export function ScoringBoard({
                           Sacrifice fly
                         </button>
                       )}
-                      <button
-                        onClick={() =>
-                          handleInPlaySacrifice(
-                            'sacrifice_bunt',
-                            pendingTrajectory ?? 'ground_ball',
-                            stashedSacFieldingSequence,
-                          )
-                        }
-                        className="py-2 text-sm font-semibold rounded-lg border border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100 transition-colors"
-                      >
-                        Sacrifice bunt
-                      </button>
+                      {sacBuntEligible && (
+                        <button
+                          onClick={() =>
+                            handleInPlaySacrifice(
+                              'sacrifice_bunt',
+                              pendingTrajectory ?? 'ground_ball',
+                              stashedSacFieldingSequence,
+                            )
+                          }
+                          className="py-2 text-sm font-semibold rounded-lg border border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100 transition-colors"
+                        >
+                          Sacrifice bunt
+                        </button>
+                      )}
                     </div>
                     <button
                       onClick={() => {
@@ -2201,12 +2205,17 @@ export function ScoringBoard({
                             setFcRunnerOutPending(true);
                             setFieldingSequencePending(false);
                           } else if (stashedOutResult === 'out') {
-                            // Stash the sequence and ask whether this was a sacrifice
-                            // before recording. handleInPlay / handleInPlaySacrifice
-                            // will own the actual event emission.
-                            setStashedSacFieldingSequence(fieldingSequence);
-                            setFieldingSequencePending(false);
-                            setSacChoicePending(true);
+                            // Skip the sacrifice prompt entirely when no sac is
+                            // possible (e.g. 2 outs already) — it would just be a
+                            // dead-end "Regular out" modal. Otherwise stash and ask.
+                            if (!anySacEligible) {
+                              setFieldingSequencePending(false);
+                              handleInPlay('out', pendingTrajectory ?? 'ground_ball', fieldingSequence);
+                            } else {
+                              setStashedSacFieldingSequence(fieldingSequence);
+                              setFieldingSequencePending(false);
+                              setSacChoicePending(true);
+                            }
                           } else {
                             handleInPlay(stashedOutResult, pendingTrajectory ?? 'ground_ball', fieldingSequence);
                           }
@@ -2233,10 +2242,16 @@ export function ScoringBoard({
                             setFcRunnerOutPending(true);
                             setFieldingSequencePending(false);
                           } else if (stashedOutResult === 'out') {
-                            // No fielding sequence captured — still ask the sac question.
-                            setStashedSacFieldingSequence([]);
-                            setFieldingSequencePending(false);
-                            setSacChoicePending(true);
+                            // No fielding sequence captured. Skip the sac prompt
+                            // when no sac is possible (e.g. 2 outs already).
+                            if (!anySacEligible) {
+                              setFieldingSequencePending(false);
+                              handleInPlay('out', pendingTrajectory ?? 'ground_ball');
+                            } else {
+                              setStashedSacFieldingSequence([]);
+                              setFieldingSequencePending(false);
+                              setSacChoicePending(true);
+                            }
                           } else {
                             handleInPlay(stashedOutResult, pendingTrajectory ?? 'ground_ball');
                           }
