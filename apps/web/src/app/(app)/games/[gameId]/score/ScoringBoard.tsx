@@ -740,11 +740,13 @@ export function ScoringBoard({
   const events = effectiveEventRows.map(mapRowToEvent);
   const gameState = deriveGameState(game.id, events, game.teamId);
 
-  // Sac fly is only valid when a runner is on 2nd or 3rd (must be able to
-  // score on the catch). Sac bunt stays unconditional — it can advance a
-  // runner from 1st per OBR 9.08.
+  // Sac fly requires a runner who can score on the catch (must be on 2nd or
+  // 3rd) AND fewer than 2 outs (with 2 outs the catch is the third out and
+  // no run can score on tag-up). Sac bunt stays unconditional — it can
+  // advance a runner from 1st per OBR 9.08.
   const sacFlyEligible =
-    !!gameState.runnersOnBase.second || !!gameState.runnersOnBase.third;
+    gameState.outs < 2 &&
+    (!!gameState.runnersOnBase.second || !!gameState.runnersOnBase.third);
 
   // Sorted starters for batting order cycling
   const starters = lineup
