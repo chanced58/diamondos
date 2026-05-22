@@ -1,7 +1,7 @@
 'use client';
 import type { JSX } from 'react';
 
-import { useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { saveLineupAction } from './actions';
@@ -71,12 +71,23 @@ export function LineupBuilder({
   const [error, action] = useFormState(saveLineupAction, null);
   const router = useRouter();
   const [isRemoving, startRemove] = useTransition();
+  const [guestError, setGuestError] = useState<string | null>(null);
 
   function handleRemoveGuest(lineupId: string) {
+    setGuestError(null);
     startRemove(() => {
       void (async () => {
-        const res = await removeGuestFromLineupAction({ gameId, lineupId });
-        if (!('error' in res)) router.refresh();
+        try {
+          const res = await removeGuestFromLineupAction({ gameId, lineupId });
+          if ('error' in res) {
+            setGuestError(res.error);
+            return;
+          }
+          router.refresh();
+        } catch (err) {
+          console.error('[lineup] removeGuest failed', err);
+          setGuestError('Could not remove guest. Try again.');
+        }
       })();
     });
   }
@@ -189,6 +200,11 @@ export function LineupBuilder({
               defaultCountTowardStats={guestStatsDefault}
             />
           </div>
+          {guestError && (
+            <div className="mx-4 mt-3 mb-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">
+              {guestError}
+            </div>
+          )}
           {guests.length === 0 ? (
             <p className="px-4 py-3 text-xs text-gray-400">No guest players yet.</p>
           ) : (

@@ -18,7 +18,10 @@ async function readCache(teamId: string): Promise<LeagueScoringSettings | null> 
     const raw = await SecureStore.getItemAsync(cacheKey(teamId));
     if (!raw) return null;
     return mergeWithDefaults(JSON.parse(raw));
-  } catch {
+  } catch (err) {
+    console.warn(
+      `[league-settings] readCache failed team=${teamId}: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return null;
   }
 }
@@ -26,8 +29,11 @@ async function readCache(teamId: string): Promise<LeagueScoringSettings | null> 
 async function writeCache(teamId: string, settings: LeagueScoringSettings): Promise<void> {
   try {
     await SecureStore.setItemAsync(cacheKey(teamId), JSON.stringify(settings));
-  } catch {
-    /* best-effort: cache miss is acceptable */
+  } catch (err) {
+    // best-effort: a cache miss next launch is acceptable but worth logging
+    console.warn(
+      `[league-settings] writeCache failed team=${teamId}: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 
@@ -69,7 +75,12 @@ export function useLeagueSettings(teamId: string | undefined): LeagueScoringSett
         .limit(1)
         .maybeSingle();
 
-      if (membershipErr) return; // keep cached value
+      if (membershipErr) {
+        console.warn(
+          `[league-settings] league_members lookup failed team=${teamId}: ${membershipErr.message}`,
+        );
+        return; // keep cached value
+      }
       if (!membership?.league_id) {
         const defaults = defaultLeagueScoringSettings();
         if (!cancelled) setSettings(defaults);
@@ -82,7 +93,12 @@ export function useLeagueSettings(teamId: string | undefined): LeagueScoringSett
         .select('scoring_settings')
         .eq('id', membership.league_id)
         .maybeSingle();
-      if (leagueErr) return;
+      if (leagueErr) {
+        console.warn(
+          `[league-settings] leagues.scoring_settings lookup failed team=${teamId} league=${membership.league_id}: ${leagueErr.message}`,
+        );
+        return;
+      }
 
       const next = mergeWithDefaults(leagueRow?.scoring_settings ?? {});
       if (!cancelled) setSettings(next);

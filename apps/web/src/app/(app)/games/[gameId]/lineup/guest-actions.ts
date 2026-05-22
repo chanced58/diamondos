@@ -75,6 +75,43 @@ async function nextBattingOrder(
 }
 
 /**
+ * Insert a `game_lineups` row at the next available batting_order, retrying
+ * once on the unique(game_id, batting_order) collision that two concurrent
+ * guest adds can produce. Returns the order ultimately chosen, or an error
+ * string when the league cap is reached or the second attempt also collides.
+ *
+ * The 23505 ("unique_violation") branch is the real-world race: read max,
+ * compute max+1, two writers both arrive at the same N, second loses.
+ * Retrying once with a fresh max is sufficient because the contention
+ * window for guest adds is small (a single human-tap rate-limited UI).
+ */
+async function insertLineupSlotWithRetry(
+  db: SupabaseClient<Database>,
+  gameId: string,
+  maxBatters: number,
+  build: (battingOrder: number) => Database['public']['Tables']['game_lineups']['Insert'],
+): Promise<{ ok: true; order: number } | { error: string }> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const order = await nextBattingOrder(db, gameId);
+    if (order > maxBatters) {
+      return { error: `Lineup is full (max ${maxBatters}).` };
+    }
+    const { error } = await db.from('game_lineups').insert(build(order));
+    if (!error) return { ok: true, order };
+    // PostgreSQL 23505 — unique constraint violation, almost certainly the
+    // (game_id, batting_order) one. Re-pick the next slot and try again.
+    const code = (error as { code?: string }).code;
+    if (code !== '23505') {
+      console.error(
+        `[guest-actions] game_lineups insert failed game=${gameId} order=${order} code=${code}: ${error.message}`,
+      );
+      return { error: error.message };
+    }
+  }
+  return { error: 'Lineup slot is contended — try again.' };
+}
+
+/**
  * Add a guest lineup slot pointing to an existing players row (cross-team
  * guest from any team in the system, including other leagues).
  */
@@ -90,28 +127,33 @@ export async function addExistingGuestToLineupAction(input: {
   if (!settings.guests.allowed) return { error: 'League does not allow guest players.' };
 
   const maxBatters = getMaxBattingOrder(settings);
-  const order = await nextBattingOrder(ctx.db, input.gameId);
-  if (order > maxBatters) {
-    return { error: `Lineup is full (max ${maxBatters}).` };
-  }
-
-  const { error: insertError } = await ctx.db.from('game_lineups').insert({
-    game_id: input.gameId,
-    player_id: input.playerId,
-    batting_order: order,
-    is_guest: true,
-    count_toward_stats: input.countTowardStats,
-    is_starter: false,
-  });
-  if (insertError) return { error: insertError.message };
+  const inserted = await insertLineupSlotWithRetry(
+    ctx.db,
+    input.gameId,
+    maxBatters,
+    (battingOrder) => ({
+      game_id: input.gameId,
+      player_id: input.playerId,
+      batting_order: battingOrder,
+      is_guest: true,
+      count_toward_stats: input.countTowardStats,
+      is_starter: false,
+    }),
+  );
+  if ('error' in inserted) return { error: inserted.error };
 
   if (ctx.leagueId) {
-    await ctx.db
+    const { error: upsertErr } = await ctx.db
       .from('league_players')
       .upsert(
         { league_id: ctx.leagueId, player_id: input.playerId },
         { onConflict: 'league_id,player_id', ignoreDuplicates: true },
       );
+    if (upsertErr) {
+      console.warn(
+        `[guest-actions] league_players upsert failed league=${ctx.leagueId} player=${input.playerId}: ${upsertErr.message}`,
+      );
+    }
   }
 
   revalidatePath(`/games/${input.gameId}/lineup`);
@@ -140,8 +182,11 @@ export async function addNewGuestToLineupAction(input: {
   if (!trimmedFirst || !trimmedLast) return { error: 'First and last name are required.' };
 
   const maxBatters = getMaxBattingOrder(settings);
-  const order = await nextBattingOrder(ctx.db, input.gameId);
-  if (order > maxBatters) return { error: `Lineup is full (max ${maxBatters}).` };
+  // Sanity-check the cap before we create a player identity we'd then have
+  // to delete. The lineup insert below uses the same retry helper for the
+  // race-on-batting_order case.
+  const peekOrder = await nextBattingOrder(ctx.db, input.gameId);
+  if (peekOrder > maxBatters) return { error: `Lineup is full (max ${maxBatters}).` };
 
   const { data: newPlayer, error: playerErr } = await ctx.db
     .from('players')
@@ -155,29 +200,53 @@ export async function addNewGuestToLineupAction(input: {
     })
     .select('id')
     .single();
-  if (playerErr || !newPlayer) return { error: playerErr?.message ?? 'Could not create guest player.' };
+  if (playerErr || !newPlayer) {
+    console.warn(
+      `[guest-actions] players insert failed game=${input.gameId}: ${playerErr?.message ?? 'no row'}`,
+    );
+    return { error: playerErr?.message ?? 'Could not create guest player.' };
+  }
 
-  const { error: lineupErr } = await ctx.db.from('game_lineups').insert({
-    game_id: input.gameId,
-    player_id: newPlayer.id,
-    batting_order: order,
-    is_guest: true,
-    guest_display_name: `${trimmedFirst} ${trimmedLast}`,
-    count_toward_stats: input.countTowardStats,
-    is_starter: false,
-  });
-  if (lineupErr) {
-    await ctx.db.from('players').delete().eq('id', newPlayer.id);
-    return { error: lineupErr.message };
+  const inserted = await insertLineupSlotWithRetry(
+    ctx.db,
+    input.gameId,
+    maxBatters,
+    (battingOrder) => ({
+      game_id: input.gameId,
+      player_id: newPlayer.id,
+      batting_order: battingOrder,
+      is_guest: true,
+      guest_display_name: `${trimmedFirst} ${trimmedLast}`,
+      count_toward_stats: input.countTowardStats,
+      is_starter: false,
+    }),
+  );
+  if ('error' in inserted) {
+    // Best-effort cleanup of the orphaned player row.
+    const { error: cleanupErr } = await ctx.db
+      .from('players')
+      .delete()
+      .eq('id', newPlayer.id);
+    if (cleanupErr) {
+      console.warn(
+        `[guest-actions] orphan cleanup failed player=${newPlayer.id}: ${cleanupErr.message}`,
+      );
+    }
+    return { error: inserted.error };
   }
 
   if (ctx.leagueId) {
-    await ctx.db
+    const { error: upsertErr } = await ctx.db
       .from('league_players')
       .upsert(
         { league_id: ctx.leagueId, player_id: newPlayer.id },
         { onConflict: 'league_id,player_id', ignoreDuplicates: true },
       );
+    if (upsertErr) {
+      console.warn(
+        `[guest-actions] league_players upsert failed league=${ctx.leagueId} player=${newPlayer.id}: ${upsertErr.message}`,
+      );
+    }
   }
 
   revalidatePath(`/games/${input.gameId}/lineup`);
@@ -265,7 +334,7 @@ export async function searchGuestCandidatesAction(input: {
   // Sanitize the query against PostgREST's `.or()` syntax: commas and
   // parentheses are delimiters, so strip anything that isn't a letter,
   // digit, space, hyphen, or apostrophe.
-  const safeQuery = query.replace(/[^a-z0-9 '\-]/gi, '');
+  const safeQuery = query.replace(/[^a-z0-9 '-]/gi, '');
   if (candidates.length < limit && safeQuery.length >= 2) {
     const remaining = limit - candidates.length;
     const { data: systemPlayers } = await ctx.db

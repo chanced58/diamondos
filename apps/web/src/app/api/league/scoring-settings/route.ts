@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'leagueId is required' }, { status: 400 });
   }
 
-  const { data: staffRow } = await db
+  const { data: staffRow, error: staffErr } = await db
     .from('league_staff')
     .select('role')
     .eq('league_id', leagueId)
@@ -43,6 +43,13 @@ export async function POST(request: NextRequest) {
     .eq('is_active', true)
     .eq('role', 'league_admin')
     .maybeSingle();
+
+  if (staffErr) {
+    console.error(
+      `[scoring-settings] league_staff lookup failed league=${leagueId} user=${user.id}: ${staffErr.message}`,
+    );
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
 
   if (!staffRow) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -56,13 +63,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { error: updateError } = await db
+  // .select() with count gives us the number of rows touched. If zero, the
+  // leagueId was either deleted or doesn't exist — surface that as a 404 so
+  // the caller doesn't get a misleading success response.
+  const { data: updatedRows, error: updateError } = await db
     .from('leagues')
     .update({ scoring_settings: parsed.data })
-    .eq('id', leagueId);
+    .eq('id', leagueId)
+    .select('id');
 
   if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
+    console.error(
+      `[scoring-settings] update failed league=${leagueId}: ${updateError.message}`,
+    );
+    return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 });
+  }
+
+  if (!updatedRows || updatedRows.length === 0) {
+    return NextResponse.json({ error: 'League not found' }, { status: 404 });
   }
 
   return NextResponse.json({ ok: true });

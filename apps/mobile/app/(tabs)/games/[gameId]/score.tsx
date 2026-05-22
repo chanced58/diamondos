@@ -811,6 +811,7 @@ export default function ScoringScreen() {
         gameId={gameId}
         teamId={teamId as string}
         defaultCountTowardStats={leagueSettings.guests.countTowardStatsDefault}
+        maxBatters={maxBatters}
         onClose={() => setShowGuestModal(false)}
         onAdded={() => {
           // Refresh the local lineup snapshot so the new guest shows up in

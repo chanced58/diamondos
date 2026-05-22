@@ -14,6 +14,8 @@ interface GuestPlayerModalProps {
   gameId: string;
   teamId: string;
   defaultCountTowardStats: boolean;
+  /** Cap from the league's lineup.maxBatters (or 9 if expanded lineups are off). */
+  maxBatters: number;
   onClose: () => void;
   onAdded: () => void;
 }
@@ -32,6 +34,7 @@ export function GuestPlayerModal({
   gameId,
   teamId,
   defaultCountTowardStats,
+  maxBatters,
   onClose,
   onAdded,
 }: GuestPlayerModalProps) {
@@ -64,8 +67,12 @@ export function GuestPlayerModal({
     const supabase = getSupabaseClient();
 
     try {
-      // 1. Pick the next batting_order slot.
-      const { data: maxRow } = await supabase
+      // 1. Pick the next batting_order slot and enforce the league cap. We
+      //    rely on the (game_id, batting_order) unique constraint as the
+      //    final-line race guard: two concurrent adds will both try the
+      //    same slot and the second will get a 23505, which we surface
+      //    cleanly to the coach.
+      const { data: maxRow, error: maxErr } = await supabase
         .from('game_lineups')
         .select('batting_order')
         .eq('game_id', gameId)
@@ -73,7 +80,18 @@ export function GuestPlayerModal({
         .order('batting_order', { ascending: false })
         .limit(1)
         .maybeSingle();
+      if (maxErr) {
+        console.warn(
+          `[guest-modal] batting_order lookup failed game=${gameId}: ${maxErr.message}`,
+        );
+        setError('Could not load current lineup. Try again.');
+        return;
+      }
       const nextOrder = ((maxRow?.batting_order as number | null) ?? 0) + 1;
+      if (nextOrder > maxBatters) {
+        setError(`Lineup is already at the league cap (${maxBatters}).`);
+        return;
+      }
 
       // 2. Create the guest-only player identity.
       const parsedJersey = jerseyNumber.trim() === '' ? null : Number.parseInt(jerseyNumber, 10);
@@ -90,6 +108,9 @@ export function GuestPlayerModal({
         .select('id')
         .single();
       if (playerErr || !newPlayer) {
+        console.warn(
+          `[guest-modal] players insert failed game=${gameId} team=${teamId}: ${playerErr?.message ?? 'no row'}`,
+        );
         setError(playerErr?.message ?? 'Could not create the guest player.');
         return;
       }
@@ -105,27 +126,52 @@ export function GuestPlayerModal({
         is_starter: false,
       });
       if (lineupErr) {
-        // Best-effort cleanup of the orphaned player row.
-        await supabase.from('players').delete().eq('id', newPlayer.id);
-        setError(lineupErr.message);
+        console.warn(
+          `[guest-modal] game_lineups insert failed game=${gameId} player=${newPlayer.id}: ${lineupErr.message}`,
+        );
+        // Best-effort cleanup of the orphaned player row — log if it fails
+        // so we can spot dangling guest identities.
+        const { error: cleanupErr } = await supabase
+          .from('players')
+          .delete()
+          .eq('id', newPlayer.id);
+        if (cleanupErr) {
+          console.warn(
+            `[guest-modal] orphan cleanup failed player=${newPlayer.id}: ${cleanupErr.message}`,
+          );
+        }
+        setError(
+          lineupErr.code === '23505'
+            ? 'Another batter just took that slot — try again.'
+            : 'Could not add the guest to the lineup.',
+        );
         return;
       }
 
       // 4. Register the guest in the team's league pool (best-effort).
-      const { data: membership } = await supabase
+      const { data: membership, error: membershipErr } = await supabase
         .from('league_members')
         .select('league_id')
         .eq('team_id', teamId)
         .eq('is_active', true)
         .limit(1)
         .maybeSingle();
-      if (membership?.league_id) {
-        await supabase
+      if (membershipErr) {
+        console.warn(
+          `[guest-modal] league_members lookup failed team=${teamId}: ${membershipErr.message}`,
+        );
+      } else if (membership?.league_id) {
+        const { error: upsertErr } = await supabase
           .from('league_players')
           .upsert(
             { league_id: membership.league_id, player_id: newPlayer.id },
             { onConflict: 'league_id,player_id', ignoreDuplicates: true },
           );
+        if (upsertErr) {
+          console.warn(
+            `[guest-modal] league_players upsert failed league=${membership.league_id} player=${newPlayer.id}: ${upsertErr.message}`,
+          );
+        }
       }
 
       reset();

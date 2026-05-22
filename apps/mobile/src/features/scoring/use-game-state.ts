@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Q } from '@nozbe/watermelondb';
 import { database } from '../../db';
 import type { GameEvent } from '../../db/models/GameEvent';
-import { computeLineScore, deriveGameState } from '@baseball/shared';
+import { computeLineScore, deriveGameState, filterResetAndReverted } from '@baseball/shared';
 import type { LineScoreData, LiveGameState } from '@baseball/shared';
 import type { GameEvent as SharedGameEvent } from '@baseball/shared';
 
@@ -45,13 +45,19 @@ export function useGameState(gameRemoteId: string, homeTeamId: string) {
         setGameState(state);
 
         // computeLineScore expects snake_case rows (it's a database-row adapter
-        // shared with the web client). Re-map the WDB models accordingly.
-        const lineScoreRows = events.map((e) => ({
-          event_type: e.eventType,
-          inning: e.inning,
-          is_top_of_inning: e.isTopOfInning,
-          payload: e.payload,
-        }));
+        // shared with the web client). Re-map the WDB models, then strip out
+        // any events that were voided via the undo flow (EVENT_VOIDED) so the
+        // line score stays consistent with `gameState`.
+        const lineScoreRows = filterResetAndReverted(
+          events.map((e) => ({
+            event_type: e.eventType,
+            inning: e.inning,
+            is_top_of_inning: e.isTopOfInning,
+            payload: e.payload,
+            // Sequence number drives the EVENT_VOIDED back-reference.
+            sequence_number: e.sequenceNumber,
+          })),
+        );
         setLineScore(computeLineScore(lineScoreRows));
         setLoading(false);
       });

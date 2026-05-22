@@ -56,6 +56,10 @@ export function GuestPlayerPicker({
       } else {
         setResults(res.candidates);
       }
+    } catch (err) {
+      console.error('[guest-picker] search failed', err);
+      setErrorMsg('Search failed. Try again in a moment.');
+      setResults([]);
     } finally {
       setSearching(false);
     }
@@ -77,17 +81,22 @@ export function GuestPlayerPicker({
     startTransition(() => {
       void (async () => {
         setErrorMsg(null);
-        const res = await addExistingGuestToLineupAction({
-          gameId,
-          playerId: candidate.id,
-          countTowardStats,
-        });
-        if ('error' in res) {
-          setErrorMsg(res.error);
-          return;
+        try {
+          const res = await addExistingGuestToLineupAction({
+            gameId,
+            playerId: candidate.id,
+            countTowardStats,
+          });
+          if ('error' in res) {
+            setErrorMsg(res.error);
+            return;
+          }
+          router.refresh();
+          reset();
+        } catch (err) {
+          console.error('[guest-picker] addExistingGuest failed', err);
+          setErrorMsg('Could not add guest. Try again.');
         }
-        router.refresh();
-        reset();
       })();
     });
   }
@@ -97,20 +106,25 @@ export function GuestPlayerPicker({
     startTransition(() => {
       void (async () => {
         setErrorMsg(null);
-        const jersey = newJersey.trim() === '' ? null : Number.parseInt(newJersey, 10);
-        const res = await addNewGuestToLineupAction({
-          gameId,
-          firstName: newFirst,
-          lastName: newLast,
-          jerseyNumber: Number.isFinite(jersey ?? NaN) ? jersey : null,
-          countTowardStats,
-        });
-        if ('error' in res) {
-          setErrorMsg(res.error);
-          return;
+        try {
+          const jersey = newJersey.trim() === '' ? null : Number.parseInt(newJersey, 10);
+          const res = await addNewGuestToLineupAction({
+            gameId,
+            firstName: newFirst,
+            lastName: newLast,
+            jerseyNumber: Number.isFinite(jersey ?? NaN) ? jersey : null,
+            countTowardStats,
+          });
+          if ('error' in res) {
+            setErrorMsg(res.error);
+            return;
+          }
+          router.refresh();
+          reset();
+        } catch (err) {
+          console.error('[guest-picker] addNewGuest failed', err);
+          setErrorMsg('Could not create guest. Try again.');
         }
-        router.refresh();
-        reset();
       })();
     });
   }

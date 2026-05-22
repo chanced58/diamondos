@@ -120,77 +120,118 @@ export function defaultLeagueScoringSettings(): LeagueScoringSettings {
  * Merge a (possibly partial / legacy) JSON blob with platform defaults so the
  * rest of the codebase can always rely on a fully-shaped LeagueScoringSettings.
  *
- * Tolerant by design: unknown keys are dropped, malformed nested values fall
- * back to the default for that subtree. This keeps the consumer side simple
- * even as the schema evolves.
+ * Each leaf is validated against the same range/type constraints used by the
+ * strict schema. Invalid values silently fall back to the default for that
+ * field — including range violations (e.g. `maxBatters: 5` falls back to the
+ * default 30, not silently accepted). Unknown keys are dropped.
  */
 export function mergeWithDefaults(raw: unknown): LeagueScoringSettings {
   const defaults = defaultLeagueScoringSettings();
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return defaults;
-  const input = raw as Record<string, unknown>;
-
-  return {
-    lineup: mergeSubtree(defaults.lineup, input.lineup),
-    guests: mergeSubtree(defaults.guests, input.guests),
-    gameLength: mergeGameLength(defaults.gameLength, input.gameLength),
-    substitutions: mergeSubtree(defaults.substitutions, input.substitutions),
-    rules: mergeSubtree(defaults.rules, input.rules),
-    compliance: mergeSubtree(defaults.compliance, input.compliance),
-  };
+  return tolerantSchema(defaults).parse(raw);
 }
 
-function mergeSubtree<T extends Record<string, unknown>>(defaults: T, raw: unknown): T {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return defaults;
-  const out = { ...defaults };
-  for (const key of Object.keys(defaults)) {
-    const value = (raw as Record<string, unknown>)[key];
-    if (value !== undefined && typeof value === typeof defaults[key] && value !== null) {
-      (out as Record<string, unknown>)[key] = value;
-    } else if (defaults[key] === null && (value === null || typeof value === 'string')) {
-      // nullable fields like defaultPitchRuleId
-      (out as Record<string, unknown>)[key] = value as unknown;
-    }
-  }
-  return out;
-}
+/**
+ * Build a Zod schema where every leaf has a `.catch(default)` clause so any
+ * parse-time error (wrong type, out of range, missing field) falls back to
+ * the supplied default. The whole thing is wrapped in a top-level `.catch`
+ * for the "raw isn't an object at all" case.
+ */
+function tolerantSchema(defaults: LeagueScoringSettings) {
+  const lineup = z
+    .object({
+      allowExpanded: z.boolean().catch(defaults.lineup.allowExpanded),
+      maxBatters: z
+        .number()
+        .int()
+        .min(MIN_BATTERS_CAP)
+        .max(MAX_BATTERS_CAP)
+        .catch(defaults.lineup.maxBatters),
+      allowMidGameExtension: z.boolean().catch(defaults.lineup.allowMidGameExtension),
+      continuousBattingOrder: z.boolean().catch(defaults.lineup.continuousBattingOrder),
+    })
+    .catch(defaults.lineup);
 
-function mergeGameLength(
-  defaults: LeagueScoringSettings['gameLength'],
-  raw: unknown,
-): LeagueScoringSettings['gameLength'] {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return defaults;
-  const input = raw as Record<string, unknown>;
-  return {
-    maxInnings:
-      typeof input.maxInnings === 'number' && Number.isInteger(input.maxInnings)
-        ? clamp(input.maxInnings, MIN_INNINGS, MAX_INNINGS_CAP)
-        : defaults.maxInnings,
-    mercy: mergeSubtree(defaults.mercy, input.mercy),
-    runCap: mergeSubtree(defaults.runCap, input.runCap),
-    tiebreakerExtras: mergeTiebreaker(defaults.tiebreakerExtras, input.tiebreakerExtras),
-  };
-}
+  const guests = z
+    .object({
+      allowed: z.boolean().catch(defaults.guests.allowed),
+      countTowardStatsDefault: z.boolean().catch(defaults.guests.countTowardStatsDefault),
+    })
+    .catch(defaults.guests);
 
-function mergeTiebreaker(
-  defaults: LeagueScoringSettings['gameLength']['tiebreakerExtras'],
-  raw: unknown,
-): LeagueScoringSettings['gameLength']['tiebreakerExtras'] {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return defaults;
-  const input = raw as Record<string, unknown>;
-  const startBase =
-    input.startBase === 1 || input.startBase === 2 || input.startBase === 3
-      ? (input.startBase as 1 | 2 | 3)
-      : defaults.startBase;
-  return {
-    enabled: typeof input.enabled === 'boolean' ? input.enabled : defaults.enabled,
-    startBase,
-    fromInning:
-      typeof input.fromInning === 'number' && Number.isInteger(input.fromInning)
-        ? clamp(input.fromInning, 1, MAX_INNINGS_CAP)
-        : defaults.fromInning,
-  };
-}
+  const mercy = z
+    .object({
+      enabled: z.boolean().catch(defaults.gameLength.mercy.enabled),
+      runDiff: z.number().int().min(1).max(30).catch(defaults.gameLength.mercy.runDiff),
+      afterInning: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_INNINGS_CAP)
+        .catch(defaults.gameLength.mercy.afterInning),
+    })
+    .catch(defaults.gameLength.mercy);
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
+  const runCap = z
+    .object({
+      enabled: z.boolean().catch(defaults.gameLength.runCap.enabled),
+      value: z.number().int().min(1).max(30).catch(defaults.gameLength.runCap.value),
+    })
+    .catch(defaults.gameLength.runCap);
+
+  const tiebreakerExtras = z
+    .object({
+      enabled: z.boolean().catch(defaults.gameLength.tiebreakerExtras.enabled),
+      startBase: z
+        .union([z.literal(1), z.literal(2), z.literal(3)])
+        .catch(defaults.gameLength.tiebreakerExtras.startBase),
+      fromInning: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_INNINGS_CAP)
+        .catch(defaults.gameLength.tiebreakerExtras.fromInning),
+    })
+    .catch(defaults.gameLength.tiebreakerExtras);
+
+  const gameLength = z
+    .object({
+      maxInnings: z
+        .number()
+        .int()
+        .min(MIN_INNINGS)
+        .max(MAX_INNINGS_CAP)
+        .catch(defaults.gameLength.maxInnings),
+      mercy,
+      runCap,
+      tiebreakerExtras,
+    })
+    .catch(defaults.gameLength);
+
+  const substitutions = z
+    .object({
+      courtesyRunnerForCatcherPitcher: z
+        .boolean()
+        .catch(defaults.substitutions.courtesyRunnerForCatcherPitcher),
+    })
+    .catch(defaults.substitutions);
+
+  const rules = z
+    .object({
+      droppedThirdStrike: z.boolean().catch(defaults.rules.droppedThirdStrike),
+    })
+    .catch(defaults.rules);
+
+  const compliance = z
+    .object({
+      defaultPitchRuleId: z
+        .string()
+        .uuid()
+        .nullable()
+        .catch(defaults.compliance.defaultPitchRuleId),
+    })
+    .catch(defaults.compliance);
+
+  return z
+    .object({ lineup, guests, gameLength, substitutions, rules, compliance })
+    .catch(defaults);
 }

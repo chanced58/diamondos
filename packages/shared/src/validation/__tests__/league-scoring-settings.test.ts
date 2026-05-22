@@ -59,9 +59,24 @@ describe('mergeWithDefaults', () => {
     expect(merged.gameLength.maxInnings).toBe(9);
   });
 
-  it('clamps out-of-range integers', () => {
+  it('falls back to the default for out-of-range integers', () => {
     const merged = mergeWithDefaults({ gameLength: { maxInnings: 99 } });
-    expect(merged.gameLength.maxInnings).toBe(15);
+    // 99 > MAX_INNINGS_CAP (15), so the schema rejects it and the default
+    // (9) is used. We don't silently clamp — silent clamping could mask
+    // upstream bugs that submit bogus values.
+    expect(merged.gameLength.maxInnings).toBe(9);
+  });
+
+  it('falls back to the default for out-of-range maxBatters', () => {
+    const merged = mergeWithDefaults({ lineup: { maxBatters: 5 } });
+    expect(merged.lineup.maxBatters).toBe(30);
+  });
+
+  it('falls back to the default for a non-uuid pitch rule id', () => {
+    const merged = mergeWithDefaults({
+      compliance: { defaultPitchRuleId: 'not-a-uuid' },
+    });
+    expect(merged.compliance.defaultPitchRuleId).toBeNull();
   });
 
   it('preserves nullable string fields', () => {

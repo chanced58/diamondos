@@ -177,11 +177,16 @@ export function evaluateGameEnd(
     }
   }
 
-  // Walk-off: bottom of regulation or later, home team leads, current at-bat
-  // ends or already ended.
-  if (currentInning >= regulation && !isTopOfInning && home > away && outs >= 3) {
+  // Walk-off: bottom of regulation or later, home team has taken the lead.
+  // The game ends the moment the winning run scores — the next at-bat does
+  // not need to complete, and we may still have 0-2 outs.
+  if (currentInning >= regulation && !isTopOfInning && home > away) {
     return { reason: 'walkoff', message: `Walk-off — game ends in the bottom of the ${ordinal(currentInning)}.` };
   }
+  // Acknowledge `outs` as a logical input — kept for parity with the
+  // engine state callers pass in and to allow future end-game variants
+  // that hinge on out count.
+  void outs;
 
   // Regulation completed (top of inning after regulation, score not tied)
   if (currentInning > regulation && isTopOfInning && outs === 0 && home !== away) {

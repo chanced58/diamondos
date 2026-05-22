@@ -208,14 +208,32 @@ describe('evaluateGameEnd', () => {
     expect(evaluateGameEnd(s, ls, 5, true, 0)).toBeNull();
   });
 
-  it('recognises a walk-off at the end of regulation', () => {
+  it('recognises a walk-off the moment the home team takes the lead in the bottom of regulation', () => {
     const s = defaultLeagueScoringSettings(); // maxInnings=9
     const ls = makeLineScore({
       awayByInning: [0, 0, 0, 0, 0, 0, 0, 0, 0],
       homeByInning: [0, 0, 0, 0, 0, 0, 0, 0, 1],
     });
-    const decision = evaluateGameEnd(s, ls, 9, false, 3);
-    expect(decision?.reason).toBe('walkoff');
+    // Walk-off fires with 0 outs (the run scored, game over)
+    expect(evaluateGameEnd(s, ls, 9, false, 0)?.reason).toBe('walkoff');
+    // …and with 2 outs
+    expect(evaluateGameEnd(s, ls, 9, false, 2)?.reason).toBe('walkoff');
+    // …and even at outs=3 (after the inning closes, still counts as walk-off)
+    expect(evaluateGameEnd(s, ls, 9, false, 3)?.reason).toBe('walkoff');
+  });
+
+  it('does not recognise a walk-off when the home team trails or is tied', () => {
+    const s = defaultLeagueScoringSettings();
+    const tied = makeLineScore({
+      awayByInning: [0, 0, 0, 0, 0, 0, 0, 0, 1],
+      homeByInning: [0, 0, 0, 0, 0, 0, 0, 0, 1],
+    });
+    expect(evaluateGameEnd(s, tied, 9, false, 0)).toBeNull();
+    const trailing = makeLineScore({
+      awayByInning: [0, 0, 0, 0, 0, 0, 0, 0, 2],
+      homeByInning: [0, 0, 0, 0, 0, 0, 0, 0, 1],
+    });
+    expect(evaluateGameEnd(s, trailing, 9, false, 0)).toBeNull();
   });
 
   it('recognises regulation complete at top-of-10 with no tie', () => {

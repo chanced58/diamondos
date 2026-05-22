@@ -473,7 +473,12 @@ function NumberField({
         value={value}
         disabled={disabled}
         onChange={(e) => {
-          const parsed = Number(e.target.value);
+          const raw = e.target.value;
+          // `Number('')` is 0 — that silently writes a bogus value into the
+          // settings blob and confuses validation on save. Treat an empty
+          // input as "not yet typed" and keep the previous value instead.
+          if (raw === '') return;
+          const parsed = Number(raw);
           if (Number.isFinite(parsed)) onChange(parsed);
         }}
         className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-gray-50 disabled:text-gray-400"
