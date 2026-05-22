@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import * as SecureStore from 'expo-secure-store';
 import {
   defaultLeagueScoringSettings,
   mergeWithDefaults,
@@ -6,13 +7,41 @@ import {
 } from '@baseball/shared';
 import { getSupabaseClient } from './supabase';
 
+const CACHE_KEY_PREFIX = 'league_scoring_settings_v1__';
+
+function cacheKey(teamId: string): string {
+  return `${CACHE_KEY_PREFIX}${teamId}`;
+}
+
+async function readCache(teamId: string): Promise<LeagueScoringSettings | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(cacheKey(teamId));
+    if (!raw) return null;
+    return mergeWithDefaults(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+async function writeCache(teamId: string, settings: LeagueScoringSettings): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(cacheKey(teamId), JSON.stringify(settings));
+  } catch {
+    /* best-effort: cache miss is acceptable */
+  }
+}
+
 /**
- * Fetch the active league settings for a team, online via Supabase.
+ * Resolve the active league settings for a team, with SecureStore-backed
+ * offline caching.
  *
- * v1 mobile path. Slice 7 will replace this with a WatermelonDB-backed
- * lookup so scoring respects league flags fully offline. In the meantime
- * a missing network (or a team not in any league) falls back to platform
- * defaults — preserving today's behavior.
+ * On mount we (a) seed from any cached value so scoring respects the league
+ * gates immediately even with no network, then (b) refresh from Supabase in
+ * the background and update both state and cache when the fetch returns.
+ *
+ * This keeps the offline-first promise of the mobile scoring app without
+ * having to add a full WatermelonDB table for what is effectively a small
+ * per-team JSON blob.
  */
 export function useLeagueSettings(teamId: string | undefined): LeagueScoringSettings {
   const [settings, setSettings] = useState<LeagueScoringSettings>(defaultLeagueScoringSettings);
@@ -23,9 +52,16 @@ export function useLeagueSettings(teamId: string | undefined): LeagueScoringSett
       return;
     }
     let cancelled = false;
+
+    // (a) seed from cache immediately
+    void readCache(teamId).then((cached) => {
+      if (!cancelled && cached) setSettings(cached);
+    });
+
+    // (b) refresh in the background
     (async () => {
       const supabase = getSupabaseClient();
-      const { data: membership } = await supabase
+      const { data: membership, error: membershipErr } = await supabase
         .from('league_members')
         .select('league_id')
         .eq('team_id', teamId)
@@ -33,20 +69,26 @@ export function useLeagueSettings(teamId: string | undefined): LeagueScoringSett
         .limit(1)
         .maybeSingle();
 
+      if (membershipErr) return; // keep cached value
       if (!membership?.league_id) {
-        if (!cancelled) setSettings(defaultLeagueScoringSettings());
+        const defaults = defaultLeagueScoringSettings();
+        if (!cancelled) setSettings(defaults);
+        await writeCache(teamId, defaults);
         return;
       }
 
-      const { data: leagueRow } = await supabase
+      const { data: leagueRow, error: leagueErr } = await supabase
         .from('leagues')
         .select('scoring_settings')
         .eq('id', membership.league_id)
         .maybeSingle();
+      if (leagueErr) return;
 
-      if (cancelled) return;
-      setSettings(mergeWithDefaults(leagueRow?.scoring_settings ?? {}));
+      const next = mergeWithDefaults(leagueRow?.scoring_settings ?? {});
+      if (!cancelled) setSettings(next);
+      await writeCache(teamId, next);
     })();
+
     return () => {
       cancelled = true;
     };
