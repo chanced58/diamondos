@@ -301,6 +301,12 @@ Consistent naming helps avoid confusion between the codebase and baseball termin
 | **ComplianceRule** | A ruleset (e.g., NFHS, Little League) defining max pitches per day and required rest days |
 | **QAB** | Quality At-Bat — a high-school-relevant metric crediting productive plate appearances regardless of traditional hit/out outcome |
 | **Channel** | A messaging context: announcement (coach-post-only), topic (threaded), or direct (1:1) |
+| **LeagueScoringSettings** | Per-league JSONB blob on `leagues.scoring_settings` that toggles non-standard scoring behaviors (expanded lineups, mercy rule, run cap, guest players, courtesy runners, etc.). Validated by `leagueScoringSettingsSchema` in `@baseball/shared`. |
+| **GuestPlayer** | A player appearing in a lineup who is not on the home team's roster — either ad-hoc (free-text name) or an FK to another team's player. Tracked per-appearance via `game_lineups.is_guest` and gated by `settings.guests.allowed`. |
+| **LeaguePlayer** | Registry row (`league_players` table) listing every player who has appeared in any team's game inside a league. Seeds the cross-season guest picker. |
+| **MercyRule** | League-configurable game-ending rule: `gameLength.mercy = {enabled, runDiff, afterInning}`. The scoring engine surfaces an advisory banner when conditions are met; coach still confirms via End Game. |
+| **RunCap** | League-configurable per-half-inning run limit (`gameLength.runCap = {enabled, value}`). Triggers an inning-switch advisory in the scoring UI. |
+| **CourtesyRunner** | LL/HS substitution that pinch-runs for catcher/pitcher without burning a regular sub. `SubstitutionType.COURTESY_RUNNER`, gated on `settings.substitutions.courtesyRunnerForCatcherPitcher`. |
 
 Extend this glossary as domain concepts are added to the codebase.
 
