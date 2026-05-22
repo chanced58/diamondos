@@ -60,6 +60,14 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
     .select('id, name, city')
     .order('name');
 
+  // Fetch the league's scoring settings JSON (validated/merged client-side)
+  const { data: scoringRow } = await db
+    .from('leagues')
+    .select('scoring_settings')
+    .eq('id', league.id)
+    .maybeSingle();
+  const scoringSettings = scoringRow?.scoring_settings ?? {};
+
   return (
     <div className="p-8 max-w-4xl">
       <h1 className="text-2xl font-bold text-gray-900 mb-1">Manage League</h1>
@@ -89,6 +97,7 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
           };
         })}
         isAdmin={access.isLeagueAdmin}
+        scoringSettings={scoringSettings}
         availableOpponentTeams={(availableOpponentTeams ?? []).map((t) => ({
           id: t.id,
           name: t.name,

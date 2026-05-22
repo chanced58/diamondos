@@ -1188,6 +1188,7 @@ export type Database = {
           level: string | null
           logo_url: string | null
           name: string
+          scoring_settings: Json
           setup_completed_at: string | null
           state_code: string | null
           updated_at: string
@@ -1202,6 +1203,7 @@ export type Database = {
           level?: string | null
           logo_url?: string | null
           name: string
+          scoring_settings?: Json
           setup_completed_at?: string | null
           state_code?: string | null
           updated_at?: string
@@ -1216,6 +1218,7 @@ export type Database = {
           level?: string | null
           logo_url?: string | null
           name?: string
+          scoring_settings?: Json
           setup_completed_at?: string | null
           state_code?: string | null
           updated_at?: string

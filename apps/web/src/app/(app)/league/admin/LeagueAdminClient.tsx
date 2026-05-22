@@ -5,6 +5,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { LeagueScoringSettingsForm } from './LeagueScoringSettingsForm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -51,6 +52,7 @@ interface LeagueAdminClientProps {
   divisions: Division[];
   staff: StaffEntry[];
   isAdmin: boolean;
+  scoringSettings?: unknown;
   availableTeams?: AvailableTeam[];
   availableOpponentTeams?: AvailableOpponentTeam[];
 }
@@ -63,6 +65,7 @@ export function LeagueAdminClient({
   divisions,
   staff,
   isAdmin,
+  scoringSettings,
   availableTeams,
   availableOpponentTeams,
 }: LeagueAdminClientProps): JSX.Element {
@@ -741,6 +744,13 @@ export function LeagueAdminClient({
           </div>
         </div>
       )}
+
+      {/* League Scoring Settings */}
+      <LeagueScoringSettingsForm
+        leagueId={leagueId}
+        initialSettings={scoringSettings ?? {}}
+        canEdit={isAdmin}
+      />
     </div>
   );
 }
