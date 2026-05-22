@@ -1,4 +1,8 @@
-import { deriveFieldingStats, type FieldingLineupContext } from '../fielding-stats';
+import {
+  deriveFieldingStats,
+  POSITION_PLACEHOLDER_PREFIX,
+  type FieldingLineupContext,
+} from '../fielding-stats';
 import { EventType } from '../../types/game-event';
 
 type Evt = {
@@ -296,6 +300,94 @@ describe('deriveFieldingStats — STRIKEOUT and sacrifice handling', () => {
     const stats = deriveFieldingStats(events as any, players, ctxMap());
     expect(stats.get('p-p')!.assists).toBe(1);
     expect(stats.get('p-1b')!.putouts).toBe(1);
+  });
+});
+
+describe('deriveFieldingStats — defensive placeholders', () => {
+  beforeEach(resetSeq);
+
+  // When a coach hasn't assigned a player at a defensive position (only the
+  // pitcher is required), errors and fielding plays charged to that position
+  // should still surface in the stats table as a synthetic "Position X" row,
+  // not vanish silently as they did before.
+  const pitcherOnlyAlignment: FieldingLineupContext = {
+    isHome: true,
+    startingPositions: new Map<number, string>([[1, 'p-p']]),
+  };
+  const placeholderCtx = () => new Map([[GAME, pitcherOnlyAlignment]]);
+
+  it('charges an error to a synthetic position row when no player is assigned', () => {
+    const events: Evt[] = [
+      e(EventType.FIELD_ERROR, { errorBy: 5 }, true),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveFieldingStats(events as any, players, placeholderCtx());
+    const row = stats.get(`${POSITION_PLACEHOLDER_PREFIX}5`);
+    expect(row).toBeDefined();
+    expect(row!.errors).toBe(1);
+    expect(row!.playerName).toBe('Position 3B');
+  });
+
+  it('seeds gamesAppeared for every non-pitcher position without a player', () => {
+    // No events at all — placeholders should still appear with zero chances.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveFieldingStats([] as any, players, placeholderCtx());
+    for (let pos = 2; pos <= 9; pos++) {
+      const row = stats.get(`${POSITION_PLACEHOLDER_PREFIX}${pos}`);
+      expect(row).toBeDefined();
+      expect(row!.gamesAppeared).toBe(1);
+    }
+    // Pitcher (real player) also seeded; no __POS__1 placeholder.
+    expect(stats.get('p-p')!.gamesAppeared).toBe(1);
+    expect(stats.get(`${POSITION_PLACEHOLDER_PREFIX}1`)).toBeUndefined();
+  });
+
+  it('does NOT mint a placeholder for out-of-range position numbers', () => {
+    // A malformed event with errorBy: 10 (or any value outside 1-9) shouldn't
+    // create a bogus __POS__10 row. Guards against scorer typos and stale
+    // payloads from older client versions.
+    const events: Evt[] = [
+      e(EventType.FIELD_ERROR, { errorBy: 10 }, true),
+      e(EventType.FIELD_ERROR, { errorBy: 0 }, true),
+      e(EventType.FIELD_ERROR, { errorBy: -1 }, true),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveFieldingStats(events as any, players, placeholderCtx());
+    expect(stats.get(`${POSITION_PLACEHOLDER_PREFIX}10`)).toBeUndefined();
+    expect(stats.get(`${POSITION_PLACEHOLDER_PREFIX}0`)).toBeUndefined();
+    expect(stats.get(`${POSITION_PLACEHOLDER_PREFIX}-1`)).toBeUndefined();
+  });
+
+  it('does NOT mint a placeholder for the pitcher position when no player is set', () => {
+    // Strip the pitcher too — malformed alignment. The error at position 1
+    // must be ignored, not charged to a synthetic "Position P" row, because
+    // pitcher stats must always reference a real player_id (pitch counts).
+    const noPitcher: FieldingLineupContext = {
+      isHome: true,
+      startingPositions: new Map<number, string>(),
+    };
+    const events: Evt[] = [
+      e(EventType.FIELD_ERROR, { errorBy: 1 }, true),
+    ];
+    const stats = deriveFieldingStats(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      events as any,
+      players,
+      new Map([[GAME, noPitcher]]),
+    );
+    expect(stats.get(`${POSITION_PLACEHOLDER_PREFIX}1`)).toBeUndefined();
+  });
+
+  it('credits a fielding sequence touching an empty position to a placeholder row', () => {
+    // 6-4-3 DP where only the pitcher exists; SS, 2B, 1B all unassigned.
+    const events: Evt[] = [
+      e(EventType.DOUBLE_PLAY, { fieldingSequence: [6, 4, 3] }, true),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveFieldingStats(events as any, players, placeholderCtx());
+    expect(stats.get(`${POSITION_PLACEHOLDER_PREFIX}6`)!.assists).toBe(1);
+    expect(stats.get(`${POSITION_PLACEHOLDER_PREFIX}4`)!.putouts).toBe(1);
+    expect(stats.get(`${POSITION_PLACEHOLDER_PREFIX}3`)!.putouts).toBe(1);
   });
 });
 

@@ -29,6 +29,29 @@ const POSITION_NUMBER_BY_NAME: Record<string, number> = {
 };
 
 /**
+ * Synthetic player-id prefix used to attribute fielding stats to a defensive
+ * position when no real player is assigned to that slot. Lets coaches run
+ * games with only the pitcher named on defense — errors / PO / A still
+ * aggregate by position (e.g. "Position 3B") instead of vanishing silently.
+ *
+ * Never persisted: only appears in the in-memory stats map produced by
+ * deriveFieldingStats.
+ */
+export const POSITION_PLACEHOLDER_PREFIX = '__POS__';
+
+const POSITION_NAME_BY_NUM: Record<number, string> = {
+  1: 'P', 2: 'C', 3: '1B', 4: '2B', 5: '3B', 6: 'SS', 7: 'LF', 8: 'CF', 9: 'RF',
+};
+
+function placeholderId(posNum: number): string {
+  return `${POSITION_PLACEHOLDER_PREFIX}${posNum}`;
+}
+
+function placeholderName(posNum: number): string {
+  return `Position ${POSITION_NAME_BY_NUM[posNum] ?? posNum}`;
+}
+
+/**
  * Normalize a free-form position string (e.g. 'SS', 'ss', 'Shortstop',
  * ' shortstop ', 'first_base') to a canonical number, or null when
  * unrecognized. Unrecognized input returns null silently — the shared
@@ -146,31 +169,60 @@ export function deriveFieldingStats(
       markAppeared(playerId);
     }
 
+    // Seed placeholder rows for non-pitcher positions that have no assigned
+    // player at game start. Pitcher (1) is intentionally excluded: pitch
+    // counts and league compliance require a real player_id, and the credit
+    // helpers below ignore pitcher-position credits when no player is set.
+    for (let pos = 2; pos <= 9; pos++) {
+      if (!alignment.startingPositions.has(pos)) {
+        const pid = placeholderId(pos);
+        if (!nameMap.has(pid)) nameMap.set(pid, placeholderName(pos));
+        markAppeared(pid);
+      }
+    }
+
     const playerAtPosition = (posNum: number): string | null =>
       positions.get(posNum) ?? null;
 
     const isOurDefensiveHalf = (isTop: boolean): boolean =>
       alignment.isHome ? isTop : !isTop;
 
-    const creditPO = (posNum: number): void => {
+    /**
+     * Resolve the id to credit for `posNum`. Returns the real player_id when
+     * a player occupies the position, a synthetic position-placeholder id for
+     * non-pitcher positions (2–9) when no player is set, or null when no
+     * credit should be issued: pitcher with no player (pitch counts require a
+     * real id), or an out-of-range position number from a malformed scorer
+     * event (e.g. `errorBy: 10`).
+     */
+    const resolveCreditId = (posNum: number): string | null => {
       const playerId = playerAtPosition(posNum);
-      if (!playerId) return;
-      markAppeared(playerId);
-      getStats(playerId).putouts += 1;
+      if (playerId) return playerId;
+      if (posNum < 2 || posNum > 9) return null;
+      const pid = placeholderId(posNum);
+      if (!nameMap.has(pid)) nameMap.set(pid, placeholderName(posNum));
+      return pid;
+    };
+
+    const creditPO = (posNum: number): void => {
+      const id = resolveCreditId(posNum);
+      if (!id) return;
+      markAppeared(id);
+      getStats(id).putouts += 1;
     };
 
     const creditAssist = (posNum: number): void => {
-      const playerId = playerAtPosition(posNum);
-      if (!playerId) return;
-      markAppeared(playerId);
-      getStats(playerId).assists += 1;
+      const id = resolveCreditId(posNum);
+      if (!id) return;
+      markAppeared(id);
+      getStats(id).assists += 1;
     };
 
     const creditError = (posNum: number): void => {
-      const playerId = playerAtPosition(posNum);
-      if (!playerId) return;
-      markAppeared(playerId);
-      getStats(playerId).errors += 1;
+      const id = resolveCreditId(posNum);
+      if (!id) return;
+      markAppeared(id);
+      getStats(id).errors += 1;
     };
 
     /**

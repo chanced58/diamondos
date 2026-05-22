@@ -748,9 +748,10 @@ export function ScoringBoard({
     gameState.outs < 2 &&
     (!!gameState.runnersOnBase.second || !!gameState.runnersOnBase.third);
 
-  // Sorted starters for batting order cycling
+  // Sorted starters for batting order cycling. Upper bound matches the DB
+  // check constraint (1–30) — "everyone bats" lineups go beyond 9.
   const starters = lineup
-    .filter((l) => l.battingOrder >= 1 && l.battingOrder <= 9)
+    .filter((l) => l.battingOrder >= 1 && l.battingOrder <= 30)
     .sort((a, b) => a.battingOrder - b.battingOrder);
 
   // Is the opponent currently batting?
@@ -761,7 +762,7 @@ export function ScoringBoard({
 
   // Opponent starters sorted by batting order
   const opponentStarters = localOpponentLineup
-    .filter((l) => l.battingOrder >= 1 && l.battingOrder <= 9)
+    .filter((l) => l.battingOrder >= 1 && l.battingOrder <= 30)
     .sort((a, b) => a.battingOrder - b.battingOrder);
 
   // Derive current batter from the PA counts tracked by deriveGameState.
@@ -781,13 +782,14 @@ export function ScoringBoard({
       if ((row.event_type as string) !== 'substitution') continue;
       const p = (row.payload ?? {}) as Record<string, unknown>;
       if (Boolean(p.isOpponentSubstitution) !== forOpponent) continue;
-      const outId = p.outPlayerId as string;
+      const outId = p.outPlayerId as string | undefined;
       const inId  = p.inPlayerId  as string;
-      const idx = result.findIndex((s) => s.playerId === outId);
-      if (idx === -1) continue;
+      const battingOrderPosition = p.battingOrderPosition as number | undefined;
 
       // Position change: same player, just update their defensive position
       if (p.substitutionType === 'position_change') {
+        const idx = result.findIndex((s) => s.playerId === outId);
+        if (idx === -1) continue;
         result[idx] = {
           ...result[idx],
           startingPosition: (p.newPosition as string | null) ?? result[idx].startingPosition,
@@ -796,12 +798,33 @@ export function ScoringBoard({
       }
 
       const rosterEntry = (roster ?? []).find((r) => r.id === inId);
+      const fielderName = rosterEntry
+        ? { id: inId, firstName: rosterEntry.firstName, lastName: rosterEntry.lastName, jerseyNumber: rosterEntry.jerseyNumber }
+        : { id: inId, firstName: 'Sub', lastName: 'Player', jerseyNumber: null };
+
+      // Lineup extension: no outPlayerId and a battingOrderPosition past the
+      // current end means we're adding a batter to the order (10th, 11th, …).
+      // Append a new entry so rotation walks the new slot.
+      if (!outId && typeof battingOrderPosition === 'number') {
+        if (!result.some((s) => s.battingOrder === battingOrderPosition)) {
+          result.push({
+            playerId: inId,
+            battingOrder: battingOrderPosition,
+            startingPosition: (p.newPosition as string | null) ?? null,
+            player: fielderName,
+          });
+          result.sort((a, b) => a.battingOrder - b.battingOrder);
+        }
+        continue;
+      }
+
+      const idx = result.findIndex((s) => s.playerId === outId);
+      if (idx === -1) continue;
+
       result[idx] = {
         ...result[idx],
         playerId: inId,
-        player: rosterEntry
-          ? { id: inId, firstName: rosterEntry.firstName, lastName: rosterEntry.lastName, jerseyNumber: rosterEntry.jerseyNumber }
-          : { id: inId, firstName: 'Sub', lastName: 'Player', jerseyNumber: null },
+        player: fielderName,
       };
     }
     return result;
@@ -819,9 +842,18 @@ export function ScoringBoard({
   const completedOpponentPAs = opponentBatsInTop
     ? gameState.completedTopHalfPAs
     : gameState.completedBottomHalfPAs;
-  const expectedOpponentSlot = (completedOpponentPAs % 9) + 1;
+  // Cycle through the actual opponent lineup length so "everyone bats" rosters
+  // walk slot 10+ before wrapping. Use index-based lookup against the sorted
+  // starter array so non-contiguous batting orders (e.g. slots 1,2,3,5,6,7,8,9
+  // when slot 4 was removed) still cycle every batter — the prior approach of
+  // computing `(PAs % count) + 1` and matching by exact battingOrder would
+  // return null when the expected slot number didn't exist in the lineup.
+  const opponentSlotCount = effectiveOpponentStarters.length;
   const currentOpponentBatter =
-    effectiveOpponentStarters.find((s) => s.battingOrder === expectedOpponentSlot) ?? null;
+    opponentSlotCount > 0
+      ? effectiveOpponentStarters[completedOpponentPAs % opponentSlotCount]
+      : null;
+  const expectedOpponentSlot = currentOpponentBatter?.battingOrder ?? 1;
 
   // Clear skipped-slot dismissals when the active slot changes (skip is per-PA only)
   useEffect(() => {

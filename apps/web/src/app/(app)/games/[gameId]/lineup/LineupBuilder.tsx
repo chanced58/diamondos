@@ -5,7 +5,13 @@ import { useFormState, useFormStatus } from 'react-dom';
 import { saveLineupAction } from './actions';
 
 const POSITIONS = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH'] as const;
-const ORDER_OPTIONS = ['Bench', '1', '2', '3', '4', '5', '6', '7', '8', '9'] as const;
+
+const MAX_BATTING_ORDER = 30;
+
+function orderOptions(rosterSize: number): readonly string[] {
+  const cap = Math.min(Math.max(rosterSize, 9), MAX_BATTING_ORDER);
+  return ['Bench', ...Array.from({ length: cap }, (_, i) => String(i + 1))];
+}
 
 type Player = {
   id: string;
@@ -61,6 +67,8 @@ export function LineupBuilder({
     return aOrder - bOrder;
   });
 
+  const options = orderOptions(players.length);
+
   return (
     <form action={action}>
       <input type="hidden" name="gameId" value={gameId} />
@@ -99,7 +107,7 @@ export function LineupBuilder({
                     defaultValue={getDefaultOrder(player.id)}
                     className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                   >
-                    {ORDER_OPTIONS.map((opt) => (
+                    {options.map((opt) => (
                       <option key={opt} value={opt}>{opt}</option>
                     ))}
                   </select>
@@ -123,9 +131,11 @@ export function LineupBuilder({
       </div>
 
       <p className="text-xs text-gray-400 mb-4">
-        Set batting order 1–9 for starters. Players left as &quot;Bench&quot; will not appear in the batting order.
-        Exception: a player set to &quot;Bench&quot; with position P is saved as the starting pitcher without a
-        batting slot — use this for DH rules where the pitcher does not bat.
+        Set the batting order (1 and up) for batters. Players left as &quot;Bench&quot; will not appear in
+        the batting order. Exception: a player set to &quot;Bench&quot; with position P is saved as
+        the starting pitcher without a batting slot — use this for DH rules where the pitcher
+        does not bat. Defensive positions are optional; leave them blank to use position-only
+        error tracking (placeholders) when you don&apos;t want to assign a player.
       </p>
 
       <div className="flex items-center gap-3">

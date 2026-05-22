@@ -24,6 +24,17 @@ const ABBR_TO_NUM: Record<string, number> = {
   P: 1, C: 2, '1B': 3, '2B': 4, '3B': 5, SS: 6, LF: 7, CF: 8, RF: 9,
 };
 
+// Reverse map: position number → abbreviation. Used to label placeholder
+// fielding-stat rows when no real player is assigned to a position.
+const POSITION_NAME_BY_NUM: Record<number, string> = {
+  1: 'P', 2: 'C', 3: '1B', 4: '2B', 5: '3B', 6: 'SS', 7: 'LF', 8: 'CF', 9: 'RF',
+};
+
+// Synthetic id prefix used when a defensive position has no assigned player.
+// Keeps fielding chances (errors, PO, A) from vanishing silently — they
+// surface as "Position 3B" etc. in the table. NEVER persisted to the DB.
+const POSITION_PLACEHOLDER_PREFIX = '__POS__';
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 type LineupEntry = {
@@ -54,15 +65,41 @@ function computeFieldingStats(
 
   function getRow(playerId: string): FieldingStatRow {
     if (!stats.has(playerId)) {
-      const info = playerNameMap.get(playerId);
-      stats.set(playerId, {
-        playerId,
-        playerName: info?.name ?? 'Unknown',
-        position: info?.position ?? '',
-        putouts: 0, assists: 0, errors: 0,
-      });
+      // Synthetic placeholder ids like "__POS__5" don't have entries in the
+      // player name map — label them by position so the table renders
+      // "Position 3B" instead of "Unknown".
+      if (playerId.startsWith(POSITION_PLACEHOLDER_PREFIX)) {
+        const posNum = Number(playerId.slice(POSITION_PLACEHOLDER_PREFIX.length));
+        const abbr = POSITION_NAME_BY_NUM[posNum] ?? String(posNum);
+        stats.set(playerId, {
+          playerId,
+          playerName: `Position ${abbr}`,
+          position: abbr,
+          putouts: 0, assists: 0, errors: 0,
+        });
+      } else {
+        const info = playerNameMap.get(playerId);
+        stats.set(playerId, {
+          playerId,
+          playerName: info?.name ?? 'Unknown',
+          position: info?.position ?? '',
+          putouts: 0, assists: 0, errors: 0,
+        });
+      }
     }
     return stats.get(playerId)!;
+  }
+
+  // Resolve the credit target for `posNum`. Returns the real player id when
+  // a player occupies the position, a synthetic placeholder id for non-pitcher
+  // positions (2–9) when no player is set, or null when no credit should be
+  // issued (pitcher with no player; or an out-of-range position from a
+  // malformed scorer event).
+  function resolveCreditId(posNum: number): string | null {
+    const playerId = posToPlayer.get(posNum);
+    if (playerId) return playerId;
+    if (posNum < 2 || posNum > 9) return null;
+    return `${POSITION_PLACEHOLDER_PREFIX}${posNum}`;
   }
 
   let isTopOfInning = true;
@@ -116,10 +153,10 @@ function computeFieldingStats(
       const seq = payload.fieldingSequence as number[] | undefined;
       if (seq && seq.length > 0) {
         for (let i = 0; i < seq.length; i++) {
-          const playerId = posToPlayer.get(seq[i]);
-          if (!playerId) continue;
-          if (i === seq.length - 1) getRow(playerId).putouts++;
-          else getRow(playerId).assists++;
+          const id = resolveCreditId(seq[i]);
+          if (!id) continue;
+          if (i === seq.length - 1) getRow(id).putouts++;
+          else getRow(id).assists++;
         }
       }
     }
@@ -127,21 +164,21 @@ function computeFieldingStats(
     if (etype === 'field_error') {
       const errorBy = payload.errorBy as number | undefined;
       if (errorBy !== undefined) {
-        const playerId = posToPlayer.get(errorBy);
-        if (playerId) getRow(playerId).errors++;
+        const id = resolveCreditId(errorBy);
+        if (id) getRow(id).errors++;
       }
     }
 
     if (etype === 'caught_stealing') {
       // Catcher typically gets the putout; add one if catcher is identified
-      const catcherId = posToPlayer.get(2);
-      if (catcherId) getRow(catcherId).putouts++;
+      const id = resolveCreditId(2);
+      if (id) getRow(id).putouts++;
     }
 
     if (etype === 'strikeout') {
       // Catcher gets PO on strikeout (if no SB/passed ball during the strikeout)
-      const catcherId = posToPlayer.get(2);
-      if (catcherId) getRow(catcherId).putouts++;
+      const id = resolveCreditId(2);
+      if (id) getRow(id).putouts++;
     }
   }
 

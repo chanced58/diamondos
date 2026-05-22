@@ -57,6 +57,8 @@ export enum SubstitutionType {
   PINCH_RUNNER    = 'pinch_runner',
   DEFENSIVE       = 'defensive',
   POSITION_CHANGE = 'position_change',
+  /** Adding a new batter to the end of the order mid-game (late arrival, courtesy player). */
+  LINEUP_EXTENSION = 'lineup_extension',
 }
 
 export enum PitchType {

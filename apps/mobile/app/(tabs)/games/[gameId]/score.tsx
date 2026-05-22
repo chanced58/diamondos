@@ -19,6 +19,7 @@ import type { Game } from '../../../../src/db/models/Game';
 import type { Player } from '../../../../src/db/models/Player';
 import type { BattedOutType, RosterPlayer } from '../../../../src/features/scoring/PitchInput';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
+import { getSupabaseClient } from '../../../../src/lib/supabase';
 
 /**
  * Live game scoring screen — the core feature of the mobile app.
@@ -72,6 +73,40 @@ export default function ScoringScreen() {
   const currentBatterId = gameState?.currentBatterId ?? undefined;
   const defensiveLineup = useDefensiveLineup(gameId, roster);
   const [showLineupModal, setShowLineupModal] = useState(false);
+
+  // Snapshot of the current batting order from Supabase game_lineups so the
+  // Add Batter flow knows (a) which players are already in the order (to hide
+  // them from the picker) and (b) the current max batting_order so the new
+  // batter lands at end+1 without colliding with the unique constraint.
+  // Refreshed after every successful add-batter insert.
+  //
+  // lineupLoaded / lineupLoadError gate the Add Batter flow: if the fetch
+  // failed (transient network blip, RLS issue) we'd otherwise treat the empty
+  // [] as "no batters yet" and pick batting_order=1 — colliding with the real
+  // slot 1 occupant and re-offering starters in the picker. Block the flow
+  // until we have a confirmed snapshot.
+  const [lineupRows, setLineupRows] = useState<{ player_id: string; batting_order: number | null }[]>([]);
+  const [lineupLoaded, setLineupLoaded] = useState(false);
+  const [lineupLoadError, setLineupLoadError] = useState<string | null>(null);
+  const refreshLineupRows = useMemo(() => async () => {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('game_lineups')
+      .select('player_id, batting_order')
+      .eq('game_id', gameId);
+    if (error || !data) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to load game_lineups snapshot', { gameId, error: error?.message });
+      setLineupLoadError(error?.message ?? 'Failed to load lineup snapshot');
+      setLineupLoaded(false);
+      return;
+    }
+    setLineupRows(data);
+    setLineupLoadError(null);
+    setLineupLoaded(true);
+  }, [gameId]);
+  useEffect(() => { void refreshLineupRows(); }, [refreshLineupRows]);
+
   // Dropped-third-strike modal — opened either by the manual button in
   // PitchInput, or automatically by handlePitch when a 3rd-strike pitch is
   // recorded with D3K eligibility (first base empty or two outs).
@@ -400,6 +435,104 @@ export default function ScoringScreen() {
     await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
   }
 
+  /**
+   * Add a batter to the END of the order mid-game. Late arrival, courtesy
+   * player, or "everyone bats" lineup extension. The new slot lands at
+   * (current max batting_order) + 1; we emit a SUBSTITUTION event for live
+   * replay AND upsert into game_lineups so MaxPreps export, season stats,
+   * and post-game queries pick the new batter up.
+   *
+   * The unique(game_id, batting_order) constraint guarantees we can't
+   * collide as long as we always use max+1; refreshLineupRows() pulls the
+   * latest state after each insert.
+   */
+  async function handleAddBatter(newBatterId: string) {
+    if (!gameState) return;
+    // Don't add anyone until we have a confirmed snapshot of the existing
+    // lineup. If the snapshot fetch failed we'd compute currentMax=0 and
+    // collide with the real slot-1 occupant.
+    if (!lineupLoaded) return;
+
+    // Build the set of player ids already in the order, including pending
+    // in-game LINEUP_EXTENSION events that haven't been reflected in the
+    // Supabase snapshot yet (defense-in-depth against picker filter bypass
+    // / two rapid taps before refreshLineupRows completes).
+    const activePlayerIds = new Set(lineupRows.map((row) => row.player_id));
+
+    // Compute current max from both the DB snapshot AND any in-game
+    // SUBSTITUTION events that already extended the lineup but haven't yet
+    // been reflected in lineupRows.
+    let currentMax = lineupRows.reduce(
+      (max, l) => (l.batting_order ?? 0) > max ? (l.batting_order ?? 0) : max,
+      0,
+    );
+    const eventsCollection = database.get<WdbGameEvent>('game_events');
+    const recent = await eventsCollection
+      .query(Q.where('game_remote_id', gameId), Q.sortBy('sequence_number', Q.asc))
+      .fetch();
+    for (const evt of recent) {
+      if (evt.eventType !== EventType.SUBSTITUTION) continue;
+      const p = evt.payload as Partial<SubstitutionPayload> | undefined;
+      if (!p) continue;
+      if (p.substitutionType === SubstitutionType.LINEUP_EXTENSION && p.inPlayerId) {
+        activePlayerIds.add(p.inPlayerId);
+      }
+      if (!p.outPlayerId && typeof p.battingOrderPosition === 'number') {
+        if (p.battingOrderPosition > currentMax) currentMax = p.battingOrderPosition;
+      }
+    }
+
+    // DB check constraint caps batting_order at 30. Bail before emitting an
+    // event that the persistence layer would reject; the SUBSTITUTION would
+    // still land in the event log and diverge replay from the DB state.
+    if (activePlayerIds.has(newBatterId) || currentMax >= 30) return;
+
+    const battingOrderPosition = currentMax + 1;
+
+    const payload: SubstitutionPayload = {
+      inPlayerId: newBatterId,
+      substitutionType: SubstitutionType.LINEUP_EXTENSION,
+      battingOrderPosition,
+    };
+    await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
+
+    // Persist the new batter to game_lineups so post-game consumers (MaxPreps
+    // export, season-stat rollups) see them as a roster row alongside the
+    // pre-game starters. is_starter=false marks them as a late addition.
+    //
+    // Offline-first trade-off: this upsert is a best-effort online write,
+    // unlike everything else on this screen which lands in WatermelonDB
+    // first and syncs later. The SUBSTITUTION event IS offline-first and is
+    // the authoritative source for live state, batting rotation, and the
+    // shared stats derivers — those all replay from game_events. If this
+    // upsert fails (offline, transient RLS hiccup), the live game continues
+    // to work correctly; only the post-game game_lineups table will be
+    // missing the row until the scorer comes back online and the next
+    // Add Batter (or any other UI) re-triggers refresh.
+    //
+    // A true offline-first solution would mirror game_lineups in
+    // WatermelonDB and push via the sync engine, OR add a server-side
+    // edge function that backfills game_lineups from LINEUP_EXTENSION
+    // events. Either change is meaningful scope outside this PR — tracked
+    // as follow-up.
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from('game_lineups').upsert(
+      {
+        game_id: gameId,
+        player_id: newBatterId,
+        batting_order: battingOrderPosition,
+        starting_position: null,
+        is_starter: false,
+      },
+      { onConflict: 'game_id,batting_order' },
+    );
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.warn('Add Batter game_lineups upsert failed:', error.message);
+    }
+    void refreshLineupRows();
+  }
+
   // Only scan this far back when searching for an event to void. Typical
   // scorer Undo use lives within the last few events; a 64-event trailing
   // window covers well over an inning of activity while keeping the query
@@ -632,6 +765,8 @@ export default function ScoringScreen() {
         onRecordPinchHitter={handlePinchHitter}
         onRecordDefensiveSub={handleDefensiveSub}
         onRecordPositionChange={handlePositionChange}
+        onRecordAddBatter={handleAddBatter}
+        activeBattingOrderPlayerIds={lineupRows.map((l) => l.player_id)}
         defensiveLineup={defensiveLineup}
         roster={roster}
         onUndoLastEvent={handleUndo}

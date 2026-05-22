@@ -204,7 +204,7 @@ export async function updateOpponentPlayerAction(
 /**
  * Auto-fill the game lineup from the opponent team roster.
  * Creates one opponent_game_lineups entry per active roster player, all set to Bench
- * (batting_order = NULL) so the coach can then assign batting order 1–9.
+ * (batting_order = NULL) so the coach can then assign a batting order.
  */
 export async function autoFillLineupFromRosterAction(
   _prevState: string | null | undefined,
@@ -277,7 +277,7 @@ export async function saveOpponentLineupAction(
       const order = parseInt(value as string, 10);
       const rawPosition = formData.get(`player_${playerId}_position`) as string | null;
       const dbPosition = rawPosition ? (POSITION_TO_DB[rawPosition] ?? rawPosition) : null;
-      if (isNaN(order) || order < 1 || order > 9) {
+      if (isNaN(order) || order < 1 || order > 30) {
         // Bench — still include pitchers so they can be identified as the starting pitcher.
         if (dbPosition === 'pitcher') {
           entries.push({ opponent_player_id: playerId, batting_order: null, starting_position: dbPosition });
@@ -291,7 +291,7 @@ export async function saveOpponentLineupAction(
   // Validate no duplicate batting order spots (nulls are not compared)
   const orders = entries.map((e) => e.batting_order).filter((o): o is number => o !== null);
   if (orders.length !== new Set(orders).size) {
-    return 'Duplicate batting order positions. Each spot (1–9) can only be assigned once.';
+    return 'Duplicate batting order positions. Each spot can only be assigned once.';
   }
 
   if (entries.length > 0) {

@@ -824,8 +824,11 @@ export function deriveBattingStats(
             if (byBatOrder >= 0) {
               orderedLineup[byBatOrder].playerId = inId;
             } else {
-              const idx = pos - 1;
-              if (idx >= 0 && idx < orderedLineup.length) orderedLineup[idx].playerId = inId;
+              // Slot doesn't exist yet — this is a lineup extension (e.g. adding
+              // a 10th batter mid-game). Append and re-sort so the rotation at
+              // `ourCompletedPAs % orderedLineup.length` walks the new slot.
+              orderedLineup.push({ playerId: inId, battingOrder: pos });
+              orderedLineup.sort((a, b) => a.battingOrder - b.battingOrder);
             }
           }
         }

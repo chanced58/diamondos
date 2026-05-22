@@ -24,8 +24,13 @@ export function suggestLineupAdjustment(args: {
   const topSlotCount = args.topSlotCount ?? 5;
   const maxSwaps = args.maxSwaps ?? 2;
 
-  const starters = args.currentLineup
-    .filter((l) => l.isStarter)
+  // Drop NULL batting_order rows (DH-rule pitchers don't bat — they can't be
+  // swapped into the order). After this filter, batting_order is guaranteed
+  // to be a number, which lets the rest of the function treat slots as
+  // contiguous numeric positions without nullable arithmetic.
+  type OrderedSlot = GameLineup & { battingOrder: number };
+  const starters: OrderedSlot[] = args.currentLineup
+    .filter((l): l is OrderedSlot => l.isStarter && l.battingOrder !== null)
     .sort((a, b) => a.battingOrder - b.battingOrder);
   if (starters.length === 0) return [];
 

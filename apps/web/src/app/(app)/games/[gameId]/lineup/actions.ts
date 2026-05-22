@@ -64,7 +64,7 @@ export async function saveLineupAction(
       const order = parseInt(value as string, 10);
       const rawPosition = formData.get(`player_${playerId}_position`) as string | null;
       const dbPosition = rawPosition ? POSITION_TO_DB[rawPosition] ?? rawPosition : null;
-      if (isNaN(order) || order < 1 || order > 9) {
+      if (isNaN(order) || order < 1 || order > 30) {
         // Bench — still include pitchers so they can be tracked for pitch counts
         // even when a DH bats in their lineup slot.
         if (dbPosition === 'pitcher') {
@@ -80,7 +80,7 @@ export async function saveLineupAction(
   const orders = entries.map((e) => e.batting_order).filter((o): o is number => o !== null);
   const uniqueOrders = new Set(orders);
   if (orders.length !== uniqueOrders.size) {
-    return 'Duplicate batting order positions. Each spot (1–9) can only be assigned once.';
+    return 'Duplicate batting order positions. Each spot can only be assigned once.';
   }
 
   // Delete existing lineup and insert fresh

@@ -195,6 +195,38 @@ describe('deriveBattingStats — lineup-replay batter inference', () => {
     expect(stats.get('p9')?.plateAppearances).toBe(1);
     expect(stats.has('p3')).toBe(false);
   });
+
+  it('appends a new slot when a SUBSTITUTION extends the lineup past the current end', () => {
+    // 3-player lineup; mid-game we add a 4th batter at battingOrderPosition 4.
+    // The rotation should walk slot 4 before wrapping back to slot 1.
+    const lineupCtx: BattingLineupContext = {
+      isHome: true,
+      ourLineup: [
+        { playerId: 'p1', battingOrder: 1 },
+        { playerId: 'p2', battingOrder: 2 },
+        { playerId: 'p3', battingOrder: 3 },
+      ],
+    };
+    const events = [
+      e(EventType.HIT,       { hitType: HitType.SINGLE }, false), // slot 1 → p1
+      e(EventType.OUT,       { outType: 'groundout' },     false), // slot 2 → p2
+      e(EventType.WALK,      {},                           false), // slot 3 → p3
+      // Add a 4th batter to the end of the order.
+      e('substitution', { inPlayerId: 'p4', battingOrderPosition: 4 }, false),
+      e(EventType.HIT,       { hitType: HitType.DOUBLE },  false), // slot 4 → p4
+      e(EventType.STRIKEOUT, {},                           false), // wraps → p1
+    ];
+    const lineups = new Map([[GAME, lineupCtx]]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players, lineups);
+    expect(stats.get('p1')?.plateAppearances).toBe(2);
+    expect(stats.get('p1')?.strikeouts).toBe(1);
+    expect(stats.get('p2')?.plateAppearances).toBe(1);
+    expect(stats.get('p3')?.plateAppearances).toBe(1);
+    expect(stats.get('p4')?.plateAppearances).toBe(1);
+    expect(stats.get('p4')?.hits).toBe(1);
+    expect(stats.get('p4')?.doubles).toBe(1);
+  });
 });
 
 describe('deriveBattingStats — TRIPLE_PLAY handler', () => {
