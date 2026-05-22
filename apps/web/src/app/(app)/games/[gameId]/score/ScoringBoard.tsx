@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome, computeLineScore, evaluateGameEnd, shouldEndHalfForRunCap, defaultLeagueScoringSettings, type LeagueScoringSettings } from '@baseball/shared';
+import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome, computeLineScore, evaluateGameEnd, shouldEndHalfForRunCap, isDroppedThirdStrikeAllowed, ghostRunnerBaseForHalf, defaultLeagueScoringSettings, type LeagueScoringSettings } from '@baseball/shared';
 import type { GameEvent } from '@baseball/shared';
 import { endGameAction } from '../actions';
 import { DefensiveDiamond } from './DefensiveDiamond';
@@ -760,6 +760,12 @@ export function ScoringBoard({
     gameState.inning,
     gameState.isTopOfInning,
   );
+  const ghostRunnerBase = ghostRunnerBaseForHalf(
+    settings,
+    gameState.inning,
+    gameState.outs,
+    gameState.runnersOnBase,
+  );
 
   // Sac fly requires a runner who can score on the catch (must be on 2nd or
   // 3rd) AND fewer than 2 outs (with 2 outs the catch is the third out and
@@ -1349,9 +1355,11 @@ export function ScoringBoard({
   }
 
   // Eligibility per OBR 5.05(a)(2): the batter may become a runner on an uncaught
-  // third strike only when first base is unoccupied OR there are two outs.
+  // third strike only when first base is unoccupied OR there are two outs. Some
+  // youth leagues disable the rule entirely (settings.rules.droppedThirdStrike).
   const droppedThirdStrikeEligible =
-    gameState.outs === 2 || !gameState.runnersOnBase.first;
+    isDroppedThirdStrikeAllowed(settings) &&
+    (gameState.outs === 2 || !gameState.runnersOnBase.first);
 
   async function handleDroppedThirdStrike(details: {
     outcome: 'thrown_out' | 'reached_on_error' | 'reached_wild_pitch';
@@ -3172,7 +3180,7 @@ export function ScoringBoard({
         )}
 
         {/* ── League-rule advisories ──────────────────────────────── */}
-        {isCoach && !isDemo && (gameEndDecision || runCapReached) && (
+        {isCoach && !isDemo && (gameEndDecision || runCapReached || ghostRunnerBase) && (
           <div className="border-t border-gray-200 pt-4 space-y-2">
             {gameEndDecision && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
@@ -3183,6 +3191,14 @@ export function ScoringBoard({
               <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800">
                 <strong>Run cap reached</strong> for this half-inning. Switch sides
                 via the Inning Change control.
+              </div>
+            )}
+            {ghostRunnerBase && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg px-4 py-3 text-sm text-purple-800">
+                <strong>Ghost runner</strong> — place a runner on{' '}
+                {ghostRunnerBase === 1 ? '1st' : ghostRunnerBase === 2 ? '2nd' : '3rd'} via
+                Substitution → Pinch Runner before the first pitch of this half-inning
+                (league tiebreaker rule).
               </div>
             )}
           </div>

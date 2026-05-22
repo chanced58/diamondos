@@ -54,6 +54,37 @@ export function getTiebreakerExtras(
   return { startBase: tiebreakerExtras.startBase, fromInning: tiebreakerExtras.fromInning };
 }
 
+/**
+ * Returns the base where a ghost runner should be placed at the start of
+ * the current half-inning under the league's tiebreaker rule. Returns null
+ * when:
+ *  - tiebreaker isn't enabled
+ *  - we haven't reached the rule's `fromInning` yet
+ *  - the half-inning has already begun (any baserunner or any out logged)
+ *  - the configured base is already occupied
+ *
+ * The caller is expected to surface a prompt and emit a SUBSTITUTION event
+ * with `runnerBase = result` so the event log keeps a record of the
+ * placement.
+ */
+export function ghostRunnerBaseForHalf(
+  settings: LeagueScoringSettings,
+  inning: number,
+  outs: number,
+  runnersOnBase: {
+    first: string | null;
+    second: string | null;
+    third: string | null;
+  },
+): 1 | 2 | 3 | null {
+  const cfg = getTiebreakerExtras(settings);
+  if (!cfg) return null;
+  if (inning < cfg.fromInning) return null;
+  if (outs > 0) return null;
+  if (runnersOnBase.first || runnersOnBase.second || runnersOnBase.third) return null;
+  return cfg.startBase;
+}
+
 export function isCourtesyRunnerAllowed(
   settings: LeagueScoringSettings,
   fromPosition: PlayerPosition,

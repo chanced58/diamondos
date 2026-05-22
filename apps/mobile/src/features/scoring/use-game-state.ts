@@ -2,17 +2,22 @@ import { useEffect, useState } from 'react';
 import { Q } from '@nozbe/watermelondb';
 import { database } from '../../db';
 import type { GameEvent } from '../../db/models/GameEvent';
-import { deriveGameState } from '@baseball/shared';
-import type { LiveGameState } from '@baseball/shared';
+import { computeLineScore, deriveGameState } from '@baseball/shared';
+import type { LineScoreData, LiveGameState } from '@baseball/shared';
 import type { GameEvent as SharedGameEvent } from '@baseball/shared';
 
 /**
  * Reactively derives live game state from WatermelonDB game events.
  * Subscribes to the game_events table for this game and recomputes
  * state whenever a new event is added (offline or synced).
+ *
+ * Also returns the line score (inning-by-inning runs/hits/errors) so
+ * league-rule advisories (mercy, run cap, regulation complete) can be
+ * evaluated without an extra query.
  */
 export function useGameState(gameRemoteId: string, homeTeamId: string) {
   const [gameState, setGameState] = useState<LiveGameState | null>(null);
+  const [lineScore, setLineScore] = useState<LineScoreData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -38,11 +43,21 @@ export function useGameState(gameRemoteId: string, homeTeamId: string) {
 
         const state = deriveGameState(gameRemoteId, sharedEvents, homeTeamId);
         setGameState(state);
+
+        // computeLineScore expects snake_case rows (it's a database-row adapter
+        // shared with the web client). Re-map the WDB models accordingly.
+        const lineScoreRows = events.map((e) => ({
+          event_type: e.eventType,
+          inning: e.inning,
+          is_top_of_inning: e.isTopOfInning,
+          payload: e.payload,
+        }));
+        setLineScore(computeLineScore(lineScoreRows));
         setLoading(false);
       });
 
     return () => subscription.unsubscribe();
   }, [gameRemoteId, homeTeamId]);
 
-  return { gameState, loading };
+  return { gameState, lineScore, loading };
 }

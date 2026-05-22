@@ -105,6 +105,12 @@ export function formatBattingPct(value: number): string {
 export type BattingLineupContext = {
   ourLineup: { playerId: string; battingOrder: number }[];
   isHome: boolean;
+  /**
+   * Player ids whose at-bats in THIS game should be excluded from the
+   * returned stats map. Used to honor `game_lineups.count_toward_stats=false`
+   * for guest appearances per the league's stat-attribution policy.
+   */
+  excludedPlayerIds?: ReadonlySet<string>;
 };
 
 /**
@@ -132,13 +138,30 @@ export function deriveBattingStats(
 
   const statsMap = new Map<string, BattingStats>();
 
+  // Players whose at-bats in the CURRENT game iteration should be silently
+  // dropped (guest appearance with count_toward_stats=false). Updated at the
+  // top of each game's loop body below. Mutations on the returned sink are
+  // discarded, so call sites stay unchanged.
+  let currentExcluded: ReadonlySet<string> = new Set<string>();
+  const sink = makeEmptyStats('__excluded__', '__excluded__');
+
   function getStats(playerId: string): BattingStats {
+    if (currentExcluded.has(playerId)) {
+      // Return a fresh sink each call so accumulated values from one
+      // excluded player don't pollute another's tally if the caller
+      // somehow stashes the reference.
+      return makeEmptyStats('__excluded__', '__excluded__');
+    }
     if (!statsMap.has(playerId)) {
       const name = nameMap.get(playerId) ?? 'Unknown';
       statsMap.set(playerId, makeEmptyStats(playerId, name));
     }
     return statsMap.get(playerId)!;
   }
+  // Suppress unused-variable warning for the bare `sink` reference above —
+  // we intentionally create fresh sinks inside getStats to avoid cross-call
+  // contamination, but keep the constant around as documentation of intent.
+  void sink;
 
   // Group events by game_id preserving sequence order
   const gameMap = new Map<string, GameEvent[]>();
@@ -155,6 +178,7 @@ export function deriveBattingStats(
       return aSeq - bSeq;
     });
 
+    currentExcluded = lineupsByGameId?.get(gameId)?.excludedPlayerIds ?? new Set<string>();
     const appearedThisGame = new Set<string>();
 
     function markAppeared(playerId: string) {

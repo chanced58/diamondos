@@ -10,7 +10,7 @@ import { PitchInput } from '../../../../src/features/scoring/PitchInput';
 import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueSettings } from '../../../../src/lib/league-settings';
@@ -36,12 +36,41 @@ export default function ScoringScreen() {
       teamName: string;
     }>();
 
-  const { gameState, loading } = useGameState(gameId, teamId);
+  const { gameState, lineScore, loading } = useGameState(gameId, teamId);
   const { recordEvent } = useRecordEvent(gameId);
   const { isSyncing, lastSyncError, pendingEventsCount } = useSyncContext();
   const leagueSettings = useLeagueSettings(teamId);
   const maxBatters = getMaxBattingOrder(leagueSettings);
   const midGameExtensionAllowed = isMidGameExtensionAllowed(leagueSettings);
+
+  // League-rule advisories — mercy / run cap / regulation complete. These
+  // surface banners; the coach still confirms via the existing End Game /
+  // Inning Change controls.
+  const gameEndDecision = gameState && lineScore
+    ? evaluateGameEnd(
+        leagueSettings,
+        lineScore,
+        gameState.inning,
+        gameState.isTopOfInning,
+        gameState.outs,
+      )
+    : null;
+  const runCapReached = gameState && lineScore
+    ? shouldEndHalfForRunCap(
+        leagueSettings,
+        lineScore,
+        gameState.inning,
+        gameState.isTopOfInning,
+      )
+    : false;
+  const ghostRunnerBase = gameState
+    ? ghostRunnerBaseForHalf(
+        leagueSettings,
+        gameState.inning,
+        gameState.outs,
+        gameState.runnersOnBase,
+      )
+    : null;
 
   // Roster for substitution + pitching-change pickers.
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
@@ -144,9 +173,11 @@ export default function ScoringScreen() {
       outcome === PitchOutcome.FOUL_TIP;
     if (isStrikePitch && gameState.strikes + 1 >= 3) {
       // Per OBR 5.05(a)(2): D3K only applies when first base is unoccupied
-      // or there are two outs. Otherwise the batter is out regardless.
+      // or there are two outs. Otherwise the batter is out regardless. Some
+      // youth leagues disable the rule entirely (settings.rules.droppedThirdStrike).
       const eligible =
-        gameState.outs === 2 || !gameState.runnersOnBase.first;
+        isDroppedThirdStrikeAllowed(leagueSettings) &&
+        (gameState.outs === 2 || !gameState.runnersOnBase.first);
       if (eligible) {
         setShowD3KModal(true);
       } else {
@@ -698,6 +729,30 @@ export default function ScoringScreen() {
         opponentName={opponentName as string}
         teamName={teamName as string}
       />
+
+      {/* League-rule advisories (mercy / run cap / regulation complete) */}
+      {gameEndDecision && (
+        <View className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+          <Text className="text-sm font-semibold text-amber-900">End game?</Text>
+          <Text className="text-xs text-amber-800 mt-0.5">{gameEndDecision.message}</Text>
+        </View>
+      )}
+      {runCapReached && (
+        <View className="mx-4 mt-2 p-3 bg-blue-50 border border-blue-300 rounded-lg">
+          <Text className="text-sm font-semibold text-blue-900">Run cap reached</Text>
+          <Text className="text-xs text-blue-800 mt-0.5">
+            Switch sides via the Inning Change control.
+          </Text>
+        </View>
+      )}
+      {ghostRunnerBase && (
+        <View className="mx-4 mt-2 p-3 bg-purple-50 border border-purple-300 rounded-lg">
+          <Text className="text-sm font-semibold text-purple-900">Ghost runner</Text>
+          <Text className="text-xs text-purple-800 mt-0.5">
+            Place a runner on {ghostRunnerBase === 1 ? '1st' : ghostRunnerBase === 2 ? '2nd' : '3rd'} via Substitution → Pinch Runner.
+          </Text>
+        </View>
+      )}
 
       {/* Middle: count + baserunners */}
       <CountDisplay gameState={gameState} />

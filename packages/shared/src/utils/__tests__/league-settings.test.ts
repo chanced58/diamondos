@@ -9,6 +9,7 @@ import {
   runsInCurrentHalf,
   shouldEndHalfForRunCap,
   evaluateGameEnd,
+  ghostRunnerBaseForHalf,
 } from '../league-settings';
 import { PlayerPosition } from '../../types/player';
 import type { LineScoreData } from '../line-score';
@@ -86,6 +87,36 @@ describe('getHalfInningRunCap', () => {
     const s = defaultLeagueScoringSettings();
     s.gameLength.runCap = { enabled: true, value: 7 };
     expect(getHalfInningRunCap(s)).toBe(7);
+  });
+});
+
+describe('ghostRunnerBaseForHalf', () => {
+  const empty = { first: null, second: null, third: null };
+
+  it('returns null when tiebreaker is disabled', () => {
+    const s = defaultLeagueScoringSettings();
+    expect(ghostRunnerBaseForHalf(s, 10, 0, empty)).toBeNull();
+  });
+
+  it('returns null before fromInning', () => {
+    const s = defaultLeagueScoringSettings();
+    s.gameLength.tiebreakerExtras = { enabled: true, startBase: 2, fromInning: 10 };
+    expect(ghostRunnerBaseForHalf(s, 9, 0, empty)).toBeNull();
+  });
+
+  it('returns the configured base at the top of qualifying extras', () => {
+    const s = defaultLeagueScoringSettings();
+    s.gameLength.tiebreakerExtras = { enabled: true, startBase: 2, fromInning: 10 };
+    expect(ghostRunnerBaseForHalf(s, 10, 0, empty)).toBe(2);
+  });
+
+  it('returns null once outs > 0 or a runner is on base', () => {
+    const s = defaultLeagueScoringSettings();
+    s.gameLength.tiebreakerExtras = { enabled: true, startBase: 2, fromInning: 10 };
+    expect(ghostRunnerBaseForHalf(s, 10, 1, empty)).toBeNull();
+    expect(
+      ghostRunnerBaseForHalf(s, 10, 0, { ...empty, second: 'p1' }),
+    ).toBeNull();
   });
 });
 
