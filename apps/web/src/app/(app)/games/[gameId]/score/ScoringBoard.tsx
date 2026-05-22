@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome } from '@baseball/shared';
+import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome, computeLineScore, evaluateGameEnd, shouldEndHalfForRunCap, defaultLeagueScoringSettings, type LeagueScoringSettings } from '@baseball/shared';
 import type { GameEvent } from '@baseball/shared';
 import { endGameAction } from '../actions';
 import { DefensiveDiamond } from './DefensiveDiamond';
@@ -511,6 +511,7 @@ export function ScoringBoard({
   isDemo = false,
   seasonSprayPoints,
   scoringConfig: initialScoringConfig,
+  leagueSettings,
 }: {
   game: GameRow;
   lineup: LineupEntry[];
@@ -528,7 +529,9 @@ export function ScoringBoard({
   isDemo?: boolean;
   seasonSprayPoints?: Record<string, SprayPt[]>;
   scoringConfig?: ScoringConfig;
+  leagueSettings?: LeagueScoringSettings;
 }): JSX.Element {
+  const settings = leagueSettings ?? defaultLeagueScoringSettings();
   const [localOpponentLineup, setLocalOpponentLineup] = useState<LineupEntry[]>(opponentLineup ?? []);
   const [eventRows, setEventRows] = useState<EventRow[]>(initialEvents);
   const nextSeqNum = useRef(
@@ -739,6 +742,24 @@ export function ScoringBoard({
   // Derive game state from events
   const events = effectiveEventRows.map(mapRowToEvent);
   const gameState = deriveGameState(game.id, events, game.teamId);
+
+  // League-rule advisories: line-score by inning is used to evaluate mercy /
+  // run-cap / regulation-complete conditions. These surface as banners; the
+  // coach still confirms game/half-inning end via the existing buttons.
+  const lineScoreForRules = computeLineScore(effectiveEventRows as unknown as Record<string, unknown>[]);
+  const gameEndDecision = evaluateGameEnd(
+    settings,
+    lineScoreForRules,
+    gameState.inning,
+    gameState.isTopOfInning,
+    gameState.outs,
+  );
+  const runCapReached = shouldEndHalfForRunCap(
+    settings,
+    lineScoreForRules,
+    gameState.inning,
+    gameState.isTopOfInning,
+  );
 
   // Sac fly requires a runner who can score on the catch (must be on 2nd or
   // 3rd) AND fewer than 2 outs (with 2 outs the catch is the third out and
@@ -3147,6 +3168,23 @@ export function ScoringBoard({
                 Cancel
               </button>
             </div>
+          </div>
+        )}
+
+        {/* ── League-rule advisories ──────────────────────────────── */}
+        {isCoach && !isDemo && (gameEndDecision || runCapReached) && (
+          <div className="border-t border-gray-200 pt-4 space-y-2">
+            {gameEndDecision && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+                <strong>End game?</strong> {gameEndDecision.message}
+              </div>
+            )}
+            {runCapReached && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800">
+                <strong>Run cap reached</strong> for this half-inning. Switch sides
+                via the Inning Change control.
+              </div>
+            )}
           </div>
         )}
 
