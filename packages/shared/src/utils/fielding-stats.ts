@@ -190,14 +190,15 @@ export function deriveFieldingStats(
     /**
      * Resolve the id to credit for `posNum`. Returns the real player_id when
      * a player occupies the position, a synthetic position-placeholder id for
-     * non-pitcher positions when no player is set, or null for the pitcher
-     * position with no player (which short-circuits the caller — pitcher
-     * must always be a real player).
+     * non-pitcher positions (2–9) when no player is set, or null when no
+     * credit should be issued: pitcher with no player (pitch counts require a
+     * real id), or an out-of-range position number from a malformed scorer
+     * event (e.g. `errorBy: 10`).
      */
     const resolveCreditId = (posNum: number): string | null => {
       const playerId = playerAtPosition(posNum);
       if (playerId) return playerId;
-      if (posNum === 1) return null;
+      if (posNum < 2 || posNum > 9) return null;
       const pid = placeholderId(posNum);
       if (!nameMap.has(pid)) nameMap.set(pid, placeholderName(posNum));
       return pid;

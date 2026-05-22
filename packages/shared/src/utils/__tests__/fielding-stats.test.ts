@@ -342,6 +342,22 @@ describe('deriveFieldingStats — defensive placeholders', () => {
     expect(stats.get(`${POSITION_PLACEHOLDER_PREFIX}1`)).toBeUndefined();
   });
 
+  it('does NOT mint a placeholder for out-of-range position numbers', () => {
+    // A malformed event with errorBy: 10 (or any value outside 1-9) shouldn't
+    // create a bogus __POS__10 row. Guards against scorer typos and stale
+    // payloads from older client versions.
+    const events: Evt[] = [
+      e(EventType.FIELD_ERROR, { errorBy: 10 }, true),
+      e(EventType.FIELD_ERROR, { errorBy: 0 }, true),
+      e(EventType.FIELD_ERROR, { errorBy: -1 }, true),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveFieldingStats(events as any, players, placeholderCtx());
+    expect(stats.get(`${POSITION_PLACEHOLDER_PREFIX}10`)).toBeUndefined();
+    expect(stats.get(`${POSITION_PLACEHOLDER_PREFIX}0`)).toBeUndefined();
+    expect(stats.get(`${POSITION_PLACEHOLDER_PREFIX}-1`)).toBeUndefined();
+  });
+
   it('does NOT mint a placeholder for the pitcher position when no player is set', () => {
     // Strip the pitcher too — malformed alignment. The error at position 1
     // must be ignored, not charged to a synthetic "Position P" row, because

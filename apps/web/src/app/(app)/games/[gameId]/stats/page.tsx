@@ -92,12 +92,13 @@ function computeFieldingStats(
 
   // Resolve the credit target for `posNum`. Returns the real player id when
   // a player occupies the position, a synthetic placeholder id for non-pitcher
-  // positions when no player is set, or null for the pitcher position with no
-  // player (pitcher must always be a real player — pitch counts depend on it).
+  // positions (2–9) when no player is set, or null when no credit should be
+  // issued (pitcher with no player; or an out-of-range position from a
+  // malformed scorer event).
   function resolveCreditId(posNum: number): string | null {
     const playerId = posToPlayer.get(posNum);
     if (playerId) return playerId;
-    if (posNum === 1) return null;
+    if (posNum < 2 || posNum > 9) return null;
     return `${POSITION_PLACEHOLDER_PREFIX}${posNum}`;
   }
 

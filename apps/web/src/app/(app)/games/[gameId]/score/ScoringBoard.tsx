@@ -843,12 +843,17 @@ export function ScoringBoard({
     ? gameState.completedTopHalfPAs
     : gameState.completedBottomHalfPAs;
   // Cycle through the actual opponent lineup length so "everyone bats" rosters
-  // walk slot 10+ before wrapping. Fall back to 9 if the lineup is empty so
-  // we don't divide by zero.
-  const opponentSlotCount = effectiveOpponentStarters.length || 9;
-  const expectedOpponentSlot = (completedOpponentPAs % opponentSlotCount) + 1;
+  // walk slot 10+ before wrapping. Use index-based lookup against the sorted
+  // starter array so non-contiguous batting orders (e.g. slots 1,2,3,5,6,7,8,9
+  // when slot 4 was removed) still cycle every batter — the prior approach of
+  // computing `(PAs % count) + 1` and matching by exact battingOrder would
+  // return null when the expected slot number didn't exist in the lineup.
+  const opponentSlotCount = effectiveOpponentStarters.length;
   const currentOpponentBatter =
-    effectiveOpponentStarters.find((s) => s.battingOrder === expectedOpponentSlot) ?? null;
+    opponentSlotCount > 0
+      ? effectiveOpponentStarters[completedOpponentPAs % opponentSlotCount]
+      : null;
+  const expectedOpponentSlot = currentOpponentBatter?.battingOrder ?? 1;
 
   // Clear skipped-slot dismissals when the active slot changes (skip is per-PA only)
   useEffect(() => {
