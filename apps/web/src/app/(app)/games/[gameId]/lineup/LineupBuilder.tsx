@@ -1,8 +1,12 @@
 'use client';
 import type { JSX } from 'react';
 
+import { useTransition } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
+import { useRouter } from 'next/navigation';
 import { saveLineupAction } from './actions';
+import { removeGuestFromLineupAction } from './guest-actions';
+import { GuestPlayerPicker } from './GuestPlayerPicker';
 
 const POSITIONS = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH'] as const;
 
@@ -25,6 +29,15 @@ type LineupEntry = {
   startingPosition: string | null;
 };
 
+export type GuestLineupEntry = {
+  lineupId: string;
+  playerId: string;
+  battingOrder: number | null;
+  displayName: string;
+  jerseyNumber: number | null;
+  countTowardStats: boolean;
+};
+
 function SaveButton() {
   const { pending } = useFormStatus();
   return (
@@ -43,13 +56,30 @@ export function LineupBuilder({
   players,
   existingLineup,
   maxBatters,
+  guests = [],
+  guestsAllowed = false,
+  guestStatsDefault = true,
 }: {
   gameId: string;
   players: Player[];
   existingLineup: LineupEntry[];
   maxBatters: number;
+  guests?: GuestLineupEntry[];
+  guestsAllowed?: boolean;
+  guestStatsDefault?: boolean;
 }): JSX.Element | null {
   const [error, action] = useFormState(saveLineupAction, null);
+  const router = useRouter();
+  const [isRemoving, startRemove] = useTransition();
+
+  function handleRemoveGuest(lineupId: string) {
+    startRemove(() => {
+      void (async () => {
+        const res = await removeGuestFromLineupAction({ gameId, lineupId });
+        if (!('error' in res)) router.refresh();
+      })();
+    });
+  }
 
   function getDefaultOrder(playerId: string): string {
     const entry = existingLineup.find((e) => e.playerId === playerId);
@@ -144,6 +174,56 @@ export function LineupBuilder({
           Cancel
         </a>
       </div>
+
+      {guestsAllowed && (
+        <div className="mt-6 bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Guest players</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Non-roster players appearing in this game only.
+              </p>
+            </div>
+            <GuestPlayerPicker
+              gameId={gameId}
+              defaultCountTowardStats={guestStatsDefault}
+            />
+          </div>
+          {guests.length === 0 ? (
+            <p className="px-4 py-3 text-xs text-gray-400">No guest players yet.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {guests.map((g) => (
+                <li key={g.lineupId} className="px-4 py-2 flex items-center justify-between">
+                  <div className="text-sm">
+                    <span className="text-gray-400 font-mono w-8 inline-block">
+                      {g.battingOrder ?? '—'}
+                    </span>
+                    <span className="text-gray-900 font-medium">{g.displayName}</span>
+                    {g.jerseyNumber != null && (
+                      <span className="ml-2 text-xs text-gray-400">#{g.jerseyNumber}</span>
+                    )}
+                    <span className="ml-2 text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700">
+                      guest
+                    </span>
+                    {!g.countTowardStats && (
+                      <span className="ml-2 text-xs text-gray-400">stats off</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveGuest(g.lineupId)}
+                    disabled={isRemoving}
+                    className="text-xs text-red-600 hover:text-red-800 disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </form>
   );
 }

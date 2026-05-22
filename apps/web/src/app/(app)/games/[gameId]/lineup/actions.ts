@@ -88,8 +88,15 @@ export async function saveLineupAction(
     return 'Duplicate batting order positions. Each spot can only be assigned once.';
   }
 
-  // Delete existing lineup and insert fresh
-  await supabase.from('game_lineups').delete().eq('game_id', gameId);
+  // Delete existing non-guest lineup and insert fresh. Guest entries are managed
+  // separately (addExistingGuestToLineupAction / addNewGuestToLineupAction /
+  // removeGuestFromLineupAction) so wiping them here would silently drop them
+  // whenever a coach re-saves the roster.
+  await supabase
+    .from('game_lineups')
+    .delete()
+    .eq('game_id', gameId)
+    .eq('is_guest', false);
 
   if (entries.length > 0) {
     const { error } = await supabase.from('game_lineups').insert(

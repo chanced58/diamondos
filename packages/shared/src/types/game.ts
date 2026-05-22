@@ -64,6 +64,22 @@ export interface GameLineup {
   startingPosition?: PlayerPosition;
   isStarter: boolean;
   createdAt: string;
+  /** TRUE when the slot is filled by a guest player (not on the home team roster). */
+  isGuest?: boolean;
+  /** Display name for ad-hoc named guests without a players.id FK. */
+  guestDisplayName?: string | null;
+  /** When isGuest=true, whether the appearance accumulates in the player's home stat line. */
+  countTowardStats?: boolean;
+}
+
+/**
+ * Registry row tying a player (rostered or guest) to a league for the
+ * all-time appearance pool used by the guest-player picker.
+ */
+export interface LeaguePlayer {
+  leagueId: string;
+  playerId: string;
+  firstSeenAt: string;
 }
 
 /** Derived in-memory game state computed from replaying GameEvents */
