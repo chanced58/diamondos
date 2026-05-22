@@ -17,12 +17,14 @@ interface LeagueScoringSettingsFormProps {
   leagueId: string;
   initialSettings: unknown;
   canEdit: boolean;
+  pitchRuleOptions?: Array<{ id: string; label: string }>;
 }
 
 export function LeagueScoringSettingsForm({
   leagueId,
   initialSettings,
   canEdit,
+  pitchRuleOptions = [],
 }: LeagueScoringSettingsFormProps): JSX.Element {
   const router = useRouter();
   const [settings, setSettings] = useState<LeagueScoringSettings>(() =>
@@ -343,6 +345,34 @@ export function LeagueScoringSettingsForm({
               setSettings({ ...settings, rules: { droppedThirdStrike: v } })
             }
           />
+        </Section>
+
+        <Section
+          title="Pitch-Count Compliance"
+          description="Default pitch-count ruleset for new seasons in this league. Teams may still override per-season."
+        >
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              Default ruleset
+            </label>
+            <select
+              value={settings.compliance.defaultPitchRuleId ?? ''}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  compliance: { defaultPitchRuleId: e.target.value || null },
+                })
+              }
+              className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            >
+              <option value="">No default (teams choose)</option>
+              {pitchRuleOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </Section>
 
         {canEdit && (

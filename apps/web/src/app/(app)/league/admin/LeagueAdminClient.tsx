@@ -53,6 +53,7 @@ interface LeagueAdminClientProps {
   staff: StaffEntry[];
   isAdmin: boolean;
   scoringSettings?: unknown;
+  pitchRuleOptions?: Array<{ id: string; label: string }>;
   availableTeams?: AvailableTeam[];
   availableOpponentTeams?: AvailableOpponentTeam[];
 }
@@ -66,6 +67,7 @@ export function LeagueAdminClient({
   staff,
   isAdmin,
   scoringSettings,
+  pitchRuleOptions,
   availableTeams,
   availableOpponentTeams,
 }: LeagueAdminClientProps): JSX.Element {
@@ -750,6 +752,7 @@ export function LeagueAdminClient({
         leagueId={leagueId}
         initialSettings={scoringSettings ?? {}}
         canEdit={isAdmin}
+        pitchRuleOptions={pitchRuleOptions ?? []}
       />
     </div>
   );

@@ -68,6 +68,21 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
     .maybeSingle();
   const scoringSettings = scoringRow?.scoring_settings ?? {};
 
+  // System pitch-count rule presets (NFHS / Little League / NCAA). League
+  // admins can pick one as the default for new seasons in this league.
+  const { data: systemPitchRules } = await db
+    .from('pitch_compliance_rules')
+    .select('id, rule_name, age_min, age_max')
+    .is('team_id', null)
+    .eq('is_active', true)
+    .order('rule_name');
+  const pitchRuleOptions = (systemPitchRules ?? []).map((r) => ({
+    id: r.id,
+    label: r.age_min != null && r.age_max != null
+      ? `${r.rule_name} (ages ${r.age_min}–${r.age_max})`
+      : r.rule_name,
+  }));
+
   return (
     <div className="p-8 max-w-4xl">
       <h1 className="text-2xl font-bold text-gray-900 mb-1">Manage League</h1>
@@ -98,6 +113,7 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
         })}
         isAdmin={access.isLeagueAdmin}
         scoringSettings={scoringSettings}
+        pitchRuleOptions={pitchRuleOptions}
         availableOpponentTeams={(availableOpponentTeams ?? []).map((t) => ({
           id: t.id,
           name: t.name,
