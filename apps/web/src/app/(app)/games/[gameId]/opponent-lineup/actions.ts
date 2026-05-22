@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { getMaxBattingOrder } from '@baseball/shared';
+import { getLeagueSettingsForTeam } from '@/lib/league-settings';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
@@ -266,7 +268,9 @@ export async function saveOpponentLineupAction(
   const ctx = await getCoachContext(gameId);
   if (!ctx) return 'Not authorized.';
 
-  const { db } = ctx;
+  const { db, game } = ctx;
+  const leagueSettings = await getLeagueSettingsForTeam(db, game.team_id);
+  const maxBatters = getMaxBattingOrder(leagueSettings);
 
   // Parse entries: player_{id}_order and player_{id}_position
   const entries: { opponent_player_id: string; batting_order: number | null; starting_position: string | null }[] = [];
@@ -277,7 +281,7 @@ export async function saveOpponentLineupAction(
       const order = parseInt(value as string, 10);
       const rawPosition = formData.get(`player_${playerId}_position`) as string | null;
       const dbPosition = rawPosition ? (POSITION_TO_DB[rawPosition] ?? rawPosition) : null;
-      if (isNaN(order) || order < 1 || order > 30) {
+      if (isNaN(order) || order < 1 || order > maxBatters) {
         // Bench — still include pitchers so they can be identified as the starting pitcher.
         if (dbPosition === 'pitcher') {
           entries.push({ opponent_player_id: playerId, batting_order: null, starting_position: dbPosition });

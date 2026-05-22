@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { weAreHome } from '@baseball/shared';
+import { getMaxBattingOrder, weAreHome } from '@baseball/shared';
+import { getLeagueSettingsForTeam } from '@/lib/league-settings';
 import { LineupBuilder } from './LineupBuilder';
 
 export const metadata: Metadata = { title: 'Set Lineup' };
@@ -57,7 +58,7 @@ export default async function LineupPage({ params }: { params: { gameId: string 
     redirect(`/games/${params.gameId}`);
   }
 
-  const [playersResult, lineupResult] = await Promise.all([
+  const [playersResult, lineupResult, leagueSettings] = await Promise.all([
     db
       .from('players')
       .select('id, first_name, last_name, jersey_number, primary_position')
@@ -68,7 +69,10 @@ export default async function LineupPage({ params }: { params: { gameId: string 
       .from('game_lineups')
       .select('player_id, batting_order, starting_position')
       .eq('game_id', params.gameId),
+    getLeagueSettingsForTeam(db, game.team_id),
   ]);
+
+  const maxBatters = getMaxBattingOrder(leagueSettings);
 
   const players = (playersResult.data ?? []).map((p) => ({
     id: p.id,
@@ -114,6 +118,7 @@ export default async function LineupPage({ params }: { params: { gameId: string 
           gameId={params.gameId}
           players={players}
           existingLineup={existingLineup}
+          maxBatters={maxBatters}
         />
       )}
     </div>

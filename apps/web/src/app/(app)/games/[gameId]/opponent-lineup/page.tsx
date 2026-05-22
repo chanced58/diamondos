@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { weAreHome } from '@baseball/shared';
+import { getMaxBattingOrder, weAreHome } from '@baseball/shared';
+import { getLeagueSettingsForTeam } from '@/lib/league-settings';
 import { OpponentLineupManager } from './OpponentLineupManager';
 
 export const metadata: Metadata = { title: 'Opponent Lineup' };
@@ -47,8 +48,8 @@ export default async function OpponentLineupPage({
     redirect(`/games/${params.gameId}`);
   }
 
-  // Load opponent team + players + lineup in parallel
-  const [opponentTeamResult, playersResult, lineupResult] = await Promise.all([
+  // Load opponent team + players + lineup + league settings in parallel
+  const [opponentTeamResult, playersResult, lineupResult, leagueSettings] = await Promise.all([
     game.opponent_team_id
       ? db
           .from('opponent_teams')
@@ -68,7 +69,10 @@ export default async function OpponentLineupPage({
       .from('opponent_game_lineups')
       .select('opponent_player_id, batting_order, starting_position')
       .eq('game_id', params.gameId),
+    getLeagueSettingsForTeam(db, game.team_id),
   ]);
+
+  const maxBatters = getMaxBattingOrder(leagueSettings);
 
   const opponentTeam = opponentTeamResult.data
     ? { id: opponentTeamResult.data.id, name: opponentTeamResult.data.name }
@@ -109,6 +113,7 @@ export default async function OpponentLineupPage({
         defaultOpponentName={game.opponent_name}
         players={players}
         existingLineup={existingLineup}
+        maxBatters={maxBatters}
       />
     </div>
   );

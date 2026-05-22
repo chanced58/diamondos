@@ -6,10 +6,8 @@ import { saveLineupAction } from './actions';
 
 const POSITIONS = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH'] as const;
 
-const MAX_BATTING_ORDER = 30;
-
-function orderOptions(rosterSize: number): readonly string[] {
-  const cap = Math.min(Math.max(rosterSize, 9), MAX_BATTING_ORDER);
+function orderOptions(rosterSize: number, maxBatters: number): readonly string[] {
+  const cap = Math.min(Math.max(rosterSize, 9), maxBatters);
   return ['Bench', ...Array.from({ length: cap }, (_, i) => String(i + 1))];
 }
 
@@ -44,10 +42,12 @@ export function LineupBuilder({
   gameId,
   players,
   existingLineup,
+  maxBatters,
 }: {
   gameId: string;
   players: Player[];
   existingLineup: LineupEntry[];
+  maxBatters: number;
 }): JSX.Element | null {
   const [error, action] = useFormState(saveLineupAction, null);
 
@@ -67,7 +67,7 @@ export function LineupBuilder({
     return aOrder - bOrder;
   });
 
-  const options = orderOptions(players.length);
+  const options = orderOptions(players.length, maxBatters);
 
   return (
     <form action={action}>

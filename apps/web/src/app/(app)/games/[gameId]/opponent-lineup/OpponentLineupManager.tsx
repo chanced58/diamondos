@@ -14,10 +14,8 @@ import {
 
 const POSITIONS = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH'] as const;
 
-const MAX_BATTING_ORDER = 30;
-
-function orderOptions(rosterSize: number): readonly string[] {
-  const cap = Math.min(Math.max(rosterSize, 9), MAX_BATTING_ORDER);
+function orderOptions(rosterSize: number, maxBatters: number): readonly string[] {
+  const cap = Math.min(Math.max(rosterSize, 9), maxBatters);
   return ['Bench', ...Array.from({ length: cap }, (_, i) => String(i + 1))];
 }
 
@@ -403,10 +401,12 @@ function OpponentBattingOrderSection({
   gameId,
   players,
   existingLineup,
+  maxBatters,
 }: {
   gameId: string;
   players: OpponentPlayer[];
   existingLineup: LineupEntry[];
+  maxBatters: number;
 }): JSX.Element {
   const [error, action] = useFormState(saveOpponentLineupAction, null);
   const [autoFillError, autoFillAction] = useFormState(autoFillLineupFromRosterAction, null);
@@ -427,7 +427,7 @@ function OpponentBattingOrderSection({
     return aOrder - bOrder;
   });
 
-  const options = orderOptions(players.length);
+  const options = orderOptions(players.length, maxBatters);
 
   const showAutoFill = existingLineup.length === 0 && players.length > 0;
 
@@ -533,12 +533,14 @@ export function OpponentLineupManager({
   defaultOpponentName,
   players,
   existingLineup,
+  maxBatters,
 }: {
   gameId: string;
   opponentTeam: OpponentTeam | null;
   defaultOpponentName: string;
   players: OpponentPlayer[];
   existingLineup: LineupEntry[];
+  maxBatters: number;
 }): JSX.Element {
   return (
     <div>
@@ -559,6 +561,7 @@ export function OpponentLineupManager({
             gameId={gameId}
             players={players}
             existingLineup={existingLineup}
+            maxBatters={maxBatters}
           />
         </>
       )}

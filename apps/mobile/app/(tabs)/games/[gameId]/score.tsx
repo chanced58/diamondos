@@ -10,9 +10,10 @@ import { PitchInput } from '../../../../src/features/scoring/PitchInput';
 import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
+import { useLeagueSettings } from '../../../../src/lib/league-settings';
 import { database } from '../../../../src/db';
 import type { GameEvent as WdbGameEvent } from '../../../../src/db/models/GameEvent';
 import type { Game } from '../../../../src/db/models/Game';
@@ -38,6 +39,9 @@ export default function ScoringScreen() {
   const { gameState, loading } = useGameState(gameId, teamId);
   const { recordEvent } = useRecordEvent(gameId);
   const { isSyncing, lastSyncError, pendingEventsCount } = useSyncContext();
+  const leagueSettings = useLeagueSettings(teamId);
+  const maxBatters = getMaxBattingOrder(leagueSettings);
+  const midGameExtensionAllowed = isMidGameExtensionAllowed(leagueSettings);
 
   // Roster for substitution + pitching-change pickers.
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
@@ -482,10 +486,11 @@ export default function ScoringScreen() {
       }
     }
 
-    // DB check constraint caps batting_order at 30. Bail before emitting an
-    // event that the persistence layer would reject; the SUBSTITUTION would
-    // still land in the event log and diverge replay from the DB state.
-    if (activePlayerIds.has(newBatterId) || currentMax >= 30) return;
+    // DB check constraint caps batting_order at 30 and the league cap may be
+    // tighter. Bail before emitting an event that the persistence layer would
+    // reject; the SUBSTITUTION would still land in the event log and diverge
+    // replay from the DB state.
+    if (activePlayerIds.has(newBatterId) || currentMax >= maxBatters) return;
 
     const battingOrderPosition = currentMax + 1;
 
@@ -765,7 +770,7 @@ export default function ScoringScreen() {
         onRecordPinchHitter={handlePinchHitter}
         onRecordDefensiveSub={handleDefensiveSub}
         onRecordPositionChange={handlePositionChange}
-        onRecordAddBatter={handleAddBatter}
+        onRecordAddBatter={midGameExtensionAllowed ? handleAddBatter : undefined}
         activeBattingOrderPlayerIds={lineupRows.map((l) => l.player_id)}
         defensiveLineup={defensiveLineup}
         roster={roster}
