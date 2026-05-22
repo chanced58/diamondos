@@ -259,7 +259,7 @@ export async function startGameAction(_prevState: string | null | undefined, for
   // GAME_START payload, deriveGameState can't restore currentBatterId on
   // INNING_CHANGE, which is exactly the bug this code was added to prevent.
   if (lineupRows && lineupRows.length > 0 && !ourLeadoff) {
-    return 'No batter is assigned to a batting order. Set batting orders 1–9 on the lineup screen before starting the game.';
+    return 'No batter is assigned to a batting order. Set batting orders on the lineup screen before starting the game.';
   }
   if (opponentLineupRows && opponentLineupRows.length > 0 && !opponentLeadoff) {
     return 'No opponent batter is assigned to a batting order. Set the opponent batting order before starting the game.';
