@@ -59,7 +59,8 @@ export interface GameLineup {
   id: string;
   gameId: string;
   playerId: string;
-  battingOrder: number;
+  /** NULL for pitchers who do not bat (DH rule). */
+  battingOrder: number | null;
   startingPosition?: PlayerPosition;
   isStarter: boolean;
   createdAt: string;
