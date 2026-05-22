@@ -59,6 +59,10 @@ interface PitchInputProps {
   onRecordDefensiveSub?: (outPlayerId: string, inPlayerId: string, newPosition?: string) => void;
   /** Position change: same player moves to a new defensive position. */
   onRecordPositionChange?: (playerId: string, newPosition: string) => void;
+  /** Add a batter to the end of the order mid-game (late arrival, courtesy player). */
+  onRecordAddBatter?: (newBatterId: string) => void;
+  /** Player ids already in the active batting order — excluded from the Add Batter picker. */
+  activeBattingOrderPlayerIds?: ReadonlyArray<string>;
   /** Current defensive alignment, shown above the defensive-sub / position-change pickers. */
   defensiveLineup?: DefensiveLineup | null;
   roster: RosterPlayer[];
@@ -135,6 +139,8 @@ export function PitchInput({
   onRecordPinchHitter,
   onRecordDefensiveSub,
   onRecordPositionChange,
+  onRecordAddBatter,
+  activeBattingOrderPlayerIds,
   defensiveLineup,
   roster,
   onUndoLastEvent,
@@ -154,7 +160,7 @@ export function PitchInput({
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showDPModal, setShowDPModal] = useState(false);
   const [subModal, setSubModal] = useState<
-    null | 'pinch_hitter' | 'pitching_change' | 'defensive' | 'position_change'
+    null | 'pinch_hitter' | 'pitching_change' | 'defensive' | 'position_change' | 'add_batter'
   >(null);
   // Defensive-sub / position-change picker state.
   const [defSubOutId, setDefSubOutId] = useState<string>('');
@@ -192,6 +198,7 @@ export function PitchInput({
     setSubModal(null);
     if (mode === 'pinch_hitter') onRecordPinchHitter(playerId);
     else if (mode === 'pitching_change') onRecordPitchingChange(playerId);
+    else if (mode === 'add_batter' && onRecordAddBatter) onRecordAddBatter(playerId);
   }
 
   function openDefensiveSubModal() {
@@ -396,6 +403,9 @@ export function PitchInput({
           {onRecordPositionChange && (
             <OutcomeButton label="Position Change" emoji="↔" onPress={openPositionChangeModal} color="bg-indigo-700" />
           )}
+          {onRecordAddBatter && (
+            <OutcomeButton label="Add Batter" emoji="+" onPress={() => setSubModal('add_batter')} color="bg-emerald-700" />
+          )}
         </View>
       </View>
 
@@ -571,7 +581,8 @@ export function PitchInput({
               {subModal === 'pinch_hitter'   ? 'Pinch Hitter' :
                subModal === 'pitching_change' ? 'Pitching Change' :
                subModal === 'defensive'       ? 'Defensive Substitution' :
-               subModal === 'position_change' ? 'Position Change' : ''}
+               subModal === 'position_change' ? 'Position Change' :
+               subModal === 'add_batter'      ? 'Add Batter' : ''}
             </Text>
             <Text className="text-sm text-gray-500 mb-4">
               {subModal === 'pinch_hitter'
@@ -582,6 +593,8 @@ export function PitchInput({
                 ? 'Replace a fielder with a player from the roster.'
                 : subModal === 'position_change'
                 ? 'Move a player to a different defensive position.'
+                : subModal === 'add_batter'
+                ? 'Add a batter to the end of the order (late arrival, courtesy player).'
                 : ''}
             </Text>
 
@@ -592,17 +605,29 @@ export function PitchInput({
                 </View>
               )}
 
-              {(subModal === 'pinch_hitter' || subModal === 'pitching_change') && (
-                roster.length === 0 ? (
-                  <Text className="text-gray-500 text-sm py-4">
-                    No players loaded. Sync the roster first.
-                  </Text>
-                ) : (
+              {(subModal === 'pinch_hitter' || subModal === 'pitching_change' || subModal === 'add_batter') && (() => {
+                // For add_batter, hide players already in the order so the
+                // coach can't accidentally double-add a starter.
+                const filteredRoster = subModal === 'add_batter' && activeBattingOrderPlayerIds
+                  ? roster.filter((p) => !activeBattingOrderPlayerIds.includes(p.id))
+                  : roster;
+                if (filteredRoster.length === 0) {
+                  return (
+                    <Text className="text-gray-500 text-sm py-4">
+                      {subModal === 'add_batter'
+                        ? 'Every roster player is already in the order.'
+                        : 'No players loaded. Sync the roster first.'}
+                    </Text>
+                  );
+                }
+                const buttonColor =
+                  subModal === 'add_batter' ? 'bg-emerald-700' : 'bg-sky-700';
+                return (
                   <View className="gap-2">
-                    {roster.map((p) => (
+                    {filteredRoster.map((p) => (
                       <TouchableOpacity
                         key={p.id}
-                        className="bg-sky-700 rounded-xl px-4 py-3 flex-row items-center"
+                        className={`${buttonColor} rounded-xl px-4 py-3 flex-row items-center`}
                         onPress={() => handleSubPick(p.id)}
                       >
                         <Text className="text-white font-semibold text-base">
@@ -612,8 +637,8 @@ export function PitchInput({
                       </TouchableOpacity>
                     ))}
                   </View>
-                )
-              )}
+                );
+              })()}
 
               {subModal === 'defensive' && (
                 <>
