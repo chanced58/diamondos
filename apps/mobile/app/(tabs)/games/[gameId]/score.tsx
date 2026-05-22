@@ -7,6 +7,7 @@ import { ScoreBoard } from '../../../../src/features/scoring/ScoreBoard';
 import { CountDisplay } from '../../../../src/features/scoring/CountDisplay';
 import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDisplay';
 import { PitchInput } from '../../../../src/features/scoring/PitchInput';
+import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerModal';
 import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
@@ -144,6 +145,9 @@ export default function ScoringScreen() {
   // PitchInput, or automatically by handlePitch when a 3rd-strike pitch is
   // recorded with D3K eligibility (first base empty or two outs).
   const [showD3KModal, setShowD3KModal] = useState(false);
+  // Guest-player modal — open via the small button on the score screen,
+  // gated on the league's guests.allowed flag.
+  const [showGuestModal, setShowGuestModal] = useState(false);
 
   async function handlePitch(outcome: PitchOutcome, pitchType?: PitchType) {
     if (!gameState) return;
@@ -801,6 +805,28 @@ export default function ScoringScreen() {
         onCancel={() => setShowLineupModal(false)}
         onSubmit={handleStartGame}
       />
+
+      <GuestPlayerModal
+        visible={showGuestModal}
+        gameId={gameId}
+        teamId={teamId as string}
+        defaultCountTowardStats={leagueSettings.guests.countTowardStatsDefault}
+        onClose={() => setShowGuestModal(false)}
+        onAdded={() => {
+          // Refresh the local lineup snapshot so the new guest shows up in
+          // any picker that's filtered by activeBattingOrderPlayerIds.
+          void refreshLineupRows();
+        }}
+      />
+
+      {leagueSettings.guests.allowed && (
+        <TouchableOpacity
+          onPress={() => setShowGuestModal(true)}
+          className="absolute top-2 right-3 px-3 py-1.5 rounded-full bg-emerald-700/90"
+        >
+          <Text className="text-xs font-semibold text-white">+ Guest</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Bottom: pitch / outcome input */}
       <PitchInput
