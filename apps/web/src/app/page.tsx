@@ -131,6 +131,9 @@ export default async function HomePage(): Promise<JSX.Element> {
             <span className="display" style={{ fontSize: 20, letterSpacing: '-0.01em' }}>{s.site_name}</span>
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {!isLoggedIn && (
+              <Link href="/about" className="btn btn-ghost btn-sm">About</Link>
+            )}
             <Link href={isLoggedIn ? '/dashboard' : '/login'} className="btn btn-ghost btn-sm">
               {isLoggedIn ? 'Dashboard' : 'Sign in'}
             </Link>
