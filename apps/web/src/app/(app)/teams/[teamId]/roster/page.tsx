@@ -6,6 +6,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
 import { addToTeamChannels } from '@/lib/team-channels';
 import {
+  CURRICULUM_VERSION,
   POSITION_ABBREVIATIONS,
   deriveBattingStats,
   derivePitchingStats,
@@ -286,6 +287,17 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     }
   }
 
+  const staffUserIds = (staffMembersResult.data ?? []).map((m) => m.user_id);
+  const certifiedUserIds = new Set<string>();
+  if (staffUserIds.length > 0) {
+    const { data: certRows } = await db
+      .from('user_certifications')
+      .select('user_id')
+      .in('user_id', staffUserIds)
+      .eq('curriculum_version', CURRICULUM_VERSION);
+    for (const r of certRows ?? []) certifiedUserIds.add(r.user_id);
+  }
+
   const staff = (staffMembersResult.data ?? []).map((row) => {
     const profile = profileMap.get(row.user_id);
     return {
@@ -297,6 +309,7 @@ export default async function RosterPage({ params }: { params: { teamId: string 
       lastName: profile?.last_name || null as string | null,
       email: profile?.email ?? null as string | null,
       phone: profile?.phone ?? null as string | null,
+      isCertified: certifiedUserIds.has(row.user_id),
     };
   });
 

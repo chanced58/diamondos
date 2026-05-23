@@ -4,3 +4,4 @@ export * from './utils';
 export * from './validation';
 export * from './integrations';
 export * from './ai';
+export * from './training';

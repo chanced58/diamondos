@@ -11,6 +11,7 @@ import { addToTeamChannels } from '@/lib/team-channels';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueAccess } from '@/lib/league-access';
 import { getTeamTier } from '@/lib/team-tier';
+import { getTrainingProgress, hasCoachingRole } from '@/lib/training/get-progress';
 
 export default async function AppLayout({ children }: { children: ReactNode }): Promise<JSX.Element> {
   const supabase = createServerClient();
@@ -255,6 +256,12 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
   // Check if user is a league admin (for sidebar nav)
   const leagueAccess = league ? await getLeagueAccess(league.id, user.id) : null;
 
+  // Training entry-point gating + Certified badge state
+  const [showTraining, trainingProgress] = await Promise.all([
+    hasCoachingRole(user.id),
+    getTrainingProgress(user.id),
+  ]);
+
   // Pull display name for the sidebar footer
   let userName: string | undefined;
   let userInitials: string | undefined;
@@ -296,6 +303,8 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         isLeagueAdmin={leagueAccess?.isLeagueAdmin ?? false}
         userName={userName}
         userInitials={userInitials}
+        showTraining={showTraining}
+        isCertified={trainingProgress.isCertified}
       />
       <main className="main">
         {children}
