@@ -7,6 +7,7 @@ import { messagingBasics } from './modules/messaging-basics';
 
 export const CURRICULUM_VERSION = '2026-05-23';
 
+// Array order is presentation order on /training and in the side ProgressList.
 export const TRAINING_MODULES: readonly TrainingModule[] = [
   gettingStarted,
   rosterAndLineups,
