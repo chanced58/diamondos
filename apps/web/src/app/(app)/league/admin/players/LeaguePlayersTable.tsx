@@ -40,9 +40,11 @@ export function LeaguePlayersTable({
     return players.filter((p) => {
       if (filter.teamId === 'free' && p.player.team_id !== null) return false;
       if (filter.teamId && filter.teamId !== 'free' && p.player.team_id !== filter.teamId) return false;
-      if (filter.divisionId) {
+      if (filter.divisionId && filter.teamId !== 'free') {
+        // Free agents have no team and therefore no division — only filter
+        // by division when the user isn't explicitly looking at free agents.
         const team = teams.find((t) => t.id === p.player.team_id);
-        if (team?.divisionId !== filter.divisionId) return false;
+        if (!team || team.divisionId !== filter.divisionId) return false;
       }
       if (s) {
         const blob = `${p.player.first_name} ${p.player.last_name} #${p.player.jersey_number ?? ''}`.toLowerCase();
@@ -108,7 +110,7 @@ export function LeaguePlayersTable({
             <div className="text-xs text-amber-700">Registered in the league but not currently on a team</div>
           </div>
           <button
-            onClick={() => setFilter({ ...filter, teamId: 'free' })}
+            onClick={() => setFilter({ ...filter, teamId: 'free', divisionId: '' })}
             className="text-xs font-medium text-amber-800 border border-amber-300 rounded-md px-3 py-1.5 hover:bg-amber-100"
           >
             View free agents

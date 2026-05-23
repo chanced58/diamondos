@@ -22,21 +22,29 @@ export function ReleasePlayerDialog({ leagueId, player, onClose, onSuccess }: Pr
     e.preventDefault();
     setSaving(true);
     setErr(null);
-    const res = await releasePlayer({
-      leagueId,
-      playerId: player.player.id,
-      reason: reason || undefined,
-    });
-    setSaving(false);
-    if (!res.ok) {
-      if (res.code === 'IN_PROGRESS_GAME') {
-        setErr(`Cannot release — ${fullName} is in a live game. Finalize the game first.`);
+    try {
+      const res = await releasePlayer({
+        leagueId,
+        playerId: player.player.id,
+        reason: reason || undefined,
+      });
+      if (!res.ok) {
+        if (res.code === 'IN_PROGRESS_GAME') {
+          setErr(`Cannot release — ${fullName} is in a live game. Finalize the game first.`);
+          return;
+        }
+        setErr(res.message);
         return;
       }
-      setErr(res.message);
-      return;
+      onSuccess();
+    } catch (error) {
+      console.error('ReleasePlayerDialog submit failed', {
+        leagueId, playerId: player.player.id, error,
+      });
+      setErr('Unable to release player right now. Please try again.');
+    } finally {
+      setSaving(false);
     }
-    onSuccess();
   }
 
   return (

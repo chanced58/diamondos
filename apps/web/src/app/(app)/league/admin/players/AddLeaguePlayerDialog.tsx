@@ -34,21 +34,27 @@ export function AddLeaguePlayerDialog({ leagueId, teams, onClose, onSuccess }: P
     e.preventDefault();
     setSaving(true);
     setErr(null);
-    const res = await createLeaguePlayer({
-      leagueId,
-      firstName: first,
-      lastName: last,
-      dateOfBirth: dob || undefined,
-      jerseyNumber: jersey ? Number(jersey) : undefined,
-      primaryPosition: (position || undefined) as Position | undefined,
-      teamId: teamId || undefined,
-    });
-    setSaving(false);
-    if (!res.ok) {
-      setErr(res.code === 'VALIDATION' ? 'Check the form fields' : res.message);
-      return;
+    try {
+      const res = await createLeaguePlayer({
+        leagueId,
+        firstName: first,
+        lastName: last,
+        dateOfBirth: dob || undefined,
+        jerseyNumber: jersey ? Number(jersey) : undefined,
+        primaryPosition: (position || undefined) as Position | undefined,
+        teamId: teamId || undefined,
+      });
+      if (!res.ok) {
+        setErr(res.code === 'VALIDATION' ? 'Check the form fields' : res.message);
+        return;
+      }
+      onSuccess();
+    } catch (error) {
+      console.error('AddLeaguePlayerDialog submit failed', { leagueId, error });
+      setErr('Unable to add player right now. Please try again.');
+    } finally {
+      setSaving(false);
     }
-    onSuccess();
   }
 
   return (

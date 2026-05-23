@@ -31,28 +31,36 @@ export function TradePlayerDialog({ leagueId, player, teams, onClose, onSuccess 
     e.preventDefault();
     setSaving(true);
     setErr(null);
-    const res = await transferPlayer({
-      leagueId,
-      playerId: player.player.id,
-      toTeamId,
-      effectiveAt: effective ? new Date(effective).toISOString() : undefined,
-      reason: reason || undefined,
-      acceptJerseyClear: !!collision,
-    });
-    setSaving(false);
-    if (!res.ok) {
-      if (res.code === 'JERSEY_CONFLICT') {
-        setCollision((res.meta?.conflictingPlayerName as string) ?? 'another player');
+    try {
+      const res = await transferPlayer({
+        leagueId,
+        playerId: player.player.id,
+        toTeamId,
+        effectiveAt: effective ? new Date(effective).toISOString() : undefined,
+        reason: reason || undefined,
+        acceptJerseyClear: !!collision,
+      });
+      if (!res.ok) {
+        if (res.code === 'JERSEY_CONFLICT') {
+          setCollision((res.meta?.conflictingPlayerName as string) ?? 'another player');
+          return;
+        }
+        if (res.code === 'IN_PROGRESS_GAME') {
+          setErr(`Cannot trade — ${fullName} is in a live game. Finalize the game first.`);
+          return;
+        }
+        setErr(res.message);
         return;
       }
-      if (res.code === 'IN_PROGRESS_GAME') {
-        setErr(`Cannot trade — ${fullName} is in a live game. Finalize the game first.`);
-        return;
-      }
-      setErr(res.message);
-      return;
+      onSuccess();
+    } catch (error) {
+      console.error('TradePlayerDialog submit failed', {
+        leagueId, playerId: player.player.id, toTeamId, error,
+      });
+      setErr('Unable to complete this move right now. Please try again.');
+    } finally {
+      setSaving(false);
     }
-    onSuccess();
   }
 
   return (

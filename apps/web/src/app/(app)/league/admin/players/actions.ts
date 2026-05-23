@@ -150,6 +150,24 @@ export async function updateLeaguePlayer(
   if ('error' in auth) return { ok: false, code: auth.error, message: auth.error };
 
   const db = service();
+
+  // Verify the target player is registered in this league before mutating
+  // via service role. Without this, a league_admin could craft a request
+  // with their own leagueId but a foreign playerId and edit other leagues'
+  // players.
+  const { data: membership, error: membershipError } = await db
+    .from('league_players')
+    .select('player_id')
+    .eq('league_id', leagueId)
+    .eq('player_id', parsed.data.playerId)
+    .maybeSingle();
+  if (membershipError) {
+    return { ok: false, code: 'DB_ERROR', message: membershipError.message };
+  }
+  if (!membership) {
+    return { ok: false, code: 'NOT_IN_LEAGUE', message: 'NOT_IN_LEAGUE' };
+  }
+
   const updates: Record<string, unknown> = {};
   const map: Record<string, string> = {
     firstName: 'first_name', lastName: 'last_name', dateOfBirth: 'date_of_birth',
