@@ -20,3 +20,4 @@ export * from './practice-reps';
 export * from './ai-practice';
 export * from './practice-summaries';
 export * from './opponent-scouting-cards';
+export * from './league-players';
