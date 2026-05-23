@@ -3,6 +3,8 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { getMaxBattingOrder } from '@baseball/shared';
+import { getLeagueSettingsForTeam } from '@/lib/league-settings';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
@@ -55,6 +57,9 @@ export async function saveLineupAction(
     return 'Only coaches can set the lineup.';
   }
 
+  const leagueSettings = await getLeagueSettingsForTeam(supabase, game.team_id);
+  const maxBatters = getMaxBattingOrder(leagueSettings);
+
   // Parse lineup entries: player_{id}_order and player_{id}_position
   const entries: { player_id: string; batting_order: number | null; starting_position: string | null }[] = [];
   for (const [key, value] of formData.entries()) {
@@ -64,7 +69,7 @@ export async function saveLineupAction(
       const order = parseInt(value as string, 10);
       const rawPosition = formData.get(`player_${playerId}_position`) as string | null;
       const dbPosition = rawPosition ? POSITION_TO_DB[rawPosition] ?? rawPosition : null;
-      if (isNaN(order) || order < 1 || order > 30) {
+      if (isNaN(order) || order < 1 || order > maxBatters) {
         // Bench — still include pitchers so they can be tracked for pitch counts
         // even when a DH bats in their lineup slot.
         if (dbPosition === 'pitcher') {
@@ -83,8 +88,15 @@ export async function saveLineupAction(
     return 'Duplicate batting order positions. Each spot can only be assigned once.';
   }
 
-  // Delete existing lineup and insert fresh
-  await supabase.from('game_lineups').delete().eq('game_id', gameId);
+  // Delete existing non-guest lineup and insert fresh. Guest entries are managed
+  // separately (addExistingGuestToLineupAction / addNewGuestToLineupAction /
+  // removeGuestFromLineupAction) so wiping them here would silently drop them
+  // whenever a coach re-saves the roster.
+  await supabase
+    .from('game_lineups')
+    .delete()
+    .eq('game_id', gameId)
+    .eq('is_guest', false);
 
   if (entries.length > 0) {
     const { error } = await supabase.from('game_lineups').insert(

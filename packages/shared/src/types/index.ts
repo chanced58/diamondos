@@ -22,3 +22,4 @@ export * from './weakness';
 export * from './pitcher-availability';
 export * from './hot-hitters';
 export * from './prep-practice';
+export * from './league-scoring-settings';

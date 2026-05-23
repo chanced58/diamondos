@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
+import { getLeagueSettingsForTeam } from '@/lib/league-settings';
 import { ScoringBoard } from './ScoringBoard';
 
 export const metadata: Metadata = { title: 'Scoring' };
@@ -259,6 +260,8 @@ export default async function ScorePage({ params }: { params: { gameId: string }
     sprayChart:    gsp.sprayChartEnabled    !== false,
   };
 
+  const leagueSettings = await getLeagueSettingsForTeam(db, game.team_id);
+
   return (
     <ScoringBoard
       game={{
@@ -278,6 +281,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       isCoach={isCoach}
       seasonSprayPoints={seasonSprayPoints}
       scoringConfig={scoringConfig}
+      leagueSettings={leagueSettings}
     />
   );
 }

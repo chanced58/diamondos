@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { weAreHome } from '@baseball/shared';
+import { getMaxBattingOrder, weAreHome } from '@baseball/shared';
+import { getLeagueSettingsForTeam } from '@/lib/league-settings';
 import { LineupBuilder } from './LineupBuilder';
 
 export const metadata: Metadata = { title: 'Set Lineup' };
@@ -57,7 +58,7 @@ export default async function LineupPage({ params }: { params: { gameId: string 
     redirect(`/games/${params.gameId}`);
   }
 
-  const [playersResult, lineupResult] = await Promise.all([
+  const [playersResult, lineupResult, guestsResult, leagueSettings] = await Promise.all([
     db
       .from('players')
       .select('id, first_name, last_name, jersey_number, primary_position')
@@ -67,8 +68,32 @@ export default async function LineupPage({ params }: { params: { gameId: string 
     db
       .from('game_lineups')
       .select('player_id, batting_order, starting_position')
-      .eq('game_id', params.gameId),
+      .eq('game_id', params.gameId)
+      .eq('is_guest', false),
+    db
+      .from('game_lineups')
+      .select('id, player_id, batting_order, guest_display_name, count_toward_stats, players(first_name, last_name, jersey_number)')
+      .eq('game_id', params.gameId)
+      .eq('is_guest', true)
+      .order('batting_order', { ascending: true, nullsFirst: false }),
+    getLeagueSettingsForTeam(db, game.team_id),
   ]);
+
+  const maxBatters = getMaxBattingOrder(leagueSettings);
+  const guests = (guestsResult.data ?? []).map((g) => {
+    const p = Array.isArray(g.players) ? g.players[0] : g.players;
+    const displayName =
+      g.guest_display_name ??
+      (p ? `${p.first_name} ${p.last_name}` : 'Guest');
+    return {
+      lineupId: g.id,
+      playerId: g.player_id,
+      battingOrder: g.batting_order,
+      displayName,
+      jerseyNumber: p?.jersey_number ?? null,
+      countTowardStats: g.count_toward_stats,
+    };
+  });
 
   const players = (playersResult.data ?? []).map((p) => ({
     id: p.id,
@@ -114,6 +139,10 @@ export default async function LineupPage({ params }: { params: { gameId: string 
           gameId={params.gameId}
           players={players}
           existingLineup={existingLineup}
+          maxBatters={maxBatters}
+          guests={guests}
+          guestsAllowed={leagueSettings.guests.allowed}
+          guestStatsDefault={leagueSettings.guests.countTowardStatsDefault}
         />
       )}
     </div>

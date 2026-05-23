@@ -28,7 +28,7 @@ export async function buildLineupsByGameId(
   const gameIds = games.map((g) => g.id);
   const { data: lineupRows, error } = await db
     .from('game_lineups')
-    .select('game_id, player_id, batting_order')
+    .select('game_id, player_id, batting_order, is_guest, count_toward_stats')
     .in('game_id', gameIds);
 
   if (error) {
@@ -39,11 +39,22 @@ export async function buildLineupsByGameId(
   }
 
   const byGame = new Map<string, { playerId: string; battingOrder: number }[]>();
+  const excludedByGame = new Map<string, Set<string>>();
   for (const row of (lineupRows ?? []) as Array<{
     game_id: string;
     player_id: string | null;
     batting_order: number | null;
+    is_guest: boolean | null;
+    count_toward_stats: boolean | null;
   }>) {
+    // Guest appearances flagged count_toward_stats=false should be silently
+    // dropped from the home team's batting stats per the league's stat-
+    // attribution policy.
+    if (row.player_id && row.is_guest && row.count_toward_stats === false) {
+      const set = excludedByGame.get(row.game_id) ?? new Set<string>();
+      set.add(row.player_id);
+      excludedByGame.set(row.game_id, set);
+    }
     if (!row.player_id || typeof row.batting_order !== 'number' || row.batting_order <= 0) continue;
     const list = byGame.get(row.game_id) ?? [];
     list.push({ playerId: row.player_id, battingOrder: row.batting_order });
@@ -52,10 +63,12 @@ export async function buildLineupsByGameId(
 
   for (const g of games) {
     const ourLineup = byGame.get(g.id) ?? [];
-    if (ourLineup.length === 0) continue;
+    const excludedPlayerIds = excludedByGame.get(g.id);
+    if (ourLineup.length === 0 && !excludedPlayerIds) continue;
     lineupsByGameId.set(g.id, {
       ourLineup,
       isHome: weAreHome(g.location_type, g.neutral_home_team),
+      ...(excludedPlayerIds ? { excludedPlayerIds } : {}),
     });
   }
 

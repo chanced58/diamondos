@@ -74,6 +74,34 @@ describe('deriveBattingStats — normalizeBatterId', () => {
   });
 });
 
+describe('deriveBattingStats — excludedPlayerIds', () => {
+  beforeEach(resetSeq);
+
+  it('drops at-bats for players in the per-game excludedPlayerIds set', () => {
+    const events = [
+      e(EventType.HIT, { batterId: 'p1', hitType: HitType.SINGLE }),
+      e(EventType.HIT, { batterId: 'p2', hitType: HitType.DOUBLE }),
+      e(EventType.STRIKEOUT, { batterId: 'p1' }),
+    ];
+    const lineupsByGameId = new Map<string, BattingLineupContext>([
+      [
+        GAME,
+        {
+          ourLineup: [],
+          isHome: true,
+          excludedPlayerIds: new Set(['p1']),
+        },
+      ],
+    ]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players, lineupsByGameId);
+    // p1 was excluded — no stats entry should exist
+    expect(stats.has('p1')).toBe(false);
+    // p2 is unaffected
+    expect(stats.get('p2')?.hits).toBe(1);
+  });
+});
+
 describe('deriveBattingStats — lineup-replay batter inference', () => {
   beforeEach(resetSeq);
 

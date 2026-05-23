@@ -60,6 +60,45 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
     .select('id, name, city')
     .order('name');
 
+  // Fetch the league's scoring settings JSON (validated/merged client-side).
+  // We must distinguish "row exists with empty object" (which is the v1 default
+  // for any league that hasn't opened the Settings panel yet) from "the query
+  // failed". The latter is fatal — we throw rather than render the form seeded
+  // with defaults, because the user might then click Save and overwrite real
+  // league settings with the platform defaults.
+  const { data: scoringRow, error: scoringErr } = await db
+    .from('leagues')
+    .select('scoring_settings')
+    .eq('id', league.id)
+    .maybeSingle();
+  if (scoringErr) {
+    console.error(
+      `[league-admin] failed to load scoring_settings for league=${league.id}: ${scoringErr.message}`,
+    );
+    throw new Error('Failed to load league settings. Refresh to try again.');
+  }
+  const scoringSettings = scoringRow?.scoring_settings ?? {};
+
+  // System pitch-count rule presets (NFHS / Little League / NCAA). League
+  // admins can pick one as the default for new seasons in this league.
+  const { data: systemPitchRules, error: pitchRulesErr } = await db
+    .from('pitch_compliance_rules')
+    .select('id, rule_name, age_min, age_max')
+    .is('team_id', null)
+    .eq('is_active', true)
+    .order('rule_name');
+  if (pitchRulesErr) {
+    console.error(
+      `[league-admin] failed to load pitch_compliance_rules for league=${league.id}: ${pitchRulesErr.message}`,
+    );
+  }
+  const pitchRuleOptions = (systemPitchRules ?? []).map((r) => ({
+    id: r.id,
+    label: r.age_min != null && r.age_max != null
+      ? `${r.rule_name} (ages ${r.age_min}–${r.age_max})`
+      : r.rule_name,
+  }));
+
   return (
     <div className="p-8 max-w-4xl">
       <h1 className="text-2xl font-bold text-gray-900 mb-1">Manage League</h1>
@@ -89,6 +128,8 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
           };
         })}
         isAdmin={access.isLeagueAdmin}
+        scoringSettings={scoringSettings}
+        pitchRuleOptions={pitchRuleOptions}
         availableOpponentTeams={(availableOpponentTeams ?? []).map((t) => ({
           id: t.id,
           name: t.name,

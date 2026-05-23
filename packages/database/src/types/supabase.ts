@@ -500,9 +500,12 @@ export type Database = {
       game_lineups: {
         Row: {
           batting_order: number | null
+          count_toward_stats: boolean
           created_at: string
           game_id: string
+          guest_display_name: string | null
           id: string
+          is_guest: boolean
           is_starter: boolean
           player_id: string
           starting_position:
@@ -511,9 +514,12 @@ export type Database = {
         }
         Insert: {
           batting_order?: number | null
+          count_toward_stats?: boolean
           created_at?: string
           game_id: string
+          guest_display_name?: string | null
           id?: string
+          is_guest?: boolean
           is_starter?: boolean
           player_id: string
           starting_position?:
@@ -522,9 +528,12 @@ export type Database = {
         }
         Update: {
           batting_order?: number | null
+          count_toward_stats?: boolean
           created_at?: string
           game_id?: string
+          guest_display_name?: string | null
           id?: string
+          is_guest?: boolean
           is_starter?: boolean
           player_id?: string
           starting_position?:
@@ -1188,6 +1197,7 @@ export type Database = {
           level: string | null
           logo_url: string | null
           name: string
+          scoring_settings: Json
           setup_completed_at: string | null
           state_code: string | null
           updated_at: string
@@ -1202,6 +1212,7 @@ export type Database = {
           level?: string | null
           logo_url?: string | null
           name: string
+          scoring_settings?: Json
           setup_completed_at?: string | null
           state_code?: string | null
           updated_at?: string
@@ -1216,6 +1227,7 @@ export type Database = {
           level?: string | null
           logo_url?: string | null
           name?: string
+          scoring_settings?: Json
           setup_completed_at?: string | null
           state_code?: string | null
           updated_at?: string
@@ -2153,6 +2165,7 @@ export type Database = {
           graduation_year: number | null
           id: string
           is_active: boolean
+          is_guest_only: boolean
           jersey_number: number | null
           last_name: string
           notes: string | null
@@ -2177,6 +2190,7 @@ export type Database = {
           graduation_year?: number | null
           id?: string
           is_active?: boolean
+          is_guest_only?: boolean
           jersey_number?: number | null
           last_name: string
           notes?: string | null
@@ -2201,6 +2215,7 @@ export type Database = {
           graduation_year?: number | null
           id?: string
           is_active?: boolean
+          is_guest_only?: boolean
           jersey_number?: number | null
           last_name?: string
           notes?: string | null
@@ -2220,6 +2235,39 @@ export type Database = {
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      league_players: {
+        Row: {
+          first_seen_at: string
+          league_id: string
+          player_id: string
+        }
+        Insert: {
+          first_seen_at?: string
+          league_id: string
+          player_id: string
+        }
+        Update: {
+          first_seen_at?: string
+          league_id?: string
+          player_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_players_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_players_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]
