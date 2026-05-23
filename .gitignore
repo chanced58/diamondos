@@ -46,5 +46,8 @@ web-build/
 # Claude Code worktrees
 claude/
 
+# Superpowers brainstorming session artifacts (mockups, transient state)
+.superpowers/
+
 # Design handoff (extracted from DiamondOS Revamp.zip — reference only)
 design_handoff_diamondos_revamp/
