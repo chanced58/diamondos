@@ -307,6 +307,8 @@ Consistent naming helps avoid confusion between the codebase and baseball termin
 | **MercyRule** | League-configurable game-ending rule: `gameLength.mercy = {enabled, runDiff, afterInning}`. The scoring engine surfaces an advisory banner when conditions are met; coach still confirms via End Game. |
 | **RunCap** | League-configurable per-half-inning run limit (`gameLength.runCap = {enabled, value}`). Triggers an inning-switch advisory in the scoring UI. |
 | **CourtesyRunner** | LL/HS substitution that pinch-runs for catcher/pitcher without burning a regular sub. `SubstitutionType.COURTESY_RUNNER`, gated on `settings.substitutions.courtesyRunnerForCatcherPitcher`. |
+| **PlayerTransfer** | Append-only row in `player_transfers` recording a player's move within a league (initial assignment, trade, release, season reassignment). Written by league_admin server actions wrapping `fn_transfer_player` / `fn_release_player`, which also maintain `player_team_memberships` and the `players.team_id` denorm atomically. Coach-driven moves still write to the same table with NULL `league_id`. Does not drive stat attribution — that lives on `game_lineups.team_id`. |
+| **FreeAgent** | A player registered in a league (`league_players` row exists, `is_guest_only=false`) with `players.team_id IS NULL` and no active `player_team_memberships` row. Eligible for assignment to a team via `transferPlayer`. |
 
 Extend this glossary as domain concepts are added to the codebase.
 

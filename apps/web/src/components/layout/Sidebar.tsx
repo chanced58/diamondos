@@ -76,7 +76,10 @@ export function Sidebar({
       ? [{ href: '/league', label: leagueName ?? 'League', icon: <Icon.admin /> }]
       : []),
     ...(leagueId && canLeague && isLeagueAdmin
-      ? [{ href: '/league/admin', label: 'League Admin', icon: <Icon.admin /> }]
+      ? [
+          { href: '/league/admin', label: 'League Admin', icon: <Icon.admin /> },
+          { href: '/league/admin/players', label: 'League Players', icon: <Icon.team /> },
+        ]
       : []),
     ...(hasPlayerProfile
       ? [{ href: '/players/me', label: 'My Profile', icon: <Icon.team /> }]
