@@ -3831,6 +3831,30 @@ export type Database = {
         }
         Relationships: []
       }
+      training_module_completions: {
+        Row: {
+          completed_at: string
+          curriculum_version: string
+          id: string
+          module_slug: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string
+          curriculum_version: string
+          id?: string
+          module_slug: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string
+          curriculum_version?: string
+          id?: string
+          module_slug?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       training_sessions: {
         Row: {
           external_session_id: string | null
@@ -3881,6 +3905,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_certifications: {
+        Row: {
+          certified_at: string
+          curriculum_version: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          certified_at?: string
+          curriculum_version: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          certified_at?: string
+          curriculum_version?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       user_profiles: {
         Row: {

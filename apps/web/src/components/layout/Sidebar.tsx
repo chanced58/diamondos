@@ -9,6 +9,7 @@ import { SubscriptionTier, hasFeature, Feature } from '@baseball/shared';
 import { BrandMark } from '@/components/ui/BrandMark';
 import { Icon } from '@/components/ui/icons';
 import { useSidebar } from '@/components/providers/SidebarProvider';
+import { CertifiedBadge } from '@/components/training/CertifiedBadge';
 
 interface SidebarProps {
   teamName?: string;
@@ -26,6 +27,8 @@ interface SidebarProps {
   userInitials?: string;
   userName?: string;
   userRole?: string;
+  showTraining?: boolean;
+  isCertified?: boolean;
 }
 
 type NavItem = {
@@ -51,6 +54,8 @@ export function Sidebar({
   userInitials,
   userName = 'Coach',
   userRole,
+  showTraining = false,
+  isCertified = false,
 }: SidebarProps): JSX.Element | null {
   const pathname = usePathname();
   const router = useRouter();
@@ -66,6 +71,14 @@ export function Sidebar({
     { href: '/games',     label: 'Schedule',  icon: <Icon.sched /> },
     ...(canPractices ? [{ href: '/practices', label: 'Practices', icon: <Icon.prac /> }] : []),
     { href: '/compliance', label: 'Stats', icon: <Icon.stats /> },
+    ...(showTraining
+      ? [{
+          href: '/training',
+          label: 'Training',
+          icon: <Icon.dash />,
+          ...(isCertified ? {} : { badge: '!' }),
+        } as NavItem]
+      : []),
     { href: '/messages',   label: 'Messages', icon: <Icon.msg /> },
     {
       href: teamId ? `/teams/${teamId}/admin` : '/teams',
@@ -231,7 +244,10 @@ export function Sidebar({
         <div className="avatar">{userInitials ?? userName.slice(0, 1).toUpperCase()}</div>
         <div className="sb-foot-text" style={{ flex: 1, minWidth: 0 }}>
           <div className="name">{userName}</div>
-          <div className="role">{userRole ?? (isPlatformAdmin ? 'Admin' : 'Head Coach')}</div>
+          <div className="role" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>{userRole ?? (isPlatformAdmin ? 'Admin' : 'Head Coach')}</span>
+            {isCertified && <CertifiedBadge size="sm" showLabel={false} />}
+          </div>
         </div>
         <button
           onClick={handleSignOut}

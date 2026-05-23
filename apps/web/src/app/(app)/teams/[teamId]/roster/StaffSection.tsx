@@ -56,6 +56,7 @@ type StaffMember = {
   lastName: string | null;
   email: string | null;
   phone: string | null;
+  isCertified: boolean;
 };
 
 type PendingInvitation = {
@@ -320,6 +321,7 @@ export function StaffSection({
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Role</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Phone</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Training</th>
                 {canInvite && (
                   <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
                 )}
@@ -331,7 +333,7 @@ export function StaffSection({
                   editing?.type === 'confirmed' && editing.memberId === member.id;
                 return isEditingThis ? (
                   <tr key={member.id} className="bg-gray-50">
-                    <td colSpan={canInvite ? 6 : 5} className="px-4 py-4">
+                    <td colSpan={canInvite ? 7 : 6} className="px-4 py-4">
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-3">
                           <div>
@@ -435,6 +437,15 @@ export function StaffSection({
                     <td className="px-4 py-3 text-gray-600">
                       {member.phone ?? <span className="text-gray-300">—</span>}
                     </td>
+                    <td className="px-4 py-3">
+                      {member.isCertified ? (
+                        <span className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full font-medium">
+                          ✓ Certified
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
+                    </td>
                     {canInvite && (
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         <button
@@ -475,7 +486,7 @@ export function StaffSection({
                   editing?.type === 'pending' && editing.invitationId === inv.id;
                 return isEditingThis ? (
                   <tr key={inv.id} className="bg-gray-50">
-                    <td colSpan={canInvite ? 6 : 5} className="px-4 py-4">
+                    <td colSpan={canInvite ? 7 : 6} className="px-4 py-4">
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-3">
                           <div>
@@ -576,6 +587,9 @@ export function StaffSection({
                     </td>
                     <td className="px-4 py-3 text-gray-600">
                       {inv.phone ?? <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs text-gray-400">—</span>
                     </td>
                     {canInvite && (
                       <td className="px-4 py-3 text-right whitespace-nowrap">
