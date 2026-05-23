@@ -1144,6 +1144,48 @@ export type Database = {
           },
         ]
       }
+      league_players: {
+        Row: {
+          first_seen_at: string
+          league_id: string
+          notes: string | null
+          player_id: string
+          registered_at: string
+          registered_by: string | null
+        }
+        Insert: {
+          first_seen_at?: string
+          league_id: string
+          notes?: string | null
+          player_id: string
+          registered_at?: string
+          registered_by?: string | null
+        }
+        Update: {
+          first_seen_at?: string
+          league_id?: string
+          notes?: string | null
+          player_id?: string
+          registered_at?: string
+          registered_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_players_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_players_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       league_staff: {
         Row: {
           id: string
@@ -2101,10 +2143,13 @@ export type Database = {
           from_team_id: string | null
           id: string
           initiated_by: string
+          league_id: string | null
           notes: string | null
           player_id: string
           reason: string | null
+          season_id: string | null
           to_team_id: string | null
+          transfer_type: Database["public"]["Enums"]["transfer_type"] | null
           transferred_at: string
         }
         Insert: {
@@ -2112,10 +2157,13 @@ export type Database = {
           from_team_id?: string | null
           id?: string
           initiated_by: string
+          league_id?: string | null
           notes?: string | null
           player_id: string
           reason?: string | null
+          season_id?: string | null
           to_team_id?: string | null
+          transfer_type?: Database["public"]["Enums"]["transfer_type"] | null
           transferred_at?: string
         }
         Update: {
@@ -2123,10 +2171,13 @@ export type Database = {
           from_team_id?: string | null
           id?: string
           initiated_by?: string
+          league_id?: string | null
           notes?: string | null
           player_id?: string
           reason?: string | null
+          season_id?: string | null
           to_team_id?: string | null
+          transfer_type?: Database["public"]["Enums"]["transfer_type"] | null
           transferred_at?: string
         }
         Relationships: [
@@ -2138,10 +2189,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "player_transfers_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "player_transfers_player_id_fkey"
             columns: ["player_id"]
             isOneToOne: false
             referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_transfers_season_id_fkey"
+            columns: ["season_id"]
+            isOneToOne: false
+            referencedRelation: "seasons"
             referencedColumns: ["id"]
           },
           {
@@ -2235,39 +2300,6 @@ export type Database = {
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      league_players: {
-        Row: {
-          first_seen_at: string
-          league_id: string
-          player_id: string
-        }
-        Insert: {
-          first_seen_at?: string
-          league_id: string
-          player_id: string
-        }
-        Update: {
-          first_seen_at?: string
-          league_id?: string
-          player_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "league_players_league_id_fkey"
-            columns: ["league_id"]
-            isOneToOne: false
-            referencedRelation: "leagues"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "league_players_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
-            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]
@@ -4081,6 +4113,114 @@ export type Database = {
     Functions: {
       can_edit_block: { Args: { p_block_id: string }; Returns: boolean }
       find_auth_user_id_by_email: { Args: { p_email: string }; Returns: string }
+      fn_create_league_player: {
+        Args: {
+          p_actor: string
+          p_bats: Database["public"]["Enums"]["bats_throws"]
+          p_date_of_birth: string
+          p_first_name: string
+          p_graduation_year: number
+          p_jersey_number: number
+          p_last_name: string
+          p_league_id: string
+          p_notes: string
+          p_primary_position: Database["public"]["Enums"]["player_position"]
+          p_team_id: string
+          p_throws: Database["public"]["Enums"]["bats_throws"]
+        }
+        Returns: {
+          bats: Database["public"]["Enums"]["bats_throws"] | null
+          created_at: string
+          date_of_birth: string | null
+          disabled_at: string | null
+          disabled_by: string | null
+          email: string | null
+          first_name: string
+          graduation_year: number | null
+          id: string
+          is_active: boolean
+          is_guest_only: boolean
+          jersey_number: number | null
+          last_name: string
+          notes: string | null
+          phone: string | null
+          primary_position:
+            | Database["public"]["Enums"]["player_position"]
+            | null
+          secondary_positions: Database["public"]["Enums"]["player_position"][]
+          team_id: string | null
+          throws: Database["public"]["Enums"]["bats_throws"] | null
+          updated_at: string
+          user_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "players"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      fn_release_player: {
+        Args: {
+          p_actor: string
+          p_effective_at: string
+          p_league_id: string
+          p_player_id: string
+          p_reason: string
+        }
+        Returns: {
+          created_at: string
+          from_team_id: string | null
+          id: string
+          initiated_by: string
+          league_id: string | null
+          notes: string | null
+          player_id: string
+          reason: string | null
+          season_id: string | null
+          to_team_id: string | null
+          transfer_type: Database["public"]["Enums"]["transfer_type"] | null
+          transferred_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "player_transfers"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      fn_transfer_player: {
+        Args: {
+          p_accept_jersey_clear: boolean
+          p_actor: string
+          p_effective_at: string
+          p_league_id: string
+          p_player_id: string
+          p_reason: string
+          p_season_id: string
+          p_to_team_id: string
+        }
+        Returns: {
+          created_at: string
+          from_team_id: string | null
+          id: string
+          initiated_by: string
+          league_id: string | null
+          notes: string | null
+          player_id: string
+          reason: string | null
+          season_id: string | null
+          to_team_id: string | null
+          transfer_type: Database["public"]["Enums"]["transfer_type"] | null
+          transferred_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "player_transfers"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       get_league_role: {
         Args: { p_league_id: string; p_user_id: string }
         Returns: Database["public"]["Enums"]["league_role"]
@@ -4297,6 +4437,7 @@ export type Database = {
         | "athletic_director"
         | "scorekeeper"
         | "staff"
+      transfer_type: "initial_assignment" | "trade" | "release" | "reassignment"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -4589,7 +4730,7 @@ export const Constants = {
         "scorekeeper",
         "staff",
       ],
+      transfer_type: ["initial_assignment", "trade", "release", "reassignment"],
     },
   },
 } as const
-

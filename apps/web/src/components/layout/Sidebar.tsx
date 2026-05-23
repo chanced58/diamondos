@@ -89,7 +89,10 @@ export function Sidebar({
       ? [{ href: '/league', label: leagueName ?? 'League', icon: <Icon.admin /> }]
       : []),
     ...(leagueId && canLeague && isLeagueAdmin
-      ? [{ href: '/league/admin', label: 'League Admin', icon: <Icon.admin /> }]
+      ? [
+          { href: '/league/admin', label: 'League Admin', icon: <Icon.admin /> },
+          { href: '/league/admin/players', label: 'League Players', icon: <Icon.team /> },
+        ]
       : []),
     ...(hasPlayerProfile
       ? [{ href: '/players/me', label: 'My Profile', icon: <Icon.team /> }]
@@ -180,12 +183,19 @@ export function Sidebar({
       )}
 
       <nav className="sb-nav" style={{ marginTop: 14 }}>
-        {navItems.map((item) => {
-          const isActive = isAdminPanel
-            ? item.href === '/admin'
-              ? pathname === '/admin'
-              : pathname.startsWith(item.href)
-            : pathname.startsWith(item.href);
+        {(() => {
+          // Pick the single most-specific nav item that matches the current
+          // pathname so nested routes (e.g. /league/admin/players under
+          // /league/admin) only highlight one entry. `null` when nothing
+          // matches.
+          const activeHref =
+            [...navItems]
+              .filter((n) =>
+                n.href === '/admin' ? pathname === '/admin' : pathname === n.href || pathname.startsWith(n.href + '/'),
+              )
+              .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null;
+          return navItems.map((item) => {
+          const isActive = item.href === activeHref;
           return (
             <Link
               key={item.label}
@@ -210,7 +220,8 @@ export function Sidebar({
                 ))}
             </Link>
           );
-        })}
+        });
+        })()}
 
         {isAdminPanel && teamId && (
           <>
