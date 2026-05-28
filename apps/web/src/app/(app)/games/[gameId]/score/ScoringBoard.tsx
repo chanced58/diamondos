@@ -573,6 +573,22 @@ export function ScoringBoard({
   // Fielder's choice: waiting for user to identify which runner is called out
   const [fcRunnerOutPending, setFcRunnerOutPending] = useState(false);
   const [fcOutRunnerId, setFcOutRunnerId] = useState<string | null>(null);
+  // Pending runner-outcomes panel for a 2B/3B hit with runners on base.
+  // Captures the hit params at the moment of in-play resolution so the
+  // panel can confirm or cancel without re-deriving anything.
+  const [pendingHitRunnerOutcomes, setPendingHitRunnerOutcomes] = useState<
+    | {
+        hitType: 'double' | 'triple';
+        trajectory: string;
+        sprayExtra: Record<string, unknown>;
+        pitchExtra: Record<string, unknown>;
+        batterId: string | undefined;
+        pitcherId: string | undefined;
+        runners: Array<{ runnerId: string; fromBase: 1 | 2 | 3 }>;
+        choices: Record<string, { kind: 'auto' | 'held' | 'thrown_out'; toBase?: 2 | 3 }>;
+      }
+    | null
+  >(null);
   // Track pitching change UI
   const [showPitchingChange, setShowPitchingChange] = useState(false);
   // Pending baserunner advance — waiting for reason selection
@@ -1069,7 +1085,7 @@ export function ScoringBoard({
 
   // ── Event recording ──────────────────────────────────────────────────────
   const recordEvent = useCallback(
-    async (eventType: string, payload: Record<string, unknown>) => {
+    async (eventType: string, payload: Record<string, unknown>): Promise<string> => {
       const seq = nextSeqNum.current++;
       const newRow: EventRow = {
         id: crypto.randomUUID(),
@@ -1089,7 +1105,7 @@ export function ScoringBoard({
       // The Realtime subscription deduplicates by id, so the echoed insert is a no-op.
       setEventRows((prev) => [...prev, newRow]);
 
-      if (isDemo) return;
+      if (isDemo) return newRow.id as string;
 
       const supabase = createBrowserClient();
       const { error: upsertError } = await supabase.from('game_events').upsert(
@@ -1103,6 +1119,7 @@ export function ScoringBoard({
         setEventRows((prev) => prev.filter((r) => r.id !== newRow.id));
         setSaveError('Failed to save last action. Please try again.');
       }
+      return newRow.id as string;
     },
     [game.id, gameState.inning, gameState.isTopOfInning, currentUserId, isDemo],
   );
@@ -1218,11 +1235,79 @@ export function ScoringBoard({
     } else if (result === 'triple_play') {
       await recordEvent('triple_play', { batterId, pitcherId, trajectory, ...sprayExtra, ...seqExtra, ...assignExtra, ...runnerOutExtra });
     } else {
+      // 2B/3B with runners on base: open the per-runner outcomes panel so
+      // the scorer can mark any runner as held short or thrown out
+      // advancing. The HIT and any linked BASERUNNER_* events are emitted
+      // together by confirmHitWithRunnerOutcomes.
+      const runners: Array<{ runnerId: string; fromBase: 1 | 2 | 3 }> = [];
+      if (gameState.runnersOnBase.first)  runners.push({ runnerId: gameState.runnersOnBase.first,  fromBase: 1 });
+      if (gameState.runnersOnBase.second) runners.push({ runnerId: gameState.runnersOnBase.second, fromBase: 2 });
+      if (gameState.runnersOnBase.third)  runners.push({ runnerId: gameState.runnersOnBase.third,  fromBase: 3 });
+      if ((result === 'double' || result === 'triple') && runners.length > 0) {
+        const choices: Record<string, { kind: 'auto' | 'held' | 'thrown_out'; toBase?: 2 | 3 }> = {};
+        for (const r of runners) choices[r.runnerId] = { kind: 'auto' };
+        setPendingHitRunnerOutcomes({
+          hitType: result,
+          trajectory,
+          sprayExtra,
+          pitchExtra,
+          batterId,
+          pitcherId,
+          runners,
+          choices,
+        });
+        return;
+      }
       // Omit rbis so batting-stats / maxpreps-export auto-derive RBI from
       // runners scoring on the hit (OBR 9.04). An explicit 0 here would
       // suppress derivation and zero out the RBI column for every hit.
       await recordEvent('hit', { batterId, pitcherId, hitType: result, trajectory, ...sprayExtra });
     }
+  }
+
+  async function confirmHitWithRunnerOutcomes() {
+    const ctx = pendingHitRunnerOutcomes;
+    if (!ctx) return;
+    setPendingHitRunnerOutcomes(null);
+    const { hitType, trajectory, sprayExtra, batterId, pitcherId, runners, choices } = ctx;
+    const hitId = await recordEvent('hit', {
+      batterId, pitcherId, hitType, trajectory, ...sprayExtra,
+    });
+    for (const r of runners) {
+      const choice = choices[r.runnerId];
+      if (!choice || choice.kind === 'auto') continue;
+      if (choice.kind === 'thrown_out') {
+        await recordEvent('baserunner_out', {
+          runnerId: r.runnerId,
+          fromBase: r.fromBase,
+          pitcherId,
+          relatedEventId: hitId,
+          reason: 'on_play',
+        });
+      } else if (choice.kind === 'held' && choice.toBase) {
+        await recordEvent('baserunner_advance', {
+          runnerId: r.runnerId,
+          fromBase: r.fromBase,
+          toBase: choice.toBase,
+          reason: 'on_play',
+          relatedEventId: hitId,
+        });
+      }
+    }
+  }
+
+  function cancelHitWithRunnerOutcomes() {
+    setPendingHitRunnerOutcomes(null);
+  }
+
+  function setRunnerOutcomeChoice(runnerId: string, fromBase: 1 | 2 | 3, kind: 'auto' | 'held' | 'thrown_out') {
+    setPendingHitRunnerOutcomes((prev) => {
+      if (!prev) return prev;
+      const toBase: 2 | 3 = fromBase === 1 ? 2 : 3;
+      const next = { ...prev.choices };
+      next[runnerId] = kind === 'held' ? { kind, toBase } : { kind };
+      return { ...prev, choices: next };
+    });
   }
 
   // Sacrifice fly / sacrifice bunt path that funnels through the in-play Out
@@ -3357,6 +3442,77 @@ export function ScoringBoard({
                 className="w-full py-2 text-sm font-medium text-gray-500 hover:text-gray-700"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingHitRunnerOutcomes && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center">
+          <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden">
+            <div className="px-5 pt-5 pb-3 border-b border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900">
+                {pendingHitRunnerOutcomes.hitType === 'triple' ? 'Triple' : 'Double'} — Runner Outcomes
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">
+                For each runner on base, choose what happened. Default is the standard advance.
+              </p>
+            </div>
+            <div className="px-5 py-4 max-h-96 overflow-y-auto">
+              {pendingHitRunnerOutcomes.runners.map(({ runnerId, fromBase }) => {
+                const choice = pendingHitRunnerOutcomes.choices[runnerId];
+                const kind = choice?.kind ?? 'auto';
+                const canHold = fromBase === 1 || fromBase === 2;
+                const heldLabel = fromBase === 1 ? 'Held at 2B' : 'Held at 3B';
+                return (
+                  <div key={runnerId} className="mb-3 border border-gray-200 rounded-lg p-3">
+                    <div className="text-sm font-semibold text-gray-700 mb-2">
+                      {playerName(runnerId) || `Runner on ${fromBase === 1 ? '1B' : fromBase === 2 ? '2B' : '3B'}`}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setRunnerOutcomeChoice(runnerId, fromBase, 'auto')}
+                        className={`px-3 py-2 text-xs font-semibold rounded-md ${kind === 'auto' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                      >
+                        Advanced as expected
+                      </button>
+                      {canHold && (
+                        <button
+                          type="button"
+                          onClick={() => setRunnerOutcomeChoice(runnerId, fromBase, 'held')}
+                          className={`px-3 py-2 text-xs font-semibold rounded-md ${kind === 'held' ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                        >
+                          {heldLabel}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setRunnerOutcomeChoice(runnerId, fromBase, 'thrown_out')}
+                        className={`px-3 py-2 text-xs font-semibold rounded-md ${kind === 'thrown_out' ? 'bg-rose-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                      >
+                        Thrown out advancing
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="px-5 pb-5 pt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={cancelHitWithRunnerOutcomes}
+                className="flex-1 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 border border-gray-200 rounded-md"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmHitWithRunnerOutcomes}
+                className="flex-1 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+              >
+                Confirm {pendingHitRunnerOutcomes.hitType === 'triple' ? 'Triple' : 'Double'}
               </button>
             </div>
           </div>
