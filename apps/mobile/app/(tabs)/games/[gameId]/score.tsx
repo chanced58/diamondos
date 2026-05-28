@@ -19,7 +19,7 @@ import { database } from '../../../../src/db';
 import type { GameEvent as WdbGameEvent } from '../../../../src/db/models/GameEvent';
 import type { Game } from '../../../../src/db/models/Game';
 import type { Player } from '../../../../src/db/models/Player';
-import type { BattedOutType, RosterPlayer } from '../../../../src/features/scoring/PitchInput';
+import type { BattedOutType, RosterPlayer, RunnerOutcome } from '../../../../src/features/scoring/PitchInput';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
 import { getSupabaseClient } from '../../../../src/lib/supabase';
 
@@ -198,6 +198,46 @@ export default function ScoringScreen() {
       hitType,
     };
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, payload);
+  }
+
+  // Records the HIT plus any linked BASERUNNER_OUT / BASERUNNER_ADVANCE
+  // events (via relatedEventId) so the engine + stats correctly suppress
+  // default scoring for held or thrown-out runners and so the play feed
+  // shows e.g. "Double (Runner thrown out at 3B)".
+  async function handleHitWithRunnerOutcomes(hitType: HitType, outcomes: RunnerOutcome[]) {
+    if (!gameState) return;
+    const payload: HitPayload = {
+      batterId: currentBatterId,
+      pitcherId: currentPitcherId,
+      hitType,
+    };
+    const hitId = await recordEvent(
+      EventType.HIT,
+      gameState.inning,
+      gameState.isTopOfInning,
+      payload,
+    );
+    for (const outcome of outcomes) {
+      if (outcome.kind === 'auto') continue;
+      if (outcome.kind === 'thrown_out') {
+        await recordEvent(EventType.BASERUNNER_OUT, gameState.inning, gameState.isTopOfInning, {
+          runnerId: outcome.runnerId,
+          fromBase: outcome.fromBase,
+          pitcherId: currentPitcherId,
+          relatedEventId: hitId,
+          reason: AdvanceReason.ON_PLAY,
+        });
+      } else {
+        // 'held' — runner stops short of the default advance.
+        await recordEvent(EventType.BASERUNNER_ADVANCE, gameState.inning, gameState.isTopOfInning, {
+          runnerId: outcome.runnerId,
+          fromBase: outcome.fromBase,
+          toBase: outcome.toBase,
+          reason: AdvanceReason.ON_PLAY,
+          relatedEventId: hitId,
+        });
+      }
+    }
   }
 
   async function handleOut(outType: BattedOutType) {
@@ -612,6 +652,27 @@ export default function ScoringScreen() {
       if (e.eventType === EventType.EVENT_VOIDED) continue;
       if (e.eventType === EventType.PITCH_REVERTED) continue;
       if (voidedIds.has(e.remoteId)) continue;
+      // Cascade-undo: when voiding a parent play, also void any linked
+      // outcome events (BASERUNNER_OUT / BASERUNNER_ADVANCE with
+      // relatedEventId === parent.id) so a single Undo tap retires the
+      // full multi-event play (e.g. "Double + R1 thrown out at 3B").
+      const linked = recent.filter((other) => {
+        if (other.remoteId === e.remoteId) return false;
+        if (voidedIds.has(other.remoteId)) return false;
+        if (
+          other.eventType !== EventType.BASERUNNER_OUT &&
+          other.eventType !== EventType.BASERUNNER_ADVANCE
+        ) return false;
+        const p = other.payload as { relatedEventId?: string };
+        return p.relatedEventId === e.remoteId;
+      });
+      for (const child of linked) {
+        const childPayload: EventVoidedPayload = {
+          voidedEventId: child.remoteId,
+          voidedSequenceNumber: child.sequenceNumber,
+        };
+        await recordEvent(EventType.EVENT_VOIDED, gameState.inning, gameState.isTopOfInning, childPayload);
+      }
       const payload: EventVoidedPayload = {
         voidedEventId: e.remoteId,
         voidedSequenceNumber: e.sequenceNumber,
@@ -833,6 +894,7 @@ export default function ScoringScreen() {
       <PitchInput
         onRecordPitch={handlePitch}
         onRecordHit={handleHit}
+        onRecordHitWithRunnerOutcomes={handleHitWithRunnerOutcomes}
         onRecordOut={handleOut}
         onRecordStrikeout={handleStrikeout}
         onRecordError={handleError}

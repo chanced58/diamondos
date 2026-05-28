@@ -22,7 +22,7 @@ export function useRecordEvent(gameRemoteId: string) {
     inning: number,
     isTopOfInning: boolean,
     payload: GameEventPayload,
-  ) {
+  ): Promise<string> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
@@ -66,6 +66,12 @@ export function useRecordEvent(gameRemoteId: string) {
 
     // Trigger sync in the background (non-blocking)
     triggerSync().catch(console.warn);
+
+    // Return the persisted event id so the caller can chain follow-up
+    // events that link back via `relatedEventId` (used by the runner-
+    // outcomes flow to attach BASERUNNER_OUT / BASERUNNER_ADVANCE events
+    // to their parent HIT).
+    return eventId;
   }
 
   return { recordEvent };
