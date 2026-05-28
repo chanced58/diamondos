@@ -266,11 +266,9 @@ describe('buildGameHistoryTree — HIT with linked runner outcomes', () => {
     });
     const tree = buildGameHistoryTree([pitch, hit, out], players);
     const atBat = tree.innings[0]?.top?.items[0];
-    expect(atBat?.type).toBe('at-bat');
-    if (atBat?.type === 'at-bat') {
-      expect(atBat.result?.label).toContain('Double');
-      expect(atBat.result?.label).toContain('Alice Atbat thrown out advancing');
-    }
+    if (atBat?.type !== 'at-bat') throw new Error('expected at-bat node');
+    expect(atBat.result?.label).toContain('Double');
+    expect(atBat.result?.label).toContain('Alice Atbat thrown out advancing');
   });
 
   it('appends "held at 3B" to the HIT label when a BASERUNNER_ADVANCE is linked with toBase < default', () => {
@@ -285,10 +283,9 @@ describe('buildGameHistoryTree — HIT with linked runner outcomes', () => {
     });
     const tree = buildGameHistoryTree([pitch, hit, held], players);
     const atBat = tree.innings[0]?.top?.items[0];
-    if (atBat?.type === 'at-bat') {
-      expect(atBat.result?.label).toContain('Double');
-      expect(atBat.result?.label).toContain('Alice Atbat held at 3B');
-    }
+    if (atBat?.type !== 'at-bat') throw new Error('expected at-bat node');
+    expect(atBat.result?.label).toContain('Double');
+    expect(atBat.result?.label).toContain('Alice Atbat held at 3B');
   });
 
   it('does not append parenthetical when no linked outcome events exist', () => {
@@ -296,8 +293,7 @@ describe('buildGameHistoryTree — HIT with linked runner outcomes', () => {
     const hit = mkEvent(EventType.HIT, { batterId: 'p2', pitcherId: 'pit1', hitType: HitType.SINGLE });
     const tree = buildGameHistoryTree([pitch, hit], players);
     const atBat = tree.innings[0]?.top?.items[0];
-    if (atBat?.type === 'at-bat') {
-      expect(atBat.result?.label).toBe('Single');
-    }
+    if (atBat?.type !== 'at-bat') throw new Error('expected at-bat node');
+    expect(atBat.result?.label).toBe('Single');
   });
 });

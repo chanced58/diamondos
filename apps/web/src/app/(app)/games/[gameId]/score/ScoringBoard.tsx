@@ -575,13 +575,14 @@ export function ScoringBoard({
   const [fcOutRunnerId, setFcOutRunnerId] = useState<string | null>(null);
   // Pending runner-outcomes panel for a 2B/3B hit with runners on base.
   // Captures the hit params at the moment of in-play resolution so the
-  // panel can confirm or cancel without re-deriving anything.
+  // panel can confirm or cancel without re-deriving anything. The
+  // `pitch_thrown` event has already been recorded by handleInPlay before
+  // this state is set, so no pitch metadata is captured here.
   const [pendingHitRunnerOutcomes, setPendingHitRunnerOutcomes] = useState<
     | {
         hitType: 'double' | 'triple';
         trajectory: string;
         sprayExtra: Record<string, unknown>;
-        pitchExtra: Record<string, unknown>;
         batterId: string | undefined;
         pitcherId: string | undefined;
         runners: Array<{ runnerId: string; fromBase: 1 | 2 | 3 }>;
@@ -1250,7 +1251,6 @@ export function ScoringBoard({
           hitType: result,
           trajectory,
           sprayExtra,
-          pitchExtra,
           batterId,
           pitcherId,
           runners,
