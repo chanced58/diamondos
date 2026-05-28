@@ -201,6 +201,73 @@ function formatHitLabel(event: GameEvent): string {
   return label;
 }
 
+const BASE_ORDINAL: Record<number, string> = { 1: '1B', 2: '2B', 3: '3B' };
+
+/**
+ * Parenthetical describing per-runner outcomes linked to a parent play
+ * (HIT, etc.) via `relatedEventId`. Returns empty string when no overrides
+ * exist for this parent. Examples:
+ *   "(R1 thrown out at 3B)"
+ *   "(R2 held at 3B, R1 thrown out at 3B)"
+ */
+function formatLinkedRunnerOutcomes(
+  parentEventId: string,
+  allEvents: GameEvent[],
+  nameMap: Map<string, string>,
+): string {
+  const parts: string[] = [];
+  for (const ev of allEvents) {
+    if (
+      ev.eventType !== EventType.BASERUNNER_OUT &&
+      ev.eventType !== EventType.BASERUNNER_ADVANCE
+    ) continue;
+    const p = ev.payload as BaserunnerMovePayload;
+    if (p.relatedEventId !== parentEventId) continue;
+    const runner = playerName(p.runnerId, nameMap) || `R${p.fromBase ?? '?'}`;
+    if (ev.eventType === EventType.BASERUNNER_OUT) {
+      parts.push(`${runner} thrown out advancing`);
+    } else {
+      // BASERUNNER_ADVANCE — runner held short of default (or to a specific base)
+      const base = BASE_ORDINAL[p.toBase] ?? String(p.toBase);
+      parts.push(`${runner} held at ${base}`);
+    }
+  }
+  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
+}
+
+/**
+ * How many runs the running scoreline overcounted for a HIT, based on
+ * linked BASERUNNER_OUT (thrown out) or BASERUNNER_ADVANCE with toBase < 4
+ * (held short) events. A runner is "suppressed" iff they would have scored
+ * on the default auto-advance given `bases` (single=1, double=2, triple=3,
+ * HR=4) — i.e., `fromBase + bases >= 4`.
+ */
+function countSuppressedRunsForHit(
+  hitEventId: string,
+  bases: number,
+  allEvents: GameEvent[],
+): number {
+  let suppressed = 0;
+  for (const ev of allEvents) {
+    if (
+      ev.eventType !== EventType.BASERUNNER_OUT &&
+      ev.eventType !== EventType.BASERUNNER_ADVANCE
+    ) continue;
+    const p = ev.payload as BaserunnerMovePayload;
+    if (p.relatedEventId !== hitEventId) continue;
+    const from = p.fromBase ?? 0;
+    if (ev.eventType === EventType.BASERUNNER_OUT) {
+      // For HRs, every runner scores by default; for hits, only those whose
+      // fromBase + bases reaches home would have scored.
+      if (bases === 4 || from + bases >= 4) suppressed += 1;
+    } else if (ev.eventType === EventType.BASERUNNER_ADVANCE) {
+      // Held short of home (toBase < 4) when default would have scored them.
+      if (p.toBase < 4 && (bases === 4 || from + bases >= 4)) suppressed += 1;
+    }
+  }
+  return suppressed;
+}
+
 function formatOutLabel(event: GameEvent): string {
   const p = event.payload as OutPayload;
   let label = capitalize(p.outType);
@@ -695,19 +762,23 @@ export function buildGameHistoryTree(
         if (event.eventType === EventType.HIT) {
           const hp = event.payload as HitPayload;
           const bases = hitBases(hp.hitType);
+          // Subtract runs that would have scored on a default advance but
+          // were suppressed by a linked BASERUNNER_OUT (thrown out) or
+          // BASERUNNER_ADVANCE with toBase < 4 (held short).
+          const suppressed = countSuppressedRunsForHit(event.id, bases, orderedEvents);
           if (bases === 4) {
             let runners = 0;
             if (runnerFirst) runners++;
             if (runnerSecond) runners++;
             if (runnerThird) runners++;
-            addRuns(runners + 1);
+            addRuns(Math.max(0, runners + 1 - suppressed));
             clearBases();
           } else {
             let runs = 0;
             if (runnerThird) runs++;
             if (runnerSecond && 2 + bases >= 4) runs++;
             if (runnerFirst && 1 + bases >= 4) runs++;
-            addRuns(runs);
+            addRuns(Math.max(0, runs - suppressed));
             const newFirst = bases === 1;
             const newSecond = bases === 2 || (bases === 1 && runnerFirst);
             const newThird = bases === 3 || (bases === 2 && (runnerFirst || runnerSecond)) || (bases === 1 && runnerSecond);
@@ -748,9 +819,13 @@ export function buildGameHistoryTree(
           resultCategory = p.outcome === 'thrown_out' ? 'negative' : 'positive';
         }
 
+        let resultLabel = formatEventLabel(event, playerNameMap);
+        if (event.eventType === EventType.HIT) {
+          resultLabel += formatLinkedRunnerOutcomes(event.id, orderedEvents, playerNameMap);
+        }
         openAtBat.result = {
           event,
-          label: formatEventLabel(event, playerNameMap),
+          label: resultLabel,
           category: resultCategory,
         };
 
