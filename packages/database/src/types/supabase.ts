@@ -796,6 +796,360 @@ export type Database = {
           },
         ]
       }
+      historical_player_game_stats: {
+        Row: {
+          bat_2b: number | null
+          bat_3b: number | null
+          bat_ab: number | null
+          bat_bb: number | null
+          bat_h: number | null
+          bat_hbp: number | null
+          bat_hr: number | null
+          bat_pa: number | null
+          bat_r: number | null
+          bat_rbi: number | null
+          bat_sf: number | null
+          bat_sh: number | null
+          bat_so: number | null
+          batch_id: string
+          external_game_id: string | null
+          external_player_id: string | null
+          fld_a: number | null
+          fld_e: number | null
+          fld_po: number | null
+          game_date: string | null
+          games_played: number
+          id: string
+          imported_at: string
+          is_season_summary: boolean
+          jersey_number: number | null
+          league_id: string
+          opponent_label: string | null
+          opponent_team_id: string | null
+          pit_balls: number | null
+          pit_bb: number | null
+          pit_er: number | null
+          pit_h: number | null
+          pit_hbp: number | null
+          pit_ip_outs: number | null
+          pit_pitches: number | null
+          pit_r: number | null
+          pit_so: number | null
+          pit_strikes: number | null
+          pit_wp: number | null
+          player_id: string | null
+          player_name: string
+          season_id: string | null
+          season_label: string | null
+          season_year: number
+          team_id: string | null
+        }
+        Insert: {
+          bat_2b?: number | null
+          bat_3b?: number | null
+          bat_ab?: number | null
+          bat_bb?: number | null
+          bat_h?: number | null
+          bat_hbp?: number | null
+          bat_hr?: number | null
+          bat_pa?: number | null
+          bat_r?: number | null
+          bat_rbi?: number | null
+          bat_sf?: number | null
+          bat_sh?: number | null
+          bat_so?: number | null
+          batch_id: string
+          external_game_id?: string | null
+          external_player_id?: string | null
+          fld_a?: number | null
+          fld_e?: number | null
+          fld_po?: number | null
+          game_date?: string | null
+          games_played?: number
+          id?: string
+          imported_at?: string
+          is_season_summary?: boolean
+          jersey_number?: number | null
+          league_id: string
+          opponent_label?: string | null
+          opponent_team_id?: string | null
+          pit_balls?: number | null
+          pit_bb?: number | null
+          pit_er?: number | null
+          pit_h?: number | null
+          pit_hbp?: number | null
+          pit_ip_outs?: number | null
+          pit_pitches?: number | null
+          pit_r?: number | null
+          pit_so?: number | null
+          pit_strikes?: number | null
+          pit_wp?: number | null
+          player_id?: string | null
+          player_name: string
+          season_id?: string | null
+          season_label?: string | null
+          season_year: number
+          team_id?: string | null
+        }
+        Update: {
+          bat_2b?: number | null
+          bat_3b?: number | null
+          bat_ab?: number | null
+          bat_bb?: number | null
+          bat_h?: number | null
+          bat_hbp?: number | null
+          bat_hr?: number | null
+          bat_pa?: number | null
+          bat_r?: number | null
+          bat_rbi?: number | null
+          bat_sf?: number | null
+          bat_sh?: number | null
+          bat_so?: number | null
+          batch_id?: string
+          external_game_id?: string | null
+          external_player_id?: string | null
+          fld_a?: number | null
+          fld_e?: number | null
+          fld_po?: number | null
+          game_date?: string | null
+          games_played?: number
+          id?: string
+          imported_at?: string
+          is_season_summary?: boolean
+          jersey_number?: number | null
+          league_id?: string
+          opponent_label?: string | null
+          opponent_team_id?: string | null
+          pit_balls?: number | null
+          pit_bb?: number | null
+          pit_er?: number | null
+          pit_h?: number | null
+          pit_hbp?: number | null
+          pit_ip_outs?: number | null
+          pit_pitches?: number | null
+          pit_r?: number | null
+          pit_so?: number | null
+          pit_strikes?: number | null
+          pit_wp?: number | null
+          player_id?: string | null
+          player_name?: string
+          season_id?: string | null
+          season_label?: string | null
+          season_year?: number
+          team_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "historical_player_game_stats_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "import_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "historical_player_game_stats_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "historical_player_game_stats_opponent_team_id_fkey"
+            columns: ["opponent_team_id"]
+            isOneToOne: false
+            referencedRelation: "opponent_teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "historical_player_game_stats_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "historical_player_game_stats_season_id_fkey"
+            columns: ["season_id"]
+            isOneToOne: false
+            referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "historical_player_game_stats_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      historical_team_game_stats: {
+        Row: {
+          batch_id: string
+          external_game_id: string | null
+          game_date: string | null
+          games_played: number
+          id: string
+          imported_at: string
+          is_season_summary: boolean
+          league_id: string
+          losses: number | null
+          opponent_label: string | null
+          opponent_team_id: string | null
+          runs_against: number | null
+          runs_for: number | null
+          season_id: string | null
+          season_label: string | null
+          season_year: number
+          team_id: string | null
+          team_stats: Json
+          ties: number | null
+          wins: number | null
+        }
+        Insert: {
+          batch_id: string
+          external_game_id?: string | null
+          game_date?: string | null
+          games_played?: number
+          id?: string
+          imported_at?: string
+          is_season_summary?: boolean
+          league_id: string
+          losses?: number | null
+          opponent_label?: string | null
+          opponent_team_id?: string | null
+          runs_against?: number | null
+          runs_for?: number | null
+          season_id?: string | null
+          season_label?: string | null
+          season_year: number
+          team_id?: string | null
+          team_stats?: Json
+          ties?: number | null
+          wins?: number | null
+        }
+        Update: {
+          batch_id?: string
+          external_game_id?: string | null
+          game_date?: string | null
+          games_played?: number
+          id?: string
+          imported_at?: string
+          is_season_summary?: boolean
+          league_id?: string
+          losses?: number | null
+          opponent_label?: string | null
+          opponent_team_id?: string | null
+          runs_against?: number | null
+          runs_for?: number | null
+          season_id?: string | null
+          season_label?: string | null
+          season_year?: number
+          team_id?: string | null
+          team_stats?: Json
+          ties?: number | null
+          wins?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "historical_team_game_stats_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "import_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "historical_team_game_stats_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "historical_team_game_stats_opponent_team_id_fkey"
+            columns: ["opponent_team_id"]
+            isOneToOne: false
+            referencedRelation: "opponent_teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "historical_team_game_stats_season_id_fkey"
+            columns: ["season_id"]
+            isOneToOne: false
+            referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "historical_team_game_stats_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      import_batches: {
+        Row: {
+          committed_at: string | null
+          confirmed_categories: Database["public"]["Enums"]["import_category"][]
+          counts: Json
+          created_at: string
+          created_by: string | null
+          detected_categories: Database["public"]["Enums"]["import_category"][]
+          error_log: Json
+          file_name: string
+          id: string
+          league_id: string
+          mapping: Json
+          reconciliation: Json
+          source_platform: Database["public"]["Enums"]["import_source_platform"]
+          status: Database["public"]["Enums"]["import_status"]
+          storage_path: string | null
+        }
+        Insert: {
+          committed_at?: string | null
+          confirmed_categories?: Database["public"]["Enums"]["import_category"][]
+          counts?: Json
+          created_at?: string
+          created_by?: string | null
+          detected_categories?: Database["public"]["Enums"]["import_category"][]
+          error_log?: Json
+          file_name: string
+          id?: string
+          league_id: string
+          mapping?: Json
+          reconciliation?: Json
+          source_platform: Database["public"]["Enums"]["import_source_platform"]
+          status?: Database["public"]["Enums"]["import_status"]
+          storage_path?: string | null
+        }
+        Update: {
+          committed_at?: string | null
+          confirmed_categories?: Database["public"]["Enums"]["import_category"][]
+          counts?: Json
+          created_at?: string
+          created_by?: string | null
+          detected_categories?: Database["public"]["Enums"]["import_category"][]
+          error_log?: Json
+          file_name?: string
+          id?: string
+          league_id?: string
+          mapping?: Json
+          reconciliation?: Json
+          source_platform?: Database["public"]["Enums"]["import_source_platform"]
+          status?: Database["public"]["Enums"]["import_status"]
+          storage_path?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "import_batches_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       injury_flag_catalog: {
         Row: {
           body_part: string
@@ -1593,6 +1947,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          is_historical: boolean
           league_id: string | null
           linked_team_id: string | null
           logo_url: string | null
@@ -1609,6 +1964,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          is_historical?: boolean
           league_id?: string | null
           linked_team_id?: string | null
           logo_url?: string | null
@@ -1625,6 +1981,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          is_historical?: boolean
           league_id?: string | null
           linked_team_id?: string | null
           logo_url?: string | null
@@ -4113,6 +4470,49 @@ export type Database = {
     Functions: {
       can_edit_block: { Args: { p_block_id: string }; Returns: boolean }
       find_auth_user_id_by_email: { Args: { p_email: string }; Returns: string }
+      fn_commit_historical_player_stats: {
+        Args: { p_actor: string; p_batch_id: string; p_rows: Json }
+        Returns: Json
+      }
+      fn_commit_historical_rosters: {
+        Args: { p_actor: string; p_batch_id: string; p_rows: Json }
+        Returns: Json
+      }
+      fn_commit_historical_team_stats: {
+        Args: { p_actor: string; p_batch_id: string; p_rows: Json }
+        Returns: Json
+      }
+      fn_create_historical_opponent_team: {
+        Args: {
+          p_abbrev: string
+          p_actor: string
+          p_league_id: string
+          p_name: string
+        }
+        Returns: {
+          abbreviation: string | null
+          city: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_historical: boolean
+          league_id: string | null
+          linked_team_id: string | null
+          logo_url: string | null
+          name: string
+          notes: string | null
+          state_code: string | null
+          stats_visible: boolean
+          team_id: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "opponent_teams"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       fn_create_league_player: {
         Args: {
           p_actor: string
@@ -4188,6 +4588,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      fn_rollback_import_batch: {
+        Args: { p_actor: string; p_batch_id: string }
+        Returns: undefined
       }
       fn_transfer_player: {
         Args: {
@@ -4313,6 +4717,15 @@ export type Database = {
         | "completed"
         | "cancelled"
         | "postponed"
+      import_category: "rosters" | "player_stats" | "team_stats"
+      import_source_platform: "home_team"
+      import_status:
+        | "analyzing"
+        | "previewed"
+        | "committing"
+        | "completed"
+        | "failed"
+        | "rolled_back"
       injury_flag_visibility: "system" | "team"
       league_role: "league_admin" | "league_manager"
       opponent_scouting_category:
@@ -4593,6 +5006,16 @@ export const Constants = {
         "completed",
         "cancelled",
         "postponed",
+      ],
+      import_category: ["rosters", "player_stats", "team_stats"],
+      import_source_platform: ["home_team"],
+      import_status: [
+        "analyzing",
+        "previewed",
+        "committing",
+        "completed",
+        "failed",
+        "rolled_back",
       ],
       injury_flag_visibility: ["system", "team"],
       league_role: ["league_admin", "league_manager"],
