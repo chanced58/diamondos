@@ -252,3 +252,48 @@ describe('getEventCategory — coverage for newly classified events', () => {
     expect(getEventCategory(EventType.RUNDOWN)).toBe('info');
   });
 });
+
+describe('buildGameHistoryTree — HIT with linked runner outcomes', () => {
+  beforeEach(resetSeq);
+
+  it('appends "thrown out advancing" to the HIT label when a BASERUNNER_OUT is linked', () => {
+    const pitch = mkEvent(EventType.PITCH_THROWN, { batterId: 'p2', pitcherId: 'pit1', outcome: PitchOutcome.IN_PLAY });
+    const hit = mkEvent(EventType.HIT, { batterId: 'p2', pitcherId: 'pit1', hitType: HitType.DOUBLE });
+    const out = mkEvent(EventType.BASERUNNER_OUT, {
+      runnerId: 'p1',
+      fromBase: 1,
+      relatedEventId: hit.id,
+    });
+    const tree = buildGameHistoryTree([pitch, hit, out], players);
+    const atBat = tree.innings[0]?.top?.items[0];
+    if (atBat?.type !== 'at-bat') throw new Error('expected at-bat node');
+    expect(atBat.result?.label).toContain('Double');
+    expect(atBat.result?.label).toContain('Alice Atbat thrown out advancing');
+  });
+
+  it('appends "held at 3B" to the HIT label when a BASERUNNER_ADVANCE is linked with toBase < default', () => {
+    const pitch = mkEvent(EventType.PITCH_THROWN, { batterId: 'p2', pitcherId: 'pit1', outcome: PitchOutcome.IN_PLAY });
+    const hit = mkEvent(EventType.HIT, { batterId: 'p2', pitcherId: 'pit1', hitType: HitType.DOUBLE });
+    const held = mkEvent(EventType.BASERUNNER_ADVANCE, {
+      runnerId: 'p1',
+      fromBase: 2,
+      toBase: 3,
+      reason: 'on_play',
+      relatedEventId: hit.id,
+    });
+    const tree = buildGameHistoryTree([pitch, hit, held], players);
+    const atBat = tree.innings[0]?.top?.items[0];
+    if (atBat?.type !== 'at-bat') throw new Error('expected at-bat node');
+    expect(atBat.result?.label).toContain('Double');
+    expect(atBat.result?.label).toContain('Alice Atbat held at 3B');
+  });
+
+  it('does not append parenthetical when no linked outcome events exist', () => {
+    const pitch = mkEvent(EventType.PITCH_THROWN, { batterId: 'p2', pitcherId: 'pit1', outcome: PitchOutcome.IN_PLAY });
+    const hit = mkEvent(EventType.HIT, { batterId: 'p2', pitcherId: 'pit1', hitType: HitType.SINGLE });
+    const tree = buildGameHistoryTree([pitch, hit], players);
+    const atBat = tree.innings[0]?.top?.items[0];
+    if (atBat?.type !== 'at-bat') throw new Error('expected at-bat node');
+    expect(atBat.result?.label).toBe('Single');
+  });
+});

@@ -354,6 +354,13 @@ This is one of the most cited sections in scorekeeping. It enumerates the exact 
 
 **App behavior.** Base state is modeled as `runnersOnBase: { first, second, third }` in `LiveGameState`, carrying the player IDs of the runners. The helpers `advanceRunners` (hit model — everyone advances N bases) and `forceAdvanceRunners` (walk/HBP model — only forced runners advance) in `game-state.ts` apply these semantics. Explicit runner movements outside those standard patterns are encoded as `BASERUNNER_ADVANCE` events with an `AdvanceReason` (wild pitch, passed ball, balk, overthrow, error, on-play, voluntary).
 
+**Linked runner outcomes on a hit (RunnerOutcome).** A common case the auto-advance can't express: the batter doubles with a runner on 1B who is **thrown out at 3B**, or with a runner on 2B who **holds at 3B** (rather than scoring) or is **thrown out at home**. The batter still earns a double in all three cases (OBR 9.05(a) — a hit is judged independently of subsequent runner fates), but the lead runner's outcome diverges from the +N auto-advance. The app records each such divergence as a separate event linked to the parent `HIT` via `BaserunnerMovePayload.relatedEventId`:
+
+- **Thrown out advancing** → `BASERUNNER_OUT` with `runnerId`, `fromBase`, `relatedEventId = HIT.id`. Increments outs; does not credit a CS.
+- **Held short of the default** → `BASERUNNER_ADVANCE` with `runnerId`, `fromBase`, `toBase` (less than the default), `reason: ON_PLAY`, `relatedEventId = HIT.id`. The held runner ends at `toBase` rather than at the auto-advance position.
+
+The replay logic in `deriveGameState` builds a pre-pass map of overrides keyed by parent event id and **suppresses default scoring and base placement** for any runner referenced by a linked outcome event. Stats reducers (`batting-stats.ts`, `opponent-batting-stats.ts`, `pitching-stats.ts`) honor the same map so RBI auto-derivation and runs-allowed attribution match the actual outcome. The play feed (`game-history.ts`) appends a parenthetical to the parent row, e.g. "Double (Alice thrown out advancing, Bob held at 3B)".
+
 ### 5.07 Pitching
 
 **5.07(a) — Legal Pitching Positions.** The pitcher must take either the **windup** or the **set position** before delivering the pitch. Both begin with the pivot foot in contact with the rubber.

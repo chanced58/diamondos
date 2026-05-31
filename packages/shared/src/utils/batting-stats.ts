@@ -298,6 +298,33 @@ export function deriveBattingStats(
       r1 = batterId;
     }
 
+    // Pre-pass: map any BASERUNNER_OUT / BASERUNNER_ADVANCE events with
+    // `relatedEventId` to their parent play. The HIT branch below consults
+    // this to skip default run-scoring and base placement for any runner
+    // whose outcome on the play is captured by a linked outcome event.
+    const overridesByParentId = new Map<string, { outIds: Set<string>; advIds: Set<string> }>();
+    for (const ev of gameEvents) {
+      const etype = (ev as any).event_type ?? ev.eventType;
+      if (etype !== 'baserunner_out' && etype !== 'baserunner_advance') continue;
+      const p = ev.payload as any;
+      const parentId: string | undefined = p?.relatedEventId;
+      const runnerId: string | undefined = p?.runnerId;
+      if (!parentId || !runnerId) continue;
+      let entry = overridesByParentId.get(parentId);
+      if (!entry) {
+        entry = { outIds: new Set(), advIds: new Set() };
+        overridesByParentId.set(parentId, entry);
+      }
+      if (etype === 'baserunner_out') entry.outIds.add(runnerId);
+      else entry.advIds.add(runnerId);
+    }
+    const isOverriddenRunner = (runnerId: string | null, parentId: string): boolean => {
+      if (!runnerId) return false;
+      const o = overridesByParentId.get(parentId);
+      if (!o) return false;
+      return o.outIds.has(runnerId) || o.advIds.has(runnerId);
+    };
+
     for (const event of gameEvents) {
       const etype: string = (event as any).event_type ?? event.eventType;
       const payload = event.payload as any;
@@ -384,29 +411,46 @@ export function deriveBattingStats(
             : hitType === 'double' ? 2
             : 1;
 
+          // Runners with a linked BASERUNNER_OUT / BASERUNNER_ADVANCE (same
+          // parent id) are excluded from default scoring and base placement;
+          // the linked event handles them. Lets the scorer record "R2 held
+          // at 3B on a double" or "R1 thrown out at 3B advancing" without
+          // double-counting runs.
+          const parentId = event.id;
+          const r1Override = isOverriddenRunner(r1, parentId);
+          const r2Override = isOverriddenRunner(r2, parentId);
+          const r3Override = isOverriddenRunner(r3, parentId);
+
           let runsScored = 0;
           if (bases === 4) {
-            // Home run: all runners + batter score
-            if (r3) runsScored += 1;
-            if (r2) runsScored += 1;
-            if (r1) runsScored += 1;
-            runsScored += 1;
-            scoreRunner(r3); scoreRunner(r2); scoreRunner(r1);
+            if (r3 && !r3Override) { scoreRunner(r3); runsScored += 1; }
+            if (r2 && !r2Override) { scoreRunner(r2); runsScored += 1; }
+            if (r1 && !r1Override) { scoreRunner(r1); runsScored += 1; }
             scoreRunner(batterId);
+            runsScored += 1;
+            // Clear bases; the linked BASERUNNER_OUT will no-op against an
+            // empty slot (still increments outs); BASERUNNER_ADVANCE places
+            // the runner on toBase.
             clearBases();
           } else {
             // Determine which runners score
-            if (r3) { scoreRunner(r3); runsScored += 1; }                      // 3rd always scores
-            if (r2 && 2 + bases >= 4) { scoreRunner(r2); runsScored += 1; }    // scores on double+
-            if (r1 && 1 + bases >= 4) { scoreRunner(r1); runsScored += 1; }    // scores on triple
+            if (r3 && !r3Override)                    { scoreRunner(r3); runsScored += 1; }
+            if (r2 && 2 + bases >= 4 && !r2Override)  { scoreRunner(r2); runsScored += 1; }
+            if (r1 && 1 + bases >= 4 && !r1Override)  { scoreRunner(r1); runsScored += 1; }
 
-            // Advance non-scoring runners
+            // Snapshot runners we'd otherwise place by default, then skip
+            // overridden ones so the linked event can place them correctly.
+            // (Overridden R3 was suppressed from scoring above and is being
+            // overwritten by the auto-advance assignment below; the linked
+            // BASERUNNER_ADVANCE — if any — runs after this HIT and places
+            // the runner at their actual end base.)
+            const prevR1 = r1, prevR2 = r2;
             if (bases === 1) {
-              r3 = r2 ?? null; // r2 advances to 3rd; r3 already scored so clear it
-              r2 = r1;       // r1 advances to 2nd
+              r3 = r2 && !r2Override ? prevR2 : null;
+              r2 = r1 && !r1Override ? prevR1 : null;
               r1 = batterId;
             } else if (bases === 2) {
-              r3 = r1 ?? null; // r1 advances to 3rd
+              r3 = r1 && !r1Override ? prevR1 : null;
               r2 = batterId;
               r1 = null;
             } else if (bases === 3) {

@@ -3,6 +3,18 @@ import type { LiveGameState } from '../types/game';
 import { BALLS_FOR_WALK, STRIKES_FOR_STRIKEOUT, OUTS_PER_INNING } from '../constants/baseball';
 
 /**
+ * Per-runner outcome overrides for a single parent play (HIT, etc.). Built
+ * from any BASERUNNER_OUT / BASERUNNER_ADVANCE events whose payload carries
+ * `relatedEventId` pointing back to the parent. The parent handler consults
+ * this to skip default auto-advance and run-scoring for runners whose
+ * outcome on the play is explicitly captured by a linked event.
+ */
+interface RunnerOverrides {
+  outRunnerIds: Set<string>;
+  advancedRunnerIds: Set<string>;
+}
+
+/**
  * Derives the current live game state by replaying a sorted array of GameEvents.
  * This is a pure function — same inputs always produce the same output.
  * Events must be sorted by sequenceNumber ascending before calling.
@@ -12,6 +24,7 @@ export function deriveGameState(
   events: GameEvent[],
   homeTeamId: string,
 ): LiveGameState {
+  const runnerOverridesByParentId = buildRunnerOverrideMap(events);
   const state: LiveGameState = {
     gameId,
     inning: 1,
@@ -128,10 +141,20 @@ export function deriveGameState(
         // the 3rd out). The batter still completes a PA + AB, so incrementPA
         // runs unconditionally — mirrors the SACRIFICE_FLY shape above.
         if (state.outs < OUTS_PER_INNING) {
+          // Runners with a linked BASERUNNER_OUT / BASERUNNER_ADVANCE event
+          // (same parent id) are excluded from default scoring + advancement;
+          // the linked event handles them. Lets the scorer record "R2 held at
+          // 3B on a double" or "R1 thrown out at 3B advancing" without
+          // double-counting runs or stranding the runner on a default base.
+          const overrides = runnerOverridesByParentId.get(event.id);
+          const r1 = state.runnersOnBase.first;
+          const r2 = state.runnersOnBase.second;
+          const r3 = state.runnersOnBase.third;
           if (bases === 4) {
-            // Home run: clear bases, score everyone
-            const runners = Object.values(state.runnersOnBase).filter(Boolean).length;
-            const runs = runners + 1;
+            let runs = 1; // batter
+            if (r1 && !isRunnerOverridden(r1, overrides)) runs++;
+            if (r2 && !isRunnerOverridden(r2, overrides)) runs++;
+            if (r3 && !isRunnerOverridden(r3, overrides)) runs++;
             addRuns(state, runs, state.isTopOfInning);
             state.runnersOnBase = { first: null, second: null, third: null };
           } else {
@@ -140,11 +163,13 @@ export function deriveGameState(
             // Runner on 2nd scores on a double or triple (2+bases >= 4).
             // Runner on 1st scores only on a triple (1+bases >= 4).
             let runs = 0;
-            if (state.runnersOnBase.third)                    runs++;
-            if (state.runnersOnBase.second && 2 + bases >= 4) runs++;
-            if (state.runnersOnBase.first  && 1 + bases >= 4) runs++;
+            if (r3 && !isRunnerOverridden(r3, overrides))                    runs++;
+            if (r2 && 2 + bases >= 4 && !isRunnerOverridden(r2, overrides))  runs++;
+            if (r1 && 1 + bases >= 4 && !isRunnerOverridden(r1, overrides))  runs++;
             if (runs > 0) addRuns(state, runs, state.isTopOfInning);
-            state.runnersOnBase = advanceRunners(state.runnersOnBase, state.currentBatterId, bases);
+            state.runnersOnBase = advanceRunnersWithOverrides(
+              state.runnersOnBase, state.currentBatterId, bases, overrides,
+            );
           }
         }
         state.balls = 0;
@@ -331,10 +356,14 @@ export function deriveGameState(
       case EventType.BASERUNNER_ADVANCE: {
         const p = event.payload as unknown as BaserunnerMovePayload;
         const runners = { ...state.runnersOnBase };
-        // Remove from old base
-        if (p.fromBase === 1) runners.first  = null;
-        else if (p.fromBase === 2) runners.second = null;
-        else if (p.fromBase === 3) runners.third  = null;
+        // Remove from old base — only if the runner is still there. A linked
+        // outcome event firing after a HIT may have a `fromBase` reflecting
+        // the runner's pre-play position; the HIT case has already cleared
+        // that slot (or placed the batter there), so clearing blindly would
+        // wipe out an unrelated runner.
+        if (p.fromBase === 1 && runners.first === p.runnerId) runners.first  = null;
+        else if (p.fromBase === 2 && runners.second === p.runnerId) runners.second = null;
+        else if (p.fromBase === 3 && runners.third === p.runnerId) runners.third  = null;
         // Place on new base (toBase 4 = scored; cleared from diamond, SCORE event adds the run)
         if (p.toBase === 2) runners.second = p.runnerId;
         else if (p.toBase === 3) runners.third  = p.runnerId;
@@ -457,6 +486,62 @@ function advanceRunners(
   // bases === 4 (home run) is handled separately in the HIT case
 
   return result;
+}
+
+function isRunnerOverridden(runnerId: string, overrides: RunnerOverrides | undefined): boolean {
+  if (!overrides) return false;
+  return overrides.outRunnerIds.has(runnerId) || overrides.advancedRunnerIds.has(runnerId);
+}
+
+function advanceRunnersWithOverrides(
+  runners: LiveGameState['runnersOnBase'],
+  batterId: string | null,
+  bases: number,
+  overrides: RunnerOverrides | undefined,
+): LiveGameState['runnersOnBase'] {
+  // Fast path when nothing on the play diverges from the default advance.
+  if (!overrides || (overrides.outRunnerIds.size === 0 && overrides.advancedRunnerIds.size === 0)) {
+    return advanceRunners(runners, batterId, bases);
+  }
+  const result: LiveGameState['runnersOnBase'] = { first: null, second: null, third: null };
+  // Skip overridden runners — the linked BASERUNNER_OUT removes them and
+  // bumps outs, or the linked BASERUNNER_ADVANCE places them at toBase.
+  if (runners.second && !isRunnerOverridden(runners.second, overrides)) {
+    const dest = 2 + bases;
+    if (dest === 3) result.third = runners.second;
+  }
+  if (runners.first && !isRunnerOverridden(runners.first, overrides)) {
+    const dest = 1 + bases;
+    if (dest === 2) result.second = runners.first;
+    else if (dest === 3) result.third = runners.first;
+  }
+  if (bases === 1) result.first = batterId;
+  else if (bases === 2) result.second = batterId;
+  else if (bases === 3) result.third = batterId;
+  return result;
+}
+
+function buildRunnerOverrideMap(events: GameEvent[]): Map<string, RunnerOverrides> {
+  const map = new Map<string, RunnerOverrides>();
+  for (const event of events) {
+    if (
+      event.eventType !== EventType.BASERUNNER_OUT &&
+      event.eventType !== EventType.BASERUNNER_ADVANCE
+    ) continue;
+    const p = event.payload as Partial<BaserunnerMovePayload>;
+    if (!p.relatedEventId || !p.runnerId) continue;
+    let entry = map.get(p.relatedEventId);
+    if (!entry) {
+      entry = { outRunnerIds: new Set(), advancedRunnerIds: new Set() };
+      map.set(p.relatedEventId, entry);
+    }
+    if (event.eventType === EventType.BASERUNNER_OUT) {
+      entry.outRunnerIds.add(p.runnerId);
+    } else {
+      entry.advancedRunnerIds.add(p.runnerId);
+    }
+  }
+  return map;
 }
 
 function forceAdvanceRunners(

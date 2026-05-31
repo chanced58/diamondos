@@ -436,3 +436,139 @@ describe('deriveGameState — DROPPED_THIRD_STRIKE', () => {
     expect(state.runnersOnBase.third).toBe('a2');
   });
 });
+
+describe('deriveGameState — runner outcomes linked to a HIT via relatedEventId', () => {
+  beforeEach(resetSeq);
+
+  const start = () => [
+    e(EventType.GAME_START, {
+      awayLineupPitcherId: 'home-p',
+      homeLineupPitcherId: 'away-p',
+      awayLeadoffBatterId: 'a1',
+      homeLeadoffBatterId: 'h1',
+    }),
+  ];
+
+  it('Scenario 1 — double with R1 thrown out at 3B: batter on 2B, R1 cleared, outs +1', () => {
+    // Put a1 on 1st via a single, then a2 doubles. R1 (a1) is thrown out
+    // advancing to 3rd on the play.
+    const pa1 = batterHit('a1', HitType.SINGLE);
+    const pitch2 = e(EventType.PITCH_THROWN, { batterId: 'a2', outcome: PitchOutcome.IN_PLAY });
+    const hit2 = e(EventType.HIT, { batterId: 'a2', hitType: HitType.DOUBLE });
+    const out1 = e(EventType.BASERUNNER_OUT, {
+      runnerId: 'a1',
+      fromBase: 1,
+      relatedEventId: hit2.id,
+    });
+    const state = deriveGameState(GAME, [...start(), ...pa1, pitch2, hit2, out1], HOME_TEAM);
+
+    expect(state.outs).toBe(1);
+    expect(state.runnersOnBase.first).toBe(null);
+    expect(state.runnersOnBase.second).toBe('a2');
+    expect(state.runnersOnBase.third).toBe(null);
+    expect(state.awayScore).toBe(0);
+  });
+
+  it('Scenario 2a — double with R2 held at 3B: batter on 2B, R2 on 3B, no run', () => {
+    // a1 doubles → R2 on 2nd. a2 doubles → default would score R2; with
+    // an override, R2 holds at 3B.
+    const pa1 = batterHit('a1', HitType.DOUBLE);
+    const pitch2 = e(EventType.PITCH_THROWN, { batterId: 'a2', outcome: PitchOutcome.IN_PLAY });
+    const hit2 = e(EventType.HIT, { batterId: 'a2', hitType: HitType.DOUBLE });
+    const held = e(EventType.BASERUNNER_ADVANCE, {
+      runnerId: 'a1',
+      fromBase: 2,
+      toBase: 3,
+      reason: 'on_play',
+      relatedEventId: hit2.id,
+    });
+    const state = deriveGameState(GAME, [...start(), ...pa1, pitch2, hit2, held], HOME_TEAM);
+
+    expect(state.outs).toBe(0);
+    expect(state.awayScore).toBe(0);
+    expect(state.runnersOnBase.second).toBe('a2');
+    expect(state.runnersOnBase.third).toBe('a1');
+  });
+
+  it('Scenario 2b — double with R2 thrown out at home: batter on 2B, no R3, outs +1', () => {
+    const pa1 = batterHit('a1', HitType.DOUBLE);
+    const pitch2 = e(EventType.PITCH_THROWN, { batterId: 'a2', outcome: PitchOutcome.IN_PLAY });
+    const hit2 = e(EventType.HIT, { batterId: 'a2', hitType: HitType.DOUBLE });
+    const thrownOut = e(EventType.BASERUNNER_OUT, {
+      runnerId: 'a1',
+      fromBase: 2,
+      relatedEventId: hit2.id,
+    });
+    const state = deriveGameState(GAME, [...start(), ...pa1, pitch2, hit2, thrownOut], HOME_TEAM);
+
+    expect(state.outs).toBe(1);
+    expect(state.awayScore).toBe(0);
+    expect(state.runnersOnBase.second).toBe('a2');
+    expect(state.runnersOnBase.third).toBe(null);
+  });
+
+  it('regression — double with no overrides still auto-advances runners (fast path)', () => {
+    // a1 on 1st via single, then a2 doubles. Default: a1 → 3rd, a2 → 2nd.
+    const events: GameEvent[] = [
+      ...start(),
+      ...batterHit('a1', HitType.SINGLE),
+      ...batterHit('a2', HitType.DOUBLE),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+
+    expect(state.outs).toBe(0);
+    expect(state.awayScore).toBe(0);
+    expect(state.runnersOnBase.second).toBe('a2');
+    expect(state.runnersOnBase.third).toBe('a1');
+  });
+
+  it('triple with R1 held at 3B — only R3/R2 score, not R1', () => {
+    // Put a1 on 1st, a2 on 2nd, a3 on 3rd via two singles and a double.
+    // Wait, simpler: load bases via walks, then triple with R1 held at 3rd.
+    const events: GameEvent[] = [
+      ...start(),
+      e(EventType.WALK, { batterId: 'a1' }),  // a1 on 1st
+      e(EventType.WALK, { batterId: 'a2' }),  // a1 on 2nd, a2 on 1st
+      e(EventType.WALK, { batterId: 'a3' }),  // a1 on 3rd, a2 on 2nd, a3 on 1st
+    ];
+    const pitch4 = e(EventType.PITCH_THROWN, { batterId: 'a4', outcome: PitchOutcome.IN_PLAY });
+    const hit4 = e(EventType.HIT, { batterId: 'a4', hitType: HitType.TRIPLE });
+    // R1 (a3, on 1st pre-play) held at 3rd instead of scoring.
+    const held = e(EventType.BASERUNNER_ADVANCE, {
+      runnerId: 'a3',
+      fromBase: 1,
+      toBase: 3,
+      reason: 'on_play',
+      relatedEventId: hit4.id,
+    });
+    const state = deriveGameState(GAME, [...events, pitch4, hit4, held], HOME_TEAM);
+
+    expect(state.outs).toBe(0);
+    expect(state.awayScore).toBe(2); // a1, a2 scored; a3 held
+    expect(state.runnersOnBase.third).toBe('a3'); // a3 held at 3rd
+    // Wait — the batter is on 3rd after a triple. The held runner takes
+    // priority by event order: HIT places batter at 3rd, then ADVANCE
+    // overwrites with a3.
+  });
+
+  it('HR with trailing runner thrown out — HR credited, only non-out runners score', () => {
+    const events: GameEvent[] = [
+      ...start(),
+      e(EventType.WALK, { batterId: 'a1' }),  // a1 on 1st
+    ];
+    const pitch2 = e(EventType.PITCH_THROWN, { batterId: 'a2', outcome: PitchOutcome.IN_PLAY });
+    const hr = e(EventType.HIT, { batterId: 'a2', hitType: HitType.HOME_RUN });
+    const out1 = e(EventType.BASERUNNER_OUT, {
+      runnerId: 'a1',
+      fromBase: 1,
+      relatedEventId: hr.id,
+    });
+    const state = deriveGameState(GAME, [...events, pitch2, hr, out1], HOME_TEAM);
+
+    expect(state.outs).toBe(1);
+    expect(state.awayScore).toBe(1); // batter only; a1 thrown out
+    expect(state.runnersOnBase.first).toBe(null);
+    expect(state.runnersOnBase.second).toBe(null);
+    expect(state.runnersOnBase.third).toBe(null);
+  });
+});
