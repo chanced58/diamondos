@@ -181,6 +181,9 @@ importers:
       '@types/colorthief':
         specifier: ^2.6.1
         version: 2.6.1
+      '@types/jest':
+        specifier: ^29.5.12
+        version: 29.5.14
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.33
@@ -193,12 +196,18 @@ importers:
       autoprefixer:
         specifier: ^10.4.0
         version: 10.4.24(postcss@8.5.6)
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@20.19.33)
       postcss:
         specifier: ^8.4.0
         version: 8.5.6
       tailwindcss:
         specifier: ^3.4.0
         version: 3.4.19(tsx@4.21.0)(yaml@2.8.2)
+      ts-jest:
+        specifier: ^29.1.2
+        version: 29.4.9(@babel/core@7.29.0)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.0))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.33))(typescript@5.9.3)
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
