@@ -6,6 +6,7 @@ import {
   memberDisplayName,
   mergeWithThemeDefaults,
   leagueLeaderConfigSchema,
+  DEFAULT_LEADER_CONFIG,
   type LeaderRow,
   type RankedLeaderRow,
   type StatDef,
@@ -77,7 +78,10 @@ export async function getLeagueHomeData(
   }
 
   const theme = mergeWithThemeDefaults(league.home_theme);
-  const leaderConfig = leagueLeaderConfigSchema.parse(league.leader_config ?? {});
+  // Tolerate a malformed leader_config (e.g. hand-edited in the DB) rather than
+  // 500 the public page — fall back to defaults.
+  const parsedLeader = leagueLeaderConfigSchema.safeParse(league.leader_config ?? {});
+  const leaderConfig = parsedLeader.success ? parsedLeader.data : DEFAULT_LEADER_CONFIG;
 
   // Resolve available seasons (distinct snapshot season names) and the active one.
   const { data: seasonRows } = await db
