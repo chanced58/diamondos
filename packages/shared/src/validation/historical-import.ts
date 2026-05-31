@@ -58,6 +58,22 @@ export const seasonContextSchema = z.object({
 });
 export type SeasonContext = z.infer<typeof seasonContextSchema>;
 
+/**
+ * The team a single import belongs to. A Home Team export covers one team's
+ * history: either an existing platform team in the league, an existing
+ * league-owned opponent team, or a new historical opponent team to create.
+ */
+export const subjectTeamSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('team'), teamId: z.string().uuid() }),
+  z.object({ kind: z.literal('opponent'), opponentTeamId: z.string().uuid() }),
+  z.object({
+    kind: z.literal('new_historical'),
+    name: z.string().min(1).max(100),
+    abbreviation: z.string().max(10).nullable().optional(),
+  }),
+]);
+export type SubjectTeam = z.infer<typeof subjectTeamSchema>;
+
 /** Phase B: the confirmed mapping + reconciliation, committed to the DB. */
 export const commitImportInputSchema = z.object({
   batchId: z.string().uuid(),
@@ -66,6 +82,7 @@ export const commitImportInputSchema = z.object({
   mapping: categoryMappingsSchema,
   reconciliation: z.array(reconcileDecisionSchema),
   seasonContext: seasonContextSchema,
+  subjectTeam: subjectTeamSchema,
 });
 export type CommitImportInput = z.infer<typeof commitImportInputSchema>;
 
