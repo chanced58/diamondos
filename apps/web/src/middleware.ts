@@ -45,8 +45,16 @@ export async function middleware(request: NextRequest) {
     'error:', error?.message ?? null,
   );
 
-  // Redirect unauthenticated users from protected routes to login
   const pathname = request.nextUrl.pathname;
+
+  // Public league home pages (/l/[slug]) are viewable without auth. The session
+  // was still refreshed above, so signed-in viewers of 'signed_in' leagues keep
+  // a valid session; the page itself enforces visibility.
+  if (pathname.startsWith('/l/')) {
+    return supabaseResponse;
+  }
+
+  // Redirect unauthenticated users from protected routes to login
   const isProtectedRoute = pathname.startsWith('/dashboard') ||
     pathname.startsWith('/teams') ||
     pathname.startsWith('/games') ||
