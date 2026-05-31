@@ -16,7 +16,6 @@ export function Hero({
     >
       <div className="flex items-center gap-4">
         {logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
           <img src={logoUrl} alt="" className="h-16 w-16 rounded-full bg-white/20 object-cover" />
         ) : null}
         <div>
