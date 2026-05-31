@@ -13,6 +13,7 @@ import {
   applyMapping,
   bestMatch,
   parseName,
+  normalizePersonName,
   type CommitImportInput,
   type RollbackImportInput,
   type HistoricalCategory,
@@ -58,6 +59,17 @@ function adapterFor(_platform: string) {
   return homeTeamAdapter;
 }
 
+/**
+ * A stable per-player key. Many exports lack a player-id column; we derive one
+ * from the normalized name + jersey so the SAME key is used for the match
+ * preview, the reconciliation decision (which links player_external_ids), and
+ * the stat rows (which resolve player_id via that link). Kept identical in both
+ * the analyze and commit paths.
+ */
+function syntheticExternalId(name: string | null, jersey: number | null): string {
+  return `syn:${normalizePersonName(name ?? '')}:${jersey ?? ''}`;
+}
+
 export interface PlayerMatchPreview {
   externalPlayerId: string | null;
   sourceName: string;
@@ -76,6 +88,8 @@ export interface AnalyzeResult {
   detectedCategories: HistoricalCategory[];
   columnsByCategory: Partial<Record<HistoricalCategory, string[]>>;
   proposedMapping: Partial<Record<HistoricalCategory, Record<string, string>>>;
+  /** Valid internal-field tokens per category, for the mapping dropdowns. */
+  fieldOptions: Partial<Record<HistoricalCategory, string[]>>;
   sampleRows: Partial<Record<HistoricalCategory, Record<string, string>[]>>;
   matchPreview: PlayerMatchPreview[];
 }
@@ -157,12 +171,14 @@ export async function analyzeImportAction(formData: FormData): Promise<Result<An
 
   const parsedSource = adapter.detectAndParse(adapterFiles);
 
-  // Propose a mapping per detected category.
+  // Propose a mapping + expose the valid field tokens per detected category.
   const proposedMapping: AnalyzeResult['proposedMapping'] = {};
+  const fieldOptions: AnalyzeResult['fieldOptions'] = {};
   for (const category of parsedSource.detectedCategories) {
     const columns = parsedSource.columnsByCategory[category] ?? [];
     const aliases = adapter.fieldAliases[category] ?? {};
     proposedMapping[category] = autoDetectMapping(columns, aliases);
+    fieldOptions[category] = Object.keys(aliases);
   }
 
   // Build a player auto-match preview from roster/player_stats rows.
@@ -194,6 +210,7 @@ export async function analyzeImportAction(formData: FormData): Promise<Result<An
       detectedCategories: parsedSource.detectedCategories,
       columnsByCategory: parsedSource.columnsByCategory,
       proposedMapping,
+      fieldOptions,
       sampleRows,
       matchPreview,
     },
@@ -219,7 +236,6 @@ function buildMatchPreview(
 
   for (const raw of rows) {
     const m = applyMapping(raw, map);
-    const externalPlayerId = m.externalPlayerId ?? null;
     let firstName = m.firstName ?? '';
     let lastName = m.lastName ?? '';
     if ((!firstName || !lastName) && m.fullName) {
@@ -230,17 +246,20 @@ function buildMatchPreview(
     const sourceName = `${firstName} ${lastName}`.trim() || (m.fullName ?? '').trim();
     if (!sourceName) continue;
 
-    const dedupeKey = externalPlayerId ?? sourceName.toLowerCase();
-    if (seen.has(dedupeKey)) continue;
-    seen.add(dedupeKey);
+    const jerseyParsed = m.jerseyNumber ? Number.parseInt(m.jerseyNumber, 10) : null;
+    const jerseyNumber = Number.isFinite(jerseyParsed as number) ? jerseyParsed : null;
+    // Fall back to a synthetic id so name-only rows still link to their stats.
+    const externalPlayerId = m.externalPlayerId ?? syntheticExternalId(sourceName, jerseyNumber);
 
-    const jerseyNumber = m.jerseyNumber ? Number.parseInt(m.jerseyNumber, 10) : null;
+    if (seen.has(externalPlayerId)) continue;
+    seen.add(externalPlayerId);
+
     const match = bestMatch({ firstName, lastName, jerseyNumber }, candidates);
 
     preview.push({
       externalPlayerId,
       sourceName,
-      jerseyNumber: Number.isFinite(jerseyNumber as number) ? jerseyNumber : null,
+      jerseyNumber,
       suggestion: match
         ? {
             playerId: match.candidate.playerId,
@@ -352,7 +371,15 @@ export async function commitImportAction(input: CommitImportInput): Promise<Resu
     const rows = (parsedSource.rawRows.player_stats ?? [])
       .map((raw) => adapter.normalizePlayerStat(raw, map, seasonContext))
       .filter((r): r is NonNullable<typeof r> => r !== null)
-      .map((row) => ({ ...row, teamId, opponentTeamId }));
+      .map((row) => ({
+        ...row,
+        // Match the synthetic id used in the reconciliation so stat rows link
+        // to the matched/created player.
+        externalPlayerId:
+          row.externalPlayerId ?? syntheticExternalId(row.playerName, row.jerseyNumber),
+        teamId,
+        opponentTeamId,
+      }));
     const { data, error } = await db.rpc('fn_commit_historical_player_stats', {
       p_batch_id: batchId,
       p_actor: auth.user.id,

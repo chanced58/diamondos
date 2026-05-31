@@ -92,6 +92,7 @@ export function Sidebar({
       ? [
           { href: '/league/admin', label: 'League Admin', icon: <Icon.admin /> },
           { href: '/league/admin/players', label: 'League Players', icon: <Icon.team /> },
+          { href: '/league/admin/import', label: 'Import Data', icon: <Icon.plus /> },
         ]
       : []),
     ...(hasPlayerProfile
