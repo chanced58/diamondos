@@ -8,6 +8,7 @@ import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueAccess } from '@/lib/league-access';
 import { getLeagueTeamsAll, getLeagueDivisions, getLeagueStaff, getLeagueForStaff } from '@baseball/database';
 import { LeagueAdminClient } from './LeagueAdminClient';
+import { HomePageSettingsForm } from './HomePageSettingsForm';
 
 export const metadata: Metadata = { title: 'League Admin' };
 
@@ -68,7 +69,7 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
   // league settings with the platform defaults.
   const { data: scoringRow, error: scoringErr } = await db
     .from('leagues')
-    .select('scoring_settings')
+    .select('scoring_settings, slug, visibility, home_theme, leader_config')
     .eq('id', league.id)
     .maybeSingle();
   if (scoringErr) {
@@ -136,6 +137,26 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
           city: t.city,
         }))}
       />
+
+      <section className="mt-10 border-t border-slate-200 pt-8">
+        <h2 className="text-xl font-bold text-gray-900">Home Page</h2>
+        {scoringRow?.slug ? (
+          <p className="mb-4 text-sm text-slate-500">
+            Public address:{' '}
+            <a className="underline" href={`/l/${scoringRow.slug}`}>
+              /l/{scoringRow.slug}
+            </a>
+          </p>
+        ) : null}
+        <HomePageSettingsForm
+          leagueId={league.id}
+          canEdit={access.isLeagueAdmin}
+          initialVisibility={(scoringRow?.visibility ?? 'public') as 'public' | 'signed_in'}
+          initialSlug={scoringRow?.slug ?? ''}
+          initialTheme={scoringRow?.home_theme}
+          initialLeaderConfig={scoringRow?.leader_config}
+        />
+      </section>
     </div>
   );
 }
