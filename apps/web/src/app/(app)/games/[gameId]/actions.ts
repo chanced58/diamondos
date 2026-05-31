@@ -6,6 +6,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { formatDate, weAreHome, computeLineScore, applyPitchReverted, EventType } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
+import { recomputeLeagueSnapshot } from '@/lib/league-snapshot/recompute';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
@@ -771,6 +772,36 @@ export async function endGameAction(_prevState: string | null | undefined, formD
       away_score: awayScore,
     })
     .eq('id', gameId);
+
+  // Refresh league home-page snapshots for the finalized game's league + season.
+  // Non-fatal: the scheduled rebuild (cron) self-heals if this is skipped/errors.
+  try {
+    const { data: g } = await supabase
+      .from('games')
+      .select('team_id, season_id')
+      .eq('id', gameId)
+      .maybeSingle();
+    if (g?.team_id) {
+      const { data: lm } = await supabase
+        .from('league_members')
+        .select('league_id')
+        .eq('team_id', g.team_id)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (lm?.league_id && g.season_id) {
+        const { data: s } = await supabase
+          .from('seasons')
+          .select('name')
+          .eq('id', g.season_id)
+          .maybeSingle();
+        if (s?.name) await recomputeLeagueSnapshot(supabase, lm.league_id, s.name);
+      }
+    }
+  } catch (err) {
+    console.error(
+      `[endGame] snapshot recompute failed game=${gameId}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
   revalidatePath(`/dashboard`);
   redirect(`/games/${gameId}`);
