@@ -16,7 +16,7 @@ export interface TeamRecord {
   winPct: number;
 }
 
-function weAreHome(g: GameRow): boolean {
+export function weAreHome(g: Pick<GameRow, 'location_type' | 'neutral_home_team' | 'team_id'>): boolean {
   if (g.location_type === 'home') return true;
   if (g.location_type === 'away') return false;
   // neutral: the team is "home" only if explicitly flagged as such
