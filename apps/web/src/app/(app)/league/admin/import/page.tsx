@@ -27,17 +27,24 @@ export default async function LeagueImportPage(): Promise<JSX.Element | null> {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
+  // Import is admin-only. Resolve the league where the user is actually a
+  // league admin — the active-team league may differ from where they admin, so
+  // check candidates and pick the first that grants admin (don't lock to the
+  // active team and then redirect).
   const activeTeam = await getActiveTeam(supabase, user.id);
-  let leagueId = activeTeam ? (await getActiveLeague(activeTeam.id))?.id ?? null : null;
-  if (!leagueId) {
-    const staffLeague = await getLeagueForStaff(db, user.id);
-    leagueId = staffLeague?.id ?? null;
+  const activeLeagueId = activeTeam ? (await getActiveLeague(activeTeam.id))?.id ?? null : null;
+  const staffLeagueId = (await getLeagueForStaff(db, user.id))?.id ?? null;
+
+  let leagueId: string | null = null;
+  for (const candidate of [activeLeagueId, staffLeagueId]) {
+    if (!candidate || candidate === leagueId) continue;
+    const access = await getLeagueAccess(candidate, user.id);
+    if (access.isLeagueAdmin) {
+      leagueId = candidate;
+      break;
+    }
   }
   if (!leagueId) redirect('/dashboard');
-
-  // Import is admin-only (stricter than the staff-level admin landing).
-  const access = await getLeagueAccess(leagueId, user.id);
-  if (!access.isLeagueAdmin) redirect('/dashboard');
 
   const [teams, batches] = await Promise.all([
     getLeagueTeamsAll(db, leagueId),
@@ -45,11 +52,15 @@ export default async function LeagueImportPage(): Promise<JSX.Element | null> {
   ]);
 
   // League-owned opponent teams (existing, incl. historical) for subject-team choice.
-  const { data: opponentTeams } = await db
+  const { data: opponentTeams, error: opponentError } = await db
     .from('opponent_teams')
     .select('id, name, is_historical')
     .eq('league_id', leagueId)
     .order('name');
+  if (opponentError) {
+    console.error('Failed to load league opponent teams for import', { leagueId, error: opponentError });
+    throw new Error('Unable to load league teams. Please try again.');
+  }
 
   const platformTeams = (teams ?? [])
     .filter((m) => m.teams)

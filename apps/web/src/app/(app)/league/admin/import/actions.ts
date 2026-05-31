@@ -70,6 +70,18 @@ function syntheticExternalId(name: string | null, jersey: number | null): string
   return `syn:${normalizePersonName(name ?? '')}:${jersey ?? ''}`;
 }
 
+/** storage_path holds a JSON array of paths; tolerate a legacy single string. */
+function parseStoragePaths(value: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.filter((p): p is string => typeof p === 'string');
+  } catch {
+    // legacy single-path value
+  }
+  return [value];
+}
+
 export interface PlayerMatchPreview {
   externalPlayerId: string | null;
   sourceName: string;
@@ -154,22 +166,50 @@ export async function analyzeImportAction(formData: FormData): Promise<Result<An
   }
   const batchId = batch.id as string;
 
-  // Upload raw files and read their bytes for parsing.
+  // Upload ALL raw files and read their bytes for parsing. We persist every
+  // path (as JSON) so commit can re-download and clean up the full set.
   const adapter = adapterFor(parsed.data.sourcePlatform);
   const adapterFiles: { name: string; bytes: Uint8Array }[] = [];
-  let storagePath: string | null = null;
+  const storagePaths: string[] = [];
   for (const file of files) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const path = `${parsed.data.leagueId}/${batchId}/${file.name}`;
     const { error: upErr } = await db.storage
       .from(IMPORTS_BUCKET)
       .upload(path, bytes, { upsert: true, contentType: file.type || 'text/csv' });
-    if (upErr) return { ok: false, code: 'UPLOAD_FAILED', message: upErr.message };
-    storagePath = storagePath ?? path;
+    if (upErr) {
+      await db.from('import_batches').update({ status: 'failed' }).eq('id', batchId);
+      return { ok: false, code: 'UPLOAD_FAILED', message: upErr.message };
+    }
+    storagePaths.push(path);
     adapterFiles.push({ name: file.name, bytes });
   }
 
-  const parsedSource = adapter.detectAndParse(adapterFiles);
+  // Parsing runs on untrusted user files — a malformed CSV/XML must fail the
+  // batch with a controlled error, not leave it stuck in 'analyzing'.
+  let parsedSource: ReturnType<typeof adapter.detectAndParse>;
+  try {
+    parsedSource = adapter.detectAndParse(adapterFiles);
+  } catch (err) {
+    console.error('analyze parse failed', { batchId, leagueId: parsed.data.leagueId, err });
+    await db
+      .from('import_batches')
+      .update({
+        status: 'failed',
+        storage_path: JSON.stringify(storagePaths),
+        error_log: [{ category: 'parse', message: err instanceof Error ? err.message : String(err) }],
+      })
+      .eq('id', batchId);
+    return { ok: false, code: 'PARSE_FAILED', message: 'Could not parse the uploaded file(s).' };
+  }
+
+  if (parsedSource.detectedCategories.length === 0) {
+    await db
+      .from('import_batches')
+      .update({ status: 'failed', storage_path: JSON.stringify(storagePaths) })
+      .eq('id', batchId);
+    return { ok: false, code: 'NO_CATEGORIES', message: 'No importable data detected in the file(s).' };
+  }
 
   // Propose a mapping + expose the valid field tokens per detected category.
   const proposedMapping: AnalyzeResult['proposedMapping'] = {};
@@ -194,7 +234,7 @@ export async function analyzeImportAction(formData: FormData): Promise<Result<An
   await db
     .from('import_batches')
     .update({
-      storage_path: storagePath,
+      storage_path: JSON.stringify(storagePaths),
       status: 'previewed',
       detected_categories: parsedSource.detectedCategories,
       mapping: proposedMapping,
@@ -309,17 +349,38 @@ export async function commitImportAction(input: CommitImportInput): Promise<Resu
     return { ok: false, code: 'BATCH_NOT_PREVIEWED', message: `status=${batch.status}` };
   }
 
-  // Re-download + re-parse the authoritative file from Storage.
+  // Re-download + re-parse ALL authoritative files from Storage.
   const adapter = adapterFor(batch.source_platform as string);
-  const { data: blob, error: dlErr } = await db.storage
-    .from(IMPORTS_BUCKET)
-    .download(batch.storage_path as string);
-  if (dlErr || !blob) {
-    return { ok: false, code: 'DOWNLOAD_FAILED', message: dlErr?.message ?? 'no file' };
+  const storagePaths = parseStoragePaths(batch.storage_path as string | null);
+  if (storagePaths.length === 0) {
+    return { ok: false, code: 'DOWNLOAD_FAILED', message: 'no stored file' };
   }
-  const fileName = (batch.storage_path as string).split('/').pop() ?? 'import.csv';
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  const parsedSource = adapter.detectAndParse([{ name: fileName, bytes }]);
+  const adapterFiles: { name: string; bytes: Uint8Array }[] = [];
+  for (const path of storagePaths) {
+    const { data: blob, error: dlErr } = await db.storage.from(IMPORTS_BUCKET).download(path);
+    if (dlErr || !blob) {
+      return { ok: false, code: 'DOWNLOAD_FAILED', message: dlErr?.message ?? `missing ${path}` };
+    }
+    adapterFiles.push({
+      name: path.split('/').pop() ?? 'import.csv',
+      bytes: new Uint8Array(await blob.arrayBuffer()),
+    });
+  }
+
+  let parsedSource: ReturnType<typeof adapter.detectAndParse>;
+  try {
+    parsedSource = adapter.detectAndParse(adapterFiles);
+  } catch (err) {
+    console.error('commit parse failed', { batchId, leagueId, err });
+    await db
+      .from('import_batches')
+      .update({
+        status: 'failed',
+        error_log: [{ category: 'parse', message: err instanceof Error ? err.message : String(err) }],
+      })
+      .eq('id', batchId);
+    return { ok: false, code: 'PARSE_FAILED', message: 'Could not parse the stored file(s).' };
+  }
 
   await db.from('import_batches').update({ status: 'committing' }).eq('id', batchId);
 
@@ -331,18 +392,32 @@ export async function commitImportAction(input: CommitImportInput): Promise<Resu
   } else if (subjectTeam.kind === 'opponent') {
     opponentTeamId = subjectTeam.opponentTeamId;
   } else {
-    const { data: oppTeam, error: oppErr } = await db.rpc('fn_create_historical_opponent_team', {
-      p_league_id: leagueId,
-      p_name: subjectTeam.name,
-      p_abbrev: subjectTeam.abbreviation ?? null,
-      p_actor: auth.user.id,
-    });
-    if (oppErr) {
-      await db.from('import_batches').update({ status: 'failed' }).eq('id', batchId);
-      const e = parsePgError(oppErr.message);
-      return { ok: false, code: e.code, message: oppErr.message };
+    // Reuse an existing league-owned historical team of the same name so a
+    // retried commit doesn't create a duplicate opponent.
+    const { data: existing } = await db
+      .from('opponent_teams')
+      .select('id')
+      .eq('league_id', leagueId)
+      .eq('is_historical', true)
+      .eq('name', subjectTeam.name)
+      .order('created_at', { ascending: true })
+      .limit(1);
+    if (existing && existing.length > 0) {
+      opponentTeamId = existing[0].id as string;
+    } else {
+      const { data: oppTeam, error: oppErr } = await db.rpc('fn_create_historical_opponent_team', {
+        p_league_id: leagueId,
+        p_name: subjectTeam.name,
+        p_abbrev: subjectTeam.abbreviation ?? null,
+        p_actor: auth.user.id,
+      });
+      if (oppErr) {
+        await db.from('import_batches').update({ status: 'failed' }).eq('id', batchId);
+        const e = parsePgError(oppErr.message);
+        return { ok: false, code: e.code, message: oppErr.message };
+      }
+      opponentTeamId = (oppTeam as { id: string }).id;
     }
-    opponentTeamId = (oppTeam as { id: string }).id;
   }
 
   const result: CommitResult = {};
@@ -424,10 +499,10 @@ export async function commitImportAction(input: CommitImportInput): Promise<Resu
     })
     .eq('id', batchId);
 
-  // Raw upload no longer needed once committed (FERPA/data-minimization); the
+  // Raw uploads no longer needed once committed (FERPA/data-minimization); the
   // batch row retains provenance.
-  if (errorLog.length === 0 && batch.storage_path) {
-    await db.storage.from(IMPORTS_BUCKET).remove([batch.storage_path as string]);
+  if (errorLog.length === 0 && storagePaths.length > 0) {
+    await db.storage.from(IMPORTS_BUCKET).remove(storagePaths);
   }
 
   revalidatePath('/league/admin/import');

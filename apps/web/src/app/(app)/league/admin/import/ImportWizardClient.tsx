@@ -202,6 +202,9 @@ export function ImportWizardClient({ leagueId, teams, opponentTeams, batches }: 
       const res = await rollbackImportAction({ batchId, leagueId });
       if (!res.ok) setError(res.message || res.code);
       else router.refresh();
+    } catch (err) {
+      console.error('rollback failed', { batchId, leagueId, err });
+      setError('Could not undo the import. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -344,14 +347,23 @@ function UploadStep({
     <Card>
       <form onSubmit={onSubmit} className="p-6 space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Source platform</label>
-          <select disabled className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-gray-50">
+          <label htmlFor="import-source-platform" className="block text-sm font-medium mb-1">
+            Source platform
+          </label>
+          <select
+            id="import-source-platform"
+            disabled
+            className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-gray-50"
+          >
             <option>Home Team (GameChanger)</option>
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">CSV file(s)</label>
+          <label htmlFor="import-files" className="block text-sm font-medium mb-1">
+            CSV file(s)
+          </label>
           <input
+            id="import-files"
             type="file"
             accept=".csv,.xml,text/csv"
             multiple
@@ -393,8 +405,11 @@ function MappingStep(props: {
       <div className="p-6 space-y-6">
         <section className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Season year *</label>
+            <label htmlFor="import-season-year" className="block text-sm font-medium mb-1">
+              Season year *
+            </label>
             <input
+              id="import-season-year"
               type="number"
               value={props.seasonYear}
               onChange={(e) => props.onSeasonYear(e.target.value)}
@@ -403,8 +418,11 @@ function MappingStep(props: {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Season label</label>
+            <label htmlFor="import-season-label" className="block text-sm font-medium mb-1">
+              Season label
+            </label>
             <input
+              id="import-season-label"
               value={props.seasonLabel}
               onChange={(e) => props.onSeasonLabel(e.target.value)}
               placeholder="2024 Spring"
@@ -479,78 +497,107 @@ function SubjectTeamPicker(props: {
   const { subject } = props;
   return (
     <section className="space-y-2">
-      <label className="block text-sm font-medium">This import is for…</label>
-      <div className="flex flex-wrap gap-3 text-sm">
-        <label className="flex items-center gap-1">
-          <input
-            type="radio"
-            checked={subject.kind === 'team'}
-            onChange={() => props.onSubject({ kind: 'team', teamId: props.teams[0]?.id ?? '' })}
-            disabled={props.teams.length === 0}
-          />
-          A current team
-        </label>
-        <label className="flex items-center gap-1">
-          <input
-            type="radio"
-            checked={subject.kind === 'opponent'}
-            onChange={() =>
-              props.onSubject({ kind: 'opponent', opponentTeamId: props.opponentTeams[0]?.id ?? '' })
-            }
-            disabled={props.opponentTeams.length === 0}
-          />
-          An existing historical team
-        </label>
-        <label className="flex items-center gap-1">
-          <input
-            type="radio"
-            checked={subject.kind === 'new_historical'}
-            onChange={() => props.onSubject({ kind: 'new_historical', name: '', abbreviation: '' })}
-          />
-          A new historical team
-        </label>
-      </div>
+      <fieldset>
+        <legend className="block text-sm font-medium">This import is for…</legend>
+        <div className="flex flex-wrap gap-3 text-sm mt-1">
+          <label className="flex items-center gap-1">
+            <input
+              type="radio"
+              name="subject-team-kind"
+              checked={subject.kind === 'team'}
+              onChange={() => props.onSubject({ kind: 'team', teamId: props.teams[0]?.id ?? '' })}
+              disabled={props.teams.length === 0}
+            />
+            A current team
+          </label>
+          <label className="flex items-center gap-1">
+            <input
+              type="radio"
+              name="subject-team-kind"
+              checked={subject.kind === 'opponent'}
+              onChange={() =>
+                props.onSubject({ kind: 'opponent', opponentTeamId: props.opponentTeams[0]?.id ?? '' })
+              }
+              disabled={props.opponentTeams.length === 0}
+            />
+            An existing historical team
+          </label>
+          <label className="flex items-center gap-1">
+            <input
+              type="radio"
+              name="subject-team-kind"
+              checked={subject.kind === 'new_historical'}
+              onChange={() => props.onSubject({ kind: 'new_historical', name: '', abbreviation: '' })}
+            />
+            A new historical team
+          </label>
+        </div>
+      </fieldset>
 
       {subject.kind === 'team' && (
-        <select
-          value={subject.teamId}
-          onChange={(e) => props.onSubject({ kind: 'team', teamId: e.target.value })}
-          className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2"
-        >
-          {props.teams.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
+        <>
+          <label htmlFor="subject-team-select" className="sr-only">
+            Current team
+          </label>
+          <select
+            id="subject-team-select"
+            value={subject.teamId}
+            onChange={(e) => props.onSubject({ kind: 'team', teamId: e.target.value })}
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2"
+          >
+            {props.teams.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </>
       )}
       {subject.kind === 'opponent' && (
-        <select
-          value={subject.opponentTeamId}
-          onChange={(e) => props.onSubject({ kind: 'opponent', opponentTeamId: e.target.value })}
-          className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2"
-        >
-          {props.opponentTeams.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
+        <>
+          <label htmlFor="subject-opponent-select" className="sr-only">
+            Existing historical team
+          </label>
+          <select
+            id="subject-opponent-select"
+            value={subject.opponentTeamId}
+            onChange={(e) => props.onSubject({ kind: 'opponent', opponentTeamId: e.target.value })}
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2"
+          >
+            {props.opponentTeams.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </>
       )}
       {subject.kind === 'new_historical' && (
         <div className="grid grid-cols-2 gap-2">
-          <input
-            value={subject.name}
-            onChange={(e) => props.onSubject({ ...subject, name: e.target.value })}
-            placeholder="Team name"
-            className="text-sm border border-gray-300 rounded-lg px-3 py-2"
-          />
-          <input
-            value={subject.abbreviation}
-            onChange={(e) => props.onSubject({ ...subject, abbreviation: e.target.value })}
-            placeholder="Abbrev (optional)"
-            className="text-sm border border-gray-300 rounded-lg px-3 py-2"
-          />
+          <div>
+            <label htmlFor="subject-new-name" className="block text-xs text-gray-500 mb-1">
+              Team name
+            </label>
+            <input
+              id="subject-new-name"
+              value={subject.name}
+              onChange={(e) => props.onSubject({ ...subject, name: e.target.value })}
+              placeholder="Team name"
+              className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2"
+            />
+          </div>
+          <div>
+            <label htmlFor="subject-new-abbrev" className="block text-xs text-gray-500 mb-1">
+              Abbreviation
+            </label>
+            <input
+              id="subject-new-abbrev"
+              value={subject.abbreviation}
+              onChange={(e) => props.onSubject({ ...subject, abbreviation: e.target.value })}
+              placeholder="Optional"
+              className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2"
+            />
+          </div>
         </div>
       )}
     </section>
@@ -572,7 +619,9 @@ function ReconcileStep(props: {
           Confirm matches to existing league players, or create new ones.
         </p>
         <div className="divide-y">
-          {props.preview.map((p) => {
+          {props.preview
+            .filter((p) => p.externalPlayerId)
+            .map((p) => {
             const ext = p.externalPlayerId!;
             const d = props.decisions[ext] ?? { action: 'create' as const };
             return (
