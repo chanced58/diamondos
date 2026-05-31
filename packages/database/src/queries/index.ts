@@ -21,3 +21,4 @@ export * from './ai-practice';
 export * from './practice-summaries';
 export * from './opponent-scouting-cards';
 export * from './league-players';
+export * from './historical-import';
