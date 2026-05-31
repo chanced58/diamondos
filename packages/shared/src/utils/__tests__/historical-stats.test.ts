@@ -16,7 +16,7 @@ describe('battingStatsFromCounts', () => {
     expect(stats.avg).toBeCloseTo(14 / 34, 5);
     expect(stats.slg).toBeCloseTo(25 / 34, 5); // 8×1B + 3×2 + 1×3 + 2×4 = 25 TB
     expect(stats.obp).toBeCloseTo(0.5, 5); // (14+5+1)/(34+5+1+0)
-    expect(stats.ops).toBeCloseTo(14 / 34 < 0 ? 0 : 25 / 34 + 0.5, 5);
+    expect(stats.ops).toBeCloseTo(25 / 34 + 0.5, 5); // SLG + OBP
     expect(stats.kPct).toBeCloseTo(6 / 40, 5);
     expect(stats.bbPct).toBeCloseTo(5 / 40, 5);
     expect(stats.woba).toBeCloseTo(20.92 / 40, 4);
