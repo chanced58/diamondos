@@ -11,3 +11,4 @@ export * from './practice-deficit';
 export * from './training-session';
 export * from './league-scoring-settings';
 export * from './league-player';
+export * from './historical-import';
