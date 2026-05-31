@@ -27,6 +27,7 @@ import type {
   FieldingCounts,
 } from './types';
 import { applyMapping, normalizeHeader } from './mapping-engine';
+import { parseName } from './player-matching';
 import { parseCSV, csvHeaders, detectFileKind } from './parse';
 
 const FIELD_ALIASES: FieldAliases = {
@@ -225,12 +226,18 @@ export const homeTeamAdapter: HistoricalImportAdapter = {
   ): NormalizedPlayerGameStatRow | null {
     const m = applyMapping(row, mapping);
 
-    let playerName = m.fullName ?? '';
-    if (!playerName) {
-      const first = m.firstName ?? '';
-      const last = m.lastName ?? '';
-      playerName = `${first} ${last}`.trim();
+    // Derive a canonical "First Last" name IDENTICALLY to the match-preview
+    // path (actions.buildMatchPreview), so the synthetic external id used to
+    // link stat rows to reconciled players matches. A raw "Last, First"
+    // fullName must be reordered here too, or the link silently fails.
+    let firstName = m.firstName ?? '';
+    let lastName = m.lastName ?? '';
+    if ((!firstName || !lastName) && m.fullName) {
+      const parsed = parseName(m.fullName);
+      firstName = firstName || parsed.first;
+      lastName = lastName || parsed.last;
     }
+    const playerName = `${firstName} ${lastName}`.trim() || (m.fullName ?? '').trim();
     if (!playerName) return null;
 
     const batting: BattingCounts = {};

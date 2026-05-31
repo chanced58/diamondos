@@ -116,6 +116,26 @@ describe('homeTeamAdapter.normalizeTeamStat', () => {
   });
 });
 
+describe('normalizePlayerStat name canonicalization', () => {
+  // A "Last, First" fullName column must be reordered to "First Last" so the
+  // synthetic link id matches the match-preview path (which reparses names).
+  const NAME_CSV = ['Name,PA,AB,H', '"Lovelace, Ada",10,9,4'].join('\n');
+
+  it('reorders a "Last, First" name column to First Last', () => {
+    const parsed = homeTeamAdapter.detectAndParse([{ name: 'stats.csv', bytes: NAME_CSV }]);
+    const mapping = autoDetectMapping(
+      parsed.columnsByCategory.player_stats!,
+      homeTeamAdapter.fieldAliases.player_stats!,
+    );
+    const normalized = homeTeamAdapter.normalizePlayerStat(
+      parsed.rawRows.player_stats![0],
+      mapping,
+      SEASON,
+    );
+    expect(normalized?.playerName).toBe('Ada Lovelace');
+  });
+});
+
 describe('ipToOuts', () => {
   it('converts innings-pitched decimal notation to outs', () => {
     expect(ipToOuts('5.2')).toBe(17); // 5 innings (15 outs) + 2

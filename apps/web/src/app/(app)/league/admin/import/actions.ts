@@ -349,6 +349,49 @@ export async function commitImportAction(input: CommitImportInput): Promise<Resu
     return { ok: false, code: 'BATCH_NOT_PREVIEWED', message: `status=${batch.status}` };
   }
 
+  // Validate every client-supplied id actually belongs to this league before
+  // any mutation (mirrors fn_transfer_player / updateLeaguePlayer). Without
+  // this a league admin could attach players to, or link players from, a
+  // different league via crafted ids.
+  if (subjectTeam.kind === 'team') {
+    const { data: member } = await db
+      .from('league_members')
+      .select('id')
+      .eq('league_id', leagueId)
+      .eq('team_id', subjectTeam.teamId)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (!member) return { ok: false, code: 'TEAM_NOT_IN_LEAGUE', message: 'TEAM_NOT_IN_LEAGUE' };
+  } else if (subjectTeam.kind === 'opponent') {
+    const { data: opp } = await db
+      .from('opponent_teams')
+      .select('id')
+      .eq('id', subjectTeam.opponentTeamId)
+      .eq('league_id', leagueId)
+      .maybeSingle();
+    if (!opp) return { ok: false, code: 'TEAM_NOT_IN_LEAGUE', message: 'TEAM_NOT_IN_LEAGUE' };
+  }
+
+  const matchPlayerIds = Array.from(
+    new Set(
+      reconciliation
+        .filter((d) => d.action === 'match' && d.playerId)
+        .map((d) => d.playerId as string),
+    ),
+  );
+  if (matchPlayerIds.length > 0) {
+    const { data: inLeague } = await db
+      .from('league_players')
+      .select('player_id')
+      .eq('league_id', leagueId)
+      .in('player_id', matchPlayerIds);
+    const found = new Set((inLeague ?? []).map((r: { player_id: string }) => r.player_id));
+    const foreign = matchPlayerIds.filter((id) => !found.has(id));
+    if (foreign.length > 0) {
+      return { ok: false, code: 'PLAYER_NOT_IN_LEAGUE', message: `not in league: ${foreign.join(', ')}` };
+    }
+  }
+
   // Re-download + re-parse ALL authoritative files from Storage.
   const adapter = adapterFor(batch.source_platform as string);
   const storagePaths = parseStoragePaths(batch.storage_path as string | null);
