@@ -1,10 +1,13 @@
 export interface NameParts { firstName: string; lastName: string; }
 
 export function memberDisplayName(p: NameParts): string {
-  return `${p.firstName} ${p.lastName}`.trim();
+  const first = (p.firstName ?? '').trim();
+  const last = (p.lastName ?? '').trim();
+  return `${first} ${last}`.trim();
 }
 
 export function publicDisplayName(p: NameParts): string {
-  const initial = p.lastName?.trim()?.[0];
-  return initial ? `${p.firstName} ${initial}.` : p.firstName;
+  const first = (p.firstName ?? '').trim();
+  const initial = (p.lastName ?? '').trim()[0];
+  return initial ? `${first} ${initial}.` : first;
 }

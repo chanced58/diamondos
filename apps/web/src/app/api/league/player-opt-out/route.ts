@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
   const { leagueId, playerId, optOut } = parsed.data;
 
-  const { data: staffRow } = await db
+  const { data: staffRow, error: staffErr } = await db
     .from('league_staff')
     .select('role')
     .eq('league_id', leagueId)
@@ -40,16 +40,24 @@ export async function POST(request: NextRequest) {
     .eq('is_active', true)
     .eq('role', 'league_admin')
     .maybeSingle();
+  if (staffErr) {
+    console.error(`[player-opt-out] staff lookup failed league=${leagueId}: ${staffErr.message}`);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
   if (!staffRow) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-  const { error } = await db
+  const { data: updatedRows, error } = await db
     .from('league_players')
     .update({ public_opt_out: optOut })
     .eq('league_id', leagueId)
-    .eq('player_id', playerId);
+    .eq('player_id', playerId)
+    .select('player_id');
   if (error) {
     console.error(`[player-opt-out] update failed league=${leagueId} player=${playerId}: ${error.message}`);
     return NextResponse.json({ error: 'Failed to update' }, { status: 500 });
+  }
+  if (!updatedRows || updatedRows.length === 0) {
+    return NextResponse.json({ error: 'Player not found in this league' }, { status: 404 });
   }
   return NextResponse.json({ ok: true });
 }

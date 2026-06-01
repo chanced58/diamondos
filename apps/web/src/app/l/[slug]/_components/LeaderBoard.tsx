@@ -1,4 +1,6 @@
-import type { RankedLeaderRow } from '@baseball/shared';
+import type { RankedLeaderRow, StatDef } from '@baseball/shared';
+
+type StatFormat = StatDef['format'];
 
 export function LeaderBoard({
   title,
@@ -7,7 +9,7 @@ export function LeaderBoard({
 }: {
   title: string;
   rows: RankedLeaderRow[];
-  format: string;
+  format: StatFormat;
 }): JSX.Element {
   return (
     <div className="rounded-lg border border-slate-200 p-4">
@@ -32,7 +34,7 @@ export function LeaderBoard({
   );
 }
 
-function formatStat(v: number, format: string): string {
+function formatStat(v: number, format: StatFormat): string {
   switch (format) {
     case 'avg3':
       return v.toFixed(3).replace(/^0/, '');
@@ -40,6 +42,12 @@ function formatStat(v: number, format: string): string {
       return `${(v * 100).toFixed(1)}%`;
     case 'ratio2':
       return v.toFixed(2);
+    case 'ip': {
+      // value is whole outs; render as innings.thirds (e.g. 19 outs -> 6.1)
+      const whole = Math.floor(v / 3);
+      const thirds = Math.round(v % 3);
+      return `${whole}.${thirds}`;
+    }
     case 'int':
       return String(Math.round(v));
     default:

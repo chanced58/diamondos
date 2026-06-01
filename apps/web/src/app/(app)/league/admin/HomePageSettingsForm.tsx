@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import {
   mergeWithThemeDefaults,
   leagueLeaderConfigSchema,
+  DEFAULT_LEADER_CONFIG,
   ALL_SECTIONS,
   type LeagueHomeTheme,
   type LeagueLeaderConfig,
@@ -31,9 +32,10 @@ export function HomePageSettingsForm({
   const [visibility, setVisibility] = useState<'public' | 'signed_in'>(initialVisibility);
   const [slug, setSlug] = useState(initialSlug);
   const [theme, setTheme] = useState<LeagueHomeTheme>(() => mergeWithThemeDefaults(initialTheme));
-  const [leaderConfig, setLeaderConfig] = useState<LeagueLeaderConfig>(() =>
-    leagueLeaderConfigSchema.parse(initialLeaderConfig ?? {}),
-  );
+  const [leaderConfig, setLeaderConfig] = useState<LeagueLeaderConfig>(() => {
+    const parsed = leagueLeaderConfigSchema.safeParse(initialLeaderConfig ?? {});
+    return parsed.success ? parsed.data : DEFAULT_LEADER_CONFIG;
+  });
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);

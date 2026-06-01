@@ -30,4 +30,12 @@ describe('buildLeaderboard', () => {
     const out = buildLeaderboard(rows, getStatDef('avg'), { minQualifier: 10, limit: 2 });
     expect(out).toHaveLength(2);
   });
+  it('does not apply the qualifier filter to counting (non-rate) stats', () => {
+    const hrRows: LeaderRow[] = [
+      { id: 'a', name: 'A', value: 5, qualifierValue: 1 }, // tiny qualifier, must still rank
+      { id: 'b', name: 'B', value: 3, qualifierValue: 1 },
+    ];
+    const out = buildLeaderboard(hrRows, getStatDef('homeRuns'), { minQualifier: 100, limit: 10 });
+    expect(out.map((r) => r.id)).toEqual(['a', 'b']);
+  });
 });

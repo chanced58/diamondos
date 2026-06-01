@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { createServerClient } from '@/lib/supabase/server';
-import { getLeagueHomeData } from '@/lib/league-home/load';
+import { getLeagueHomeData, getLeagueMeta } from '@/lib/league-home/load';
 import { Hero } from './_components/Hero';
 import { StandingsTable } from './_components/StandingsTable';
 import { LeaderBoard } from './_components/LeaderBoard';
@@ -15,17 +15,20 @@ export async function generateMetadata({
 }: {
   params: { slug: string };
 }): Promise<Metadata> {
+  // Lightweight lookup — metadata only needs identity/visibility, not the full
+  // standings/leaderboard payload the page assembles.
   const auth = createServerClient();
   const {
     data: { user },
   } = await auth.auth.getUser();
-  const data = await getLeagueHomeData(params.slug, !!user);
-  if ('notFound' in data) return { title: 'League not found' };
-  if ('blocked' in data) return { title: data.league.name, robots: { index: false, follow: false } };
+  const meta = await getLeagueMeta(params.slug);
+  if (!meta) return { title: 'League not found' };
+  const isPrivate = meta.visibility === 'signed_in';
+  if (isPrivate && !user) return { title: meta.name, robots: { index: false, follow: false } };
   return {
-    title: `${data.league.name} — Standings & Leaders`,
-    description: `${data.league.name} standings, statistical leaders, and recent results.`,
-    robots: data.league.visibility === 'public' ? undefined : { index: false, follow: false },
+    title: `${meta.name} — Standings & Leaders`,
+    description: `${meta.name} standings, statistical leaders, and recent results.`,
+    robots: isPrivate ? { index: false, follow: false } : undefined,
   };
 }
 

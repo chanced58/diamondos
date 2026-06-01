@@ -26,24 +26,26 @@ export async function GET(request: NextRequest) {
 
   let rebuilt = 0;
   for (const lg of leagues ?? []) {
-    const { data: members } = await db
-      .from('league_members')
-      .select('team_id')
-      .eq('league_id', lg.id)
-      .eq('is_active', true);
-    const teamIds = (members ?? [])
-      .map((m: { team_id: string | null }) => m.team_id)
-      .filter((t: string | null): t is string => Boolean(t));
-    const seasons = await listLeagueSeasons(db, teamIds);
-    for (const season of seasons) {
-      try {
+    // Isolate each league so one bad discovery/recompute doesn't abort the sweep.
+    try {
+      const { data: members, error: membersErr } = await db
+        .from('league_members')
+        .select('team_id')
+        .eq('league_id', lg.id)
+        .eq('is_active', true);
+      if (membersErr) throw new Error(membersErr.message);
+      const teamIds = (members ?? [])
+        .map((m: { team_id: string | null }) => m.team_id)
+        .filter((t: string | null): t is string => Boolean(t));
+      const seasons = await listLeagueSeasons(db, teamIds);
+      for (const season of seasons) {
         await recomputeLeagueSnapshot(db, lg.id, season);
         rebuilt++;
-      } catch (err) {
-        console.error(
-          `[cron] rebuild failed league=${lg.id} season=${season}: ${err instanceof Error ? err.message : String(err)}`,
-        );
       }
+    } catch (err) {
+      console.error(
+        `[cron] rebuild failed league=${lg.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

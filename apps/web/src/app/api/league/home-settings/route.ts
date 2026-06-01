@@ -59,12 +59,16 @@ export async function POST(request: NextRequest) {
   if (!staffRow) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   // slug uniqueness (excluding this league)
-  const { data: clash } = await db
+  const { data: clash, error: clashErr } = await db
     .from('leagues')
     .select('id')
     .eq('slug', slug)
     .neq('id', leagueId)
     .maybeSingle();
+  if (clashErr) {
+    console.error(`[home-settings] slug check failed league=${leagueId}: ${clashErr.message}`);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
   if (clash) return NextResponse.json({ error: 'That URL slug is already taken' }, { status: 409 });
 
   const { data: updated, error: updErr } = await db

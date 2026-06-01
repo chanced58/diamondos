@@ -1,6 +1,9 @@
-/* One-off manual verification for recomputeLeagueSnapshot.
- * Usage: LEAGUE_ID=.. SEASON=.. npx tsx apps/web/scripts/recompute-one.ts
+/* One-off manual backfill/verification for recomputeLeagueSnapshot.
+ * Run with pnpm's bundled TS runner (no devDependency needed):
+ *   LEAGUE_ID=.. SEASON=".." pnpm dlx tsx apps/web/scripts/recompute-one.ts
  * Requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in env.
+ * Note: production snapshots normally refresh via endGameAction + the cron route;
+ * this script is only for manual backfills.
  */
 import { createClient } from '@supabase/supabase-js';
 import { recomputeLeagueSnapshot } from '../src/lib/league-snapshot/recompute';

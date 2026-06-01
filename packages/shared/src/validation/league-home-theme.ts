@@ -23,8 +23,13 @@ export const DEFAULT_LEAGUE_HOME_THEME: LeagueHomeTheme = {
 };
 
 export function mergeWithThemeDefaults(input: unknown): LeagueHomeTheme {
-  const partial = (input ?? {}) as Partial<LeagueHomeTheme>;
-  const provided = new Map((partial.sections ?? []).map((s) => [s.id, s.enabled]));
+  const partial = (typeof input === 'object' && input !== null ? input : {}) as Partial<LeagueHomeTheme>;
+  const sectionsInput = Array.isArray(partial.sections) ? partial.sections : [];
+  const provided = new Map(
+    sectionsInput
+      .filter((s): s is { id: SectionId; enabled: boolean } => !!s && typeof s === 'object')
+      .map((s) => [s.id, s.enabled]),
+  );
   return {
     accentColor: partial.accentColor ?? DEFAULT_LEAGUE_HOME_THEME.accentColor,
     secondaryColor: partial.secondaryColor ?? DEFAULT_LEAGUE_HOME_THEME.secondaryColor,

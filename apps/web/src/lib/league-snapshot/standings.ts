@@ -23,14 +23,21 @@ export function weAreHome(g: Pick<GameRow, 'location_type' | 'neutral_home_team'
   return g.neutral_home_team === g.team_id;
 }
 
-/** Tally W/L/T and run differential per team from each team's perspective. */
-export function computeStandings(games: GameRow[]): Map<string, TeamRecord> {
+function emptyRecord(): TeamRecord {
+  return { wins: 0, losses: 0, ties: 0, runsFor: 0, runsAgainst: 0, winPct: 0 };
+}
+
+/**
+ * Tally W/L/T and run differential per team from each team's perspective.
+ * Pass `allTeamIds` to seed zeroed records for league members with no completed
+ * games yet, so they still appear in standings early in a season.
+ */
+export function computeStandings(games: GameRow[], allTeamIds: string[] = []): Map<string, TeamRecord> {
   const rec = new Map<string, TeamRecord>();
+  for (const teamId of allTeamIds) rec.set(teamId, emptyRecord());
   for (const g of games) {
     if (g.status !== 'completed') continue;
-    const r =
-      rec.get(g.team_id) ??
-      { wins: 0, losses: 0, ties: 0, runsFor: 0, runsAgainst: 0, winPct: 0 };
+    const r = rec.get(g.team_id) ?? emptyRecord();
     const isHome = weAreHome(g);
     const our = isHome ? g.home_score : g.away_score;
     const their = isHome ? g.away_score : g.home_score;

@@ -11,6 +11,19 @@ import { combinePlayerStats, type PlayerTeamInfo } from './aggregate';
 
 const NIL = '00000000-0000-0000-0000-000000000000';
 
+/** Throw with context if a Supabase query returned an error. */
+function assertOk(error: { message: string } | null, what: string, leagueId: string, season: string): void {
+  if (error) throw new Error(`recompute ${what} failed (league=${leagueId} season=${season}): ${error.message}`);
+}
+
+/** Remove all snapshot rows for one league-season. */
+async function clearLeagueSeasonSnapshots(db: SupabaseClient, leagueId: string, season: string): Promise<void> {
+  await db.from('league_player_stat_snapshot').delete().eq('league_id', leagueId).eq('season', season);
+  await db.from('league_standings_snapshot').delete().eq('league_id', leagueId).eq('season', season);
+  await db.from('league_team_stat_snapshot').delete().eq('league_id', leagueId).eq('season', season);
+  await db.from('league_spotlight_snapshot').delete().eq('league_id', leagueId).eq('season', season);
+}
+
 /**
  * Recompute and upsert all four league snapshot tables for one league-season.
  *
@@ -25,15 +38,21 @@ export async function recomputeLeagueSnapshot(
   season: string,
 ): Promise<void> {
   // 1) league team ids
-  const { data: members } = await db
+  const { data: members, error: membersErr } = await db
     .from('league_members')
     .select('team_id')
     .eq('league_id', leagueId)
     .eq('is_active', true);
+  assertOk(membersErr, 'league_members', leagueId, season);
   const teamIds = (members ?? [])
     .map((m: { team_id: string | null }) => m.team_id)
     .filter((t: string | null): t is string => Boolean(t));
-  if (teamIds.length === 0) return;
+  if (teamIds.length === 0) {
+    // League has no active members — clear any stale snapshots so the public
+    // page doesn't keep serving old standings/leaders indefinitely.
+    await clearLeagueSeasonSnapshots(db, leagueId, season);
+    return;
+  }
   const teamIdSet = new Set(teamIds);
 
   // 2) games in this league-season
@@ -42,11 +61,11 @@ export async function recomputeLeagueSnapshot(
 
   // 3) load games, events, lineups, players, teams, opt-outs
   const [
-    { data: games },
-    { data: events },
-    { data: lineups },
-    { data: teams },
-    { data: optOuts },
+    { data: games, error: gamesErr },
+    { data: events, error: eventsErr },
+    { data: lineups, error: lineupsErr },
+    { data: teams, error: teamsErr },
+    { data: optOuts, error: optOutsErr },
   ] = await Promise.all([
     db
       .from('games')
@@ -60,16 +79,22 @@ export async function recomputeLeagueSnapshot(
     db.from('teams').select('id, name').in('id', teamIds),
     db.from('league_players').select('player_id, public_opt_out').eq('league_id', leagueId),
   ]);
+  assertOk(gamesErr, 'games', leagueId, season);
+  assertOk(eventsErr, 'game_events', leagueId, season);
+  assertOk(lineupsErr, 'game_lineups', leagueId, season);
+  assertOk(teamsErr, 'teams', leagueId, season);
+  assertOk(optOutsErr, 'league_players', leagueId, season);
 
   const teamName = new Map<string, string>((teams ?? []).map((t: any) => [t.id, t.name]));
   const optOut = new Map<string, boolean>((optOuts ?? []).map((o: any) => [o.player_id, o.public_opt_out]));
 
   // 4) player rows (for names + team attribution)
   const playerIds = Array.from(new Set((lineups ?? []).map((l: any) => l.player_id)));
-  const { data: playerRows } = await db
+  const { data: playerRows, error: playerRowsErr } = await db
     .from('players')
     .select('id, first_name, last_name, team_id')
     .in('id', playerIds.length ? playerIds : [NIL]);
+  assertOk(playerRowsErr, 'players', leagueId, season);
   const players = (playerRows ?? []).map((p: any) => ({
     id: p.id,
     firstName: p.first_name,
@@ -125,7 +150,7 @@ export async function recomputeLeagueSnapshot(
   });
 
   // 8) standings
-  const standings = computeStandings((games ?? []) as GameRow[]);
+  const standings = computeStandings((games ?? []) as GameRow[], teamIds);
 
   // 9) team stats — team AVG (hits/AB) and team ERA (ER*7 / IP) from the reducer maps
   const teamStatRows = Array.from(standings.entries()).map(([teamId, rec]) => {
@@ -217,11 +242,11 @@ export async function recomputeLeagueSnapshot(
     },
   ].filter(Boolean) as Array<Record<string, unknown>>;
 
-  // 11) replace snapshot rows for this league-season
-  await db.from('league_player_stat_snapshot').delete().eq('league_id', leagueId).eq('season', season);
-  await db.from('league_standings_snapshot').delete().eq('league_id', leagueId).eq('season', season);
-  await db.from('league_team_stat_snapshot').delete().eq('league_id', leagueId).eq('season', season);
-  await db.from('league_spotlight_snapshot').delete().eq('league_id', leagueId).eq('season', season);
+  // 11) replace snapshot rows for this league-season.
+  // NOTE: not a single transaction (supabase-js limitation) — a mid-write
+  // failure is healed by the next finalize/cron recompute. A transactional RPC
+  // or staged version-swap is tracked as a v2 hardening item.
+  await clearLeagueSeasonSnapshots(db, leagueId, season);
   if (playerSnapshotRows.length) await db.from('league_player_stat_snapshot').insert(playerSnapshotRows);
   if (standingRows.length) await db.from('league_standings_snapshot').insert(standingRows);
   if (teamStatRows.length) await db.from('league_team_stat_snapshot').insert(teamStatRows);

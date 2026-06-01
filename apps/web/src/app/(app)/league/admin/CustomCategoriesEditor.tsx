@@ -60,7 +60,12 @@ export function CustomCategoriesEditor({
             max={25}
             value={c.limit}
             disabled={disabled}
-            onChange={(e) => edit(i, { limit: Number(e.target.value) })}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              // Clamp to the schema's supported 3–25 range; keep prior value on empty/NaN.
+              const clamped = Number.isFinite(n) && e.target.value !== '' ? Math.min(25, Math.max(3, Math.round(n))) : c.limit;
+              edit(i, { limit: clamped });
+            }}
           />
           <button type="button" className="text-red-600 disabled:opacity-40" disabled={disabled} onClick={() => remove(i)}>
             Remove

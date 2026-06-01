@@ -20,6 +20,18 @@ export function resolveVisibility(visibility: string, isAuthed: boolean): 'ok' |
   return 'ok';
 }
 
+/** Read a (possibly dot-pathed) stat field out of a snapshot `stats` object. */
+export function getStatValue(stats: unknown, field: string): number {
+  if (stats == null || typeof stats !== 'object') return 0;
+  const raw = field.split('.').reduce<unknown>((acc, key) => {
+    if (acc != null && typeof acc === 'object' && key in (acc as Record<string, unknown>)) {
+      return (acc as Record<string, unknown>)[key];
+    }
+    return undefined;
+  }, stats);
+  return Number(raw ?? 0);
+}
+
 /** Map player snapshot rows to leaderboard rows, masking names + honoring opt-out for public viewers. */
 export function toLeaderRows(snap: any[], statKey: string, isAuthed: boolean): LeaderRow[] {
   const def = getStatDef(statKey as any);
@@ -31,7 +43,7 @@ export function toLeaderRows(snap: any[], statKey: string, isAuthed: boolean): L
         ? memberDisplayName({ firstName: r.first_name, lastName: r.last_name })
         : publicDisplayName({ firstName: r.first_name, lastName: r.last_name }),
       teamName: r.team_name,
-      value: Number(r.stats?.[def.field] ?? 0),
+      value: getStatValue(r.stats, def.field),
       qualifierValue: def.qualifier === 'ip' ? r.innings_pitched_outs : r.plate_appearances,
     }));
 }
@@ -64,6 +76,17 @@ export type LeagueHomeData =
       counters: { teams: number; games: number };
     };
 
+/** Minimal league identity/visibility lookup for metadata (no snapshot reads). */
+export async function getLeagueMeta(slug: string): Promise<{ name: string; visibility: string } | null> {
+  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const { data, error } = await db.from('leagues').select('name, visibility').eq('slug', slug).maybeSingle();
+  if (error) {
+    console.error(`[league-home] meta lookup failed slug=${slug}: ${error.message}`);
+    return null;
+  }
+  return data ? { name: data.name, visibility: data.visibility } : null;
+}
+
 export async function getLeagueHomeData(
   slug: string,
   isAuthed: boolean,
@@ -71,7 +94,16 @@ export async function getLeagueHomeData(
 ): Promise<LeagueHomeData> {
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
-  const { data: league } = await db.from('leagues').select('*').eq('slug', slug).maybeSingle();
+  const { data: league, error: leagueErr } = await db
+    .from('leagues')
+    .select('*')
+    .eq('slug', slug)
+    .maybeSingle();
+  if (leagueErr) {
+    // A query failure is not a 404 — surface it so it's observable.
+    console.error(`[league-home] league lookup failed slug=${slug}: ${leagueErr.message}`);
+    throw new Error('Failed to load league. Please try again.');
+  }
   if (!league) return { notFound: true };
   if (resolveVisibility(league.visibility, isAuthed) === 'blocked') {
     return { blocked: true, league: { name: league.name } };
@@ -93,12 +125,22 @@ export async function getLeagueHomeData(
   );
   const season = seasonParam ?? league.current_season ?? seasons[0] ?? '';
 
-  const [{ data: standings }, { data: playerSnap }, { data: teamSnap }, { data: spots }] = await Promise.all([
+  const [
+    { data: standings, error: standingsErr },
+    { data: playerSnap, error: playerErr },
+    { data: teamSnap, error: teamErr },
+    { data: spots, error: spotsErr },
+  ] = await Promise.all([
     db.from('league_standings_snapshot').select('*').eq('league_id', league.id).eq('season', season),
     db.from('league_player_stat_snapshot').select('*').eq('league_id', league.id).eq('season', season),
     db.from('league_team_stat_snapshot').select('*').eq('league_id', league.id).eq('season', season),
     db.from('league_spotlight_snapshot').select('*').eq('league_id', league.id).eq('season', season),
   ]);
+  const snapErr = standingsErr || playerErr || teamErr || spotsErr;
+  if (snapErr) {
+    console.error(`[league-home] snapshot read failed league=${league.id} season=${season}: ${snapErr.message}`);
+    throw new Error('Failed to load league data. Please try again.');
+  }
 
   const standingsSorted = (standings ?? []).sort((a: any, b: any) => b.win_pct - a.win_pct);
   const leagueGames = standingsSorted.reduce(
@@ -115,7 +157,7 @@ export async function getLeagueHomeData(
         ? (teamSnap ?? []).map((t: any) => ({
             id: t.team_id,
             name: t.team_name,
-            value: Number(t.stats?.[def.field] ?? 0),
+            value: getStatValue(t.stats, def.field),
             qualifierValue: 1,
           }))
         : toLeaderRows(playerSnap ?? [], statKey, isAuthed);
