@@ -250,6 +250,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
       logo_url: staffLeague.logo_url,
       state_code: staffLeague.state_code,
       setup_completed_at: staffLeague.setup_completed_at,
+      slug: staffLeague.slug,
     };
   }
 
@@ -298,6 +299,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         isPlatformAdmin={isPlatformAdmin}
         leagueId={league?.id}
         leagueName={league?.name}
+        leagueSlug={league?.slug ?? undefined}
         subscriptionTier={subscriptionTier ?? undefined}
         hasPlayerProfile={hasPlayerProfile}
         isLeagueAdmin={leagueAccess?.isLeagueAdmin ?? false}

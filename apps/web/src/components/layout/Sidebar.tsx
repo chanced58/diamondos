@@ -21,6 +21,7 @@ interface SidebarProps {
   isPlatformAdmin?: boolean;
   leagueId?: string;
   leagueName?: string;
+  leagueSlug?: string;
   subscriptionTier?: SubscriptionTier;
   hasPlayerProfile?: boolean;
   isLeagueAdmin?: boolean;
@@ -36,6 +37,7 @@ type NavItem = {
   label: string;
   icon: ReactNode;
   badge?: string | number;
+  external?: boolean;
 };
 
 export function Sidebar({
@@ -48,6 +50,7 @@ export function Sidebar({
   isPlatformAdmin,
   leagueId,
   leagueName,
+  leagueSlug,
   subscriptionTier = SubscriptionTier.FREE,
   hasPlayerProfile,
   isLeagueAdmin,
@@ -87,6 +90,9 @@ export function Sidebar({
     },
     ...(leagueId && canLeague
       ? [{ href: '/league', label: leagueName ?? 'League', icon: <Icon.admin /> }]
+      : []),
+    ...(leagueId && canLeague && leagueSlug
+      ? [{ href: `/l/${leagueSlug}`, label: 'League Home', icon: <Icon.stats />, external: true }]
       : []),
     ...(leagueId && canLeague && isLeagueAdmin
       ? [
@@ -205,6 +211,8 @@ export function Sidebar({
               style={{ textDecoration: 'none' }}
               title={item.label}
               aria-label={item.label}
+              target={item.external ? '_blank' : undefined}
+              rel={item.external ? 'noopener noreferrer' : undefined}
             >
               <span className="ico">{item.icon}</span>
               <span>{item.label}</span>

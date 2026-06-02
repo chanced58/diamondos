@@ -117,14 +117,26 @@ export default async function LeaguePage(): Promise<JSX.Element | null> {
             <p className="text-gray-500 mt-1">{league.description}</p>
           )}
         </div>
-        {access.isLeagueAdmin && (
-          <Link
-            href="/league/admin"
-            className="text-sm font-medium bg-brand-700 text-white px-4 py-2 rounded-lg hover:bg-brand-800 transition-colors"
-          >
-            Manage League
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          {league.slug && (
+            <Link
+              href={`/l/${league.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-medium border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              View public home page
+            </Link>
+          )}
+          {access.isLeagueAdmin && (
+            <Link
+              href="/league/admin"
+              className="text-sm font-medium bg-brand-700 text-white px-4 py-2 rounded-lg hover:bg-brand-800 transition-colors"
+            >
+              Manage League
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Standings by division */}
