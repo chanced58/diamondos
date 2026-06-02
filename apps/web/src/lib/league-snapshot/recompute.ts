@@ -3,13 +3,20 @@ import {
   deriveBattingStats,
   derivePitchingStats,
   selectSpotlights,
-  type BattingLineupContext,
+  filterResetAndReverted,
+  EventType,
 } from '@baseball/shared';
+import { fetchAllEventsForGames } from '@/lib/stats/fetch-events';
+import { buildLineupsByGameId } from '@/lib/stats/lineups';
 import { resolveLeagueSeasonGameIds } from './season';
-import { computeStandings, weAreHome, type GameRow } from './standings';
+import { computeStandings, type GameRow } from './standings';
 import { combinePlayerStats, type PlayerTeamInfo } from './aggregate';
 
 const NIL = '00000000-0000-0000-0000-000000000000';
+
+// All derivable event types (mirrors compliance's RELEVANT_EVENT_TYPES) so the
+// paginated fetch pulls everything the reducers need.
+const SNAPSHOT_EVENT_TYPES = [...Object.values(EventType), 'game_reset'] as const;
 
 /** Throw with context if a Supabase query returned an error. */
 function assertOk(error: { message: string } | null, what: string, leagueId: string, season: string): void {
@@ -53,64 +60,47 @@ export async function recomputeLeagueSnapshot(
     await clearLeagueSeasonSnapshots(db, leagueId, season);
     return;
   }
-  const teamIdSet = new Set(teamIds);
-
   // 2) games in this league-season
   const gameIds = await resolveLeagueSeasonGameIds(db, teamIds, season);
   const gameIdList = gameIds.length ? gameIds : [NIL];
 
-  // 3) load games, events, lineups, players, teams, opt-outs
+  // 3) load games, teams, opt-outs, and the league roster (for attribution)
   const [
     { data: games, error: gamesErr },
-    { data: events, error: eventsErr },
-    { data: lineups, error: lineupsErr },
     { data: teams, error: teamsErr },
     { data: optOuts, error: optOutsErr },
+    { data: playerRows, error: playerRowsErr },
   ] = await Promise.all([
     db
       .from('games')
       .select('id, team_id, home_score, away_score, location_type, neutral_home_team, status')
       .in('id', gameIdList),
-    // Reducers require events ordered by (game_id, sequence_number) ascending.
-    db
-      .from('game_events')
-      .select('*')
-      .in('game_id', gameIdList)
-      .order('game_id', { ascending: true })
-      .order('sequence_number', { ascending: true }),
-    db
-      .from('game_lineups')
-      .select('game_id, player_id, batting_order, count_toward_stats')
-      .in('game_id', gameIdList),
     db.from('teams').select('id, name').in('id', teamIds),
     db.from('league_players').select('player_id, public_opt_out').eq('league_id', leagueId),
+    db.from('players').select('id, first_name, last_name, team_id').in('team_id', teamIds),
   ]);
   assertOk(gamesErr, 'games', leagueId, season);
-  assertOk(eventsErr, 'game_events', leagueId, season);
-  assertOk(lineupsErr, 'game_lineups', leagueId, season);
   assertOk(teamsErr, 'teams', leagueId, season);
   assertOk(optOutsErr, 'league_players', leagueId, season);
+  assertOk(playerRowsErr, 'players', leagueId, season);
 
   const teamName = new Map<string, string>((teams ?? []).map((t: any) => [t.id, t.name]));
   const optOut = new Map<string, boolean>((optOuts ?? []).map((o: any) => [o.player_id, o.public_opt_out]));
 
-  // 4) player rows (for names + team attribution)
-  const playerIds = Array.from(new Set((lineups ?? []).map((l: any) => l.player_id)));
-  const { data: playerRows, error: playerRowsErr } = await db
-    .from('players')
-    .select('id, first_name, last_name, team_id')
-    .in('id', playerIds.length ? playerIds : [NIL]);
-  assertOk(playerRowsErr, 'players', leagueId, season);
+  // 4) events: paginated fetch (past Supabase's 1000-row cap) + drop
+  //    reverted/voided/reset events — same pipeline the compliance stats use.
+  //    Without pagination a multi-game season silently truncates to ~1000
+  //    events and per-player PA/AB are massively undercounted.
+  const events = filterResetAndReverted(await fetchAllEventsForGames(db, gameIds, SNAPSHOT_EVENT_TYPES));
+
+  // 5) name list + team attribution from the league roster
   const players = (playerRows ?? []).map((p: any) => ({
     id: p.id,
     firstName: p.first_name,
     lastName: p.last_name,
   }));
-
-  // 5) team attribution (players.team_id, only if in this league) + opt-out flag
   const teamOf = new Map<string, PlayerTeamInfo>();
   for (const p of playerRows ?? []) {
-    if (!teamIdSet.has(p.team_id)) continue;
     teamOf.set(p.id, {
       teamId: p.team_id,
       teamName: teamName.get(p.team_id) ?? '',
@@ -120,29 +110,19 @@ export async function recomputeLeagueSnapshot(
     });
   }
 
-  // 6) per-game batting lineup context (home/away from the game; honor count_toward_stats)
-  const gameById = new Map<string, any>((games ?? []).map((g: any) => [g.id, g]));
-  const battingCtx = new Map<string, BattingLineupContext>();
-  const byGame = new Map<string, any[]>();
-  for (const l of lineups ?? []) {
-    if (!byGame.has(l.game_id)) byGame.set(l.game_id, []);
-    byGame.get(l.game_id)!.push(l);
-  }
-  for (const [gameId, ls] of byGame) {
-    const g = gameById.get(gameId);
-    if (!g) continue;
-    const excluded = new Set<string>(
-      ls.filter((l) => l.count_toward_stats === false).map((l) => l.player_id),
-    );
-    battingCtx.set(gameId, {
-      ourLineup: ls.map((l) => ({ playerId: l.player_id, battingOrder: l.batting_order })),
-      isHome: weAreHome(g),
-      excludedPlayerIds: excluded,
-    });
-  }
+  // 6) per-game batting lineup context (home/away + guest exclusion), via the
+  //    shared helper used across the stats pages.
+  const battingCtx = await buildLineupsByGameId(
+    db,
+    (games ?? []).map((g: any) => ({
+      id: g.id,
+      location_type: g.location_type,
+      neutral_home_team: g.neutral_home_team,
+    })),
+  );
 
   // 7) run reducers
-  const evts = (events ?? []) as any;
+  const evts = events as any;
   const batting = deriveBattingStats(evts, players, battingCtx);
   const pitching = derivePitchingStats(evts, players);
 
