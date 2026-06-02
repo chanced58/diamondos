@@ -8,7 +8,8 @@
     "start": "next start -p ${PORT:-3000}",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "recompute:one": "pnpm dlx tsx scripts/recompute-one.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",

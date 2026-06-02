@@ -1,6 +1,7 @@
 /* One-off manual backfill/verification for recomputeLeagueSnapshot.
- * Run with pnpm's bundled TS runner (no devDependency needed):
- *   LEAGUE_ID=.. SEASON=".." pnpm dlx tsx apps/web/scripts/recompute-one.ts
+ * Run via the workspace script (no devDependency needed):
+ *   LEAGUE_ID=.. SEASON=".." pnpm --filter web recompute:one
+ * (which runs `pnpm dlx tsx scripts/recompute-one.ts`)
  * Requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in env.
  * Note: production snapshots normally refresh via endGameAction + the cron route;
  * this script is only for manual backfills.
