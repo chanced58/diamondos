@@ -12,3 +12,5 @@ export * from './training-session';
 export * from './league-scoring-settings';
 export * from './league-player';
 export * from './historical-import';
+export * from './league-home-theme';
+export * from './league-leader-config';

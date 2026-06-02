@@ -1498,12 +1498,80 @@ export type Database = {
           },
         ]
       }
+      league_player_stat_snapshot: {
+        Row: {
+          first_name: string
+          innings_pitched_outs: number
+          last_name: string
+          league_id: string
+          plate_appearances: number
+          player_id: string
+          public_opt_out: boolean
+          season: string
+          stats: Json
+          team_id: string
+          team_name: string
+          updated_at: string
+        }
+        Insert: {
+          first_name: string
+          innings_pitched_outs?: number
+          last_name: string
+          league_id: string
+          plate_appearances?: number
+          player_id: string
+          public_opt_out?: boolean
+          season: string
+          stats?: Json
+          team_id: string
+          team_name: string
+          updated_at?: string
+        }
+        Update: {
+          first_name?: string
+          innings_pitched_outs?: number
+          last_name?: string
+          league_id?: string
+          plate_appearances?: number
+          player_id?: string
+          public_opt_out?: boolean
+          season?: string
+          stats?: Json
+          team_id?: string
+          team_name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_player_stat_snapshot_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_player_stat_snapshot_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_player_stat_snapshot_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       league_players: {
         Row: {
           first_seen_at: string
           league_id: string
           notes: string | null
           player_id: string
+          public_opt_out: boolean
           registered_at: string
           registered_by: string | null
         }
@@ -1512,6 +1580,7 @@ export type Database = {
           league_id: string
           notes?: string | null
           player_id: string
+          public_opt_out?: boolean
           registered_at?: string
           registered_by?: string | null
         }
@@ -1520,6 +1589,7 @@ export type Database = {
           league_id?: string
           notes?: string | null
           player_id?: string
+          public_opt_out?: boolean
           registered_at?: string
           registered_by?: string | null
         }
@@ -1536,6 +1606,50 @@ export type Database = {
             columns: ["player_id"]
             isOneToOne: false
             referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      league_spotlight_snapshot: {
+        Row: {
+          blurb: string
+          league_id: string
+          season: string
+          subject_id: string
+          subject_name: string
+          team_name: string | null
+          type: string
+          updated_at: string
+          window_days: number
+        }
+        Insert: {
+          blurb?: string
+          league_id: string
+          season: string
+          subject_id: string
+          subject_name: string
+          team_name?: string | null
+          type: string
+          updated_at?: string
+          window_days?: number
+        }
+        Update: {
+          blurb?: string
+          league_id?: string
+          season?: string
+          subject_id?: string
+          subject_name?: string
+          team_name?: string | null
+          type?: string
+          updated_at?: string
+          window_days?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_spotlight_snapshot_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
             referencedColumns: ["id"]
           },
         ]
@@ -1582,51 +1696,175 @@ export type Database = {
           },
         ]
       }
+      league_standings_snapshot: {
+        Row: {
+          division_id: string | null
+          league_id: string
+          losses: number
+          runs_against: number
+          runs_for: number
+          season: string
+          streak: string
+          team_id: string
+          team_name: string
+          ties: number
+          updated_at: string
+          win_pct: number
+          wins: number
+        }
+        Insert: {
+          division_id?: string | null
+          league_id: string
+          losses?: number
+          runs_against?: number
+          runs_for?: number
+          season: string
+          streak?: string
+          team_id: string
+          team_name: string
+          ties?: number
+          updated_at?: string
+          win_pct?: number
+          wins?: number
+        }
+        Update: {
+          division_id?: string | null
+          league_id?: string
+          losses?: number
+          runs_against?: number
+          runs_for?: number
+          season?: string
+          streak?: string
+          team_id?: string
+          team_name?: string
+          ties?: number
+          updated_at?: string
+          win_pct?: number
+          wins?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_standings_snapshot_division_id_fkey"
+            columns: ["division_id"]
+            isOneToOne: false
+            referencedRelation: "league_divisions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_standings_snapshot_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_standings_snapshot_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      league_team_stat_snapshot: {
+        Row: {
+          league_id: string
+          season: string
+          stats: Json
+          team_id: string
+          team_name: string
+          updated_at: string
+        }
+        Insert: {
+          league_id: string
+          season: string
+          stats?: Json
+          team_id: string
+          team_name: string
+          updated_at?: string
+        }
+        Update: {
+          league_id?: string
+          season?: string
+          stats?: Json
+          team_id?: string
+          team_name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_team_stat_snapshot_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_team_stat_snapshot_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leagues: {
         Row: {
           created_at: string
           created_by: string
           current_season: string | null
           description: string | null
+          home_theme: Json
           id: string
+          leader_config: Json
           league_type: string | null
           level: string | null
           logo_url: string | null
           name: string
           scoring_settings: Json
           setup_completed_at: string | null
+          slug: string
           state_code: string | null
           updated_at: string
+          visibility: string
         }
         Insert: {
           created_at?: string
           created_by: string
           current_season?: string | null
           description?: string | null
+          home_theme?: Json
           id?: string
+          leader_config?: Json
           league_type?: string | null
           level?: string | null
           logo_url?: string | null
           name: string
           scoring_settings?: Json
           setup_completed_at?: string | null
+          slug: string
           state_code?: string | null
           updated_at?: string
+          visibility?: string
         }
         Update: {
           created_at?: string
           created_by?: string
           current_season?: string | null
           description?: string | null
+          home_theme?: Json
           id?: string
+          leader_config?: Json
           league_type?: string | null
           level?: string | null
           logo_url?: string | null
           name?: string
           scoring_settings?: Json
           setup_completed_at?: string | null
+          slug?: string
           state_code?: string | null
           updated_at?: string
+          visibility?: string
         }
         Relationships: []
       }

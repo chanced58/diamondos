@@ -269,6 +269,7 @@ Copy `.env.example` to `.env.local` in each app directory. Never commit `.env` f
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `apps/mobile/.env.local` | Supabase anon key (mobile) |
 | `EXPO_ACCESS_TOKEN` | Supabase secrets | Expo push notification API token |
 | `APP_URL` | Supabase secrets | Base URL for invite redirect |
+| `CRON_SECRET` | Server-only (Vercel env) | Bearer token authorizing the scheduled league-snapshot rebuild route (`/api/cron/rebuild-league-snapshots`) |
 
 ---
 
