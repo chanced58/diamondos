@@ -207,16 +207,28 @@ function StandingsRow({
             ) : null}
           </div>
         </td>
-        <td className="px-2 py-3 text-center text-app-fg-subtle">
-          <svg
-            viewBox="0 0 16 16"
-            className={`inline h-3.5 w-3.5 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
+        <td className="px-2 py-3 text-center">
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label={`${open ? 'Collapse' : 'Expand'} ${row.name} details`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen((v) => !v);
+            }}
+            className="rounded p-1 text-app-fg-subtle hover:text-app-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-app-brand-2"
           >
-            <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+            <svg
+              aria-hidden
+              viewBox="0 0 16 16"
+              className={`inline h-3.5 w-3.5 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
         </td>
       </tr>
       {open ? (

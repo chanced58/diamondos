@@ -634,13 +634,13 @@
 }
 
 /* League leaderboard relative-value bar — grows from 0 to its set width on mount. */
-@keyframes barGrow {
+@keyframes bar-grow {
   from { transform: scaleX(0); }
   to   { transform: scaleX(1); }
 }
 .lb-fill {
   transform-origin: left center;
-  animation: barGrow 650ms var(--ease) both;
+  animation: bar-grow 650ms var(--ease) both;
 }
 @media (prefers-reduced-motion: reduce) {
   .lb-fill { animation: none; }

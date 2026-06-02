@@ -11,6 +11,8 @@ import {
   type LeaderRow,
   type RankedLeaderRow,
   type StatDef,
+  type StatGroup,
+  type StatKey,
 } from '@baseball/shared';
 
 /** A completed league game summarized from the home team's perspective. */
@@ -59,15 +61,21 @@ export function toLeaderRows(snap: any[], statKey: string, isAuthed: boolean): L
     }));
 }
 
-// Default boards per category. The `group` field on each StatDef tags the
-// catalog generically; these ordered lists pick the subset (and order) shown by
-// default on each tab. League custom boards always render under `special`.
-const GROUP_BOARDS: Record<'batting' | 'pitching' | 'team' | 'special', string[]> = {
-  batting: ['avg', 'obp', 'ops', 'homeRuns', 'rbi', 'hits', 'runs'],
-  pitching: ['era', 'whip', 'strikeoutsP'],
-  team: ['teamAvg', 'teamEra', 'runsScored', 'runDiff'],
-  special: ['qabPct', 'hardHitPct', 'doubles'],
-};
+// Curated default boards, in display order. Each board is routed to a tab by its
+// StatDef.group, so this list controls *which* stats appear (and their order)
+// while the catalog's `group` field decides the tab. Typed as StatKey[] so an
+// unknown/renamed catalog key fails at compile time. League custom boards always
+// render under `special`.
+const DEFAULT_BOARD_KEYS: StatKey[] = [
+  // batting
+  'avg', 'obp', 'ops', 'homeRuns', 'rbi', 'hits', 'runs',
+  // pitching
+  'era', 'whip', 'strikeoutsP',
+  // team
+  'teamAvg', 'teamEra', 'runsScored', 'runDiff',
+  // special
+  'qabPct', 'hardHitPct', 'doubles',
+];
 
 /** A ranked row enriched for rendering: viewer-team marker + prior-period rank. */
 export interface LeaderHomeRow extends RankedLeaderRow {
@@ -276,12 +284,15 @@ export async function getLeagueHomeData(
     season,
     seasons,
     standings: standingsSorted,
-    defaultBoards: {
-      batting: GROUP_BOARDS.batting.map((k) => board(k)),
-      pitching: GROUP_BOARDS.pitching.map((k) => board(k)),
-      team: GROUP_BOARDS.team.map((k) => board(k)),
-      special: GROUP_BOARDS.special.map((k) => board(k)),
-    },
+    // Route each curated board into its tab by the catalog's `group` field.
+    defaultBoards: DEFAULT_BOARD_KEYS.reduce(
+      (acc, key) => {
+        const b = board(key);
+        acc[b.def.group].push(b);
+        return acc;
+      },
+      { batting: [], pitching: [], team: [], special: [] } as Record<StatGroup, LeaderBoardResult[]>,
+    ),
     customBoards: leaderConfig.custom.map((c) => board(c.statKey, c.label, c.limit)),
     spotlights: spots ?? [],
     recent,

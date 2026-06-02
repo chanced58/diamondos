@@ -6,11 +6,11 @@ export function Spotlights({
   if (!items.length) return null;
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      {items.map((s) => {
+      {items.map((s, i) => {
         const isPlayer = s.type === 'player_of_week';
         return (
           <div
-            key={s.type}
+            key={`${s.type}-${i}`}
             className={`flex gap-3 rounded-xl border p-4 ${
               isPlayer ? 'border-clay-200 bg-clay-50' : 'border-turf-200 bg-turf-50'
             }`}

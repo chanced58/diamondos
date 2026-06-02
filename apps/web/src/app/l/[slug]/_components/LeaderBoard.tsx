@@ -164,6 +164,9 @@ function formatStat(v: number, format: StatFormat): string {
  * 12% so last place still shows a sliver.
  */
 function barPct(value: number, leaderValue: number, ascending: boolean): number {
+  // The leader (and any exact tie, including an all-zero board) gets a full bar
+  // before ratio math — otherwise leaderValue===0 would floor everyone to 12%.
+  if (value === leaderValue) return 100;
   let ratio: number;
   if (ascending) {
     ratio = value > 0 ? leaderValue / value : 1;

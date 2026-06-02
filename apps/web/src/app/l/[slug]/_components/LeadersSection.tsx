@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { LeaderBoardResult } from '@/lib/league-home/load';
 import { LeaderBoard } from './LeaderBoard';
 
@@ -21,6 +21,15 @@ export function LeadersSection({
   // Only offer tabs that actually have boards; default to the first available.
   const available = TABS.filter((t) => boards[t.id].length > 0);
   const [active, setActive] = useState<Cat>(available[0]?.id ?? 'batting');
+
+  // If the active tab disappears (e.g. a season change drops a category), fall
+  // back to the first available tab instead of showing an empty state.
+  useEffect(() => {
+    if (available.length > 0 && !available.some((t) => t.id === active)) {
+      setActive(available[0].id);
+    }
+  }, [active, available]);
+
   const activeBoards = boards[active] ?? [];
 
   return (
