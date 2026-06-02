@@ -37,6 +37,7 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
         logo_url: staffLeague.logo_url,
         state_code: staffLeague.state_code,
         setup_completed_at: staffLeague.setup_completed_at,
+        slug: staffLeague.slug,
       };
     }
   }

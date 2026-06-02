@@ -44,6 +44,7 @@ export type LeagueSummary = {
   logo_url: string | null;
   state_code: string | null;
   setup_completed_at: string | null;
+  slug: string | null;
 };
 
 export type LeagueMember = {
@@ -97,7 +98,7 @@ export async function getLeagueForTeam(
 ): Promise<LeagueSummary | null> {
   const { data, error } = await client
     .from('league_members')
-    .select('leagues(id, name, description, logo_url, state_code, setup_completed_at)')
+    .select('leagues(id, name, description, logo_url, state_code, setup_completed_at, slug)')
     .eq('team_id', teamId)
     .eq('is_active', true)
     .limit(1)
@@ -223,7 +224,7 @@ export async function getLeagueForStaff(
 ): Promise<(LeagueSummary & { league_type: string | null; level: string | null; current_season: string | null }) | null> {
   const { data, error } = await client
     .from('league_staff')
-    .select('leagues(id, name, description, logo_url, state_code, setup_completed_at, league_type, level, current_season)')
+    .select('leagues(id, name, description, logo_url, state_code, setup_completed_at, slug, league_type, level, current_season)')
     .eq('user_id', userId)
     .eq('is_active', true)
     .limit(1)
