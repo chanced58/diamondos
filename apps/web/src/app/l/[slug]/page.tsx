@@ -1,10 +1,11 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { createServerClient } from '@/lib/supabase/server';
+import { getActiveTeam } from '@/lib/active-team';
 import { getLeagueHomeData, getLeagueMeta } from '@/lib/league-home/load';
 import { Hero } from './_components/Hero';
 import { StandingsTable } from './_components/StandingsTable';
-import { LeaderBoard } from './_components/LeaderBoard';
+import { LeadersSection } from './_components/LeadersSection';
 import { RecentUpcoming } from './_components/RecentUpcoming';
 import { Spotlights } from './_components/Spotlights';
 
@@ -43,7 +44,14 @@ export default async function LeagueHomePage({
   const {
     data: { user },
   } = await auth.auth.getUser();
-  const data = await getLeagueHomeData(params.slug, !!user, searchParams.season);
+  // Authenticated viewers get their active team marked across the leaderboards.
+  const activeTeam = user ? await getActiveTeam(auth, user.id) : null;
+  const data = await getLeagueHomeData(
+    params.slug,
+    !!user,
+    searchParams.season,
+    activeTeam ? { id: activeTeam.id, name: activeTeam.name } : null,
+  );
 
   if ('notFound' in data) notFound();
   if ('blocked' in data) {
@@ -61,7 +69,15 @@ export default async function LeagueHomePage({
     );
   }
 
-  const allBoards = [...data.defaultBoards.batting, ...data.defaultBoards.pitching, ...data.defaultBoards.team];
+  const enabled = new Set(data.theme.sections.filter((s) => s.enabled).map((s) => s.id));
+  // Custom boards live under the Special tab — but only when the league enabled
+  // the customLeaders section. The season switcher lives in the hero; fall back to
+  // the standings heading only when the hero section is disabled.
+  const special = [
+    ...data.defaultBoards.special,
+    ...(enabled.has('customLeaders') ? data.customBoards : []),
+  ];
+  const showSeasonFallback = !enabled.has('hero');
 
   const sectionNode = (id: string): JSX.Element | null => {
     switch (id) {
@@ -73,12 +89,21 @@ export default async function LeagueHomePage({
             logoUrl={data.league.logoUrl}
             theme={data.theme}
             counters={{ teams: data.counters.teams, games: data.counters.games, season: data.season }}
+            seasons={data.seasons}
+            activeSeason={data.season}
+            slug={params.slug}
+            updatedAt={data.updatedAt}
           />
         );
       case 'standings':
         return (
           <section key="standings">
-            <SectionHeading title="Standings" seasons={data.seasons} active={data.season} slug={params.slug} />
+            <SectionHeading
+              title="Standings"
+              seasons={showSeasonFallback ? data.seasons : []}
+              active={data.season}
+              slug={params.slug}
+            />
             <StandingsTable rows={data.standings} />
           </section>
         );
@@ -86,31 +111,23 @@ export default async function LeagueHomePage({
         return <Spotlights key="spotlights" items={data.spotlights} />;
       case 'leaders':
         return (
-          <section key="leaders">
-            <h2 className="mb-3 text-xl font-bold">League Leaders</h2>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              {allBoards.map((b) => (
-                <LeaderBoard key={b.def.key} title={b.label} rows={b.rows} format={b.def.format} />
-              ))}
-            </div>
-          </section>
+          <LeadersSection
+            key="leaders"
+            boards={{
+              batting: data.defaultBoards.batting,
+              pitching: data.defaultBoards.pitching,
+              team: data.defaultBoards.team,
+              special,
+            }}
+          />
         );
       case 'customLeaders':
-        if (data.customBoards.length === 0) return null;
-        return (
-          <section key="customLeaders">
-            <h2 className="mb-3 text-xl font-bold">Special Categories</h2>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              {data.customBoards.map((b, i) => (
-                <LeaderBoard key={`${b.def.key}-${i}`} title={b.label} rows={b.rows} format={b.def.format} />
-              ))}
-            </div>
-          </section>
-        );
+        // Custom boards are surfaced inside the Special tab of the Leaders section.
+        return null;
       case 'recent':
         return (
           <section key="recent">
-            <h2 className="mb-3 text-xl font-bold">Around the League</h2>
+            <h2 className="display mb-3 text-xl font-bold">Around the League</h2>
             <RecentUpcoming recent={data.recent} upcoming={data.upcoming} />
           </section>
         );
@@ -139,14 +156,17 @@ function SectionHeading({
 }): JSX.Element {
   return (
     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-      <h2 className="text-xl font-bold">{title}</h2>
+      <h2 className="display text-xl font-bold">{title}</h2>
       {seasons.length > 1 ? (
-        <div className="flex flex-wrap gap-1 text-sm">
+        <div className="inline-flex rounded-lg border border-app-border bg-app-surface-2 p-0.5 text-sm">
           {seasons.map((s) => (
             <a
               key={s}
               href={`/l/${slug}?season=${encodeURIComponent(s)}`}
-              className={`rounded px-2 py-1 ${s === active ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
+              aria-current={s === active ? 'true' : undefined}
+              className={`rounded-md px-2.5 py-1 font-semibold transition-colors ${
+                s === active ? 'bg-app-surface text-app-fg shadow-sm' : 'text-app-fg-muted hover:text-app-fg'
+              }`}
             >
               {s}
             </a>

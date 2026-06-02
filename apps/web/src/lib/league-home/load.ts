@@ -7,10 +7,21 @@ import {
   mergeWithThemeDefaults,
   leagueLeaderConfigSchema,
   DEFAULT_LEADER_CONFIG,
+  weAreHome,
   type LeaderRow,
   type RankedLeaderRow,
   type StatDef,
 } from '@baseball/shared';
+
+/** A completed league game summarized from the home team's perspective. */
+export interface RecentGame {
+  id: string;
+  team: string;
+  opponent: string;
+  ourScore: number;
+  theirScore: number;
+  result: 'W' | 'L' | 'T';
+}
 
 const DEFAULT_PA_PER_GAME = 2.0;
 const DEFAULT_IP_PER_GAME = 1.0;
@@ -48,14 +59,34 @@ export function toLeaderRows(snap: any[], statKey: string, isAuthed: boolean): L
     }));
 }
 
-const DEFAULT_BATTING = ['avg', 'homeRuns', 'rbi', 'hits', 'runs', 'obp', 'ops'];
-const DEFAULT_PITCHING = ['era', 'whip', 'strikeoutsP'];
-const DEFAULT_TEAM = ['teamAvg', 'teamEra', 'runsScored', 'runDiff'];
+// Default boards per category. The `group` field on each StatDef tags the
+// catalog generically; these ordered lists pick the subset (and order) shown by
+// default on each tab. League custom boards always render under `special`.
+const GROUP_BOARDS: Record<'batting' | 'pitching' | 'team' | 'special', string[]> = {
+  batting: ['avg', 'obp', 'ops', 'homeRuns', 'rbi', 'hits', 'runs'],
+  pitching: ['era', 'whip', 'strikeoutsP'],
+  team: ['teamAvg', 'teamEra', 'runsScored', 'runDiff'],
+  special: ['qabPct', 'hardHitPct', 'doubles'],
+};
+
+/** A ranked row enriched for rendering: viewer-team marker + prior-period rank. */
+export interface LeaderHomeRow extends RankedLeaderRow {
+  /** true when this row belongs to the authenticated viewer's active team */
+  ours: boolean;
+  /** rank in the previous period (for ▲/▼ deltas); null when unavailable — never fabricated */
+  prevRank: number | null;
+}
 
 export interface LeaderBoardResult {
   def: StatDef;
   label: string;
-  rows: RankedLeaderRow[];
+  rows: LeaderHomeRow[];
+}
+
+/** Active-team identity used to mark "your team" rows for authenticated viewers. */
+export interface ActiveTeamRef {
+  id: string;
+  name: string;
 }
 
 export type LeagueHomeData =
@@ -68,12 +99,19 @@ export type LeagueHomeData =
       season: string;
       seasons: string[];
       standings: any[];
-      defaultBoards: { batting: LeaderBoardResult[]; pitching: LeaderBoardResult[]; team: LeaderBoardResult[] };
+      defaultBoards: {
+        batting: LeaderBoardResult[];
+        pitching: LeaderBoardResult[];
+        team: LeaderBoardResult[];
+        special: LeaderBoardResult[];
+      };
       customBoards: LeaderBoardResult[];
       spotlights: any[];
-      recent: Array<{ id: string; label: string }>;
+      recent: RecentGame[];
       upcoming: Array<{ id: string; label: string }>;
       counters: { teams: number; games: number };
+      /** ISO timestamp of the most recent snapshot row, for the "Updated N ago" pill. */
+      updatedAt: string | null;
     };
 
 /** Minimal league identity/visibility lookup for metadata (no snapshot reads). */
@@ -91,6 +129,7 @@ export async function getLeagueHomeData(
   slug: string,
   isAuthed: boolean,
   seasonParam?: string,
+  activeTeam?: ActiveTeamRef | null,
 ): Promise<LeagueHomeData> {
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
@@ -150,6 +189,16 @@ export async function getLeagueHomeData(
   const paMin = (leaderConfig.qualifierOverrides.paPerGame ?? DEFAULT_PA_PER_GAME) * leagueGames;
   const ipOutsMin = (leaderConfig.qualifierOverrides.ipPerGame ?? DEFAULT_IP_PER_GAME) * leagueGames * 3;
 
+  // "Your team" marking only applies to authenticated viewers with an active team.
+  // Team boards match on team id; player boards match on (case-folded) team name.
+  const ourTeamId = isAuthed ? activeTeam?.id ?? null : null;
+  const ourTeamName = isAuthed ? activeTeam?.name?.trim().toLowerCase() ?? null : null;
+  const isOurs = (def: StatDef, row: RankedLeaderRow): boolean => {
+    if (!ourTeamId) return false;
+    if (def.subject === 'team') return row.id === ourTeamId;
+    return !!row.teamName && row.teamName.trim().toLowerCase() === ourTeamName;
+  };
+
   const board = (statKey: string, label?: string, limit = 10): LeaderBoardResult => {
     const def = getStatDef(statKey as any);
     const rows: LeaderRow[] =
@@ -162,19 +211,23 @@ export async function getLeagueHomeData(
           }))
         : toLeaderRows(playerSnap ?? [], statKey, isAuthed);
     const minQualifier = def.qualifier === 'ip' ? ipOutsMin : def.qualifier === 'pa' ? paMin : 0;
-    return { def, label: label ?? def.label, rows: buildLeaderboard(rows, def, { minQualifier, limit }) };
+    const ranked = buildLeaderboard(rows, def, { minQualifier, limit });
+    // prevRank is left null for v1 — there is no retained prior-period snapshot to
+    // diff against, and the spec forbids fabricating deltas (LEADERBOARD_ALIGNMENT §6).
+    const enriched: LeaderHomeRow[] = ranked.map((r) => ({ ...r, ours: isOurs(def, r), prevRank: null }));
+    return { def, label: label ?? def.label, rows: enriched };
   };
 
   // Recent results + upcoming for the league's teams.
   const teamIds = standingsSorted.map((r: any) => r.team_id);
-  let recent: Array<{ id: string; label: string }> = [];
+  let recent: RecentGame[] = [];
   let upcoming: Array<{ id: string; label: string }> = [];
   if (teamIds.length) {
     const teamNameById = new Map<string, string>(standingsSorted.map((r: any) => [r.team_id, r.team_name]));
     const [{ data: recentGames }, { data: upcomingGames }] = await Promise.all([
       db
         .from('games')
-        .select('id, team_id, opponent_name, home_score, away_score, scheduled_at')
+        .select('id, team_id, opponent_name, home_score, away_score, location_type, neutral_home_team, scheduled_at')
         .in('team_id', teamIds)
         .eq('status', 'completed')
         .order('scheduled_at', { ascending: false })
@@ -187,10 +240,20 @@ export async function getLeagueHomeData(
         .order('scheduled_at', { ascending: true })
         .limit(6),
     ]);
-    recent = (recentGames ?? []).map((g: any) => ({
-      id: g.id,
-      label: `${teamNameById.get(g.team_id) ?? 'Team'} ${g.home_score}-${g.away_score} vs ${g.opponent_name}`,
-    }));
+    recent = (recentGames ?? []).map((g: any) => {
+      const isHome = weAreHome(g.location_type, g.neutral_home_team);
+      const ourScore = isHome ? g.home_score : g.away_score;
+      const theirScore = isHome ? g.away_score : g.home_score;
+      const result: 'W' | 'L' | 'T' = ourScore > theirScore ? 'W' : ourScore < theirScore ? 'L' : 'T';
+      return {
+        id: g.id,
+        team: teamNameById.get(g.team_id) ?? 'Team',
+        opponent: g.opponent_name,
+        ourScore,
+        theirScore,
+        result,
+      };
+    });
     upcoming = (upcomingGames ?? []).map((g: any) => ({
       id: g.id,
       label: `${teamNameById.get(g.team_id) ?? 'Team'} vs ${g.opponent_name} — ${new Date(g.scheduled_at).toLocaleDateString()}`,
@@ -198,6 +261,13 @@ export async function getLeagueHomeData(
   }
 
   const totalGames = standingsSorted.reduce((s: number, r: any) => s + r.wins + r.losses + r.ties, 0);
+
+  // Most-recent snapshot write across the loaded tables, for the "Updated N ago" pill.
+  const updatedAt =
+    [...(standings ?? []), ...(playerSnap ?? []), ...(teamSnap ?? [])]
+      .map((r: any) => r.updated_at as string | undefined)
+      .filter((t): t is string => !!t)
+      .sort((a, b) => b.localeCompare(a))[0] ?? null;
 
   return {
     ok: true,
@@ -207,14 +277,16 @@ export async function getLeagueHomeData(
     seasons,
     standings: standingsSorted,
     defaultBoards: {
-      batting: DEFAULT_BATTING.map((k) => board(k)),
-      pitching: DEFAULT_PITCHING.map((k) => board(k)),
-      team: DEFAULT_TEAM.map((k) => board(k)),
+      batting: GROUP_BOARDS.batting.map((k) => board(k)),
+      pitching: GROUP_BOARDS.pitching.map((k) => board(k)),
+      team: GROUP_BOARDS.team.map((k) => board(k)),
+      special: GROUP_BOARDS.special.map((k) => board(k)),
     },
     customBoards: leaderConfig.custom.map((c) => board(c.statKey, c.label, c.limit)),
     spotlights: spots ?? [],
     recent,
     upcoming,
     counters: { teams: standingsSorted.length, games: Math.floor(totalGames / 2) },
+    updatedAt,
   };
 }

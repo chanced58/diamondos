@@ -633,6 +633,19 @@
   to   { opacity: 1; transform: none; }
 }
 
+/* League leaderboard relative-value bar — grows from 0 to its set width on mount. */
+@keyframes barGrow {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+.lb-fill {
+  transform-origin: left center;
+  animation: barGrow 650ms var(--ease) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lb-fill { animation: none; }
+}
+
 /* Watch Live: pulse a base when a runner arrives. The rect is placed
    inside the rotated base group, so we scale around its own center. */
 @keyframes diamond-base-pulse {
