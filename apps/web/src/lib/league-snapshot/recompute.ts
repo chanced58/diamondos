@@ -71,7 +71,13 @@ export async function recomputeLeagueSnapshot(
       .from('games')
       .select('id, team_id, home_score, away_score, location_type, neutral_home_team, status')
       .in('id', gameIdList),
-    db.from('game_events').select('*').in('game_id', gameIdList),
+    // Reducers require events ordered by (game_id, sequence_number) ascending.
+    db
+      .from('game_events')
+      .select('*')
+      .in('game_id', gameIdList)
+      .order('game_id', { ascending: true })
+      .order('sequence_number', { ascending: true }),
     db
       .from('game_lineups')
       .select('game_id, player_id, batting_order, count_toward_stats')
