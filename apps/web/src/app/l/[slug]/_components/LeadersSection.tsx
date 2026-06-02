@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { LeaderBoardResult } from '@/lib/league-home/load';
 import { LeaderBoard } from './LeaderBoard';
 
@@ -19,7 +19,8 @@ export function LeadersSection({
   boards: Record<Cat, LeaderBoardResult[]>;
 }): JSX.Element {
   // Only offer tabs that actually have boards; default to the first available.
-  const available = TABS.filter((t) => boards[t.id].length > 0);
+  // Memoized so the sync effect below only re-runs when boards actually change.
+  const available = useMemo(() => TABS.filter((t) => boards[t.id].length > 0), [boards]);
   const [active, setActive] = useState<Cat>(available[0]?.id ?? 'batting');
 
   // If the active tab disappears (e.g. a season change drops a category), fall

@@ -61,6 +61,52 @@ export function toLeaderRows(snap: any[], statKey: string, isAuthed: boolean): L
     }));
 }
 
+/** Raw `games` row fields needed to summarize a completed game from our side. */
+export interface RawRecentGame {
+  id: string;
+  opponent_name: string;
+  home_score: number;
+  away_score: number;
+  location_type: string;
+  neutral_home_team?: string | null;
+}
+
+/** Summarize a completed game from the home team's perspective (W/L/T + our/their score). */
+export function mapRecentGame(g: RawRecentGame, teamName: string): RecentGame {
+  const isHome = weAreHome(g.location_type, g.neutral_home_team);
+  const ourScore = isHome ? g.home_score : g.away_score;
+  const theirScore = isHome ? g.away_score : g.home_score;
+  const result: 'W' | 'L' | 'T' = ourScore > theirScore ? 'W' : ourScore < theirScore ? 'L' : 'T';
+  return { id: g.id, team: teamName, opponent: g.opponent_name, ourScore, theirScore, result };
+}
+
+/**
+ * Whether a leaderboard row belongs to the viewer's active team. Team boards
+ * match on id; player boards match on (case/whitespace-folded) team name. A null
+ * ref (public/unauthed viewer) never matches.
+ */
+export function isOursRow(
+  def: Pick<StatDef, 'subject'>,
+  row: { id: string; teamName?: string },
+  ref: ActiveTeamRef | null,
+): boolean {
+  if (!ref) return false;
+  if (def.subject === 'team') return row.id === ref.id;
+  const refName = ref.name?.trim().toLowerCase();
+  return !!row.teamName && !!refName && row.teamName.trim().toLowerCase() === refName;
+}
+
+/** Bucket already-built boards into their leaderboard tabs by `StatDef.group`. */
+export function groupBoardsByCategory(boards: LeaderBoardResult[]): Record<StatGroup, LeaderBoardResult[]> {
+  return boards.reduce(
+    (acc, b) => {
+      acc[b.def.group].push(b);
+      return acc;
+    },
+    { batting: [], pitching: [], team: [], special: [] } as Record<StatGroup, LeaderBoardResult[]>,
+  );
+}
+
 // Curated default boards, in display order. Each board is routed to a tab by its
 // StatDef.group, so this list controls *which* stats appear (and their order)
 // while the catalog's `group` field decides the tab. Typed as StatKey[] so an
@@ -198,14 +244,7 @@ export async function getLeagueHomeData(
   const ipOutsMin = (leaderConfig.qualifierOverrides.ipPerGame ?? DEFAULT_IP_PER_GAME) * leagueGames * 3;
 
   // "Your team" marking only applies to authenticated viewers with an active team.
-  // Team boards match on team id; player boards match on (case-folded) team name.
-  const ourTeamId = isAuthed ? activeTeam?.id ?? null : null;
-  const ourTeamName = isAuthed ? activeTeam?.name?.trim().toLowerCase() ?? null : null;
-  const isOurs = (def: StatDef, row: RankedLeaderRow): boolean => {
-    if (!ourTeamId) return false;
-    if (def.subject === 'team') return row.id === ourTeamId;
-    return !!row.teamName && row.teamName.trim().toLowerCase() === ourTeamName;
-  };
+  const ourRef: ActiveTeamRef | null = isAuthed ? activeTeam ?? null : null;
 
   const board = (statKey: string, label?: string, limit = 10): LeaderBoardResult => {
     const def = getStatDef(statKey as any);
@@ -222,7 +261,7 @@ export async function getLeagueHomeData(
     const ranked = buildLeaderboard(rows, def, { minQualifier, limit });
     // prevRank is left null for v1 — there is no retained prior-period snapshot to
     // diff against, and the spec forbids fabricating deltas (LEADERBOARD_ALIGNMENT §6).
-    const enriched: LeaderHomeRow[] = ranked.map((r) => ({ ...r, ours: isOurs(def, r), prevRank: null }));
+    const enriched: LeaderHomeRow[] = ranked.map((r) => ({ ...r, ours: isOursRow(def, r, ourRef), prevRank: null }));
     return { def, label: label ?? def.label, rows: enriched };
   };
 
@@ -232,7 +271,10 @@ export async function getLeagueHomeData(
   let upcoming: Array<{ id: string; label: string }> = [];
   if (teamIds.length) {
     const teamNameById = new Map<string, string>(standingsSorted.map((r: any) => [r.team_id, r.team_name]));
-    const [{ data: recentGames }, { data: upcomingGames }] = await Promise.all([
+    const [
+      { data: recentGames, error: recentErr },
+      { data: upcomingGames, error: upcomingErr },
+    ] = await Promise.all([
       db
         .from('games')
         .select('id, team_id, opponent_name, home_score, away_score, location_type, neutral_home_team, scheduled_at')
@@ -248,20 +290,15 @@ export async function getLeagueHomeData(
         .order('scheduled_at', { ascending: true })
         .limit(6),
     ]);
-    recent = (recentGames ?? []).map((g: any) => {
-      const isHome = weAreHome(g.location_type, g.neutral_home_team);
-      const ourScore = isHome ? g.home_score : g.away_score;
-      const theirScore = isHome ? g.away_score : g.home_score;
-      const result: 'W' | 'L' | 'T' = ourScore > theirScore ? 'W' : ourScore < theirScore ? 'L' : 'T';
-      return {
-        id: g.id,
-        team: teamNameById.get(g.team_id) ?? 'Team',
-        opponent: g.opponent_name,
-        ourScore,
-        theirScore,
-        result,
-      };
-    });
+    // Recent/upcoming is a secondary section — log so a regression is observable,
+    // but degrade to empty rather than failing the whole page (standings + leaders
+    // already loaded). Snapshot reads above still hard-fail since they *are* the page.
+    if (recentErr || upcomingErr) {
+      console.error(
+        `[league-home] games read failed league=${league.id} season=${season} teams=${teamIds.length}: ${(recentErr ?? upcomingErr)!.message}`,
+      );
+    }
+    recent = (recentGames ?? []).map((g: any) => mapRecentGame(g, teamNameById.get(g.team_id) ?? 'Team'));
     upcoming = (upcomingGames ?? []).map((g: any) => ({
       id: g.id,
       label: `${teamNameById.get(g.team_id) ?? 'Team'} vs ${g.opponent_name} — ${new Date(g.scheduled_at).toLocaleDateString()}`,
@@ -285,14 +322,7 @@ export async function getLeagueHomeData(
     seasons,
     standings: standingsSorted,
     // Route each curated board into its tab by the catalog's `group` field.
-    defaultBoards: DEFAULT_BOARD_KEYS.reduce(
-      (acc, key) => {
-        const b = board(key);
-        acc[b.def.group].push(b);
-        return acc;
-      },
-      { batting: [], pitching: [], team: [], special: [] } as Record<StatGroup, LeaderBoardResult[]>,
-    ),
+    defaultBoards: groupBoardsByCategory(DEFAULT_BOARD_KEYS.map((key) => board(key))),
     customBoards: leaderConfig.custom.map((c) => board(c.statKey, c.label, c.limit)),
     spotlights: spots ?? [],
     recent,
