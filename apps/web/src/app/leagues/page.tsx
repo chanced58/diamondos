@@ -11,6 +11,11 @@ export const metadata: Metadata = {
   description: 'Browse public baseball leagues on DiamondOS — standings, stats, and highlights for every league.',
 };
 
+/**
+ * Public `/leagues` directory page. Fetches all publicly visible leagues
+ * server-side and renders them (or an empty state) inside a nav/footer shell
+ * mirroring the marketing home page. Reachable without authentication.
+ */
 export default async function LeaguesPage(): Promise<JSX.Element> {
   const supabase = createServerClient();
   const { data: { user } } = await supabase.auth.getUser();

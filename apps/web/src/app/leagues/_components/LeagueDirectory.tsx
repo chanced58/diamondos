@@ -9,30 +9,39 @@ import type { PublicLeagueListItem } from '@/lib/league-home/load';
 function humanize(value: string): string {
   return value
     .split('_')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 }
 
 const ALL = 'all';
 
+/**
+ * Searchable, filterable grid of public leagues for the /leagues directory.
+ * Filters in-memory by a name/state-code query and an optional league-type
+ * dropdown (options derived from the supplied leagues). Each card links to the
+ * league's public home page at /l/[slug].
+ */
 export function LeagueDirectory({ leagues }: { leagues: PublicLeagueListItem[] }): JSX.Element {
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>(ALL);
 
   // Distinct league types present in the data, for the filter dropdown.
   const types = useMemo(
-    () => Array.from(new Set(leagues.map((l) => l.leagueType).filter((t): t is string => !!t))).sort(),
+    () =>
+      Array.from(
+        new Set(leagues.map((league) => league.leagueType).filter((leagueType): leagueType is string => !!leagueType)),
+      ).sort(),
     [leagues],
   );
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return leagues.filter((l) => {
-      const matchesType = typeFilter === ALL || l.leagueType === typeFilter;
+    const normalizedQuery = query.trim().toLowerCase();
+    return leagues.filter((league) => {
+      const matchesType = typeFilter === ALL || league.leagueType === typeFilter;
       const matchesQuery =
-        q === '' ||
-        l.name.toLowerCase().includes(q) ||
-        (l.stateCode?.toLowerCase().includes(q) ?? false);
+        normalizedQuery === '' ||
+        league.name.toLowerCase().includes(normalizedQuery) ||
+        (league.stateCode?.toLowerCase().includes(normalizedQuery) ?? false);
       return matchesType && matchesQuery;
     });
   }, [leagues, query, typeFilter]);
@@ -57,9 +66,9 @@ export function LeagueDirectory({ leagues }: { leagues: PublicLeagueListItem[] }
             className="rounded-lg border border-app-border bg-app-surface px-3 py-2.5 text-sm text-app-fg focus:border-turf-500 focus:outline-none"
           >
             <option value={ALL}>All types</option>
-            {types.map((t) => (
-              <option key={t} value={t}>
-                {humanize(t)}
+            {types.map((leagueType) => (
+              <option key={leagueType} value={leagueType}>
+                {humanize(leagueType)}
               </option>
             ))}
           </select>

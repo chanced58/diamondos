@@ -207,13 +207,13 @@ export async function listPublicLeagues(): Promise<PublicLeagueListItem[]> {
     console.error(`[league-directory] list failed: ${error.message}`);
     return [];
   }
-  return (data ?? []).map((r) => ({
-    slug: r.slug,
-    name: r.name,
-    logoUrl: r.logo_url,
-    stateCode: r.state_code,
-    leagueType: r.league_type,
-    level: r.level,
+  return (data ?? []).map((leagueRow) => ({
+    slug: leagueRow.slug,
+    name: leagueRow.name,
+    logoUrl: leagueRow.logo_url,
+    stateCode: leagueRow.state_code,
+    leagueType: leagueRow.league_type,
+    level: leagueRow.level,
   }));
 }
 
