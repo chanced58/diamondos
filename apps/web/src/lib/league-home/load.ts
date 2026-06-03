@@ -179,6 +179,44 @@ export async function getLeagueMeta(slug: string): Promise<{ name: string; visib
   return data ? { name: data.name, visibility: data.visibility } : null;
 }
 
+/** A single public league as shown in the discovery directory at /leagues. */
+export interface PublicLeagueListItem {
+  slug: string;
+  name: string;
+  logoUrl: string | null;
+  stateCode: string | null;
+  leagueType: string | null;
+  level: string | null;
+}
+
+/**
+ * List every league with `visibility = 'public'`, alphabetically by name, for the
+ * public discovery directory. Uses the service-role client (anon users cannot SELECT
+ * `leagues` under RLS) but only ever exposes the columns below — `signed_in` leagues
+ * are excluded by the filter. Degrades to an empty list on error rather than throwing,
+ * so the directory page never 500s.
+ */
+export async function listPublicLeagues(): Promise<PublicLeagueListItem[]> {
+  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const { data, error } = await db
+    .from('leagues')
+    .select('slug, name, logo_url, state_code, league_type, level')
+    .eq('visibility', 'public')
+    .order('name');
+  if (error) {
+    console.error(`[league-directory] list failed: ${error.message}`);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    slug: r.slug,
+    name: r.name,
+    logoUrl: r.logo_url,
+    stateCode: r.state_code,
+    leagueType: r.league_type,
+    level: r.level,
+  }));
+}
+
 export async function getLeagueHomeData(
   slug: string,
   isAuthed: boolean,
