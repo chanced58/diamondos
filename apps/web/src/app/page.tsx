@@ -131,6 +131,7 @@ export default async function HomePage(): Promise<JSX.Element> {
             <span className="display" style={{ fontSize: 20, letterSpacing: '-0.01em' }}>{s.site_name}</span>
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Link href="/leagues" className="btn btn-ghost btn-sm">Leagues</Link>
             {!isLoggedIn && (
               <Link href="/about" className="btn btn-ghost btn-sm">About</Link>
             )}
