@@ -145,7 +145,11 @@ export async function getLeagueHomeData(
     (max: number, r: any) => Math.max(max, r.wins + r.losses + r.ties),
     0,
   );
-  const { paMin, ipOutsMin } = leaderQualifierMinimums(leagueGames, leaderConfig.qualifierOverrides);
+  const { paMin, ipOutsMin } = leaderQualifierMinimums(
+    leagueGames,
+    leaderConfig.qualifierOverrides,
+    league.level,
+  );
 
   const board = (statKey: string, label?: string, limit = 10): LeaderBoardResult => {
     const def = getStatDef(statKey as any);

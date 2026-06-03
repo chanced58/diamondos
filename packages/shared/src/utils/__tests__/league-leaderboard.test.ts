@@ -46,16 +46,29 @@ describe('buildLeaderboard', () => {
 });
 
 describe('leaderQualifierMinimums', () => {
-  it('uses a HS-calibrated IP/game bar (0.5), not the MLB 1.0', () => {
+  it('uses the amateur bar (0.5 IP/game, 2.0 PA/game) for non-pro levels', () => {
     expect(DEFAULT_IP_PER_GAME).toBe(0.5);
-    const { ipOutsMin } = leaderQualifierMinimums(14);
-    expect(ipOutsMin).toBe(21); // 0.5 IP/game * 14 games * 3 outs = 7.0 IP
+    const hs = leaderQualifierMinimums(14, {}, 'high_school');
+    expect(hs.ipOutsMin).toBe(21); // 0.5 IP/game * 14 games * 3 outs = 7.0 IP
+    expect(hs.paMin).toBe(28); // 2.0 PA/game * 14
   });
 
-  it('honors per-league overrides', () => {
-    const { paMin, ipOutsMin } = leaderQualifierMinimums(14, { ipPerGame: 1.0, paPerGame: 3.1 });
-    expect(ipOutsMin).toBe(42); // back to the MLB 1.0 IP/game bar = 14.0 IP
-    expect(paMin).toBeCloseTo(43.4);
+  it('defaults to the amateur bar when level is missing/null', () => {
+    expect(leaderQualifierMinimums(14).ipOutsMin).toBe(21);
+    expect(leaderQualifierMinimums(14, {}, null).ipOutsMin).toBe(21);
+    expect(leaderQualifierMinimums(14, {}, 'college').ipOutsMin).toBe(21);
+  });
+
+  it("uses the MLB qualified-player bar for level 'pro'", () => {
+    const pro = leaderQualifierMinimums(14, {}, 'pro');
+    expect(pro.ipOutsMin).toBe(42); // 1.0 IP/game * 14 * 3 = 14.0 IP
+    expect(pro.paMin).toBeCloseTo(43.4); // 3.1 PA/game * 14
+  });
+
+  it('honors per-league overrides over the level default', () => {
+    const { paMin, ipOutsMin } = leaderQualifierMinimums(14, { ipPerGame: 0.25, paPerGame: 1.0 }, 'pro');
+    expect(ipOutsMin).toBeCloseTo(10.5); // override wins even for a pro league
+    expect(paMin).toBe(14);
   });
 
   // Regression: Idaho 2A, Spring 2026 — 9 pitchers, league max 14 games. The old
@@ -72,8 +85,8 @@ describe('leaderQualifierMinimums', () => {
     }));
     const leagueGames = 14;
 
-    const mlbBar = leaderQualifierMinimums(leagueGames, { ipPerGame: 1.0 }).ipOutsMin;
-    const hsBar = leaderQualifierMinimums(leagueGames).ipOutsMin;
+    const mlbBar = leaderQualifierMinimums(leagueGames, {}, 'pro').ipOutsMin;
+    const hsBar = leaderQualifierMinimums(leagueGames, {}, 'high_school').ipOutsMin;
 
     const mlbBoard = buildLeaderboard(rows, getStatDef('era'), { minQualifier: mlbBar, limit: 10 });
     const hsBoard = buildLeaderboard(rows, getStatDef('era'), { minQualifier: hsBar, limit: 10 });
