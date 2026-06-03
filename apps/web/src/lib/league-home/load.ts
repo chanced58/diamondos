@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import {
   buildLeaderboard,
+  leaderQualifierMinimums,
   getStatDef,
   publicDisplayName,
   memberDisplayName,
@@ -11,9 +12,6 @@ import {
   type RankedLeaderRow,
   type StatDef,
 } from '@baseball/shared';
-
-const DEFAULT_PA_PER_GAME = 2.0;
-const DEFAULT_IP_PER_GAME = 1.0;
 
 export function resolveVisibility(visibility: string, isAuthed: boolean): 'ok' | 'blocked' {
   if (visibility === 'signed_in' && !isAuthed) return 'blocked';
@@ -147,8 +145,7 @@ export async function getLeagueHomeData(
     (max: number, r: any) => Math.max(max, r.wins + r.losses + r.ties),
     0,
   );
-  const paMin = (leaderConfig.qualifierOverrides.paPerGame ?? DEFAULT_PA_PER_GAME) * leagueGames;
-  const ipOutsMin = (leaderConfig.qualifierOverrides.ipPerGame ?? DEFAULT_IP_PER_GAME) * leagueGames * 3;
+  const { paMin, ipOutsMin } = leaderQualifierMinimums(leagueGames, leaderConfig.qualifierOverrides);
 
   const board = (statKey: string, label?: string, limit = 10): LeaderBoardResult => {
     const def = getStatDef(statKey as any);
