@@ -12,10 +12,11 @@ describe('STAT_CATALOG', () => {
     expect(getStatDef('homeRuns').isRate).toBe(false);
   });
 
-  it('every stat declares subject and sort direction', () => {
+  it('every stat declares subject, sort direction, and group', () => {
     for (const s of STAT_CATALOG) {
       expect(['player', 'team']).toContain(s.subject);
       expect(['asc', 'desc']).toContain(s.sortDir);
+      expect(['batting', 'pitching', 'team', 'special']).toContain(s.group);
     }
   });
 
