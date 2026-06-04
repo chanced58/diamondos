@@ -165,8 +165,9 @@ export async function getLeagueHomeData(
     return { def, label: label ?? def.label, rows: buildLeaderboard(rows, def, { minQualifier, limit }) };
   };
 
-  // Recent results + upcoming for the league's teams.
-  const teamIds = standingsSorted.map((r: any) => r.team_id);
+  // Recent results + upcoming — only platform teams record their own games;
+  // opponent teams (team_id null) appear in standings but never as games.team_id.
+  const teamIds = standingsSorted.filter((r: any) => r.team_id).map((r: any) => r.team_id);
   let recent: Array<{ id: string; label: string }> = [];
   let upcoming: Array<{ id: string; label: string }> = [];
   if (teamIds.length) {
@@ -197,7 +198,11 @@ export async function getLeagueHomeData(
     }));
   }
 
-  const totalGames = standingsSorted.reduce((s: number, r: any) => s + r.wins + r.losses + r.ties, 0);
+  // Count games from platform rows only (each league matchup is recorded by both
+  // platform teams, hence the /2 below). Opponent inverse records would double-count.
+  const totalGames = standingsSorted
+    .filter((r: any) => r.team_id)
+    .reduce((s: number, r: any) => s + r.wins + r.losses + r.ties, 0);
 
   return {
     ok: true,

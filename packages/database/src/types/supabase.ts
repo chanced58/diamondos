@@ -1701,11 +1701,12 @@ export type Database = {
           division_id: string | null
           league_id: string
           losses: number
+          opponent_team_id: string | null
           runs_against: number
           runs_for: number
           season: string
           streak: string
-          team_id: string
+          team_id: string | null
           team_name: string
           ties: number
           updated_at: string
@@ -1716,11 +1717,12 @@ export type Database = {
           division_id?: string | null
           league_id: string
           losses?: number
+          opponent_team_id?: string | null
           runs_against?: number
           runs_for?: number
           season: string
           streak?: string
-          team_id: string
+          team_id?: string | null
           team_name: string
           ties?: number
           updated_at?: string
@@ -1731,11 +1733,12 @@ export type Database = {
           division_id?: string | null
           league_id?: string
           losses?: number
+          opponent_team_id?: string | null
           runs_against?: number
           runs_for?: number
           season?: string
           streak?: string
-          team_id?: string
+          team_id?: string | null
           team_name?: string
           ties?: number
           updated_at?: string
@@ -1755,6 +1758,13 @@ export type Database = {
             columns: ["league_id"]
             isOneToOne: false
             referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_standings_snapshot_opponent_team_id_fkey"
+            columns: ["opponent_team_id"]
+            isOneToOne: false
+            referencedRelation: "opponent_teams"
             referencedColumns: ["id"]
           },
           {
