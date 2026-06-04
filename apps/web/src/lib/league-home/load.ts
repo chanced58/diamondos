@@ -1,3 +1,4 @@
+import { unstable_cache } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import {
   buildLeaderboard,
@@ -14,7 +15,16 @@ import {
   type StatDef,
   type StatGroup,
   type StatKey,
+  type LeagueLeaderConfig,
 } from '@baseball/shared';
+
+/**
+ * How long the viewer-independent league-home snapshot (standings, leaderboards,
+ * recent/upcoming) is cached before a re-read. The recompute cron rebuilds the
+ * underlying snapshots every 6h, so a 1h public-page cache is always within
+ * freshness while sparing the DB a query on every request.
+ */
+const LEAGUE_HOME_REVALIDATE_SECONDS = 3600;
 
 /** A completed league game summarized from the home team's perspective. */
 export interface RecentGame {
@@ -215,12 +225,37 @@ export async function listPublicLeagues(): Promise<PublicLeagueListItem[]> {
   }));
 }
 
-export async function getLeagueHomeData(
-  slug: string,
-  isAuthed: boolean,
-  seasonParam?: string,
-  activeTeam?: ActiveTeamRef | null,
-): Promise<LeagueHomeData> {
+/**
+ * All viewer-INDEPENDENT league-home data: snapshots, sorted standings,
+ * recent/upcoming, and the leaderboard qualifier thresholds. Contains nothing
+ * that depends on who is viewing (no name-masking, no "your team" marking), so it
+ * is safe to cache and share across all viewers. `null` means the slug is unknown.
+ */
+interface LeagueHomeSnapshot {
+  league: { id: string; name: string; logoUrl: string | null; visibility: string };
+  theme: ReturnType<typeof mergeWithThemeDefaults>;
+  season: string;
+  seasons: string[];
+  standingsSorted: any[];
+  playerSnap: any[];
+  teamSnap: any[];
+  spotlights: any[];
+  recent: RecentGame[];
+  upcoming: Array<{ id: string; label: string }>;
+  paMin: number;
+  ipOutsMin: number;
+  customConfig: LeagueLeaderConfig['custom'];
+  counters: { teams: number; games: number };
+  updatedAt: string | null;
+}
+
+/**
+ * Read + assemble the viewer-independent league-home snapshot from Supabase.
+ * Throws on query errors (so transient failures are not cached); returns `null`
+ * only for an unknown slug. Uses the service-role client (no cookies), which is
+ * what lets the result be cached via {@link cachedLeagueHomeSnapshot}.
+ */
+async function loadLeagueHomeSnapshot(slug: string, seasonParam?: string): Promise<LeagueHomeSnapshot | null> {
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
   const { data: league, error: leagueErr } = await db
@@ -233,10 +268,7 @@ export async function getLeagueHomeData(
     console.error(`[league-home] league lookup failed slug=${slug}: ${leagueErr.message}`);
     throw new Error('Failed to load league. Please try again.');
   }
-  if (!league) return { notFound: true };
-  if (resolveVisibility(league.visibility, isAuthed) === 'blocked') {
-    return { blocked: true, league: { name: league.name } };
-  }
+  if (!league) return null;
 
   const theme = mergeWithThemeDefaults(league.home_theme);
   // Tolerate a malformed leader_config (e.g. hand-edited in the DB) rather than
@@ -285,28 +317,6 @@ export async function getLeagueHomeData(
     leaderConfig.qualifierOverrides,
     league.level,
   );
-
-  // "Your team" marking only applies to authenticated viewers with an active team.
-  const ourRef: ActiveTeamRef | null = isAuthed ? activeTeam ?? null : null;
-
-  const board = (statKey: string, label?: string, limit = 10): LeaderBoardResult => {
-    const def = getStatDef(statKey as any);
-    const rows: LeaderRow[] =
-      def.subject === 'team'
-        ? (teamSnap ?? []).map((t: any) => ({
-            id: t.team_id,
-            name: t.team_name,
-            value: getStatValue(t.stats, def.field),
-            qualifierValue: 1,
-          }))
-        : toLeaderRows(playerSnap ?? [], statKey, isAuthed);
-    const minQualifier = def.qualifier === 'ip' ? ipOutsMin : def.qualifier === 'pa' ? paMin : 0;
-    const ranked = buildLeaderboard(rows, def, { minQualifier, limit });
-    // prevRank is left null for v1 — there is no retained prior-period snapshot to
-    // diff against, and the spec forbids fabricating deltas (LEADERBOARD_ALIGNMENT §6).
-    const enriched: LeaderHomeRow[] = ranked.map((r) => ({ ...r, ours: isOursRow(def, r, ourRef), prevRank: null }));
-    return { def, label: label ?? def.label, rows: enriched };
-  };
 
   // Recent results + upcoming — only platform teams record their own games;
   // opponent teams (team_id null) appear in standings but never as games.team_id.
@@ -364,19 +374,85 @@ export async function getLeagueHomeData(
       .sort((a, b) => b.localeCompare(a))[0] ?? null;
 
   return {
-    ok: true,
     league: { id: league.id, name: league.name, logoUrl: league.logo_url, visibility: league.visibility },
     theme,
     season,
     seasons,
-    standings: standingsSorted,
-    // Route each curated board into its tab by the catalog's `group` field.
-    defaultBoards: groupBoardsByCategory(DEFAULT_BOARD_KEYS.map((key) => board(key))),
-    customBoards: leaderConfig.custom.map((c) => board(c.statKey, c.label, c.limit)),
+    standingsSorted,
+    playerSnap: playerSnap ?? [],
+    teamSnap: teamSnap ?? [],
     spotlights: spots ?? [],
     recent,
     upcoming,
+    paMin,
+    ipOutsMin,
+    customConfig: leaderConfig.custom,
     counters: { teams: standingsSorted.length, games: Math.floor(totalGames / 2) },
     updatedAt,
+  };
+}
+
+/**
+ * The viewer-independent snapshot, cached for {@link LEAGUE_HOME_REVALIDATE_SECONDS}.
+ * Keyed by (slug, season) so each season caches separately; tagged `league-home:<slug>`
+ * so a future on-recompute hook can invalidate it early via `revalidateTag`.
+ */
+function cachedLeagueHomeSnapshot(slug: string, seasonParam?: string): Promise<LeagueHomeSnapshot | null> {
+  return unstable_cache(
+    () => loadLeagueHomeSnapshot(slug, seasonParam),
+    ['league-home-snapshot', slug, seasonParam ?? ''],
+    { revalidate: LEAGUE_HOME_REVALIDATE_SECONDS, tags: [`league-home:${slug}`] },
+  )();
+}
+
+export async function getLeagueHomeData(
+  slug: string,
+  isAuthed: boolean,
+  seasonParam?: string,
+  activeTeam?: ActiveTeamRef | null,
+): Promise<LeagueHomeData> {
+  const snap = await cachedLeagueHomeSnapshot(slug, seasonParam);
+  if (!snap) return { notFound: true };
+  if (resolveVisibility(snap.league.visibility, isAuthed) === 'blocked') {
+    return { blocked: true, league: { name: snap.league.name } };
+  }
+
+  // "Your team" marking only applies to authenticated viewers with an active team.
+  const ourRef: ActiveTeamRef | null = isAuthed ? activeTeam ?? null : null;
+
+  const board = (statKey: string, label?: string, limit = 10): LeaderBoardResult => {
+    const def = getStatDef(statKey as any);
+    const rows: LeaderRow[] =
+      def.subject === 'team'
+        ? (snap.teamSnap ?? []).map((t: any) => ({
+            id: t.team_id,
+            name: t.team_name,
+            value: getStatValue(t.stats, def.field),
+            qualifierValue: 1,
+          }))
+        : toLeaderRows(snap.playerSnap ?? [], statKey, isAuthed);
+    const minQualifier = def.qualifier === 'ip' ? snap.ipOutsMin : def.qualifier === 'pa' ? snap.paMin : 0;
+    const ranked = buildLeaderboard(rows, def, { minQualifier, limit });
+    // prevRank is left null for v1 — there is no retained prior-period snapshot to
+    // diff against, and the spec forbids fabricating deltas (LEADERBOARD_ALIGNMENT §6).
+    const enriched: LeaderHomeRow[] = ranked.map((r) => ({ ...r, ours: isOursRow(def, r, ourRef), prevRank: null }));
+    return { def, label: label ?? def.label, rows: enriched };
+  };
+
+  return {
+    ok: true,
+    league: snap.league,
+    theme: snap.theme,
+    season: snap.season,
+    seasons: snap.seasons,
+    standings: snap.standingsSorted,
+    // Route each curated board into its tab by the catalog's `group` field.
+    defaultBoards: groupBoardsByCategory(DEFAULT_BOARD_KEYS.map((key) => board(key))),
+    customBoards: snap.customConfig.map((c) => board(c.statKey, c.label, c.limit)),
+    spotlights: snap.spotlights,
+    recent: snap.recent,
+    upcoming: snap.upcoming,
+    counters: snap.counters,
+    updatedAt: snap.updatedAt,
   };
 }
