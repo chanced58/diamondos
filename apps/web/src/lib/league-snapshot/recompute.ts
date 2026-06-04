@@ -9,7 +9,7 @@ import {
 import { fetchAllEventsForGames } from '@/lib/stats/fetch-events';
 import { buildLineupsByGameId } from '@/lib/stats/lineups';
 import { resolveLeagueSeasonGameIds } from './season';
-import { computeStandings, type GameRow } from './standings';
+import { computeStandings, computeOpponentStandings, type GameRow } from './standings';
 import { combinePlayerStats, type PlayerTeamInfo } from './aggregate';
 
 const NIL = '00000000-0000-0000-0000-000000000000';
@@ -44,19 +44,24 @@ export async function recomputeLeagueSnapshot(
   leagueId: string,
   season: string,
 ): Promise<void> {
-  // 1) league team ids
+  // 1) league member ids — platform teams (team_id) and opponent teams
+  //    (opponent_team_id). A row has exactly one of the two set.
   const { data: members, error: membersErr } = await db
     .from('league_members')
-    .select('team_id')
+    .select('team_id, opponent_team_id')
     .eq('league_id', leagueId)
     .eq('is_active', true);
   assertOk(membersErr, 'league_members', leagueId, season);
   const teamIds = (members ?? [])
     .map((m: { team_id: string | null }) => m.team_id)
     .filter((t: string | null): t is string => Boolean(t));
+  const opponentTeamIds = (members ?? [])
+    .map((m: { opponent_team_id: string | null }) => m.opponent_team_id)
+    .filter((t: string | null): t is string => Boolean(t));
   if (teamIds.length === 0) {
-    // League has no active members — clear any stale snapshots so the public
-    // page doesn't keep serving old standings/leaders indefinitely.
+    // No platform teams ⇒ no recorded games ⇒ no inverse opponent records to
+    // derive. Clear stale snapshots so the public page doesn't keep serving old
+    // standings/leaders (covers opponent-only rosters too).
     await clearLeagueSeasonSnapshots(db, leagueId, season);
     return;
   }
@@ -64,27 +69,31 @@ export async function recomputeLeagueSnapshot(
   const gameIds = await resolveLeagueSeasonGameIds(db, teamIds, season);
   const gameIdList = gameIds.length ? gameIds : [NIL];
 
-  // 3) load games, teams, opt-outs, and the league roster (for attribution)
+  // 3) load games, teams, opponent teams, opt-outs, and the league roster
   const [
     { data: games, error: gamesErr },
     { data: teams, error: teamsErr },
+    { data: opponentTeams, error: opponentTeamsErr },
     { data: optOuts, error: optOutsErr },
     { data: playerRows, error: playerRowsErr },
   ] = await Promise.all([
     db
       .from('games')
-      .select('id, team_id, home_score, away_score, location_type, neutral_home_team, status')
+      .select('id, team_id, opponent_team_id, home_score, away_score, location_type, neutral_home_team, status')
       .in('id', gameIdList),
     db.from('teams').select('id, name').in('id', teamIds),
+    db.from('opponent_teams').select('id, name').in('id', opponentTeamIds.length ? opponentTeamIds : [NIL]),
     db.from('league_players').select('player_id, public_opt_out').eq('league_id', leagueId),
     db.from('players').select('id, first_name, last_name, team_id').in('team_id', teamIds),
   ]);
   assertOk(gamesErr, 'games', leagueId, season);
   assertOk(teamsErr, 'teams', leagueId, season);
+  assertOk(opponentTeamsErr, 'opponent_teams', leagueId, season);
   assertOk(optOutsErr, 'league_players', leagueId, season);
   assertOk(playerRowsErr, 'players', leagueId, season);
 
   const teamName = new Map<string, string>((teams ?? []).map((t: any) => [t.id, t.name]));
+  const opponentName = new Map<string, string>((opponentTeams ?? []).map((t: any) => [t.id, t.name]));
   const optOut = new Map<string, boolean>((optOuts ?? []).map((o: any) => [o.player_id, o.public_opt_out]));
 
   // 4) events: paginated fetch (past Supabase's 1000-row cap) + drop
@@ -135,8 +144,10 @@ export async function recomputeLeagueSnapshot(
     season,
   });
 
-  // 8) standings
+  // 8) standings — platform teams from their own perspective, opponent teams
+  //    from the inverse of games recorded against them.
   const standings = computeStandings((games ?? []) as GameRow[], teamIds);
+  const opponentStandings = computeOpponentStandings((games ?? []) as GameRow[], opponentTeamIds);
 
   // 9) team stats — team AVG (hits/AB) and team ERA (ER*7 / IP) from the reducer maps
   const teamStatRows = Array.from(standings.entries()).map(([teamId, rec]) => {
@@ -173,20 +184,38 @@ export async function recomputeLeagueSnapshot(
     };
   });
 
-  const standingRows = Array.from(standings.entries()).map(([teamId, rec]) => ({
-    league_id: leagueId,
-    season,
-    team_id: teamId,
-    division_id: null,
-    team_name: teamName.get(teamId) ?? '',
-    wins: rec.wins,
-    losses: rec.losses,
-    ties: rec.ties,
-    runs_for: rec.runsFor,
-    runs_against: rec.runsAgainst,
-    win_pct: rec.winPct,
-    streak: '',
-  }));
+  const standingRows = [
+    ...Array.from(standings.entries()).map(([teamId, rec]) => ({
+      league_id: leagueId,
+      season,
+      team_id: teamId,
+      opponent_team_id: null,
+      division_id: null,
+      team_name: teamName.get(teamId) ?? '',
+      wins: rec.wins,
+      losses: rec.losses,
+      ties: rec.ties,
+      runs_for: rec.runsFor,
+      runs_against: rec.runsAgainst,
+      win_pct: rec.winPct,
+      streak: '',
+    })),
+    ...Array.from(opponentStandings.entries()).map(([opponentTeamId, rec]) => ({
+      league_id: leagueId,
+      season,
+      team_id: null,
+      opponent_team_id: opponentTeamId,
+      division_id: null,
+      team_name: opponentName.get(opponentTeamId) ?? '',
+      wins: rec.wins,
+      losses: rec.losses,
+      ties: rec.ties,
+      runs_for: rec.runsFor,
+      runs_against: rec.runsAgainst,
+      win_pct: rec.winPct,
+      streak: '',
+    })),
+  ];
 
   // 10) spotlights
   const batterCandidates = playerSnapshotRows

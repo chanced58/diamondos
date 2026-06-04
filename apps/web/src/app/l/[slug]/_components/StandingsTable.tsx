@@ -1,5 +1,6 @@
 interface StandingRow {
-  team_id: string;
+  team_id: string | null;
+  opponent_team_id: string | null;
   team_name: string;
   wins: number;
   losses: number;
@@ -34,7 +35,7 @@ export function StandingsTable({ rows }: { rows: StandingRow[] }): JSX.Element {
           {rows.map((r, i) => {
             const diff = r.runs_for - r.runs_against;
             return (
-              <tr key={r.team_id}>
+              <tr key={r.team_id ?? r.opponent_team_id}>
                 <td className="mono px-3 py-2.5 text-center text-app-fg-subtle">{i + 1}</td>
                 <td className="relative px-3 py-2.5 font-medium text-app-fg">
                   <span
