@@ -143,7 +143,11 @@ export async function getLeagueHomeData(
   }
 
   const standingsSorted = (standings ?? []).sort((a: any, b: any) => b.win_pct - a.win_pct);
-  const leagueGames = standingsSorted.reduce(
+  // Opponent rows (team_id null) aggregate games against multiple platform teams,
+  // so derive games-played metrics from platform rows only — otherwise leaderboard
+  // qualifiers and game counts inflate.
+  const platformStandings = standingsSorted.filter((r: any) => r.team_id);
+  const leagueGames = platformStandings.reduce(
     (max: number, r: any) => Math.max(max, r.wins + r.losses + r.ties),
     0,
   );
@@ -167,7 +171,7 @@ export async function getLeagueHomeData(
 
   // Recent results + upcoming — only platform teams record their own games;
   // opponent teams (team_id null) appear in standings but never as games.team_id.
-  const teamIds = standingsSorted.filter((r: any) => r.team_id).map((r: any) => r.team_id);
+  const teamIds = platformStandings.map((r: any) => r.team_id);
   let recent: Array<{ id: string; label: string }> = [];
   let upcoming: Array<{ id: string; label: string }> = [];
   if (teamIds.length) {
@@ -200,9 +204,10 @@ export async function getLeagueHomeData(
 
   // Count games from platform rows only (each league matchup is recorded by both
   // platform teams, hence the /2 below). Opponent inverse records would double-count.
-  const totalGames = standingsSorted
-    .filter((r: any) => r.team_id)
-    .reduce((s: number, r: any) => s + r.wins + r.losses + r.ties, 0);
+  const totalGames = platformStandings.reduce(
+    (s: number, r: any) => s + r.wins + r.losses + r.ties,
+    0,
+  );
 
   return {
     ok: true,
