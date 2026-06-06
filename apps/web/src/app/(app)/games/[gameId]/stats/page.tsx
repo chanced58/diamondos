@@ -5,206 +5,10 @@ import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
-import { deriveBattingStats, derivePitchingStats, weAreHome, computeOpponentBatting, applyPitchReverted, computeLineScore } from '@baseball/shared';
-import type { BattingStats, PitchingStats } from '@baseball/shared';
+import { loadGameStats } from '@/lib/game-stats/load-game-stats';
 import { GameStatsClient } from './GameStatsClient';
-import type { FieldingStatRow } from './GameStatsClient';
 
 export const metadata: Metadata = { title: 'Game Stats' };
-
-const DB_TO_POSITION: Record<string, string> = {
-  pitcher: 'P', catcher: 'C', first_base: '1B', second_base: '2B',
-  third_base: '3B', shortstop: 'SS', left_field: 'LF', center_field: 'CF',
-  right_field: 'RF', designated_hitter: 'DH', infield: 'IF', outfield: 'OF',
-  utility: 'UTIL',
-};
-
-// Position abbreviation → standard defensive position number
-const ABBR_TO_NUM: Record<string, number> = {
-  P: 1, C: 2, '1B': 3, '2B': 4, '3B': 5, SS: 6, LF: 7, CF: 8, RF: 9,
-};
-
-// Reverse map: position number → abbreviation. Used to label placeholder
-// fielding-stat rows when no real player is assigned to a position.
-const POSITION_NAME_BY_NUM: Record<number, string> = {
-  1: 'P', 2: 'C', 3: '1B', 4: '2B', 5: '3B', 6: 'SS', 7: 'LF', 8: 'CF', 9: 'RF',
-};
-
-// Synthetic id prefix used when a defensive position has no assigned player.
-// Keeps fielding chances (errors, PO, A) from vanishing silently — they
-// surface as "Position 3B" etc. in the table. NEVER persisted to the DB.
-const POSITION_PLACEHOLDER_PREFIX = '__POS__';
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-type LineupEntry = {
-  playerId: string;
-  battingOrder: number;
-  startingPosition: string | null;
-  player: { id: string | null; firstName: string; lastName: string; jerseyNumber: number | null };
-};
-
-function computeFieldingStats(
-  events: Record<string, unknown>[],
-  teamLineup: LineupEntry[],
-  isHome: boolean,
-  playerNameMap: Map<string, { name: string; position: string }>,
-  forOpponent = false,
-): FieldingStatRow[] {
-  // Position number → playerId for this team's defensive lineup
-  const posToPlayer = new Map<number, string>();
-
-  for (const entry of teamLineup) {
-    if (entry.startingPosition) {
-      const num = ABBR_TO_NUM[entry.startingPosition];
-      if (num) posToPlayer.set(num, entry.playerId);
-    }
-  }
-
-  const stats = new Map<string, FieldingStatRow>();
-
-  function getRow(playerId: string): FieldingStatRow {
-    if (!stats.has(playerId)) {
-      // Synthetic placeholder ids like "__POS__5" don't have entries in the
-      // player name map — label them by position so the table renders
-      // "Position 3B" instead of "Unknown".
-      if (playerId.startsWith(POSITION_PLACEHOLDER_PREFIX)) {
-        const posNum = Number(playerId.slice(POSITION_PLACEHOLDER_PREFIX.length));
-        const abbr = POSITION_NAME_BY_NUM[posNum] ?? String(posNum);
-        stats.set(playerId, {
-          playerId,
-          playerName: `Position ${abbr}`,
-          position: abbr,
-          putouts: 0, assists: 0, errors: 0,
-        });
-      } else {
-        const info = playerNameMap.get(playerId);
-        stats.set(playerId, {
-          playerId,
-          playerName: info?.name ?? 'Unknown',
-          position: info?.position ?? '',
-          putouts: 0, assists: 0, errors: 0,
-        });
-      }
-    }
-    return stats.get(playerId)!;
-  }
-
-  // Resolve the credit target for `posNum`. Returns the real player id when
-  // a player occupies the position, a synthetic placeholder id for non-pitcher
-  // positions (2–9) when no player is set, or null when no credit should be
-  // issued (pitcher with no player; or an out-of-range position from a
-  // malformed scorer event).
-  function resolveCreditId(posNum: number): string | null {
-    const playerId = posToPlayer.get(posNum);
-    if (playerId) return playerId;
-    if (posNum < 2 || posNum > 9) return null;
-    return `${POSITION_PLACEHOLDER_PREFIX}${posNum}`;
-  }
-
-  let isTopOfInning = true;
-
-  for (const event of events) {
-    const etype = event.event_type as string;
-    const payload = (event.payload ?? {}) as Record<string, unknown>;
-
-    if (etype === 'inning_change') {
-      isTopOfInning = !isTopOfInning;
-      continue;
-    }
-
-    if (etype === 'pitching_change') {
-      const isOppChange = payload.isOpponentChange as boolean | undefined;
-      // Track this team's pitching changes: our team = !isOppChange, opponent = isOppChange
-      if (forOpponent ? !!isOppChange : !isOppChange) {
-        const newId = payload.newPitcherId as string | undefined;
-        if (newId) posToPlayer.set(1, newId);
-      }
-      continue;
-    }
-
-    if (etype === 'substitution') {
-      const isOppSub = payload.isOpponentSubstitution as boolean | undefined;
-      if (forOpponent ? !!isOppSub : !isOppSub) {
-        const inId = payload.inPlayerId as string | undefined;
-        const outId = payload.outPlayerId as string | undefined;
-        const newPos = payload.newPosition as string | undefined;
-        if (inId && newPos && ABBR_TO_NUM[newPos]) {
-          posToPlayer.set(ABBR_TO_NUM[newPos], inId);
-        } else if (inId && outId) {
-          for (const [num, pid] of posToPlayer.entries()) {
-            if (pid === outId) { posToPlayer.set(num, inId); break; }
-          }
-        }
-      }
-      continue;
-    }
-
-    // Home team fields in top half; away team fields in bottom half.
-    const teamIsFielding = forOpponent
-      ? (isHome ? !isTopOfInning : isTopOfInning)
-      : (isHome ? isTopOfInning : !isTopOfInning);
-    if (!teamIsFielding) continue;
-
-    if (
-      etype === 'out' || etype === 'double_play' || etype === 'triple_play' ||
-      etype === 'sacrifice_fly' || etype === 'sacrifice_bunt'
-    ) {
-      const seq = payload.fieldingSequence as number[] | undefined;
-      if (seq && seq.length > 0) {
-        for (let i = 0; i < seq.length; i++) {
-          const id = resolveCreditId(seq[i]);
-          if (!id) continue;
-          if (i === seq.length - 1) getRow(id).putouts++;
-          else getRow(id).assists++;
-        }
-      }
-    }
-
-    if (etype === 'field_error') {
-      const errorBy = payload.errorBy as number | undefined;
-      if (errorBy !== undefined) {
-        const id = resolveCreditId(errorBy);
-        if (id) getRow(id).errors++;
-      }
-    }
-
-    if (etype === 'caught_stealing') {
-      // Catcher typically gets the putout; add one if catcher is identified
-      const id = resolveCreditId(2);
-      if (id) getRow(id).putouts++;
-    }
-
-    if (etype === 'strikeout') {
-      // Catcher gets PO on strikeout (if no SB/passed ball during the strikeout)
-      const id = resolveCreditId(2);
-      if (id) getRow(id).putouts++;
-    }
-  }
-
-  return Array.from(stats.values());
-}
-
-function computeBaserunningStats(
-  events: Record<string, unknown>[],
-  ourPlayerIds: Set<string>,
-): Record<string, { sb: number; cs: number }> {
-  const result: Record<string, { sb: number; cs: number }> = {};
-  for (const event of events) {
-    const etype = event.event_type as string;
-    if (etype !== 'stolen_base' && etype !== 'caught_stealing') continue;
-    const payload = (event.payload ?? {}) as Record<string, unknown>;
-    const runnerId = payload.runnerId as string | undefined;
-    if (!runnerId || !ourPlayerIds.has(runnerId)) continue;
-    if (!result[runnerId]) result[runnerId] = { sb: 0, cs: 0 };
-    if (etype === 'stolen_base') result[runnerId].sb++;
-    else result[runnerId].cs++;
-  }
-  return result;
-}
-
-
-// ── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function GameStatsPage({
   params,
@@ -220,21 +24,18 @@ export default async function GameStatsPage({
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const { data: game } = await db
-    .from('games')
-    .select('id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, season_id, opponent_team_id')
-    .eq('id', params.gameId)
-    .single();
+  const bundle = await loadGameStats(db, params.gameId);
+  if (!bundle) notFound();
 
-  if (!game) notFound();
+  const { game, teamName, isHome } = bundle;
 
-  const { isCoach, isPlatformAdmin } = await getUserAccess(game.team_id, user.id);
+  const { isCoach, isPlatformAdmin } = await getUserAccess(game.teamId, user.id);
 
   if (!isCoach && !isPlatformAdmin) {
     const { data: membership } = await db
       .from('team_members')
       .select('role')
-      .eq('team_id', game.team_id)
+      .eq('team_id', game.teamId)
       .eq('user_id', user.id)
       .eq('is_active', true)
       .single();
@@ -253,192 +54,8 @@ export default async function GameStatsPage({
     );
   }
 
-  const [lineupResult, eventsResult, rosterResult, teamResult, opponentPlayersResult, opponentLineupResult] =
-    await Promise.all([
-      db
-        .from('game_lineups')
-        .select('player_id, batting_order, starting_position, players(id, first_name, last_name, jersey_number)')
-        .eq('game_id', params.gameId)
-        .order('batting_order', { ascending: true, nullsFirst: false }),
-      db
-        .from('game_events')
-        .select('*')
-        .eq('game_id', params.gameId)
-        .order('sequence_number'),
-      // Fetch ALL players (not just active) so deactivated players who
-      // participated in this game still resolve their names in stats.
-      db
-        .from('players')
-        .select('id, first_name, last_name, jersey_number')
-        .eq('team_id', game.team_id)
-        .order('last_name'),
-      db.from('teams').select('*').eq('id', game.team_id).single(),
-      game.opponent_team_id
-        ? db
-            .from('opponent_players')
-            .select('id, first_name, last_name, jersey_number')
-            .eq('opponent_team_id', game.opponent_team_id)
-            .order('last_name')
-        : Promise.resolve({ data: [] as { id: string; first_name: string; last_name: string; jersey_number: string | null }[] }),
-      game.opponent_team_id
-        ? db
-            .from('opponent_game_lineups')
-            .select('opponent_player_id, batting_order, starting_position, opponent_players(id, first_name, last_name, jersey_number)')
-            .eq('game_id', params.gameId)
-            .order('batting_order', { ascending: true, nullsFirst: false })
-        : Promise.resolve({ data: [] as { opponent_player_id: string; batting_order: number | null; starting_position: string | null; opponent_players: unknown }[] }),
-    ]);
-
-  const teamName = teamResult.data?.name ?? 'Our Team';
-
-  const lineup: LineupEntry[] = (lineupResult.data ?? []).map((l) => {
-    const p = l.players as unknown as { id: string; first_name: string; last_name: string; jersey_number: number | null } | null;
-    return {
-      playerId: l.player_id as string,
-      battingOrder: (l.batting_order as number | null) ?? 0,
-      startingPosition: l.starting_position ? (DB_TO_POSITION[l.starting_position] ?? l.starting_position) : null,
-      player: {
-        id: p?.id ?? null,
-        firstName: p?.first_name ?? '',
-        lastName: p?.last_name ?? '',
-        jerseyNumber: p?.jersey_number ?? null,
-      },
-    };
-  });
-
-  const opponentLineup: LineupEntry[] = (opponentLineupResult.data ?? []).map((l) => {
-    const p = l.opponent_players as unknown as { id: string; first_name: string; last_name: string; jersey_number: string | null } | null;
-    return {
-      playerId: l.opponent_player_id as string,
-      battingOrder: (l.batting_order as number | null) ?? 0,
-      startingPosition: l.starting_position ? (DB_TO_POSITION[l.starting_position] ?? l.starting_position) : null,
-      player: {
-        id: p?.id ?? null,
-        firstName: p?.first_name ?? '',
-        lastName: p?.last_name ?? '',
-        jerseyNumber: typeof p?.jersey_number === 'string' ? parseInt(p.jersey_number, 10) || null : (p?.jersey_number ?? null),
-      },
-    };
-  });
-
-  const teamRoster = (rosterResult.data ?? []).map((p) => ({
-    id: p.id,
-    firstName: p.first_name,
-    lastName: p.last_name,
-    jerseyNumber: p.jersey_number ?? null,
-  }));
-
-  const opponentRoster = (opponentPlayersResult.data ?? []).map((p) => ({
-    id: p.id,
-    firstName: p.first_name,
-    lastName: p.last_name,
-    jerseyNumber: p.jersey_number ?? null,
-  }));
-
-  // ── Filter out reverted events ──────────────────────────────────────────────
-  const allEvents = (eventsResult.data ?? []) as Record<string, unknown>[];
-  // Find most recent game_start (skip game_reset boundary)
-  const lastResetIndex = allEvents.map((e) => e.event_type).lastIndexOf('game_reset');
-  const activeEvents = lastResetIndex === -1 ? allEvents : allEvents.slice(lastResetIndex + 1);
-  const effectiveEvents = applyPitchReverted(activeEvents);
-
-  // ── Batting stats (our team) ────────────────────────────────────────────────
-  // deriveBattingStats uses batterId (our team's players); opponent uses opponentBatterId
-  const ourPlayers = teamRoster.map((p) => ({
-    id: p.id,
-    firstName: p.firstName,
-    lastName: p.lastName,
-  }));
-
-  const ourPlayerIds = new Set(teamRoster.map((p) => p.id));
-
-  // Build lineup context so deriveBattingStats can infer the batter when a
-  // PA-closing event has a missing/stub batterId (recovers pre-a071a02 stub
-  // data and lineup-gap PAs for new games).
-  const isHome = weAreHome(game.location_type, game.neutral_home_team);
-  const ourLineupForInference = lineup
-    .filter((l) => l.playerId && l.battingOrder > 0)
-    .map((l) => ({ playerId: l.playerId, battingOrder: l.battingOrder }));
-  const lineupsByGameId = new Map([[params.gameId, { ourLineup: ourLineupForInference, isHome }]]);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ourBattingMap = deriveBattingStats(effectiveEvents as any, ourPlayers, lineupsByGameId);
-  const ourBatting: BattingStats[] = Array.from(ourBattingMap.values())
-    .filter((s) => s.plateAppearances > 0 && ourPlayerIds.has(s.playerId));
-
-  // ── Pitching stats (both teams) ─────────────────────────────────────────────
-  const allPlayersForPitching = [
-    ...teamRoster.map((p) => ({ id: p.id, firstName: p.firstName, lastName: p.lastName })),
-    ...opponentRoster.map((p) => ({ id: p.id, firstName: p.firstName, lastName: p.lastName })),
-  ];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const allPitchingMap = derivePitchingStats(effectiveEvents as any, allPlayersForPitching);
-
-  const oppPlayerIds = new Set(opponentRoster.map((p) => p.id));
-
-  const ourPitching: PitchingStats[] = Array.from(allPitchingMap.values())
-    .filter((s) => ourPlayerIds.has(s.playerId) && s.totalPitches > 0);
-  const oppPitching: PitchingStats[] = Array.from(allPitchingMap.values())
-    .filter((s) => oppPlayerIds.has(s.playerId) && s.totalPitches > 0);
-
-  // ── Opponent batting (simplified) ───────────────────────────────────────────
-  const oppPlayerNameMap = new Map(opponentRoster.map((p) => [p.id, `${p.firstName} ${p.lastName}`]));
-  // Also include opponent players from lineup that may not be in roster
-  for (const entry of opponentLineup) {
-    if (!oppPlayerNameMap.has(entry.playerId)) {
-      oppPlayerNameMap.set(entry.playerId, `${entry.player.firstName} ${entry.player.lastName}`);
-    }
-  }
-  const oppBatting = computeOpponentBatting(effectiveEvents, oppPlayerNameMap);
-
-  // ── Fielding stats (our team) ───────────────────────────────────────────────
-  const ourPlayerNameMap = new Map<string, { name: string; position: string }>();
-  for (const entry of lineup) {
-    ourPlayerNameMap.set(entry.playerId, {
-      name: `${entry.player.firstName} ${entry.player.lastName}`,
-      position: entry.startingPosition ?? '',
-    });
-  }
-  for (const p of teamRoster) {
-    if (!ourPlayerNameMap.has(p.id)) {
-      ourPlayerNameMap.set(p.id, { name: `${p.firstName} ${p.lastName}`, position: '' });
-    }
-  }
-
-  const ourFielding = computeFieldingStats(
-    effectiveEvents,
-    lineup,
-    isHome,
-    ourPlayerNameMap,
-  );
-
-  // ── Fielding stats (opponent) ─────────────────────────────────────────────
-  const oppFieldingNameMap = new Map<string, { name: string; position: string }>();
-  for (const entry of opponentLineup) {
-    oppFieldingNameMap.set(entry.playerId, {
-      name: `${entry.player.firstName} ${entry.player.lastName}`,
-      position: entry.startingPosition ?? '',
-    });
-  }
-  for (const p of opponentRoster) {
-    if (!oppFieldingNameMap.has(p.id)) {
-      oppFieldingNameMap.set(p.id, { name: `${p.firstName} ${p.lastName}`, position: '' });
-    }
-  }
-
-  const oppFielding = computeFieldingStats(
-    effectiveEvents,
-    opponentLineup,
-    isHome,
-    oppFieldingNameMap,
-    true, // forOpponent
-  );
-
-  // ── Baserunning stats (our team) ────────────────────────────────────────────
-  const baserunning = computeBaserunningStats(effectiveEvents, ourPlayerIds);
-
-  // ── Line score ──────────────────────────────────────────────────────────────
-  const lineScore = computeLineScore(effectiveEvents);
+  const { lineScore } = bundle;
+  const canExport = isCoach || isPlatformAdmin;
 
   return (
     <div className="flex flex-col h-full">
@@ -449,9 +66,18 @@ export default async function GameStatsPage({
         </Link>
         <div className="flex items-center justify-between mt-2">
           <h1 className="text-lg font-bold text-gray-900">
-            {teamName} vs {game.opponent_name}
+            {teamName} vs {game.opponentName}
           </h1>
           <div className="flex items-center gap-2">
+            {canExport && (
+              <a
+                href={`/api/games/${params.gameId}/export`}
+                download
+                className="text-xs font-semibold px-3 py-1 rounded-full border border-brand-300 text-brand-700 hover:bg-brand-50"
+              >
+                Export to Home Team
+              </a>
+            )}
             <span className="text-xl font-bold text-gray-900">
               {isHome
                 ? `${lineScore.homeRuns} – ${lineScore.awayRuns}`
@@ -473,20 +99,20 @@ export default async function GameStatsPage({
         <GameStatsClient
           game={{
             id: game.id,
-            opponentName: game.opponent_name,
-            locationType: game.location_type,
-            neutralHomeTeam: game.neutral_home_team,
+            opponentName: game.opponentName ?? '',
+            locationType: game.locationType,
+            neutralHomeTeam: game.neutralHomeTeam,
             status: game.status,
             teamName,
           }}
-          ourBatting={ourBatting}
-          oppBatting={oppBatting}
-          ourPitching={ourPitching}
-          oppPitching={oppPitching}
-          ourFielding={ourFielding}
-          oppFielding={oppFielding}
+          ourBatting={bundle.ourBatting}
+          oppBatting={bundle.oppBatting}
+          ourPitching={bundle.ourPitching}
+          oppPitching={bundle.oppPitching}
+          ourFielding={bundle.ourFielding}
+          oppFielding={bundle.oppFielding}
           lineScore={lineScore}
-          baserunning={baserunning}
+          baserunning={bundle.baserunning}
         />
       </div>
     </div>
