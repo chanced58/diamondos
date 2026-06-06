@@ -32,6 +32,29 @@ describe('computeStandings', () => {
     expect(out.get('t1')).toMatchObject({ wins: 1, losses: 0, runsFor: 5, runsAgainst: 3 });
     expect(out.has('o1')).toBe(false);
   });
+
+  it("scores a neutral game as home when neutral_home_team is the 'us' sentinel", () => {
+    // recorder is the designated home team -> our score = home_score (4), lost to 13
+    const out = computeStandings([
+      { team_id: 't1', opponent_team_id: 'o1', home_score: 4, away_score: 13, location_type: 'neutral', neutral_home_team: 'us', status: 'completed' },
+    ]);
+    expect(out.get('t1')).toMatchObject({ wins: 0, losses: 1, ties: 0, runsFor: 4, runsAgainst: 13 });
+  });
+
+  it("scores a neutral game as away when neutral_home_team is the 'opponent' sentinel", () => {
+    // recorder is the road team -> our score = away_score (1), lost to 10
+    const out = computeStandings([
+      { team_id: 't1', opponent_team_id: 'o1', home_score: 10, away_score: 1, location_type: 'neutral', neutral_home_team: 'opponent', status: 'completed' },
+    ]);
+    expect(out.get('t1')).toMatchObject({ wins: 0, losses: 1, ties: 0, runsFor: 1, runsAgainst: 10 });
+  });
+
+  it('defaults a neutral game with no neutral_home_team to home', () => {
+    const out = computeStandings([
+      { team_id: 't1', opponent_team_id: 'o1', home_score: 6, away_score: 2, location_type: 'neutral', neutral_home_team: null, status: 'completed' },
+    ]);
+    expect(out.get('t1')).toMatchObject({ wins: 1, losses: 0, runsFor: 6, runsAgainst: 2 });
+  });
 });
 
 describe('computeOpponentStandings', () => {
@@ -52,18 +75,18 @@ describe('computeOpponentStandings', () => {
     expect(out.get('o1')).toMatchObject({ wins: 1, losses: 0, ties: 0, runsFor: 4, runsAgainst: 2 });
   });
 
-  it('handles a neutral-site game where the recorder is the designated home team', () => {
+  it("handles a neutral-site game where the recorder is the designated home team ('us')", () => {
     const out = computeOpponentStandings(
-      [{ team_id: 't1', opponent_team_id: 'o1', home_score: 7, away_score: 2, location_type: 'neutral', neutral_home_team: 't1', status: 'completed' }],
+      [{ team_id: 't1', opponent_team_id: 'o1', home_score: 7, away_score: 2, location_type: 'neutral', neutral_home_team: 'us', status: 'completed' }],
       ['o1'],
     );
     // recorder home (7) beats opponent away (2) -> opponent loses, runsFor 2, runsAgainst 7
     expect(out.get('o1')).toMatchObject({ wins: 0, losses: 1, runsFor: 2, runsAgainst: 7 });
   });
 
-  it('handles a neutral-site game where the recorder is not the designated home team', () => {
+  it("handles a neutral-site game where the recorder is not the designated home team ('opponent')", () => {
     const out = computeOpponentStandings(
-      [{ team_id: 't1', opponent_team_id: 'o1', home_score: 7, away_score: 2, location_type: 'neutral', neutral_home_team: 'o1', status: 'completed' }],
+      [{ team_id: 't1', opponent_team_id: 'o1', home_score: 7, away_score: 2, location_type: 'neutral', neutral_home_team: 'opponent', status: 'completed' }],
       ['o1'],
     );
     // recorder away (2), opponent home (7) -> opponent wins, runsFor 7, runsAgainst 2
