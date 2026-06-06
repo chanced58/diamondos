@@ -1,5 +1,8 @@
 import { ImageResponse } from 'next/og';
+import { LEAGUE_COLOR_SCHEMES } from '@baseball/shared';
 import { getLeagueHomeData } from '@/lib/league-home/load';
+
+const SCHEME_HEX = new Map(LEAGUE_COLOR_SCHEMES.map((s) => [s.key, s.swatch]));
 
 export const runtime = 'nodejs';
 export const size = { width: 1200, height: 630 };
@@ -12,7 +15,9 @@ export default async function Og({ params }: { params: { slug: string } }) {
   const data = await getLeagueHomeData(params.slug, false);
   const isPublic = 'ok' in data;
   const name = isPublic ? data.league.name : 'Private League';
-  const accent = isPublic ? data.theme.accentColor : '#1e90ff';
+  // OG images are static PNGs (no CSS variables), so resolve the league's scheme
+  // to a concrete accent hex.
+  const accent = isPublic ? SCHEME_HEX.get(data.theme.colorScheme) ?? '#15803d' : '#15803d';
   const subtitle = isPublic ? 'Standings & League Leaders' : 'Sign in to view this league';
 
   return new ImageResponse(

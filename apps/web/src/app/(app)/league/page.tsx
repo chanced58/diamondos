@@ -8,7 +8,7 @@ import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueAccess } from '@/lib/league-access';
 import { getLeagueTeams, getLeagueDivisions, getLeagueStaff, leagueMemberName } from '@baseball/database';
-import { weAreHome } from '@baseball/shared';
+import { weAreHome, mergeWithThemeDefaults } from '@baseball/shared';
 import { StandingsBoard, type StandingsDivision, type StandingsTeamRow, type GameResult } from './StandingsBoard';
 
 export const metadata: Metadata = { title: 'League' };
@@ -41,12 +41,16 @@ export default async function LeaguePage(): Promise<JSX.Element | null> {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const [teams, divisions, staff, access] = await Promise.all([
+  const [teams, divisions, staff, access, themeRow] = await Promise.all([
     getLeagueTeams(db, league.id),
     getLeagueDivisions(db, league.id),
     getLeagueStaff(db, league.id),
     getLeagueAccess(league.id, user.id),
+    db.from('leagues').select('home_theme').eq('id', league.id).maybeSingle(),
   ]);
+  // The admin-selected color scheme themes this dashboard's accents to match the
+  // public league page (visitor light/dark base is unchanged).
+  const colorScheme = mergeWithThemeDefaults(themeRow.data?.home_theme).colorScheme;
 
   // Build standings from completed games — platform teams + opponent teams
   const platformIds = teams.filter((t) => t.team_id).map((t) => t.team_id!);
@@ -195,7 +199,7 @@ export default async function LeaguePage(): Promise<JSX.Element | null> {
   ];
 
   return (
-    <div className="p-8">
+    <div className={`league-scheme-${colorScheme} p-8`}>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{league.name}</h1>

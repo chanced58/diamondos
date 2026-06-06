@@ -40,7 +40,7 @@ export function StandingsTable({ rows }: { rows: StandingRow[] }): JSX.Element {
                 <td className="relative px-3 py-2.5 font-medium text-app-fg">
                   <span
                     aria-hidden
-                    className="absolute inset-y-1 left-0 -z-0 rounded-r bg-turf-100"
+                    className="accent-soft-bg absolute inset-y-1 left-0 -z-0 rounded-r"
                     style={{ width: `${Math.round((r.wins / maxWins) * 100)}%`, opacity: 0.5 }}
                   />
                   <span className="relative z-10">{r.team_name}</span>

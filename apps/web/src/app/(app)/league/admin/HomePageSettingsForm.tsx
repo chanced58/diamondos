@@ -6,6 +6,7 @@ import {
   leagueLeaderConfigSchema,
   DEFAULT_LEADER_CONFIG,
   ALL_SECTIONS,
+  LEAGUE_COLOR_SCHEMES,
   type LeagueHomeTheme,
   type LeagueLeaderConfig,
 } from '@baseball/shared';
@@ -91,13 +92,38 @@ export function HomePageSettingsForm({
       </label>
 
       <fieldset className="space-y-2">
-        <legend className="font-semibold">Theme</legend>
-        <label className="mr-4">
-          Accent <input type="color" value={theme.accentColor} onChange={(e) => setTheme({ ...theme, accentColor: e.target.value })} disabled={!canEdit} />
-        </label>
-        <label className="mr-4">
-          Secondary <input type="color" value={theme.secondaryColor} onChange={(e) => setTheme({ ...theme, secondaryColor: e.target.value })} disabled={!canEdit} />
-        </label>
+        <legend className="font-semibold">Color scheme</legend>
+        <p className="text-sm text-slate-500">
+          Applies to your public league page and the coach dashboard. Light/dark follows each visitor&apos;s own setting.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {LEAGUE_COLOR_SCHEMES.map((s) => {
+            const selected = theme.colorScheme === s.key;
+            return (
+              <label
+                key={s.key}
+                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                  selected ? 'border-slate-900 ring-1 ring-slate-900' : 'border-slate-300'
+                } ${canEdit ? '' : 'cursor-not-allowed opacity-50'}`}
+              >
+                <input
+                  type="radio"
+                  name="colorScheme"
+                  className="sr-only"
+                  checked={selected}
+                  onChange={() => setTheme({ ...theme, colorScheme: s.key })}
+                  disabled={!canEdit}
+                />
+                <span className="h-4 w-4 rounded-full border border-black/10" style={{ backgroundColor: s.swatch }} />
+                {s.label}
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <fieldset className="space-y-2">
+        <legend className="font-semibold">Hero & banner</legend>
         <input
           className="block w-full rounded border px-2 py-1"
           placeholder="Banner image URL"
