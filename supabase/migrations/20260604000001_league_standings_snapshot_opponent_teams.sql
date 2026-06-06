@@ -6,15 +6,22 @@
 -- members could never be stored. Mirror the league_members pattern: nullable
 -- team_id + opponent_team_id, exactly one set, uniqueness via partial indexes.
 
--- 1. team_id becomes nullable (opponent rows have no platform team)
+-- 1. Drop the composite PK first. Postgres won't let us drop NOT NULL on a
+--    column while it's part of a primary key, so the PK has to go before step 2.
+--    Recompute does clear+insert (no ON CONFLICT), so no upsert depends on the PK;
+--    per-subject partial unique indexes (step 5) replace its uniqueness role.
+alter table public.league_standings_snapshot
+  drop constraint league_standings_snapshot_pkey;
+
+-- 2. team_id becomes nullable (opponent rows have no platform team)
 alter table public.league_standings_snapshot
   alter column team_id drop not null;
 
--- 2. Add opponent_team_id for opponent-team standings rows
+-- 3. Add opponent_team_id for opponent-team standings rows
 alter table public.league_standings_snapshot
   add column opponent_team_id uuid references public.opponent_teams(id) on delete cascade;
 
--- 3. Exactly one of team_id / opponent_team_id is set
+-- 4. Exactly one of team_id / opponent_team_id is set
 alter table public.league_standings_snapshot
   add constraint chk_lss_one_team
   check (
@@ -22,12 +29,7 @@ alter table public.league_standings_snapshot
     or (team_id is null and opponent_team_id is not null)
   );
 
--- 4. Replace the composite PK (Postgres PK columns must be NOT NULL, so a
---    nullable team_id can't stay in it) with per-subject partial unique indexes.
---    Recompute does clear+insert (no ON CONFLICT), so no upsert depends on the PK.
-alter table public.league_standings_snapshot
-  drop constraint league_standings_snapshot_pkey;
-
+-- 5. Per-subject partial unique indexes replace the dropped composite PK.
 create unique index uq_lss_team
   on public.league_standings_snapshot (league_id, season, team_id)
   where team_id is not null;
