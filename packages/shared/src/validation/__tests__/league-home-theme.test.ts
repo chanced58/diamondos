@@ -1,4 +1,11 @@
-import { leagueHomeThemeSchema, DEFAULT_LEAGUE_HOME_THEME, mergeWithThemeDefaults, ALL_SECTIONS } from '../league-home-theme';
+import {
+  leagueHomeThemeSchema,
+  DEFAULT_LEAGUE_HOME_THEME,
+  mergeWithThemeDefaults,
+  ALL_SECTIONS,
+  LEAGUE_COLOR_SCHEMES,
+  LEAGUE_COLOR_SCHEME_KEYS,
+} from '../league-home-theme';
 
 describe('leagueHomeThemeSchema', () => {
   it('accepts a full valid theme', () => {
@@ -20,5 +27,37 @@ describe('leagueHomeThemeSchema', () => {
     expect(merged.heroTitle).toBe('X');
     expect(merged.accentColor).toBe(DEFAULT_LEAGUE_HOME_THEME.accentColor);
     expect(merged.sections.map((s) => s.id).sort()).toEqual([...ALL_SECTIONS].sort());
+  });
+
+  it('defaults colorScheme to sandlot (grass green + dirt brown)', () => {
+    expect(DEFAULT_LEAGUE_HOME_THEME.colorScheme).toBe('sandlot');
+  });
+
+  it('mergeWithThemeDefaults fills colorScheme when missing', () => {
+    expect(mergeWithThemeDefaults({}).colorScheme).toBe('sandlot');
+  });
+
+  it('mergeWithThemeDefaults keeps a provided colorScheme', () => {
+    expect(mergeWithThemeDefaults({ colorScheme: 'crimson' }).colorScheme).toBe('crimson');
+  });
+
+  it('mergeWithThemeDefaults falls back to default for an unknown colorScheme', () => {
+    expect(mergeWithThemeDefaults({ colorScheme: 'neon-zebra' }).colorScheme).toBe('sandlot');
+  });
+
+  it('schema rejects an unknown colorScheme', () => {
+    expect(leagueHomeThemeSchema.safeParse({ ...DEFAULT_LEAGUE_HOME_THEME, colorScheme: 'neon-zebra' }).success).toBe(
+      false,
+    );
+  });
+
+  it('every preset in LEAGUE_COLOR_SCHEMES is a valid schema enum value', () => {
+    const keys = LEAGUE_COLOR_SCHEMES.map((s) => s.key);
+    expect(keys).toEqual([...LEAGUE_COLOR_SCHEME_KEYS]);
+    for (const key of keys) {
+      expect(
+        leagueHomeThemeSchema.safeParse({ ...DEFAULT_LEAGUE_HOME_THEME, colorScheme: key }).success,
+      ).toBe(true);
+    }
   });
 });

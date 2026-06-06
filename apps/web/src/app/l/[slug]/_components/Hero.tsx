@@ -10,7 +10,7 @@ export function Hero({
 }: {
   name: string;
   logoUrl: string | null;
-  theme: { accentColor: string; bannerUrl: string | null; heroTitle: string; heroTagline: string };
+  theme: { bannerUrl: string | null; heroTitle: string; heroTagline: string };
   counters: { teams: number; games: number; season: string };
   seasons: string[];
   activeSeason: string;
@@ -20,7 +20,7 @@ export function Hero({
   return (
     <header
       className="relative overflow-hidden rounded-2xl p-8 text-white shadow"
-      style={{ background: theme.bannerUrl ? `url(${theme.bannerUrl}) center/cover` : theme.accentColor }}
+      style={{ background: theme.bannerUrl ? `url(${theme.bannerUrl}) center/cover` : 'var(--app-brand)' }}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-4">

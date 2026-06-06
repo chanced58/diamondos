@@ -156,7 +156,7 @@ export default async function LeagueHomePage({
   };
 
   return (
-    <main className="mx-auto max-w-5xl space-y-8 p-4 md:p-8">
+    <main className={`league-scheme-${data.theme.colorScheme} mx-auto max-w-5xl space-y-8 p-4 md:p-8`}>
       {data.theme.sections.filter((s) => s.enabled).map((s) => sectionNode(s.id))}
     </main>
   );

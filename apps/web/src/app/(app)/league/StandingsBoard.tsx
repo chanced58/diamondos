@@ -152,7 +152,7 @@ function StandingsRow({
         <td className="relative px-4 py-3 font-medium text-app-fg">
           <span
             aria-hidden
-            className="absolute inset-y-1.5 left-0 rounded-r bg-turf-100"
+            className="accent-soft-bg absolute inset-y-1.5 left-0 rounded-r"
             style={{ width: `${Math.round((row.wins / maxWins) * 100)}%`, opacity: 0.5 }}
           />
           <span className="relative z-10 inline-flex items-center gap-2">

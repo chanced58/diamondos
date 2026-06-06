@@ -168,6 +168,30 @@
     color-scheme: dark;
   }
 
+  /* ── Per-league color schemes ──────────────────────────────────
+     Selectable by league admins; scoped to a `.league-scheme-<key>`
+     wrapper on the public page + coach dashboard. Only the accent/brand
+     tokens are overridden so the visitor's own light/dark base still drives
+     all surfaces. Each scheme has a light value and a brighter dark variant
+     (under [data-theme="dark"]) so the accent stays legible on both.
+     Keep keys in sync with LEAGUE_COLOR_SCHEME_KEYS in @baseball/shared. */
+  .league-scheme-sandlot       { --app-brand: var(--turf-700);  --app-brand-2: var(--clay-600); }
+  .league-scheme-royal-blue    { --app-brand: var(--brand-700); --app-brand-2: var(--brand-500); }
+  .league-scheme-crimson       { --app-brand: #b91c1c;          --app-brand-2: #ef4444; }
+  .league-scheme-royal-purple  { --app-brand: #6d28d9;          --app-brand-2: #8b5cf6; }
+  .league-scheme-sunset-orange { --app-brand: #c2410c;          --app-brand-2: #f97316; }
+  .league-scheme-teal          { --app-brand: #0e7490;          --app-brand-2: #06b6d4; }
+
+  [data-theme="dark"] .league-scheme-sandlot       { --app-brand: var(--turf-500);  --app-brand-2: var(--clay-400); }
+  [data-theme="dark"] .league-scheme-royal-blue    { --app-brand: #3b82f6;          --app-brand-2: #60a5fa; }
+  [data-theme="dark"] .league-scheme-crimson       { --app-brand: #ef4444;          --app-brand-2: #f87171; }
+  [data-theme="dark"] .league-scheme-royal-purple  { --app-brand: #8b5cf6;          --app-brand-2: #a78bfa; }
+  [data-theme="dark"] .league-scheme-sunset-orange { --app-brand: #fb923c;          --app-brand-2: #fdba74; }
+  [data-theme="dark"] .league-scheme-teal          { --app-brand: #22d3ee;          --app-brand-2: #67e8f9; }
+
+  /* Soft accent fill derived from the active brand (used by standings win bars). */
+  .accent-soft-bg { background-color: color-mix(in srgb, var(--app-brand) 16%, transparent); }
+
   [data-density="compact"]  { --gap-md: 10px; --gap-lg: 14px; --gap-xl: 20px; --pad-card: 12px; --row-h: 38px; }
   [data-density="spacious"] { --gap-md: 18px; --gap-lg: 26px; --gap-xl: 36px; --pad-card: 24px; --row-h: 52px; }
 
