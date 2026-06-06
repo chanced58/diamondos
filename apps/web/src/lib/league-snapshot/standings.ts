@@ -1,3 +1,5 @@
+import { weAreHome } from '@baseball/shared';
+
 export interface GameRow {
   team_id: string;
   opponent_team_id: string | null;
@@ -17,20 +19,13 @@ export interface TeamRecord {
   winPct: number;
 }
 
-export function weAreHome(g: Pick<GameRow, 'location_type' | 'neutral_home_team' | 'team_id'>): boolean {
-  if (g.location_type === 'home') return true;
-  if (g.location_type === 'away') return false;
-  // neutral: the team is "home" only if explicitly flagged as such
-  return g.neutral_home_team === g.team_id;
-}
-
 function emptyRecord(): TeamRecord {
   return { wins: 0, losses: 0, ties: 0, runsFor: 0, runsAgainst: 0, winPct: 0 };
 }
 
 /** The recording team's runs scored (`our`) and allowed (`their`) for one game. */
 function scoresForRecorder(g: GameRow): { our: number; their: number } {
-  const isHome = weAreHome(g);
+  const isHome = weAreHome(g.location_type, g.neutral_home_team);
   return {
     our: isHome ? g.home_score : g.away_score,
     their: isHome ? g.away_score : g.home_score,
