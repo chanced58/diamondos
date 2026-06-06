@@ -95,7 +95,8 @@ export default async function LeagueHomePage({
             updatedAt={data.updatedAt}
           />
         );
-      case 'standings':
+      case 'standings': {
+        const hasDivisions = data.divisions.length > 0;
         return (
           <section key="standings">
             <SectionHeading
@@ -104,9 +105,27 @@ export default async function LeagueHomePage({
               active={data.season}
               slug={params.slug}
             />
-            <StandingsTable rows={data.standings} />
+            {hasDivisions ? (
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-app-fg-muted">League</h3>
+                  <StandingsTable rows={data.standings} />
+                </div>
+                {data.divisions.map((div) => (
+                  <div key={div.id} className="space-y-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-app-fg-muted">
+                      {div.name}
+                    </h3>
+                    <StandingsTable rows={div.rows} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <StandingsTable rows={data.standings} />
+            )}
           </section>
         );
+      }
       case 'spotlights':
         return <Spotlights key="spotlights" items={data.spotlights} />;
       case 'leaders':

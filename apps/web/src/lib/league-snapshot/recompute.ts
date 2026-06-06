@@ -48,7 +48,7 @@ export async function recomputeLeagueSnapshot(
   //    (opponent_team_id). A row has exactly one of the two set.
   const { data: members, error: membersErr } = await db
     .from('league_members')
-    .select('team_id, opponent_team_id')
+    .select('team_id, opponent_team_id, division_id')
     .eq('league_id', leagueId)
     .eq('is_active', true);
   assertOk(membersErr, 'league_members', leagueId, season);
@@ -58,6 +58,17 @@ export async function recomputeLeagueSnapshot(
   const opponentTeamIds = (members ?? [])
     .map((m: { opponent_team_id: string | null }) => m.opponent_team_id)
     .filter((t: string | null): t is string => Boolean(t));
+  // Map each member (platform or opponent) to its division so standings rows can
+  // be grouped by division on the public league page. Unassigned members → null.
+  const divisionOf = new Map<string, string | null>();
+  for (const m of (members ?? []) as Array<{
+    team_id: string | null;
+    opponent_team_id: string | null;
+    division_id: string | null;
+  }>) {
+    const id = m.team_id ?? m.opponent_team_id;
+    if (id) divisionOf.set(id, m.division_id);
+  }
   if (teamIds.length === 0) {
     // No platform teams ⇒ no recorded games ⇒ no inverse opponent records to
     // derive. Clear stale snapshots so the public page doesn't keep serving old
@@ -190,7 +201,7 @@ export async function recomputeLeagueSnapshot(
       season,
       team_id: teamId,
       opponent_team_id: null,
-      division_id: null,
+      division_id: divisionOf.get(teamId) ?? null,
       team_name: teamName.get(teamId) ?? '',
       wins: rec.wins,
       losses: rec.losses,
@@ -205,7 +216,7 @@ export async function recomputeLeagueSnapshot(
       season,
       team_id: null,
       opponent_team_id: opponentTeamId,
-      division_id: null,
+      division_id: divisionOf.get(opponentTeamId) ?? null,
       team_name: opponentName.get(opponentTeamId) ?? '',
       wins: rec.wins,
       losses: rec.losses,

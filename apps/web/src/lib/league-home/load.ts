@@ -15,6 +15,25 @@ import {
   type StatGroup,
   type StatKey,
 } from '@baseball/shared';
+import {
+  groupStandingsByDivision,
+  type LeagueDivisionRef,
+  type StandingsDivisionGroup,
+} from './standings-divisions';
+
+/** A standings snapshot row as read for the public league page. */
+export interface StandingRow {
+  team_id: string | null;
+  opponent_team_id: string | null;
+  division_id: string | null;
+  team_name: string;
+  wins: number;
+  losses: number;
+  ties: number;
+  win_pct: number;
+  runs_for: number;
+  runs_against: number;
+}
 
 /** A completed league game summarized from the home team's perspective. */
 export interface RecentGame {
@@ -150,7 +169,8 @@ export type LeagueHomeData =
       theme: ReturnType<typeof mergeWithThemeDefaults>;
       season: string;
       seasons: string[];
-      standings: any[];
+      standings: StandingRow[];
+      divisions: Array<StandingsDivisionGroup<StandingRow>>;
       defaultBoards: {
         batting: LeaderBoardResult[];
         pitching: LeaderBoardResult[];
@@ -259,19 +279,24 @@ export async function getLeagueHomeData(
     { data: playerSnap, error: playerErr },
     { data: teamSnap, error: teamErr },
     { data: spots, error: spotsErr },
+    { data: leagueDivisions, error: divisionsErr },
   ] = await Promise.all([
     db.from('league_standings_snapshot').select('*').eq('league_id', league.id).eq('season', season),
     db.from('league_player_stat_snapshot').select('*').eq('league_id', league.id).eq('season', season),
     db.from('league_team_stat_snapshot').select('*').eq('league_id', league.id).eq('season', season),
     db.from('league_spotlight_snapshot').select('*').eq('league_id', league.id).eq('season', season),
+    db.from('league_divisions').select('id, name').eq('league_id', league.id),
   ]);
-  const snapErr = standingsErr || playerErr || teamErr || spotsErr;
+  const snapErr = standingsErr || playerErr || teamErr || spotsErr || divisionsErr;
   if (snapErr) {
     console.error(`[league-home] snapshot read failed league=${league.id} season=${season}: ${snapErr.message}`);
     throw new Error('Failed to load league data. Please try again.');
   }
 
-  const standingsSorted = (standings ?? []).sort((a: any, b: any) => b.win_pct - a.win_pct);
+  const standingsSorted = ((standings ?? []) as StandingRow[]).sort((a, b) => b.win_pct - a.win_pct);
+  // Per-division breakdown for the public page. Empty when the league has no
+  // divisions; unassigned rows appear only in the overall table.
+  const divisions = groupStandingsByDivision(standingsSorted, (leagueDivisions ?? []) as LeagueDivisionRef[]);
   // Opponent rows (team_id null) aggregate games against multiple platform teams,
   // so derive games-played metrics from platform rows only — otherwise leaderboard
   // qualifiers and game counts inflate.
@@ -370,6 +395,7 @@ export async function getLeagueHomeData(
     season,
     seasons,
     standings: standingsSorted,
+    divisions,
     // Route each curated board into its tab by the catalog's `group` field.
     defaultBoards: groupBoardsByCategory(DEFAULT_BOARD_KEYS.map((key) => board(key))),
     customBoards: leaderConfig.custom.map((c) => board(c.statKey, c.label, c.limit)),
