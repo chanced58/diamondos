@@ -24,6 +24,8 @@ import { POSITION_PLACEHOLDER_PREFIX } from '@/lib/game-stats/derive';
 
 const UNPLAYED_STATUSES = ['scheduled', 'cancelled', 'postponed'];
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Filesystem-safe slug for the download filename. */
 function slug(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'team';
@@ -33,6 +35,10 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { gameId: string } },
 ) {
+  if (!UUID_RE.test(params.gameId)) {
+    return NextResponse.json({ error: 'Invalid game id' }, { status: 400 });
+  }
+
   const authClient = createServerClient();
   const { data: { user }, error: authError } = await authClient.auth.getUser();
   if (authError || !user) {
@@ -45,11 +51,21 @@ export async function GET(
   );
 
   // Lightweight fetch first so we authorize before doing the heavy stat load.
-  const { data: gameMeta } = await db
+  const { data: gameMeta, error: gameMetaError } = await db
     .from('games')
     .select('team_id, status, opponent_name')
     .eq('id', params.gameId)
     .single();
+
+  // PGRST116 = no rows matched (genuine 404); any other error is a real
+  // failure that should surface as 500, not masquerade as a missing game.
+  if (gameMetaError && gameMetaError.code !== 'PGRST116') {
+    console.error('game export metadata lookup failed', {
+      gameId: params.gameId,
+      error: gameMetaError.message,
+    });
+    return NextResponse.json({ error: 'Failed to load game for export.' }, { status: 500 });
+  }
 
   if (!gameMeta) {
     return NextResponse.json({ error: 'Game not found' }, { status: 404 });

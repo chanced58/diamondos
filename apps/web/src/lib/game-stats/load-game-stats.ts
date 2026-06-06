@@ -28,6 +28,14 @@ export interface RosterPlayer {
   jerseyNumber: number | null;
 }
 
+/** Parse a jersey number, preserving 0. Returns null only when unparseable. */
+function parseJersey(value: string | number | null | undefined): number | null {
+  if (value == null) return null;
+  if (typeof value === 'number') return value;
+  const n = parseInt(value, 10);
+  return Number.isNaN(n) ? null : n;
+}
+
 export interface GameStatsBundle {
   game: {
     id: string;
@@ -61,7 +69,7 @@ export async function loadGameStats(
   db: SupabaseClient,
   gameId: string,
 ): Promise<GameStatsBundle | null> {
-  const { data: game } = await db
+  const { data: game, error: gameError } = await db
     .from('games')
     .select(
       'id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, season_id, opponent_team_id, scheduled_at',
@@ -69,6 +77,12 @@ export async function loadGameStats(
     .eq('id', gameId)
     .single();
 
+  // PGRST116 = no rows matched (genuine not-found); any other error is a real
+  // failure that must not be silently treated as a missing game.
+  if (gameError && gameError.code !== 'PGRST116') {
+    console.error('loadGameStats: game lookup failed', { gameId, error: gameError.message });
+    throw new Error(`Failed to load game ${gameId}`);
+  }
   if (!game) return null;
 
   const [lineupResult, eventsResult, rosterResult, teamResult, opponentPlayersResult, opponentLineupResult] =
@@ -107,6 +121,19 @@ export async function loadGameStats(
         : Promise.resolve({ data: [] as { opponent_player_id: string; batting_order: number | null; starting_position: string | null; opponent_players: unknown }[] }),
     ]);
 
+  // The lineup, events, and roster reads drive every derived stat — a silent
+  // failure here would export wrong numbers, so fail loudly instead.
+  for (const [table, result] of [
+    ['game_lineups', lineupResult],
+    ['game_events', eventsResult],
+    ['players', rosterResult],
+  ] as const) {
+    if (result.error) {
+      console.error('loadGameStats: read failed', { gameId, table, error: result.error.message });
+      throw new Error(`Failed to load stats for game ${gameId}`);
+    }
+  }
+
   const teamName = teamResult.data?.name ?? 'Our Team';
 
   const lineup: LineupEntry[] = (lineupResult.data ?? []).map((l) => {
@@ -134,7 +161,7 @@ export async function loadGameStats(
         id: p?.id ?? null,
         firstName: p?.first_name ?? '',
         lastName: p?.last_name ?? '',
-        jerseyNumber: typeof p?.jersey_number === 'string' ? parseInt(p.jersey_number, 10) || null : (p?.jersey_number ?? null),
+        jerseyNumber: parseJersey(p?.jersey_number),
       },
     };
   });
@@ -150,7 +177,7 @@ export async function loadGameStats(
     id: p.id,
     firstName: p.first_name,
     lastName: p.last_name,
-    jerseyNumber: typeof p.jersey_number === 'string' ? parseInt(p.jersey_number, 10) || null : (p.jersey_number ?? null),
+    jerseyNumber: parseJersey(p.jersey_number),
   }));
 
   // ── Filter out reverted events ──────────────────────────────────────────────

@@ -47,10 +47,19 @@ export interface HomeTeamTeamExportRow {
   runsAgainst: number;
 }
 
-/** Quote a CSV field when it contains a comma, quote, or newline (RFC 4180). */
+/**
+ * Serialize one CSV field:
+ *  - Neutralize formula injection: prefix a single quote when the value starts
+ *    with =, +, -, or @ (after optional leading whitespace/tab) so spreadsheet
+ *    apps treat user-controlled names as literal text, not formulas.
+ *  - Quote per RFC 4180 when it contains a comma, quote, or newline.
+ */
 function csvField(value: string | number | null | undefined): string {
   if (value == null) return '';
-  const s = String(value);
+  let s = String(value);
+  if (/^[\t ]*[=+\-@]/.test(s)) {
+    s = `'${s}`;
+  }
   if (/[",\n\r]/.test(s)) {
     return `"${s.replace(/"/g, '""')}"`;
   }

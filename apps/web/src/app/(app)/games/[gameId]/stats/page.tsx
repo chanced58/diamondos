@@ -24,26 +24,22 @@ export default async function GameStatsPage({
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const bundle = await loadGameStats(db, params.gameId);
-  if (!bundle) notFound();
+  // Authorize and gate on status from a lightweight read before running the
+  // expensive stat load — avoids fanning out service-role queries and stat
+  // derivation for unauthorized users or not-yet-started games.
+  const { data: gameMeta } = await db
+    .from('games')
+    .select('team_id, status')
+    .eq('id', params.gameId)
+    .single();
+  if (!gameMeta) notFound();
 
-  const { game, teamName, isHome } = bundle;
-
-  const { isCoach, isPlatformAdmin } = await getUserAccess(game.teamId, user.id);
-
-  if (!isCoach && !isPlatformAdmin) {
-    const { data: membership } = await db
-      .from('team_members')
-      .select('role')
-      .eq('team_id', game.teamId)
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .single();
-    if (!membership) notFound();
-  }
+  const { isCoach, isPlatformAdmin, role } = await getUserAccess(gameMeta.team_id, user.id);
+  // Coaches, platform admins, and any active team member may view stats.
+  if (!isCoach && !isPlatformAdmin && !role) notFound();
 
   // Only show stats for games that have been started (in_progress or completed)
-  if (['scheduled', 'cancelled', 'postponed'].includes(game.status)) {
+  if (['scheduled', 'cancelled', 'postponed'].includes(gameMeta.status)) {
     return (
       <div className="p-8 max-w-2xl">
         <Link href={`/games/${params.gameId}`} className="text-sm text-brand-700 hover:underline">
@@ -54,7 +50,10 @@ export default async function GameStatsPage({
     );
   }
 
-  const { lineScore } = bundle;
+  const bundle = await loadGameStats(db, params.gameId);
+  if (!bundle) notFound();
+
+  const { game, teamName, isHome, lineScore } = bundle;
   const canExport = isCoach || isPlatformAdmin;
 
   return (

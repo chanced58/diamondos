@@ -220,6 +220,26 @@ describe('toHomeTeamPlayerStatsCsv', () => {
     expect(row?.playerName).toBe('Ada Lovelace, Jr');
     expect(row?.batting).toMatchObject({ pa: 1, ab: 1, h: 1 });
   });
+
+  it('neutralizes formula-prefixed names against CSV injection', () => {
+    for (const prefix of ['=', '+', '-', '@']) {
+      const csv = toHomeTeamPlayerStatsCsv(
+        [
+          {
+            playerId: 'uuid-fx',
+            firstName: `${prefix}CMD`,
+            lastName: 'Test',
+            jerseyNumber: 9,
+            batting: batting({ plateAppearances: 1, atBats: 1 }),
+          },
+        ],
+        META,
+      );
+      // The exported cell is prefixed with a single quote so spreadsheet apps
+      // treat it as literal text, not a formula.
+      expect(csv).toContain(`'${prefix}CMD`);
+    }
+  });
 });
 
 describe('toHomeTeamTeamStatsCsv', () => {
