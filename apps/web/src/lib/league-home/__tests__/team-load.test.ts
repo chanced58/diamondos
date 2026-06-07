@@ -33,6 +33,18 @@ describe('computeTeamRank', () => {
   it('returns null rank when the team is absent', () => {
     expect(computeTeamRank(standings as any, 'tX')).toEqual({ rank: null, total: 3 });
   });
+  it('breaks win_pct ties deterministically by team_id regardless of row order', () => {
+    const tied = [
+      { team_id: 'tb', win_pct: 0.5 },
+      { team_id: 'ta', win_pct: 0.5 },
+    ];
+    const reversed = [...tied].reverse();
+    // 'ta' sorts before 'tb' on the team_id tie-break, so its rank is stable (1)
+    // whichever order the rows arrive in.
+    expect(computeTeamRank(tied as any, 'ta')).toEqual({ rank: 1, total: 2 });
+    expect(computeTeamRank(reversed as any, 'ta')).toEqual({ rank: 1, total: 2 });
+    expect(computeTeamRank(tied as any, 'tb')).toEqual({ rank: 2, total: 2 });
+  });
 });
 
 describe('toTeamPlayerRows', () => {

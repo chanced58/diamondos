@@ -22,7 +22,11 @@ export function computeTeamRank(
   teamId: string,
 ): { rank: number | null; total: number } {
   const platform = standings.filter((r) => r.team_id);
-  const sorted = [...platform].sort((a, b) => b.win_pct - a.win_pct);
+  // Tie-break on team_id so equal win_pct produces a stable rank regardless of
+  // snapshot row order (the standings query imposes no DB ordering).
+  const sorted = [...platform].sort(
+    (a, b) => b.win_pct - a.win_pct || String(a.team_id).localeCompare(String(b.team_id)),
+  );
   const idx = sorted.findIndex((r) => r.team_id === teamId);
   return { rank: idx === -1 ? null : idx + 1, total: platform.length };
 }
@@ -116,7 +120,7 @@ export async function getTeamMeta(
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
   const { data: league, error } = await db
     .from('leagues')
-    .select('name, visibility')
+    .select('id, name, visibility')
     .eq('slug', slug)
     .maybeSingle();
   if (error) {
@@ -124,8 +128,24 @@ export async function getTeamMeta(
     return null;
   }
   if (!league) return null;
-  const { data: team } = await db.from('teams').select('name').eq('id', teamId).maybeSingle();
-  return { leagueName: league.name, visibility: league.visibility, teamName: team?.name ?? 'Team' };
+  // Resolve the team name from a *league-scoped* snapshot row, never the global
+  // `teams` table — otherwise a teamId from another league would surface that
+  // league's team name in this page's metadata (service role bypasses RLS).
+  // A team can have multiple standings rows (one per season), so take the first.
+  const { data: teamRows, error: teamErr } = await db
+    .from('league_standings_snapshot')
+    .select('team_name')
+    .eq('league_id', league.id)
+    .eq('team_id', teamId)
+    .limit(1);
+  if (teamErr) {
+    console.error(`[team-page] meta team lookup failed league=${league.id} team=${teamId}: ${teamErr.message}`);
+  }
+  return {
+    leagueName: league.name,
+    visibility: league.visibility,
+    teamName: teamRows?.[0]?.team_name ?? 'Team',
+  };
 }
 
 export async function getTeamStatPageData(
@@ -152,10 +172,15 @@ export async function getTeamStatPageData(
 
   const theme = mergeWithThemeDefaults(league.home_theme);
 
-  const { data: seasonRows } = await db
+  const { data: seasonRows, error: seasonErr } = await db
     .from('league_standings_snapshot')
     .select('season')
     .eq('league_id', league.id);
+  if (seasonErr) {
+    // Non-fatal — fall back to current_season below — but log so the degraded
+    // season resolution is observable rather than silent.
+    console.error(`[team-page] season list failed league=${league.id}: ${seasonErr.message}`);
+  }
   const seasons = Array.from(new Set((seasonRows ?? []).map((r: { season: string }) => r.season))).sort((a, b) =>
     b.localeCompare(a),
   );
@@ -194,11 +219,16 @@ export async function getTeamStatPageData(
   // Resolve division name (only if the standings row carries a division_id).
   let divisionName: string | null = null;
   if (standingRow?.division_id) {
-    const { data: div } = await db
+    const { data: div, error: divErr } = await db
       .from('league_divisions')
       .select('name')
       .eq('id', standingRow.division_id)
       .maybeSingle();
+    if (divErr) {
+      console.error(
+        `[team-page] division lookup failed league=${league.id} division=${standingRow.division_id}: ${divErr.message}`,
+      );
+    }
     divisionName = div?.name ?? null;
   }
 
