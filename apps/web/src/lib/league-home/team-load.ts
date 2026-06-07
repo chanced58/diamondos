@@ -1,3 +1,4 @@
+import 'server-only';
 import { createClient } from '@supabase/supabase-js';
 import { STAT_CATALOG, memberDisplayName, publicDisplayName, mergeWithThemeDefaults } from '@baseball/shared';
 import { formatStat } from './format-stat';
@@ -151,7 +152,13 @@ export async function getTeamStatPageData(
     { data: teamMeta, error: teamMetaErr },
   ] = await Promise.all([
     db.from('league_standings_snapshot').select('*').eq('league_id', league.id).eq('season', season),
-    db.from('league_team_stat_snapshot').select('*').eq('league_id', league.id).eq('season', season).eq('team_id', teamId).maybeSingle(),
+    db
+      .from('league_team_stat_snapshot')
+      .select('*')
+      .eq('league_id', league.id)
+      .eq('season', season)
+      .eq('team_id', teamId)
+      .maybeSingle(),
     db.from('league_player_stat_snapshot').select('*').eq('league_id', league.id).eq('season', season).eq('team_id', teamId),
     db.from('teams').select('id, name, logo_url').eq('id', teamId).maybeSingle(),
   ]);
@@ -179,7 +186,7 @@ export async function getTeamStatPageData(
     divisionName = div?.name ?? null;
   }
 
-  const teamName = teamMeta?.name ?? standingRow?.team_name ?? teamRow?.team_name ?? 'Team';
+  const teamName = teamMeta?.name ?? standingRow?.team_name ?? 'Team';
   const record: TeamRecord = {
     wins: standingRow?.wins ?? 0,
     losses: standingRow?.losses ?? 0,
