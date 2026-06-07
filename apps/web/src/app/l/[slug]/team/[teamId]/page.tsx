@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { createServerClient } from '@/lib/supabase/server';
-import { getTeamStatPageData } from '@/lib/league-home/team-load';
+import { getTeamStatPageData, getTeamMeta } from '@/lib/league-home/team-load';
 import { TeamHero } from './_components/TeamHero';
 import { TeamStatPanel } from './_components/TeamStatPanel';
 import { TeamBattingTable } from './_components/TeamBattingTable';
@@ -18,12 +18,14 @@ export async function generateMetadata({
   const {
     data: { user },
   } = await auth.auth.getUser();
-  const data = await getTeamStatPageData(params.slug, params.teamId, !!user);
-  if ('notFound' in data) return { title: 'Team not found' };
-  if ('blocked' in data) return { title: data.league.name, robots: { index: false, follow: false } };
+  const meta = await getTeamMeta(params.slug, params.teamId);
+  if (!meta) return { title: 'Team not found' };
+  const isPrivate = meta.visibility === 'signed_in';
+  if (isPrivate && !user) return { title: meta.leagueName, robots: { index: false, follow: false } };
   return {
-    title: `${data.team.name} — ${data.league.name}`,
-    description: `${data.team.name} record and player statistics in ${data.league.name}.`,
+    title: `${meta.teamName} — ${meta.leagueName}`,
+    description: `${meta.teamName} record and player statistics in ${meta.leagueName}.`,
+    robots: isPrivate ? { index: false, follow: false } : undefined,
   };
 }
 

@@ -112,6 +112,26 @@ export type TeamStatPageData =
       players: TeamPlayerStatRow[];
     };
 
+/** Lightweight identity/visibility lookup for team-page metadata (no snapshot reads). */
+export async function getTeamMeta(
+  slug: string,
+  teamId: string,
+): Promise<{ leagueName: string; visibility: string; teamName: string } | null> {
+  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const { data: league, error } = await db
+    .from('leagues')
+    .select('name, visibility')
+    .eq('slug', slug)
+    .maybeSingle();
+  if (error) {
+    console.error(`[team-page] meta lookup failed slug=${slug}: ${error.message}`);
+    return null;
+  }
+  if (!league) return null;
+  const { data: team } = await db.from('teams').select('name').eq('id', teamId).maybeSingle();
+  return { leagueName: league.name, visibility: league.visibility, teamName: team?.name ?? 'Team' };
+}
+
 export async function getTeamStatPageData(
   slug: string,
   teamId: string,
