@@ -1,3 +1,5 @@
+import { teamHref } from '@/lib/league-home/team-href';
+
 interface StandingRow {
   team_id: string | null;
   opponent_team_id: string | null;
@@ -10,7 +12,15 @@ interface StandingRow {
   runs_against: number;
 }
 
-export function StandingsTable({ rows }: { rows: StandingRow[] }): JSX.Element {
+export function StandingsTable({
+  rows,
+  slug,
+  season,
+}: {
+  rows: StandingRow[];
+  slug: string;
+  season: string;
+}): JSX.Element {
   if (rows.length === 0) {
     return <p className="text-sm text-app-fg-subtle">No standings yet for this season.</p>;
   }
@@ -43,7 +53,13 @@ export function StandingsTable({ rows }: { rows: StandingRow[] }): JSX.Element {
                     className="accent-soft-bg absolute inset-y-1 left-0 -z-0 rounded-r"
                     style={{ width: `${Math.round((r.wins / maxWins) * 100)}%`, opacity: 0.5 }}
                   />
-                  <span className="relative z-10">{r.team_name}</span>
+                  {r.team_id ? (
+                    <a href={teamHref(slug, r.team_id, season)} className="relative z-10 hover:underline">
+                      {r.team_name}
+                    </a>
+                  ) : (
+                    <span className="relative z-10">{r.team_name}</span>
+                  )}
                 </td>
                 <td className="mono px-2 py-2.5 text-center">{r.wins}</td>
                 <td className="mono px-2 py-2.5 text-center">{r.losses}</td>

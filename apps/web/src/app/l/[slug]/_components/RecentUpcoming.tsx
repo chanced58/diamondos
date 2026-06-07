@@ -1,4 +1,5 @@
 import type { RecentGame } from '@/lib/league-home/load';
+import { teamHref } from '@/lib/league-home/team-href';
 
 const RESULT_STYLE: Record<RecentGame['result'], string> = {
   W: 'bg-turf-100 text-turf-800',
@@ -9,9 +10,13 @@ const RESULT_STYLE: Record<RecentGame['result'], string> = {
 export function RecentUpcoming({
   recent,
   upcoming,
+  slug,
+  season,
 }: {
   recent: RecentGame[];
   upcoming: Array<{ id: string; label: string }>;
+  slug: string;
+  season: string;
 }): JSX.Element {
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -30,7 +35,9 @@ export function RecentUpcoming({
                   {g.result}
                 </span>
                 <span className="min-w-0 flex-1 truncate">
-                  <span className="font-medium text-app-fg">{g.team}</span>
+                  <a href={teamHref(slug, g.team_id, season)} className="font-medium text-app-fg hover:underline">
+                    {g.team}
+                  </a>
                   <span className="text-app-fg-subtle"> vs {g.opponent}</span>
                 </span>
                 <span className="mono shrink-0 font-semibold text-app-fg">

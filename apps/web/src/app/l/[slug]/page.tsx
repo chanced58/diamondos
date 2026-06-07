@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getLeagueHomeData, getLeagueMeta } from '@/lib/league-home/load';
+import { teamIdByName } from '@/lib/league-home/team-load';
 import { Hero } from './_components/Hero';
 import { StandingsTable } from './_components/StandingsTable';
 import { LeadersSection } from './_components/LeadersSection';
@@ -78,6 +79,7 @@ export default async function LeagueHomePage({
     ...(enabled.has('customLeaders') ? data.customBoards : []),
   ];
   const showSeasonFallback = !enabled.has('hero');
+  const teamIds = teamIdByName(data.standings);
 
   const sectionNode = (id: string): JSX.Element | null => {
     switch (id) {
@@ -109,25 +111,25 @@ export default async function LeagueHomePage({
               <div className="space-y-6">
                 <div className="space-y-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-app-fg-muted">League</h3>
-                  <StandingsTable rows={data.standings} />
+                  <StandingsTable rows={data.standings} slug={params.slug} season={data.season} />
                 </div>
                 {data.divisions.map((div) => (
                   <div key={div.id} className="space-y-2">
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-app-fg-muted">
                       {div.name}
                     </h3>
-                    <StandingsTable rows={div.rows} />
+                    <StandingsTable rows={div.rows} slug={params.slug} season={data.season} />
                   </div>
                 ))}
               </div>
             ) : (
-              <StandingsTable rows={data.standings} />
+              <StandingsTable rows={data.standings} slug={params.slug} season={data.season} />
             )}
           </section>
         );
       }
       case 'spotlights':
-        return <Spotlights key="spotlights" items={data.spotlights} />;
+        return <Spotlights key="spotlights" items={data.spotlights} slug={params.slug} season={data.season} teamIdByName={teamIds} />;
       case 'leaders':
         return (
           <LeadersSection
@@ -138,6 +140,8 @@ export default async function LeagueHomePage({
               team: data.defaultBoards.team,
               special,
             }}
+            slug={params.slug}
+            season={data.season}
           />
         );
       case 'customLeaders':
@@ -147,7 +151,7 @@ export default async function LeagueHomePage({
         return (
           <section key="recent">
             <h2 className="display mb-3 text-xl font-bold">Around the League</h2>
-            <RecentUpcoming recent={data.recent} upcoming={data.upcoming} />
+            <RecentUpcoming recent={data.recent} upcoming={data.upcoming} slug={params.slug} season={data.season} />
           </section>
         );
       default:

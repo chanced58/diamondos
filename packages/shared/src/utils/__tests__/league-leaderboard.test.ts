@@ -96,3 +96,15 @@ describe('leaderQualifierMinimums', () => {
     expect(hsBoard[0].value).toBe(0.6); // and the genuine ERA leader now surfaces
   });
 });
+
+describe('buildLeaderboard teamId passthrough', () => {
+  it('preserves the optional teamId on ranked rows', () => {
+    const rows: LeaderRow[] = [
+      { id: 'p1', name: 'A', value: 0.4, qualifierValue: 30, teamName: 'Reds', teamId: 't1' },
+      { id: 'p2', name: 'B', value: 0.3, qualifierValue: 30, teamName: 'Jays', teamId: 't2' },
+    ];
+    const ranked = buildLeaderboard(rows, getStatDef('avg'), { minQualifier: 0, limit: 10 });
+    expect(ranked[0].teamId).toBe('t1');
+    expect(ranked[1].teamId).toBe('t2');
+  });
+});

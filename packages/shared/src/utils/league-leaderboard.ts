@@ -1,7 +1,7 @@
 import type { StatDef } from '../constants/stat-catalog';
 
 export interface LeaderRow {
-  id: string; name: string; value: number; qualifierValue: number; teamName?: string;
+  id: string; name: string; value: number; qualifierValue: number; teamName?: string; teamId?: string;
 }
 export interface RankedLeaderRow extends LeaderRow { rank: number; }
 export interface BuildOpts { minQualifier: number; limit: number; }

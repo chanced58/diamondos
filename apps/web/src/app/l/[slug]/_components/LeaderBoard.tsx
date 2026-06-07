@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import type { StatDef } from '@baseball/shared';
 import type { LeaderHomeRow } from '@/lib/league-home/load';
-
-type StatFormat = StatDef['format'];
+import { formatStat, type StatFormat } from '@/lib/league-home/format-stat';
+import { teamHref } from '@/lib/league-home/team-href';
 
 const TOP_N = 5;
 
@@ -20,11 +20,15 @@ export function LeaderBoard({
   rows,
   format,
   sortDir,
+  slug,
+  season,
 }: {
   title: string;
   rows: LeaderHomeRow[];
   format: StatFormat;
   sortDir: StatDef['sortDir'];
+  slug: string;
+  season: string;
 }): JSX.Element {
   const [showAll, setShowAll] = useState(false);
   const ascending = sortDir === 'asc'; // lower is better (ERA, WHIP, Team ERA)
@@ -73,7 +77,13 @@ export function LeaderBoard({
               {r.rank}
             </span>
             <span className="relative z-10 min-w-0 flex-1 truncate">
-              <span className="font-medium text-app-fg">{r.name}</span>
+              {r.teamId && !r.teamName ? (
+                <a href={teamHref(slug, r.teamId, season)} className="font-medium text-app-fg hover:underline">
+                  {r.name}
+                </a>
+              ) : (
+                <span className="font-medium text-app-fg">{r.name}</span>
+              )}
               {r.ours ? (
                 <span
                   aria-label="Your team"
@@ -81,7 +91,15 @@ export function LeaderBoard({
                   className="ml-1 inline-block h-2 w-2 rotate-45 rounded-[1px] bg-turf-600 align-middle"
                 />
               ) : null}
-              {r.teamName ? <span className="ml-1 text-app-fg-subtle">· {r.teamName}</span> : null}
+              {r.teamName ? (
+                r.teamId ? (
+                  <a href={teamHref(slug, r.teamId, season)} className="ml-1 text-app-fg-subtle hover:underline">
+                    · {r.teamName}
+                  </a>
+                ) : (
+                  <span className="ml-1 text-app-fg-subtle">· {r.teamName}</span>
+                )
+              ) : null}
             </span>
             <RankDelta prevRank={r.prevRank} rank={r.rank} />
             <span className="relative z-10 mono shrink-0 font-semibold text-app-fg">
@@ -135,27 +153,6 @@ function RankDelta({ prevRank, rank }: { prevRank: number | null; rank: number }
       {Math.abs(delta)}
     </span>
   );
-}
-
-function formatStat(v: number, format: StatFormat): string {
-  switch (format) {
-    case 'avg3':
-      return v.toFixed(3).replace(/^0/, '');
-    case 'pct1':
-      return `${(v * 100).toFixed(1)}%`;
-    case 'ratio2':
-      return v.toFixed(2);
-    case 'ip': {
-      // value is whole outs; render as innings.thirds (e.g. 19 outs -> 6.1)
-      const whole = Math.floor(v / 3);
-      const thirds = Math.round(v % 3);
-      return `${whole}.${thirds}`;
-    }
-    case 'int':
-      return String(Math.round(v));
-    default:
-      return String(v);
-  }
 }
 
 /**
