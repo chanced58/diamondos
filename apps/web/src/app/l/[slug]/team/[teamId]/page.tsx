@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { createServerClient } from '@/lib/supabase/server';
-import { getTeamStatPageData, getTeamMeta } from '@/lib/league-home/team-load';
+import { getTeamStatPageData, getTeamMeta, teamHref } from '@/lib/league-home/team-load';
 import { TeamHero } from './_components/TeamHero';
 import { TeamStatPanel } from './_components/TeamStatPanel';
 import { TeamBattingTable } from './_components/TeamBattingTable';
@@ -44,12 +44,15 @@ export default async function TeamStatPage({
 
   if ('notFound' in data) notFound();
   if ('blocked' in data) {
+    // Preserve the season context and URL-encode the whole target so reserved
+    // characters in the slug/season can't break the redirect query.
+    const target = teamHref(data.slug, params.teamId, searchParams.season);
     return (
       <main className="mx-auto max-w-md p-12 text-center">
         <h1 className="text-2xl font-bold">{data.league.name}</h1>
         <p className="mt-2 text-slate-600">This league is visible to signed-in users only.</p>
         <a
-          href={`/login?redirectTo=/l/${data.slug}/team/${params.teamId}`}
+          href={`/login?redirectTo=${encodeURIComponent(target)}`}
           className="mt-4 inline-block rounded bg-slate-900 px-4 py-2 text-white"
         >
           Sign in
