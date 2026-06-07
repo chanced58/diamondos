@@ -6,7 +6,7 @@ export function Spotlights({
   season,
   teamIdByName,
 }: {
-  items: Array<{ type: string; subject_name: string; team_name: string | null; blurb: string }>;
+  items: Array<{ type: string; subject_id: string; subject_name: string; team_name: string | null; blurb: string }>;
   slug: string;
   season: string;
   teamIdByName: Map<string, string>;
@@ -39,7 +39,13 @@ export function Spotlights({
               >
                 {isPlayer ? 'Player of the Week' : 'Hot Team'}
               </p>
-              <p className="text-lg font-bold text-app-fg">{s.subject_name}</p>
+              {!isPlayer ? (
+                <a href={teamHref(slug, s.subject_id, season)} className="text-lg font-bold text-app-fg hover:underline">
+                  {s.subject_name}
+                </a>
+              ) : (
+                <p className="text-lg font-bold text-app-fg">{s.subject_name}</p>
+              )}
               {s.team_name ? (
                 (() => {
                   const tid = teamIdByName.get(s.team_name.trim().toLowerCase());
