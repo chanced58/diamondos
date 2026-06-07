@@ -29,7 +29,6 @@ export function TeamHero({
       </a>
       <div className="mt-3 flex items-center gap-4">
         {team.logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
           <img src={team.logoUrl} alt="" className="h-14 w-14 rounded-lg object-contain" />
         ) : null}
         <div>
