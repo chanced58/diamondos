@@ -109,19 +109,19 @@ export default async function LeagueHomePage({
               <div className="space-y-6">
                 <div className="space-y-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-app-fg-muted">League</h3>
-                  <StandingsTable rows={data.standings} />
+                  <StandingsTable rows={data.standings} slug={params.slug} season={data.season} />
                 </div>
                 {data.divisions.map((div) => (
                   <div key={div.id} className="space-y-2">
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-app-fg-muted">
                       {div.name}
                     </h3>
-                    <StandingsTable rows={div.rows} />
+                    <StandingsTable rows={div.rows} slug={params.slug} season={data.season} />
                   </div>
                 ))}
               </div>
             ) : (
-              <StandingsTable rows={data.standings} />
+              <StandingsTable rows={data.standings} slug={params.slug} season={data.season} />
             )}
           </section>
         );
