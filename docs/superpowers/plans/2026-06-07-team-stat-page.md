@@ -13,7 +13,8 @@
 ## File Structure
 
 **Create:**
-- `apps/web/src/lib/league-home/team-load.ts` — team-page data loader + pure helpers (`getTeamStatPageData`, `computeTeamRank`, `toTeamPlayerRows`, `teamHref`, `teamIdByName`, `buildTeamStatList`, types).
+- `apps/web/src/lib/league-home/team-load.ts` — server-only (`import 'server-only'`) team-page data loader + pure helpers (`getTeamStatPageData`, `getTeamMeta`, `computeTeamRank`, `toTeamPlayerRows`, `teamIdByName`, `buildTeamStatList`, types). It re-exports `teamHref`.
+- `apps/web/src/lib/league-home/team-href.ts` — the `teamHref` URL builder, kept in its **own non-server-only module** so client components (e.g. `LeaderBoard`) can import it without pulling in the `server-only` loader. (Discovered during implementation: Task 8 introduced this split when `LeaderBoard`, a client component, needed `teamHref`.)
 - `apps/web/src/lib/league-home/format-stat.ts` — shared `formatStat` extracted from `LeaderBoard.tsx`.
 - `apps/web/src/lib/league-home/__tests__/team-load.test.ts` — unit tests for the pure helpers.
 - `apps/web/src/app/l/[slug]/team/[teamId]/page.tsx` — the route (server component).
@@ -1227,7 +1228,7 @@ Expected: no new errors in the touched files.
 
 In `CLAUDE.md` Domain Glossary table, add:
 
-```
+```text
 | **TeamStatPage** | Public read-only page at `/l/[slug]/team/[teamId]` showing a team's record, team-level stats, and full per-player batting/pitching lines. A filtered view of the `league_*_snapshot` tables by `team_id`; no migration. Reached by clicking any team name on the league page. Opted-out players (`public_opt_out`) show a masked name with blanked stats for public viewers. |
 ```
 

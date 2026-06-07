@@ -100,9 +100,13 @@ Steps:
 - **TeamStatPanel** — the team-group stats from the team snapshot as a labeled grid,
   using `STAT_CATALOG` defs with `subject === 'team'` and the shared `formatStat`.
 - **TeamBattingTable** — every roster player; columns from batting `StatDef`s
-  (AVG/OBP/SLG/OPS/HR/RBI/H/R/2B/3B/BB/QAB%/Hard-Hit%). Default sort by AVG desc
-  (then PA desc) — server-sorted, no client interactivity required for v1.
+  (AVG/OBP/SLG/OPS/HR/RBI/H/R/2B/3B/BB/QAB%/Hard-Hit%). Server-sorted by plate
+  appearances (desc), no client interactivity required for v1. Note: sort is by
+  PA — a *structural* field — not by a batting average, so the ordering of
+  opted-out rows (whose stats are blanked for public viewers) never leaks a
+  hidden stat through rank position.
 - **TeamPitchingTable** — players with `innings_pitched_outs > 0`; IP + ERA/WHIP/K.
+  Sorted by innings pitched (desc) — likewise a structural field, not a rate stat.
 
 ### Name masking + opt-out
 
