@@ -71,14 +71,14 @@ describe('mapRecentGame', () => {
 
   it('reads our score from the home side and credits a win when we are home', () => {
     const g = { ...base, home_score: 7, away_score: 3, location_type: 'home' };
-    expect(mapRecentGame(g, 'Reds')).toEqual({
-      id: 'g1', team: 'Reds', opponent: 'Jays', ourScore: 7, theirScore: 3, result: 'W',
+    expect(mapRecentGame(g, 'Reds', 't1')).toEqual({
+      id: 'g1', team: 'Reds', team_id: 't1', opponent: 'Jays', ourScore: 7, theirScore: 3, result: 'W',
     });
   });
 
   it('flips to the away side and records a loss when we are away', () => {
     const g = { ...base, home_score: 7, away_score: 3, location_type: 'away' };
-    const out = mapRecentGame(g, 'Reds');
+    const out = mapRecentGame(g, 'Reds', 't1');
     expect(out.ourScore).toBe(3);
     expect(out.theirScore).toBe(7);
     expect(out.result).toBe('L');
@@ -86,7 +86,12 @@ describe('mapRecentGame', () => {
 
   it('records a tie on equal scores', () => {
     const g = { ...base, home_score: 4, away_score: 4, location_type: 'home' };
-    expect(mapRecentGame(g, 'Reds').result).toBe('T');
+    expect(mapRecentGame(g, 'Reds', 't1').result).toBe('T');
+  });
+
+  it('mapRecentGame carries the team id through', () => {
+    const g = { id: 'g1', opponent_name: 'Foes', home_score: 5, away_score: 2, location_type: 'home', neutral_home_team: null };
+    expect(mapRecentGame(g as any, 'Reds', 't1')).toMatchObject({ team_id: 't1', result: 'W' });
   });
 });
 

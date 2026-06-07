@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getLeagueHomeData, getLeagueMeta } from '@/lib/league-home/load';
+import { teamIdByName } from '@/lib/league-home/team-load';
 import { Hero } from './_components/Hero';
 import { StandingsTable } from './_components/StandingsTable';
 import { LeadersSection } from './_components/LeadersSection';
@@ -78,6 +79,7 @@ export default async function LeagueHomePage({
     ...(enabled.has('customLeaders') ? data.customBoards : []),
   ];
   const showSeasonFallback = !enabled.has('hero');
+  const teamIds = teamIdByName(data.standings);
 
   const sectionNode = (id: string): JSX.Element | null => {
     switch (id) {
@@ -127,7 +129,7 @@ export default async function LeagueHomePage({
         );
       }
       case 'spotlights':
-        return <Spotlights key="spotlights" items={data.spotlights} />;
+        return <Spotlights key="spotlights" items={data.spotlights} slug={params.slug} season={data.season} teamIdByName={teamIds} />;
       case 'leaders':
         return (
           <LeadersSection
@@ -149,7 +151,7 @@ export default async function LeagueHomePage({
         return (
           <section key="recent">
             <h2 className="display mb-3 text-xl font-bold">Around the League</h2>
-            <RecentUpcoming recent={data.recent} upcoming={data.upcoming} />
+            <RecentUpcoming recent={data.recent} upcoming={data.upcoming} slug={params.slug} season={data.season} />
           </section>
         );
       default:

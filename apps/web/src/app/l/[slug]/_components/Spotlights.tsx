@@ -1,7 +1,15 @@
+import { teamHref } from '@/lib/league-home/team-href';
+
 export function Spotlights({
   items,
+  slug,
+  season,
+  teamIdByName,
 }: {
   items: Array<{ type: string; subject_name: string; team_name: string | null; blurb: string }>;
+  slug: string;
+  season: string;
+  teamIdByName: Map<string, string>;
 }): JSX.Element | null {
   if (!items.length) return null;
   return (
@@ -32,7 +40,18 @@ export function Spotlights({
                 {isPlayer ? 'Player of the Week' : 'Hot Team'}
               </p>
               <p className="text-lg font-bold text-app-fg">{s.subject_name}</p>
-              {s.team_name ? <p className="text-sm text-app-fg-muted">{s.team_name}</p> : null}
+              {s.team_name ? (
+                (() => {
+                  const tid = teamIdByName.get(s.team_name.trim().toLowerCase());
+                  return tid ? (
+                    <a href={teamHref(slug, tid, season)} className="text-sm text-app-fg-muted hover:underline">
+                      {s.team_name}
+                    </a>
+                  ) : (
+                    <p className="text-sm text-app-fg-muted">{s.team_name}</p>
+                  );
+                })()
+              ) : null}
               {s.blurb ? <p className="mt-0.5 text-sm text-app-fg">{s.blurb}</p> : null}
             </div>
           </div>

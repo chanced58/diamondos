@@ -39,6 +39,7 @@ export interface StandingRow {
 export interface RecentGame {
   id: string;
   team: string;
+  team_id: string;
   opponent: string;
   ourScore: number;
   theirScore: number;
@@ -90,12 +91,12 @@ export interface RawRecentGame {
 }
 
 /** Summarize a completed game from the home team's perspective (W/L/T + our/their score). */
-export function mapRecentGame(g: RawRecentGame, teamName: string): RecentGame {
+export function mapRecentGame(g: RawRecentGame, teamName: string, teamId: string): RecentGame {
   const isHome = weAreHome(g.location_type, g.neutral_home_team);
   const ourScore = isHome ? g.home_score : g.away_score;
   const theirScore = isHome ? g.away_score : g.home_score;
   const result: 'W' | 'L' | 'T' = ourScore > theirScore ? 'W' : ourScore < theirScore ? 'L' : 'T';
-  return { id: g.id, team: teamName, opponent: g.opponent_name, ourScore, theirScore, result };
+  return { id: g.id, team: teamName, team_id: teamId, opponent: g.opponent_name, ourScore, theirScore, result };
 }
 
 /**
@@ -369,7 +370,7 @@ export async function getLeagueHomeData(
         `[league-home] games read failed league=${league.id} season=${season} teams=${teamIds.length}: ${(recentErr ?? upcomingErr)!.message}`,
       );
     }
-    recent = (recentGames ?? []).map((g: any) => mapRecentGame(g, teamNameById.get(g.team_id) ?? 'Team'));
+    recent = (recentGames ?? []).map((g: any) => mapRecentGame(g, teamNameById.get(g.team_id) ?? 'Team', g.team_id));
     upcoming = (upcomingGames ?? []).map((g: any) => ({
       id: g.id,
       label: `${teamNameById.get(g.team_id) ?? 'Team'} vs ${g.opponent_name} — ${new Date(g.scheduled_at).toLocaleDateString()}`,
