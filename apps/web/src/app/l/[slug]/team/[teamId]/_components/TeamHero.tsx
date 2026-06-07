@@ -45,17 +45,29 @@ export function TeamHero({
         <Stat label="Record" value={`${record.wins}-${record.losses}-${record.ties}`} />
         <Stat label="PCT" value={record.winPct.toFixed(3).replace(/^0/, '')} />
         <Stat label="RF / RA" value={`${record.runsFor} / ${record.runsAgainst}`} />
-        <Stat label="Run Diff" value={diff > 0 ? `+${diff}` : String(diff)} />
+        <Stat
+          label="Run Diff"
+          value={diff > 0 ? `+${diff}` : String(diff)}
+          valueClassName={diff >= 0 ? 'text-turf-700' : 'text-red-600'}
+        />
       </dl>
     </section>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }): JSX.Element {
+function Stat({
+  label,
+  value,
+  valueClassName,
+}: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+}): JSX.Element {
   return (
     <div className="rounded-lg border border-app-border bg-app-surface-2 px-3 py-2">
       <dt className="text-xs font-medium uppercase tracking-wider text-app-fg-muted">{label}</dt>
-      <dd className="mono mt-0.5 text-lg font-semibold text-app-fg">{value}</dd>
+      <dd className={`mono mt-0.5 text-lg font-semibold ${valueClassName ?? 'text-app-fg'}`}>{value}</dd>
     </div>
   );
 }
