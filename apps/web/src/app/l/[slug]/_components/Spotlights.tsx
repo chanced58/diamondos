@@ -16,6 +16,11 @@ export function Spotlights({
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       {items.map((s, i) => {
         const isPlayer = s.type === 'player_of_week';
+        // Hot-team spotlights carry the team id directly; player spotlights resolve
+        // their team via the standings name→id map (unmatched name → no link).
+        const subjectHref = isPlayer ? null : teamHref(slug, s.subject_id, season);
+        const tagTeamId = s.team_name ? teamIdByName.get(s.team_name.trim().toLowerCase()) : undefined;
+        const tagHref = tagTeamId ? teamHref(slug, tagTeamId, season) : null;
         return (
           <div
             key={`${s.type}-${i}`}
@@ -39,24 +44,9 @@ export function Spotlights({
               >
                 {isPlayer ? 'Player of the Week' : 'Hot Team'}
               </p>
-              {!isPlayer ? (
-                <a href={teamHref(slug, s.subject_id, season)} className="text-lg font-bold text-app-fg hover:underline">
-                  {s.subject_name}
-                </a>
-              ) : (
-                <p className="text-lg font-bold text-app-fg">{s.subject_name}</p>
-              )}
+              <SpotlightTeamName name={s.subject_name} href={subjectHref} className="text-lg font-bold text-app-fg" />
               {s.team_name ? (
-                (() => {
-                  const tid = teamIdByName.get(s.team_name.trim().toLowerCase());
-                  return tid ? (
-                    <a href={teamHref(slug, tid, season)} className="text-sm text-app-fg-muted hover:underline">
-                      {s.team_name}
-                    </a>
-                  ) : (
-                    <p className="text-sm text-app-fg-muted">{s.team_name}</p>
-                  );
-                })()
+                <SpotlightTeamName name={s.team_name} href={tagHref} className="text-sm text-app-fg-muted" />
               ) : null}
               {s.blurb ? <p className="mt-0.5 text-sm text-app-fg">{s.blurb}</p> : null}
             </div>
@@ -64,6 +54,25 @@ export function Spotlights({
         );
       })}
     </div>
+  );
+}
+
+/** A spotlight's team name — a link when an `href` is resolved, plain text otherwise. */
+function SpotlightTeamName({
+  name,
+  href,
+  className,
+}: {
+  name: string;
+  href: string | null;
+  className: string;
+}): JSX.Element {
+  return href ? (
+    <a href={href} className={`${className} hover:underline`}>
+      {name}
+    </a>
+  ) : (
+    <p className={className}>{name}</p>
   );
 }
 
