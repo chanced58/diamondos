@@ -1,4 +1,4 @@
-import { STAT_CATALOG, memberDisplayName, publicDisplayName, type StatDef } from '@baseball/shared';
+import { STAT_CATALOG, memberDisplayName, publicDisplayName } from '@baseball/shared';
 import { formatStat } from './format-stat';
 import { getStatValue } from './load';
 
