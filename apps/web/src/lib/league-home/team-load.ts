@@ -4,11 +4,7 @@ import { STAT_CATALOG, memberDisplayName, publicDisplayName, mergeWithThemeDefau
 import { formatStat } from './format-stat';
 import { getStatValue, resolveVisibility } from './load';
 
-/** Build a season-scoped URL to a team's public stat page. */
-export function teamHref(slug: string, teamId: string, season?: string): string {
-  const base = `/l/${slug}/team/${teamId}`;
-  return season ? `${base}?season=${encodeURIComponent(season)}` : base;
-}
+export { teamHref } from './team-href';
 
 /** A minimal standings shape used for ranking and name→id mapping. */
 export interface RankStandingRow {

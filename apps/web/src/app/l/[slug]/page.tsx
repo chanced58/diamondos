@@ -138,6 +138,8 @@ export default async function LeagueHomePage({
               team: data.defaultBoards.team,
               special,
             }}
+            slug={params.slug}
+            season={data.season}
           />
         );
       case 'customLeaders':

@@ -73,6 +73,7 @@ export function toLeaderRows(snap: any[], statKey: string, isAuthed: boolean): L
         ? memberDisplayName({ firstName: r.first_name, lastName: r.last_name })
         : publicDisplayName({ firstName: r.first_name, lastName: r.last_name }),
       teamName: r.team_name,
+      teamId: r.team_id,
       value: getStatValue(r.stats, def.field),
       qualifierValue: def.qualifier === 'ip' ? r.innings_pitched_outs : r.plate_appearances,
     }));
@@ -321,6 +322,7 @@ export async function getLeagueHomeData(
         ? (teamSnap ?? []).map((t: any) => ({
             id: t.team_id,
             name: t.team_name,
+            teamId: t.team_id,
             value: getStatValue(t.stats, def.field),
             qualifierValue: 1,
           }))

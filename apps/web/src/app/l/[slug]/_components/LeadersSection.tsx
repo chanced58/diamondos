@@ -15,8 +15,12 @@ const TABS: Array<{ id: Cat; label: string }> = [
 
 export function LeadersSection({
   boards,
+  slug,
+  season,
 }: {
   boards: Record<Cat, LeaderBoardResult[]>;
+  slug: string;
+  season: string;
 }): JSX.Element {
   // Only offer tabs that actually have boards; default to the first available.
   // Memoized so the sync effect below only re-runs when boards actually change.
@@ -73,6 +77,8 @@ export function LeadersSection({
               rows={b.rows}
               format={b.def.format}
               sortDir={b.def.sortDir}
+              slug={slug}
+              season={season}
             />
           ))}
         </div>
