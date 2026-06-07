@@ -77,7 +77,13 @@ export function LeaderBoard({
               {r.rank}
             </span>
             <span className="relative z-10 min-w-0 flex-1 truncate">
-              <span className="font-medium text-app-fg">{r.name}</span>
+              {r.teamId && !r.teamName ? (
+                <a href={teamHref(slug, r.teamId, season)} className="font-medium text-app-fg hover:underline">
+                  {r.name}
+                </a>
+              ) : (
+                <span className="font-medium text-app-fg">{r.name}</span>
+              )}
               {r.ours ? (
                 <span
                   aria-label="Your team"
