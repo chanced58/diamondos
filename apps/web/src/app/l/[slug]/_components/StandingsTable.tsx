@@ -1,4 +1,4 @@
-import { teamHref } from '@/lib/league-home/team-load';
+import { teamHref } from '@/lib/league-home/team-href';
 
 interface StandingRow {
   team_id: string | null;
