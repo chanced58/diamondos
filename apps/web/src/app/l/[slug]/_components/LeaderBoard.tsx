@@ -3,8 +3,7 @@
 import { useState } from 'react';
 import type { StatDef } from '@baseball/shared';
 import type { LeaderHomeRow } from '@/lib/league-home/load';
-
-type StatFormat = StatDef['format'];
+import { formatStat, type StatFormat } from '@/lib/league-home/format-stat';
 
 const TOP_N = 5;
 
@@ -135,27 +134,6 @@ function RankDelta({ prevRank, rank }: { prevRank: number | null; rank: number }
       {Math.abs(delta)}
     </span>
   );
-}
-
-function formatStat(v: number, format: StatFormat): string {
-  switch (format) {
-    case 'avg3':
-      return v.toFixed(3).replace(/^0/, '');
-    case 'pct1':
-      return `${(v * 100).toFixed(1)}%`;
-    case 'ratio2':
-      return v.toFixed(2);
-    case 'ip': {
-      // value is whole outs; render as innings.thirds (e.g. 19 outs -> 6.1)
-      const whole = Math.floor(v / 3);
-      const thirds = Math.round(v % 3);
-      return `${whole}.${thirds}`;
-    }
-    case 'int':
-      return String(Math.round(v));
-    default:
-      return String(v);
-  }
 }
 
 /**
