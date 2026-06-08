@@ -2,7 +2,8 @@ import 'server-only';
 import { createClient } from '@supabase/supabase-js';
 import { STAT_CATALOG, memberDisplayName, publicDisplayName, mergeWithThemeDefaults } from '@baseball/shared';
 import { formatStat } from './format-stat';
-import { getStatValue, resolveVisibility } from './load';
+import { resolveVisibility } from './load';
+import { getStatValue } from './stat-value';
 
 export { teamHref } from './team-href';
 
