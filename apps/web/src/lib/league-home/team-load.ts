@@ -46,7 +46,9 @@ export function teamIdByName(standings: RankStandingRow[]): Map<string, string> 
 export interface TeamPlayerStatRow {
   playerId: string;
   name: string;
-  /** true only for public viewers of an opted-out player; cells render '—' */
+  /** true only for public viewers of an opted-out player. When true, stats/
+   *  plateAppearances/inningsPitchedOuts are all null (stripped server-side) and
+   *  cells render '—'. */
   optedOut: boolean;
   /** true when innings_pitched_outs > 0 — lets the pitching table include opted-out
    *  pitchers (shown as '—') without exposing the count */
