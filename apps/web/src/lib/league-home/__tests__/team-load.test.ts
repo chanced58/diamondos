@@ -71,6 +71,7 @@ describe('toTeamPlayerRows', () => {
       inningsPitchedOuts: null,
       stats: null,
     });
+    expect(rows.find((r) => r.playerId === 'p2')).toMatchObject({ pitched: false, plateAppearances: null });
   });
   it('keeps full numeric data (and pitched) for authed viewers', () => {
     const rows = toTeamPlayerRows(snap as any, true);

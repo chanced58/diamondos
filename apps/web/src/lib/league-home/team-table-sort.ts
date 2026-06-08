@@ -1,6 +1,7 @@
 import { getStatValue } from './stat-value';
 import { formatStat, type StatFormat } from './format-stat';
 import type { TeamPlayerStatRow } from './team-load';
+import { getStatDef, type StatKey } from '@baseball/shared';
 
 export interface SortColumnSpec {
   key: string; // 'name' | 'pa' | 'ip' | <stat key>
@@ -48,4 +49,16 @@ export function sortPlayerRows(
     return d !== 0 ? d : a.name.localeCompare(b.name);
   });
   return [...visible, ...hidden];
+}
+
+/** Build a column list for a player stat table: a leading numeric column (PA/IP)
+ *  followed by one column per catalog stat key. */
+export function toStatColumns(lead: SortColumnSpec, statKeys: readonly StatKey[]): SortColumnSpec[] {
+  return [
+    lead,
+    ...statKeys.map((k) => {
+      const d = getStatDef(k);
+      return { key: d.key, label: d.label, source: 'stat' as const, field: d.field, format: d.format, sortDir: d.sortDir };
+    }),
+  ];
 }
