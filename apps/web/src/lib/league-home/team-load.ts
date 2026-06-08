@@ -41,29 +41,37 @@ export function teamIdByName(standings: RankStandingRow[]): Map<string, string> 
   return map;
 }
 
-/** A roster player's display row. `stats` is the raw snapshot blob (read via getStatValue). */
+/** A roster player's display row. Opted-out public rows carry no numeric data —
+ *  it is stripped here so it never reaches the (client) table payload. */
 export interface TeamPlayerStatRow {
   playerId: string;
   name: string;
-  /** true only for public viewers of an opted-out player; tables blank stat cells when set */
+  /** true only for public viewers of an opted-out player; cells render '—' */
   optedOut: boolean;
-  plateAppearances: number;
-  inningsPitchedOuts: number;
+  /** true when innings_pitched_outs > 0 — lets the pitching table include opted-out
+   *  pitchers (shown as '—') without exposing the count */
+  pitched: boolean;
+  plateAppearances: number | null;
+  inningsPitchedOuts: number | null;
   stats: unknown;
 }
 
-/** Map player snapshot rows to display rows with name masking + opt-out flagging. */
+/** Map player snapshot rows to display rows with name masking + opt-out blanking. */
 export function toTeamPlayerRows(snap: any[], isAuthed: boolean): TeamPlayerStatRow[] {
-  return snap.map((r) => ({
-    playerId: r.player_id,
-    name: isAuthed
-      ? memberDisplayName({ firstName: r.first_name, lastName: r.last_name })
-      : publicDisplayName({ firstName: r.first_name, lastName: r.last_name }),
-    optedOut: !isAuthed && !!r.public_opt_out,
-    plateAppearances: r.plate_appearances ?? 0,
-    inningsPitchedOuts: r.innings_pitched_outs ?? 0,
-    stats: r.stats,
-  }));
+  return snap.map((r) => {
+    const optedOut = !isAuthed && !!r.public_opt_out;
+    return {
+      playerId: r.player_id,
+      name: isAuthed
+        ? memberDisplayName({ firstName: r.first_name, lastName: r.last_name })
+        : publicDisplayName({ firstName: r.first_name, lastName: r.last_name }),
+      optedOut,
+      pitched: (r.innings_pitched_outs ?? 0) > 0,
+      plateAppearances: optedOut ? null : (r.plate_appearances ?? 0),
+      inningsPitchedOuts: optedOut ? null : (r.innings_pitched_outs ?? 0),
+      stats: optedOut ? null : r.stats,
+    };
+  });
 }
 
 /** A team-level stat formatted for the stat panel. */
@@ -242,10 +250,6 @@ export async function getTeamStatPageData(
     runsFor: standingRow?.runs_for ?? 0,
     runsAgainst: standingRow?.runs_against ?? 0,
   };
-
-  // Sort batting by playing time (PA desc) and pitching by workload (IP desc) — never
-  // by a hidden stat, so opted-out public rows don't leak an ordering signal.
-  players.sort((a, b) => b.plateAppearances - a.plateAppearances);
 
   return {
     ok: true,
