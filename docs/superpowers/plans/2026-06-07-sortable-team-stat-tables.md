@@ -625,7 +625,7 @@ Run `pnpm --filter web dev`, open `/l/<slug>/team/<teamId>`. Click batting/pitch
 
 In `CLAUDE.md`, find the `**TeamStatPage**` glossary row and append this sentence to its cell (before the closing `|`):
 
-```
+```text
 The batting/pitching tables are client-sortable by any column (`SortablePlayerTable`); opted-out players' numeric values are stripped server-side in `toTeamPlayerRows` (not just hidden) so they never reach the client payload, and such rows pin to the bottom of any numeric sort.
 ```
 
