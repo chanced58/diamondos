@@ -20,6 +20,9 @@ import {
   type LeagueDivisionRef,
   type StandingsDivisionGroup,
 } from './standings-divisions';
+import { getStatValue } from './stat-value';
+
+export { getStatValue } from './stat-value';
 
 /** A standings snapshot row as read for the public league page. */
 export interface StandingRow {
@@ -49,18 +52,6 @@ export interface RecentGame {
 export function resolveVisibility(visibility: string, isAuthed: boolean): 'ok' | 'blocked' {
   if (visibility === 'signed_in' && !isAuthed) return 'blocked';
   return 'ok';
-}
-
-/** Read a (possibly dot-pathed) stat field out of a snapshot `stats` object. */
-export function getStatValue(stats: unknown, field: string): number {
-  if (stats == null || typeof stats !== 'object') return 0;
-  const raw = field.split('.').reduce<unknown>((acc, key) => {
-    if (acc != null && typeof acc === 'object' && key in (acc as Record<string, unknown>)) {
-      return (acc as Record<string, unknown>)[key];
-    }
-    return undefined;
-  }, stats);
-  return Number(raw ?? 0);
 }
 
 /** Map player snapshot rows to leaderboard rows, masking names + honoring opt-out for public viewers. */

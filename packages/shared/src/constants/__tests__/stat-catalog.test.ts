@@ -23,4 +23,12 @@ describe('STAT_CATALOG', () => {
   it('getStatDef throws on unknown key', () => {
     expect(() => getStatDef('nope' as StatKey)).toThrow();
   });
+
+  it('reserves the synthetic team-table column keys (name/pa/ip) — no catalog stat may use them', () => {
+    // The team stat page builds sortable columns by prepending synthetic 'name', 'pa',
+    // and 'ip' columns to the catalog stat keys. A catalog key colliding with these
+    // would produce duplicate React keys and an ambiguous sort target.
+    const reserved = new Set(['name', 'pa', 'ip']);
+    expect(STAT_CATALOG.filter((s) => reserved.has(s.key))).toEqual([]);
+  });
 });

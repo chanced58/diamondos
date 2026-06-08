@@ -51,6 +51,7 @@ describe('toTeamPlayerRows', () => {
   const snap = [
     { player_id: 'p1', first_name: 'Alex', last_name: 'Ramirez', public_opt_out: false, stats: { avg: 0.35 }, plate_appearances: 30, innings_pitched_outs: 0 },
     { player_id: 'p2', first_name: 'Sam', last_name: 'Lee', public_opt_out: true, stats: { avg: 0.4 }, plate_appearances: 25, innings_pitched_outs: 0 },
+    { player_id: 'p3', first_name: 'Pat', last_name: 'Kim', public_opt_out: true, stats: { era: 2.1 }, plate_appearances: 0, innings_pitched_outs: 18 },
   ];
   it('masks names and flags opt-out for public viewers', () => {
     const rows = toTeamPlayerRows(snap as any, false);
@@ -60,6 +61,27 @@ describe('toTeamPlayerRows', () => {
   it('shows full names and never flags opt-out for authed viewers', () => {
     const rows = toTeamPlayerRows(snap as any, true);
     expect(rows.find((r) => r.playerId === 'p2')).toMatchObject({ name: 'Sam Lee', optedOut: false });
+  });
+  it('blanks all numeric data for opted-out public rows but keeps the pitched flag', () => {
+    const rows = toTeamPlayerRows(snap as any, false);
+    expect(rows.find((r) => r.playerId === 'p3')).toMatchObject({
+      optedOut: true,
+      pitched: true,
+      plateAppearances: null,
+      inningsPitchedOuts: null,
+      stats: null,
+    });
+    expect(rows.find((r) => r.playerId === 'p2')).toMatchObject({ pitched: false, plateAppearances: null });
+  });
+  it('keeps full numeric data (and pitched) for authed viewers', () => {
+    const rows = toTeamPlayerRows(snap as any, true);
+    expect(rows.find((r) => r.playerId === 'p3')).toMatchObject({
+      optedOut: false,
+      pitched: true,
+      inningsPitchedOuts: 18,
+      stats: { era: 2.1 },
+    });
+    expect(rows.find((r) => r.playerId === 'p1')).toMatchObject({ pitched: false, plateAppearances: 30 });
   });
 });
 
