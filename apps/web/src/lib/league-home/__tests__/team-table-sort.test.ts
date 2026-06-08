@@ -65,13 +65,13 @@ describe('sortPlayerRows', () => {
     ];
     expect(sortPlayerRows(mixed, avgCol, 'desc').map((r) => r.playerId)).toEqual(['b', 'a', 'z']);
   });
-  it('sorts the name column over all rows including opted-out', () => {
+  it('sorts the name column over all rows, including opted-out (not pinned)', () => {
     const mixed = [
       row({ playerId: 'c', name: 'Cara' }),
-      row({ playerId: 'z', name: 'Zoe', optedOut: true }),
+      row({ playerId: 'opt', name: 'Aaron', optedOut: true }), // sorts FIRST despite opt-out
       row({ playerId: 'a', name: 'Alice' }),
     ];
-    expect(sortPlayerRows(mixed, nameCol, 'asc').map((r) => r.playerId)).toEqual(['a', 'c', 'z']);
+    expect(sortPlayerRows(mixed, nameCol, 'asc').map((r) => r.playerId)).toEqual(['opt', 'a', 'c']);
   });
   it('breaks numeric ties by name for determinism', () => {
     const tied = [
