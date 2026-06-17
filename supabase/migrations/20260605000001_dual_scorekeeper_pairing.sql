@@ -30,14 +30,18 @@ CREATE TABLE public.game_reconciliations (
   home_game_id  uuid not null references public.games(id) on delete cascade,
   away_game_id  uuid not null references public.games(id) on delete cascade,
   conflicts     jsonb not null default '[]'::jsonb,
-  -- Home-coach overrides: array of { conflictIndex, useAwayValue } records.
-  -- Empty array means the home (canonical) value stands for every conflict.
+  -- Home-coach overrides: array of { key, useAwayValue } records keyed by a
+  -- stable conflict identity. Empty array means the home (canonical) value
+  -- stands for every conflict.
   resolved_overrides jsonb not null default '[]'::jsonb,
   computed_at   timestamptz not null default now(),
   computed_by   uuid references auth.users(id),
   resolved_at   timestamptz,
   resolved_by   uuid references auth.users(id),
   unique (home_game_id),
+  unique (away_game_id),
+  CONSTRAINT game_reconciliations_distinct_games
+    CHECK (home_game_id <> away_game_id),
   CONSTRAINT game_reconciliations_conflicts_is_array
     CHECK (jsonb_typeof(conflicts) = 'array'),
   CONSTRAINT game_reconciliations_overrides_is_array
@@ -73,9 +77,12 @@ CREATE POLICY "paired_team_members_view_reconciliation"
     )
   );
 
--- Only the home team's coach may write/override the reconciliation row.
+-- Only the home team's coach may override (UPDATE) the reconciliation row.
+-- The server computes/INSERTs rows with the service-role key (RLS-exempt), so
+-- direct client INSERT/DELETE is never needed — restrict to UPDATE for least
+-- privilege (a coach cannot fabricate or drop reconciliation rows).
 CREATE POLICY "home_coach_write_reconciliation"
-  ON public.game_reconciliations FOR ALL
+  ON public.game_reconciliations FOR UPDATE
   USING (
     EXISTS (
       SELECT 1 FROM public.games hg

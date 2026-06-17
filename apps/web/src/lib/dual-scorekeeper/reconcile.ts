@@ -9,11 +9,15 @@ interface PairedGameRow {
 }
 
 async function loadEvents(db: SupabaseClient, gameId: string): Promise<Record<string, unknown>[]> {
-  const { data } = await db
+  const { data, error } = await db
     .from('game_events')
     .select('*')
     .eq('game_id', gameId)
     .order('sequence_number');
+  // Throw rather than silently reconciling from incomplete data — an empty
+  // array on a real DB error would surface as phantom conflicts. The caller
+  // wraps this in try/catch and aborts (no reconciliation row written).
+  if (error) throw new Error(`game_events load failed for game ${gameId}: ${error.message}`);
   return (data ?? []) as Record<string, unknown>[];
 }
 
@@ -42,19 +46,21 @@ export async function runReconciliationForGame(
   computedBy?: string,
 ): Promise<string | null> {
   try {
-    const { data: game } = await db
+    const { data: game, error: gameErr } = await db
       .from('games')
       .select('id, status, scorer_side, paired_game_id')
       .eq('id', gameId)
       .maybeSingle<PairedGameRow>();
+    if (gameErr) throw new Error(`game load failed ${gameId}: ${gameErr.message}`);
 
     if (!game?.paired_game_id || !game.scorer_side) return null;
 
-    const { data: mirror } = await db
+    const { data: mirror, error: mirrorErr } = await db
       .from('games')
       .select('id, status, scorer_side, paired_game_id')
       .eq('id', game.paired_game_id)
       .maybeSingle<PairedGameRow>();
+    if (mirrorErr) throw new Error(`mirror load failed ${game.paired_game_id}: ${mirrorErr.message}`);
 
     if (!mirror) return null;
 

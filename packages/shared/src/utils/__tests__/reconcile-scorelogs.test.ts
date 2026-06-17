@@ -25,6 +25,24 @@ function topFirstHomers(runs: number): Record<string, unknown>[] {
   return rows;
 }
 
+/** `count` fielding errors in the top of the 1st (charged to the home defense). */
+function topFirstErrors(count: number): Record<string, unknown>[] {
+  const rows: Record<string, unknown>[] = [];
+  let seq = 1;
+  for (let i = 0; i < count; i++) {
+    rows.push({
+      id: `e-${i}`,
+      game_id: 'g',
+      sequence_number: seq++,
+      event_type: 'field_error',
+      inning: 1,
+      is_top_of_inning: true,
+      payload: {},
+    });
+  }
+  return rows;
+}
+
 function makeBatting(partial: Partial<BattingStats> & { playerId: string }): BattingStats {
   return {
     playerName: 'Test',
@@ -110,6 +128,17 @@ describe('reconcileScoreLogs', () => {
     const r = reconcileScoreLogs({ events: topFirstHomers(3) }, { events: topFirstHomers(2) });
     const inning = r.conflicts.find((c) => c.kind === 'inning_runs');
     expect(inning).toMatchObject({ kind: 'inning_runs', inning: 1, half: 'top', homeLog: 3, awayLog: 2 });
+  });
+
+  it('flags a team_hits difference', () => {
+    // 3 vs 2 top-of-1st home runs also diverges on away team hits.
+    const r = reconcileScoreLogs({ events: topFirstHomers(3) }, { events: topFirstHomers(2) });
+    expect(r.conflicts).toContainEqual({ kind: 'team_hits', side: 'away', homeLog: 3, awayLog: 2 });
+  });
+
+  it('flags a team_errors difference', () => {
+    const r = reconcileScoreLogs({ events: topFirstErrors(1) }, { events: topFirstErrors(0) });
+    expect(r.conflicts).toContainEqual({ kind: 'team_errors', side: 'home', homeLog: 1, awayLog: 0 });
   });
 
   it('diffs per-player batting counting stats', () => {

@@ -23,18 +23,29 @@ export async function loadReconciliationForGame(
   db: SupabaseClient,
   gameId: string,
 ): Promise<ReconciliationView | null> {
-  const { data: recon } = await db
+  const { data: recon, error: reconErr } = await db
     .from('game_reconciliations')
     .select('id, home_game_id, away_game_id, conflicts, resolved_overrides')
     .or(`home_game_id.eq.${gameId},away_game_id.eq.${gameId}`)
     .maybeSingle();
 
+  // Distinguish a real query failure from "no reconciliation yet" — only the
+  // latter should fall through to the no-panel state.
+  if (reconErr) {
+    console.error(`[dual-scorekeeper] reconciliation lookup failed game=${gameId}: ${reconErr.message}`);
+    return null;
+  }
   if (!recon) return null;
 
-  const { data: teams } = await db
+  const { data: teams, error: teamsErr } = await db
     .from('games')
     .select('id, teams(name)')
     .in('id', [recon.home_game_id, recon.away_game_id]);
+  if (teamsErr) {
+    console.error(
+      `[dual-scorekeeper] team-label lookup failed recon=${recon.id} game=${gameId}: ${teamsErr.message}`,
+    );
+  }
 
   const nameByGame = new Map<string, string>();
   for (const row of teams ?? []) {

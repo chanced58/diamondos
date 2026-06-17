@@ -41,24 +41,43 @@ export async function provisionMirrorGame(
     const resolved = settings ?? (await getLeagueSettingsForTeam(db, game.team_id));
     if (!isDualScorekeeperEnabled(resolved)) return null;
 
+    const originalIsHome = weAreHome(game.location_type, game.neutral_home_team);
+
     // The opponent must be a linked platform team for the other side to score.
-    const { data: opp } = await db
+    const { data: opp, error: oppErr } = await db
       .from('opponent_teams')
       .select('linked_team_id')
       .eq('id', game.opponent_team_id)
       .maybeSingle();
+    if (oppErr) {
+      console.error(
+        `[dual-scorekeeper] opponent_teams lookup failed game=${game.id} opp=${game.opponent_team_id}: ${oppErr.message}`,
+      );
+      return null;
+    }
     const linkedTeamId = opp?.linked_team_id ?? null;
     if (!linkedTeamId) return null;
 
     // Guard against duplicates: if a mirror already points back at this game.
-    const { data: existing } = await db
+    const { data: existing, error: existingErr } = await db
       .from('games')
       .select('id')
       .eq('paired_game_id', game.id)
       .maybeSingle();
-    if (existing?.id) return existing.id;
-
-    const originalIsHome = weAreHome(game.location_type, game.neutral_home_team);
+    if (existingErr) {
+      console.error(`[dual-scorekeeper] duplicate-mirror lookup failed game=${game.id}: ${existingErr.message}`);
+      return null;
+    }
+    if (existing?.id) {
+      // A prior run created the mirror but may have failed before back-linking
+      // the original. Repair the (idempotent) back-link so the pairing is
+      // bidirectional, then return the existing mirror.
+      await db
+        .from('games')
+        .update({ paired_game_id: existing.id, scorer_side: originalIsHome ? 'home' : 'away' })
+        .eq('id', game.id);
+      return existing.id;
+    }
 
     // Mirror the location for the opponent's perspective.
     const mirrorLocationType =
@@ -76,7 +95,7 @@ export async function provisionMirrorGame(
 
     // Name the mirror's opponent (= the original home team) and resolve the
     // linked team's active season for stat attribution.
-    const [{ data: homeTeam }, { data: linkedSeason }] = await Promise.all([
+    const [homeTeamRes, linkedSeasonRes] = await Promise.all([
       db.from('teams').select('name').eq('id', game.team_id).maybeSingle(),
       db
         .from('seasons')
@@ -85,6 +104,14 @@ export async function provisionMirrorGame(
         .eq('is_active', true)
         .maybeSingle(),
     ]);
+    if (homeTeamRes.error || linkedSeasonRes.error) {
+      console.error(
+        `[dual-scorekeeper] mirror metadata lookup failed game=${game.id}: ${(homeTeamRes.error ?? linkedSeasonRes.error)?.message}`,
+      );
+      return null;
+    }
+    const homeTeam = homeTeamRes.data;
+    const linkedSeason = linkedSeasonRes.data;
 
     const { data: mirror, error: mirrorErr } = await db
       .from('games')

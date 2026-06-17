@@ -127,6 +127,7 @@ export interface ReconcileInput {
   pitching?: Map<string, PitchingStats>;
 }
 
+/** Push line-score conflicts (final score, per-half-inning runs, team hits/errors). */
 function diffLineScores(home: LineScoreData, away: LineScoreData, conflicts: ScoreConflict[]): void {
   if (home.homeRuns !== away.homeRuns) {
     conflicts.push({ kind: 'final_score', side: 'home', homeLog: home.homeRuns, awayLog: away.homeRuns });
@@ -135,7 +136,16 @@ function diffLineScores(home: LineScoreData, away: LineScoreData, conflicts: Sco
     conflicts.push({ kind: 'final_score', side: 'away', homeLog: home.awayRuns, awayLog: away.awayRuns });
   }
 
-  const innings = Math.max(home.homeRunsByInning.length, away.homeRunsByInning.length);
+  // Bound the loop by the longest inning array across both logs and both
+  // halves. Within one line score the top/bottom arrays grow together, but a
+  // log that recorded an extra (e.g. unplayed bottom) half could be longer, so
+  // take the max of all four to avoid skipping a divergent inning.
+  const innings = Math.max(
+    home.homeRunsByInning.length,
+    home.awayRunsByInning.length,
+    away.homeRunsByInning.length,
+    away.awayRunsByInning.length,
+  );
   for (let i = 0; i < innings; i++) {
     const hTop = home.awayRunsByInning[i] ?? 0;
     const aTop = away.awayRunsByInning[i] ?? 0;
@@ -163,6 +173,7 @@ function diffLineScores(home: LineScoreData, away: LineScoreData, conflicts: Sco
   }
 }
 
+/** Push a player_batting conflict for every counting stat that differs (or is present in only one log). */
 function diffBatting(
   homeMap: Map<string, BattingStats> | undefined,
   awayMap: Map<string, BattingStats> | undefined,
@@ -183,6 +194,7 @@ function diffBatting(
   }
 }
 
+/** Push a player_pitching conflict for every counting stat that differs (or is present in only one log). */
 function diffPitching(
   homeMap: Map<string, PitchingStats> | undefined,
   awayMap: Map<string, PitchingStats> | undefined,
