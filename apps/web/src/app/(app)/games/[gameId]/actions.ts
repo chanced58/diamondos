@@ -1287,3 +1287,61 @@ export async function replayAtBatAction(
   revalidatePath(`/games/${gameId}/history`);
   return null;
 }
+
+/**
+ * Dual scorekeeper: the home team's coach overrides one reconciliation
+ * conflict to accept the away log's value (or reverts to the canonical home
+ * value). Overrides are recorded on the reconciliation row — they annotate the
+ * record and the displayed final line; they do not mutate the immutable
+ * game_events log. Returns null on success or an error string.
+ */
+export async function resolveReconciliationConflictAction(
+  _prevState: string | null | undefined,
+  formData: FormData,
+): Promise<string | null> {
+  const authClient = createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return 'Not authenticated.';
+
+  const reconciliationId = formData.get('reconciliationId') as string;
+  const conflictIndex = parseInt(formData.get('conflictIndex') as string, 10);
+  const useAwayValue = formData.get('useAwayValue') === 'true';
+  if (!reconciliationId || Number.isNaN(conflictIndex)) return 'Missing override fields.';
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const { data: recon } = await supabase
+    .from('game_reconciliations')
+    .select('id, home_game_id, resolved_overrides')
+    .eq('id', reconciliationId)
+    .maybeSingle();
+  if (!recon) return 'Reconciliation not found.';
+
+  // Only the home (canonical) team's coach may override.
+  const auth = await getAuthorizedCoach(supabase, user.id, recon.home_game_id);
+  if ('error' in auth) return auth.error ?? 'Only the home team coach can resolve conflicts.';
+
+  // Upsert the per-conflict override into the JSON array.
+  const overrides = Array.isArray(recon.resolved_overrides)
+    ? (recon.resolved_overrides as { conflictIndex: number; useAwayValue: boolean }[])
+    : [];
+  const next = overrides.filter((o) => o.conflictIndex !== conflictIndex);
+  // Only store an override when it diverges from the home-wins default.
+  if (useAwayValue) next.push({ conflictIndex, useAwayValue: true });
+
+  const { error } = await supabase
+    .from('game_reconciliations')
+    .update({
+      resolved_overrides: next,
+      resolved_at: new Date().toISOString(),
+      resolved_by: user.id,
+    })
+    .eq('id', reconciliationId);
+  if (error) return `Failed to save override: ${error.message}`;
+
+  revalidatePath(`/games/${recon.home_game_id}`);
+  return null;
+}
