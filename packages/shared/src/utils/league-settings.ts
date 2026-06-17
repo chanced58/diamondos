@@ -98,6 +98,15 @@ export function isDroppedThirdStrikeAllowed(settings: LeagueScoringSettings): bo
 }
 
 /**
+ * Whether the league allows both teams to independently score the same game
+ * (paired games with end-of-game reconciliation). The home team's log stays
+ * canonical regardless.
+ */
+export function isDualScorekeeperEnabled(settings: LeagueScoringSettings): boolean {
+  return settings.scorekeeping.dualScorekeeper;
+}
+
+/**
  * Runs scored in the half-inning currently being played.
  */
 export function runsInCurrentHalf(

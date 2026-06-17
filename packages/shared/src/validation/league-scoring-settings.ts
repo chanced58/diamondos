@@ -73,6 +73,12 @@ const complianceSchema = z
   })
   .strict();
 
+const scorekeepingSchema = z
+  .object({
+    dualScorekeeper: z.boolean(),
+  })
+  .strict();
+
 export const leagueScoringSettingsSchema = z
   .object({
     lineup: lineupSchema,
@@ -81,6 +87,7 @@ export const leagueScoringSettingsSchema = z
     substitutions: substitutionsSchema,
     rules: rulesSchema,
     compliance: complianceSchema,
+    scorekeeping: scorekeepingSchema,
   })
   .strict();
 
@@ -112,6 +119,9 @@ export function defaultLeagueScoringSettings(): LeagueScoringSettings {
     },
     compliance: {
       defaultPitchRuleId: null,
+    },
+    scorekeeping: {
+      dualScorekeeper: false,
     },
   };
 }
@@ -231,7 +241,13 @@ function tolerantSchema(defaults: LeagueScoringSettings) {
     })
     .catch(defaults.compliance);
 
+  const scorekeeping = z
+    .object({
+      dualScorekeeper: z.boolean().catch(defaults.scorekeeping.dualScorekeeper),
+    })
+    .catch(defaults.scorekeeping);
+
   return z
-    .object({ lineup, guests, gameLength, substitutions, rules, compliance })
+    .object({ lineup, guests, gameLength, substitutions, rules, compliance, scorekeeping })
     .catch(defaults);
 }

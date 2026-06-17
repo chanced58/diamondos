@@ -9,6 +9,7 @@ export * from './historical-stats';
 export * from './defensive-lineup';
 export * from './event-filters';
 export * from './line-score';
+export * from './reconcile-scorelogs';
 export * from './game-history';
 export * from './practice-schedule';
 export * from './practice-conflicts';
