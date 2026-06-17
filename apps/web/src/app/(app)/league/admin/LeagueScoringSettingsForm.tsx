@@ -348,6 +348,19 @@ export function LeagueScoringSettingsForm({
         </Section>
 
         <Section
+          title="Scorekeeping"
+          description="Let both teams independently score the same game. Requires the opponent to be a linked team; the home team's log stays canonical and conflicts surface after the game is marked done."
+        >
+          <Toggle
+            label="Enable dual scorekeeper (both teams score the game)"
+            checked={settings.scorekeeping.dualScorekeeper}
+            onChange={(v) =>
+              setSettings({ ...settings, scorekeeping: { dualScorekeeper: v } })
+            }
+          />
+        </Section>
+
+        <Section
           title="Pitch-Count Compliance"
           description="Default pitch-count ruleset for new seasons in this league. Teams may still override per-season."
         >

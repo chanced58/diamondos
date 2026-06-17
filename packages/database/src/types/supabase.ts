@@ -655,6 +655,57 @@ export type Database = {
           },
         ]
       }
+      game_reconciliations: {
+        Row: {
+          away_game_id: string
+          computed_at: string
+          computed_by: string | null
+          conflicts: Json
+          home_game_id: string
+          id: string
+          resolved_at: string | null
+          resolved_by: string | null
+          resolved_overrides: Json
+        }
+        Insert: {
+          away_game_id: string
+          computed_at?: string
+          computed_by?: string | null
+          conflicts?: Json
+          home_game_id: string
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          resolved_overrides?: Json
+        }
+        Update: {
+          away_game_id?: string
+          computed_at?: string
+          computed_by?: string | null
+          conflicts?: Json
+          home_game_id?: string
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          resolved_overrides?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_reconciliations_away_game_id_fkey"
+            columns: ["away_game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_reconciliations_home_game_id_fkey"
+            columns: ["home_game_id"]
+            isOneToOne: true
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       game_rsvps: {
         Row: {
           game_id: string
@@ -709,8 +760,10 @@ export type Database = {
           opponent_name: string | null
           opponent_team_id: string | null
           outs: number
+          paired_game_id: string | null
           place_id: string | null
           scheduled_at: string
+          scorer_side: string | null
           season_id: string | null
           started_at: string | null
           status: Database["public"]["Enums"]["game_status"]
@@ -736,8 +789,10 @@ export type Database = {
           opponent_name?: string | null
           opponent_team_id?: string | null
           outs?: number
+          paired_game_id?: string | null
           place_id?: string | null
           scheduled_at: string
+          scorer_side?: string | null
           season_id?: string | null
           started_at?: string | null
           status?: Database["public"]["Enums"]["game_status"]
@@ -763,8 +818,10 @@ export type Database = {
           opponent_name?: string | null
           opponent_team_id?: string | null
           outs?: number
+          paired_game_id?: string | null
           place_id?: string | null
           scheduled_at?: string
+          scorer_side?: string | null
           season_id?: string | null
           started_at?: string | null
           status?: Database["public"]["Enums"]["game_status"]
@@ -773,6 +830,13 @@ export type Database = {
           venue_name?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "games_paired_game_id_fkey"
+            columns: ["paired_game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "games_opponent_team_id_fkey"
             columns: ["opponent_team_id"]
