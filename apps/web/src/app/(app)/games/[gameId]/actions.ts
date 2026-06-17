@@ -7,6 +7,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { formatDate, weAreHome, computeLineScore, applyPitchReverted, EventType } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
 import { recomputeLeagueSnapshot } from '@/lib/league-snapshot/recompute';
+import { runReconciliationForGame } from '@/lib/dual-scorekeeper/reconcile';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
@@ -772,6 +773,10 @@ export async function endGameAction(_prevState: string | null | undefined, formD
       away_score: awayScore,
     })
     .eq('id', gameId);
+
+  // Dual scorekeeper: if this game is paired with an opponent's parallel game,
+  // (re)compute the reconciliation once both logs are done. Best-effort.
+  await runReconciliationForGame(supabase, gameId, user.id);
 
   // Refresh league home-page snapshots for the finalized game's league + season.
   // Non-fatal: the scheduled rebuild (cron) self-heals if this is skipped/errors.
