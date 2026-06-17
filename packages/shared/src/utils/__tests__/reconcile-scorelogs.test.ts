@@ -1,4 +1,4 @@
-import { reconcileScoreLogs } from '../reconcile-scorelogs';
+import { reconcileScoreLogs, conflictKey } from '../reconcile-scorelogs';
 import type { BattingStats } from '../../types/batting';
 import type { PitchingStats } from '../../types/pitching';
 
@@ -124,6 +124,22 @@ describe('reconcileScoreLogs', () => {
       homeLog: 2,
       awayLog: 1,
     });
+  });
+
+  it('produces a stable key independent of conflict array position', () => {
+    // Same logical conflict regardless of surrounding conflicts → same key.
+    const a = reconcileScoreLogs({ events: topFirstHomers(3) }, { events: topFirstHomers(2) });
+    const b = reconcileScoreLogs({ events: topFirstHomers(5) }, { events: topFirstHomers(2) });
+    const keyA = a.conflicts.filter((c) => c.kind === 'inning_runs').map(conflictKey);
+    const keyB = b.conflicts.filter((c) => c.kind === 'inning_runs').map(conflictKey);
+    expect(keyA).toContain('inning_runs:1:top');
+    expect(keyB).toContain('inning_runs:1:top');
+  });
+
+  it('gives distinct keys to distinct conflicts', () => {
+    const r = reconcileScoreLogs({ events: topFirstHomers(3) }, { events: topFirstHomers(2) });
+    const keys = r.conflicts.map(conflictKey);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   it('flags a player present in only one log as null on the other side', () => {

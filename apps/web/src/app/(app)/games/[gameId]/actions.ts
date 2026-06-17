@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { formatDate, weAreHome, computeLineScore, applyPitchReverted, EventType } from '@baseball/shared';
+import { formatDate, weAreHome, computeLineScore, applyPitchReverted, EventType, conflictKey, type ScoreConflict } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
 import { recomputeLeagueSnapshot } from '@/lib/league-snapshot/recompute';
 import { runReconciliationForGame } from '@/lib/dual-scorekeeper/reconcile';
@@ -1304,9 +1304,9 @@ export async function resolveReconciliationConflictAction(
   if (!user) return 'Not authenticated.';
 
   const reconciliationId = formData.get('reconciliationId') as string;
-  const conflictIndex = parseInt(formData.get('conflictIndex') as string, 10);
+  const conflictKeyValue = (formData.get('conflictKey') as string)?.trim();
   const useAwayValue = formData.get('useAwayValue') === 'true';
-  if (!reconciliationId || Number.isNaN(conflictIndex)) return 'Missing override fields.';
+  if (!reconciliationId || !conflictKeyValue) return 'Missing override fields.';
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -1315,7 +1315,7 @@ export async function resolveReconciliationConflictAction(
 
   const { data: recon } = await supabase
     .from('game_reconciliations')
-    .select('id, home_game_id, resolved_overrides')
+    .select('id, home_game_id, conflicts, resolved_overrides')
     .eq('id', reconciliationId)
     .maybeSingle();
   if (!recon) return 'Reconciliation not found.';
@@ -1324,13 +1324,21 @@ export async function resolveReconciliationConflictAction(
   const auth = await getAuthorizedCoach(supabase, user.id, recon.home_game_id);
   if ('error' in auth) return auth.error ?? 'Only the home team coach can resolve conflicts.';
 
-  // Upsert the per-conflict override into the JSON array.
+  // Reject a key that does not correspond to a current conflict (stale form or
+  // tampered input) so resolved_overrides never accumulates dangling entries.
+  const conflicts = Array.isArray(recon.conflicts) ? (recon.conflicts as ScoreConflict[]) : [];
+  if (!conflicts.some((c) => conflictKey(c) === conflictKeyValue)) {
+    return 'That conflict no longer exists — reload the game.';
+  }
+
+  // Upsert the per-conflict override into the JSON array, keyed by stable
+  // conflict identity (resilient to reconciliation recompute).
   const overrides = Array.isArray(recon.resolved_overrides)
-    ? (recon.resolved_overrides as { conflictIndex: number; useAwayValue: boolean }[])
+    ? (recon.resolved_overrides as { key: string; useAwayValue: boolean }[])
     : [];
-  const next = overrides.filter((o) => o.conflictIndex !== conflictIndex);
+  const next = overrides.filter((o) => o.key !== conflictKeyValue);
   // Only store an override when it diverges from the home-wins default.
-  if (useAwayValue) next.push({ conflictIndex, useAwayValue: true });
+  if (useAwayValue) next.push({ key: conflictKeyValue, useAwayValue: true });
 
   const { error } = await supabase
     .from('game_reconciliations')

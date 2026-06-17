@@ -55,6 +55,29 @@ export type ScoreConflict =
       awayLog: number | null;
     };
 
+/**
+ * A stable identity for a conflict, independent of its position in the
+ * conflicts array. Overrides are keyed by this so that re-running
+ * reconciliation (which may reorder/add/remove conflicts) never causes a
+ * stored override to silently apply to a different conflict.
+ */
+export function conflictKey(c: ScoreConflict): string {
+  switch (c.kind) {
+    case 'final_score':
+      return `final_score:${c.side}`;
+    case 'inning_runs':
+      return `inning_runs:${c.inning}:${c.half}`;
+    case 'team_hits':
+      return `team_hits:${c.side}`;
+    case 'team_errors':
+      return `team_errors:${c.side}`;
+    case 'player_batting':
+      return `player_batting:${c.playerId}:${c.stat}`;
+    case 'player_pitching':
+      return `player_pitching:${c.playerId}:${c.stat}`;
+  }
+}
+
 export interface ScoreReconciliation {
   /** True when the two logs agree on every compared field. */
   inAgreement: boolean;

@@ -3,10 +3,12 @@
 import type { JSX } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import type { ScoreConflict } from '@baseball/shared';
+import { conflictKey } from '@baseball/shared';
 import { resolveReconciliationConflictAction } from './actions';
 
 export interface ReconciliationOverride {
-  conflictIndex: number;
+  /** Stable conflict identity (see conflictKey in @baseball/shared). */
+  key: string;
   useAwayValue: boolean;
 }
 
@@ -61,7 +63,6 @@ function SubmitButton({ label }: { label: string }): JSX.Element {
 function ConflictRow({
   reconciliationId,
   conflict,
-  index,
   overridden,
   canOverride,
   homeTeamLabel,
@@ -69,7 +70,6 @@ function ConflictRow({
 }: {
   reconciliationId: string;
   conflict: ScoreConflict;
-  index: number;
   overridden: boolean;
   canOverride: boolean;
   homeTeamLabel: string;
@@ -100,7 +100,7 @@ function ConflictRow({
       {canOverride && (
         <form action={formAction} className="mt-2 flex items-center gap-2">
           <input type="hidden" name="reconciliationId" value={reconciliationId} />
-          <input type="hidden" name="conflictIndex" value={index} />
+          <input type="hidden" name="conflictKey" value={conflictKey(conflict)} />
           <input type="hidden" name="useAwayValue" value={overridden ? 'false' : 'true'} />
           <SubmitButton label={overridden ? `Revert to ${homeTeamLabel}` : `Use ${awayTeamLabel} value`} />
           {error && <span className="text-xs text-red-600">{error}</span>}
@@ -118,7 +118,7 @@ export function ReconciliationPanel({
   homeTeamLabel,
   awayTeamLabel,
 }: ReconciliationPanelProps): JSX.Element {
-  const overriddenSet = new Set(overrides.filter((o) => o.useAwayValue).map((o) => o.conflictIndex));
+  const overriddenSet = new Set(overrides.filter((o) => o.useAwayValue).map((o) => o.key));
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
@@ -139,18 +139,20 @@ export function ReconciliationPanel({
             away value.
           </p>
           <div>
-            {conflicts.map((c, i) => (
-              <ConflictRow
-                key={i}
-                reconciliationId={reconciliationId}
-                conflict={c}
-                index={i}
-                overridden={overriddenSet.has(i)}
-                canOverride={canOverride}
-                homeTeamLabel={homeTeamLabel}
-                awayTeamLabel={awayTeamLabel}
-              />
-            ))}
+            {conflicts.map((c, i) => {
+              const k = conflictKey(c);
+              return (
+                <ConflictRow
+                  key={k || i}
+                  reconciliationId={reconciliationId}
+                  conflict={c}
+                  overridden={overriddenSet.has(k)}
+                  canOverride={canOverride}
+                  homeTeamLabel={homeTeamLabel}
+                  awayTeamLabel={awayTeamLabel}
+                />
+              );
+            })}
           </div>
         </>
       )}
