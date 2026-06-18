@@ -8,6 +8,7 @@ interface PairedGameRow {
   paired_game_id: string | null;
 }
 
+/** Load a game's full event log in sequence order; throws on a real query error. */
 async function loadEvents(db: SupabaseClient, gameId: string): Promise<Record<string, unknown>[]> {
   const { data, error } = await db
     .from('game_events')

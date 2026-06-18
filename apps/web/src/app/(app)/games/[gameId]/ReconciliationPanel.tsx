@@ -24,6 +24,7 @@ interface ReconciliationPanelProps {
 
 const HALF_LABEL: Record<'top' | 'bottom', string> = { top: 'Top', bottom: 'Bottom' };
 
+/** Human-readable label for a single score conflict, shown as the row title. */
 function describeConflict(c: ScoreConflict): string {
   switch (c.kind) {
     case 'final_score':
@@ -43,10 +44,12 @@ function describeConflict(c: ScoreConflict): string {
   }
 }
 
+/** Render a numeric stat value, or an em dash when the player is absent from a log. */
 function fmt(v: number | null): string {
   return v === null ? '—' : String(v);
 }
 
+/** Submit button that reflects the form action's pending state. */
 function SubmitButton({ label }: { label: string }): JSX.Element {
   const { pending } = useFormStatus();
   return (
@@ -60,6 +63,10 @@ function SubmitButton({ label }: { label: string }): JSX.Element {
   );
 }
 
+/**
+ * One conflict row: the home/away values side by side, which value is currently
+ * in effect, and (for the home coach) a button to accept the away value or revert.
+ */
 function ConflictRow({
   reconciliationId,
   conflict,
@@ -110,6 +117,11 @@ function ConflictRow({
   );
 }
 
+/**
+ * Completed-game panel comparing the two scorekeepers' logs. Shows a green
+ * agreement state when there are no conflicts, otherwise lists each conflict
+ * with the home (canonical) and away values; the home coach can override.
+ */
 export function ReconciliationPanel({
   reconciliationId,
   conflicts,
