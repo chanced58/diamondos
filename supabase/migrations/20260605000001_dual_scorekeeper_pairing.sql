@@ -97,3 +97,35 @@ CREATE POLICY "home_coach_write_reconciliation"
         AND (public.is_coach(hg.team_id, auth.uid()) OR public.is_platform_admin())
     )
   );
+
+-- Atomically set (or clear) a single home-coach override on a reconciliation
+-- row, keyed by stable conflict identity. Doing the filter-then-append in one
+-- UPDATE avoids the read-modify-write race that a JS-side array rebuild has
+-- (two near-simultaneous submissions could otherwise drop each other's edit).
+-- Authorization is enforced by the caller (server action, service-role) before
+-- invoking this; the function only mutates resolved_overrides + resolved_*.
+CREATE OR REPLACE FUNCTION public.set_reconciliation_override(
+  p_reconciliation_id uuid,
+  p_key text,
+  p_use_away boolean,
+  p_resolved_by uuid
+)
+RETURNS void
+LANGUAGE sql
+AS $$
+  UPDATE public.game_reconciliations
+  SET resolved_overrides =
+        (
+          SELECT coalesce(jsonb_agg(elem), '[]'::jsonb)
+          FROM jsonb_array_elements(resolved_overrides) AS elem
+          WHERE elem ->> 'key' IS DISTINCT FROM p_key
+        )
+        || CASE
+             WHEN p_use_away
+               THEN jsonb_build_array(jsonb_build_object('key', p_key, 'useAwayValue', true))
+             ELSE '[]'::jsonb
+           END,
+      resolved_at = now(),
+      resolved_by = p_resolved_by
+  WHERE id = p_reconciliation_id;
+$$;

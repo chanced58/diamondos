@@ -1315,7 +1315,7 @@ export async function resolveReconciliationConflictAction(
 
   const { data: recon } = await supabase
     .from('game_reconciliations')
-    .select('id, home_game_id, conflicts, resolved_overrides')
+    .select('id, home_game_id, conflicts')
     .eq('id', reconciliationId)
     .maybeSingle();
   if (!recon) return 'Reconciliation not found.';
@@ -1331,23 +1331,16 @@ export async function resolveReconciliationConflictAction(
     return 'That conflict no longer exists — reload the game.';
   }
 
-  // Upsert the per-conflict override into the JSON array, keyed by stable
-  // conflict identity (resilient to reconciliation recompute).
-  const overrides = Array.isArray(recon.resolved_overrides)
-    ? (recon.resolved_overrides as { key: string; useAwayValue: boolean }[])
-    : [];
-  const next = overrides.filter((o) => o.key !== conflictKeyValue);
-  // Only store an override when it diverges from the home-wins default.
-  if (useAwayValue) next.push({ key: conflictKeyValue, useAwayValue: true });
-
-  const { error } = await supabase
-    .from('game_reconciliations')
-    .update({
-      resolved_overrides: next,
-      resolved_at: new Date().toISOString(),
-      resolved_by: user.id,
-    })
-    .eq('id', reconciliationId);
+  // Set (or clear) the override atomically in the DB, keyed by stable conflict
+  // identity. A single UPDATE that filters-then-appends avoids the
+  // read-modify-write race where two near-simultaneous submissions could drop
+  // each other's edit.
+  const { error } = await supabase.rpc('set_reconciliation_override', {
+    p_reconciliation_id: reconciliationId,
+    p_key: conflictKeyValue,
+    p_use_away: useAwayValue,
+    p_resolved_by: user.id,
+  });
   if (error) return `Failed to save override: ${error.message}`;
 
   revalidatePath(`/games/${recon.home_game_id}`);

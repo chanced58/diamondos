@@ -4999,6 +4999,15 @@ export type Database = {
         Args: { p_game_date?: string; p_player_id: string }
         Returns: string
       }
+      set_reconciliation_override: {
+        Args: {
+          p_key: string
+          p_reconciliation_id: string
+          p_resolved_by: string
+          p_use_away: boolean
+        }
+        Returns: undefined
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
     }
