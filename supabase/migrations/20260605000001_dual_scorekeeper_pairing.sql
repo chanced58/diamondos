@@ -77,26 +77,13 @@ CREATE POLICY "paired_team_members_view_reconciliation"
     )
   );
 
--- Only the home team's coach may override (UPDATE) the reconciliation row.
--- The server computes/INSERTs rows with the service-role key (RLS-exempt), so
--- direct client INSERT/DELETE is never needed — restrict to UPDATE for least
--- privilege (a coach cannot fabricate or drop reconciliation rows).
-CREATE POLICY "home_coach_write_reconciliation"
-  ON public.game_reconciliations FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.games hg
-      WHERE hg.id = public.game_reconciliations.home_game_id
-        AND (public.is_coach(hg.team_id, auth.uid()) OR public.is_platform_admin())
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.games hg
-      WHERE hg.id = public.game_reconciliations.home_game_id
-        AND (public.is_coach(hg.team_id, auth.uid()) OR public.is_platform_admin())
-    )
-  );
+-- No direct INSERT/UPDATE/DELETE policy: every write to this table is
+-- server-mediated. The reconciliation pipeline computes/INSERTs rows and the
+-- home coach's override flows through set_reconciliation_override() — both run
+-- with the service-role key (RLS-exempt) after the server action has verified
+-- the caller is the home coach. Granting authenticated coaches a direct UPDATE
+-- policy would let them tamper with conflicts/pair ids while bypassing that
+-- validation, so we keep writes closed at the RLS layer entirely.
 
 -- Atomically set (or clear) a single home-coach override on a reconciliation
 -- row, keyed by stable conflict identity. Doing the filter-then-append in one
@@ -129,3 +116,11 @@ AS $$
       resolved_by = p_resolved_by
   WHERE id = p_reconciliation_id;
 $$;
+
+-- Only the trusted server flow (service-role) may invoke the override mutator;
+-- close it to direct anon/authenticated calls so coaches cannot bypass the
+-- server action's conflict-key validation by RPC-ing the function directly.
+REVOKE EXECUTE ON FUNCTION public.set_reconciliation_override(uuid, text, boolean, uuid)
+  FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.set_reconciliation_override(uuid, text, boolean, uuid)
+  TO service_role;

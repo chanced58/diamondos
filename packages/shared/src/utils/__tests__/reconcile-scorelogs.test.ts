@@ -43,6 +43,7 @@ function topFirstErrors(count: number): Record<string, unknown>[] {
   return rows;
 }
 
+/** Build a zeroed BattingStats row, overriding only the fields a test cares about. */
 function makeBatting(partial: Partial<BattingStats> & { playerId: string }): BattingStats {
   return {
     playerName: 'Test',
@@ -78,6 +79,7 @@ function makeBatting(partial: Partial<BattingStats> & { playerId: string }): Bat
   };
 }
 
+/** Build a zeroed PitchingStats row, overriding only the fields a test cares about. */
 function makePitching(partial: Partial<PitchingStats> & { playerId: string }): PitchingStats {
   return {
     playerName: 'Test',

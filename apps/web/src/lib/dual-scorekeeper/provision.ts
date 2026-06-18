@@ -72,10 +72,15 @@ export async function provisionMirrorGame(
       // A prior run created the mirror but may have failed before back-linking
       // the original. Repair the (idempotent) back-link so the pairing is
       // bidirectional, then return the existing mirror.
-      await db
+      const { error: repairErr } = await db
         .from('games')
         .update({ paired_game_id: existing.id, scorer_side: originalIsHome ? 'home' : 'away' })
         .eq('id', game.id);
+      if (repairErr) {
+        console.error(
+          `[dual-scorekeeper] duplicate-path back-link repair failed game=${game.id} mirror=${existing.id}: ${repairErr.message}`,
+        );
+      }
       return existing.id;
     }
 
