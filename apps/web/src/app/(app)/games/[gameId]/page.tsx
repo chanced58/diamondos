@@ -12,6 +12,8 @@ import { StartGameForm } from './StartGameForm';
 import { LocationMap } from '@/components/maps/LocationMap';
 import { EditGameButton, ResetGameForm, RecalculateScoresForm } from './GameDetailClient';
 import { GameTakeaways } from './GameTakeaways';
+import { ReconciliationPanel } from './ReconciliationPanel';
+import { loadReconciliationForGame } from '@/lib/dual-scorekeeper/load';
 import { getGameWeaknesses } from '@baseball/database';
 
 export const metadata: Metadata = { title: 'Game' };
@@ -145,6 +147,9 @@ export default async function GameDetailPage({
   const scheduledDate = scheduled.toLocaleDateString('en-CA');                              // YYYY-MM-DD
   const scheduledTime = scheduled.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); // HH:MM
 
+  // Dual scorekeeper: surface the reconciliation panel once the game is done.
+  const reconciliation = isCompleted ? await loadReconciliationForGame(db, params.gameId) : null;
+
   return (
     <div className="p-8 max-w-2xl">
       {/* ── Back link ──────────────────────────────────────────── */}
@@ -257,6 +262,17 @@ export default async function GameDetailPage({
             </div>
           </div>
         </div>
+      )}
+
+      {reconciliation && (
+        <ReconciliationPanel
+          reconciliationId={reconciliation.reconciliationId}
+          conflicts={reconciliation.conflicts}
+          overrides={reconciliation.overrides}
+          canOverride={isCoach && reconciliation.viewerOnHomeSide}
+          homeTeamLabel={reconciliation.homeTeamLabel}
+          awayTeamLabel={reconciliation.awayTeamLabel}
+        />
       )}
 
       {/* ── Edit Opponent Lineup (completed games — coaches only) ── */}

@@ -4,9 +4,10 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { formatDate, weAreHome, computeLineScore, applyPitchReverted, EventType } from '@baseball/shared';
+import { formatDate, weAreHome, computeLineScore, applyPitchReverted, EventType, conflictKey, type ScoreConflict } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
 import { recomputeLeagueSnapshot } from '@/lib/league-snapshot/recompute';
+import { runReconciliationForGame } from '@/lib/dual-scorekeeper/reconcile';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
@@ -773,6 +774,10 @@ export async function endGameAction(_prevState: string | null | undefined, formD
     })
     .eq('id', gameId);
 
+  // Dual scorekeeper: if this game is paired with an opponent's parallel game,
+  // (re)compute the reconciliation once both logs are done. Best-effort.
+  await runReconciliationForGame(supabase, gameId, user.id);
+
   // Refresh league home-page snapshots for the finalized game's league + season.
   // Non-fatal: the scheduled rebuild (cron) self-heals if this is skipped/errors.
   try {
@@ -1280,5 +1285,64 @@ export async function replayAtBatAction(
   }
 
   revalidatePath(`/games/${gameId}/history`);
+  return null;
+}
+
+/**
+ * Dual scorekeeper: the home team's coach overrides one reconciliation
+ * conflict to accept the away log's value (or reverts to the canonical home
+ * value). Overrides are recorded on the reconciliation row — they annotate the
+ * record and the displayed final line; they do not mutate the immutable
+ * game_events log. Returns null on success or an error string.
+ */
+export async function resolveReconciliationConflictAction(
+  _prevState: string | null | undefined,
+  formData: FormData,
+): Promise<string | null> {
+  const authClient = createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return 'Not authenticated.';
+
+  const reconciliationId = formData.get('reconciliationId') as string;
+  const conflictKeyValue = (formData.get('conflictKey') as string)?.trim();
+  const useAwayValue = formData.get('useAwayValue') === 'true';
+  if (!reconciliationId || !conflictKeyValue) return 'Missing override fields.';
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const { data: recon } = await supabase
+    .from('game_reconciliations')
+    .select('id, home_game_id, conflicts')
+    .eq('id', reconciliationId)
+    .maybeSingle();
+  if (!recon) return 'Reconciliation not found.';
+
+  // Only the home (canonical) team's coach may override.
+  const auth = await getAuthorizedCoach(supabase, user.id, recon.home_game_id);
+  if ('error' in auth) return auth.error ?? 'Only the home team coach can resolve conflicts.';
+
+  // Reject a key that does not correspond to a current conflict (stale form or
+  // tampered input) so resolved_overrides never accumulates dangling entries.
+  const conflicts = Array.isArray(recon.conflicts) ? (recon.conflicts as ScoreConflict[]) : [];
+  if (!conflicts.some((c) => conflictKey(c) === conflictKeyValue)) {
+    return 'That conflict no longer exists — reload the game.';
+  }
+
+  // Set (or clear) the override atomically in the DB, keyed by stable conflict
+  // identity. A single UPDATE that filters-then-appends avoids the
+  // read-modify-write race where two near-simultaneous submissions could drop
+  // each other's edit.
+  const { error } = await supabase.rpc('set_reconciliation_override', {
+    p_reconciliation_id: reconciliationId,
+    p_key: conflictKeyValue,
+    p_use_away: useAwayValue,
+    p_resolved_by: user.id,
+  });
+  if (error) return `Failed to save override: ${error.message}`;
+
+  revalidatePath(`/games/${recon.home_game_id}`);
   return null;
 }

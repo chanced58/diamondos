@@ -42,4 +42,13 @@ export interface LeagueScoringSettings {
   compliance: {
     defaultPitchRuleId: string | null;
   };
+  scorekeeping: {
+    /**
+     * When true, both teams may independently score the same game (paired
+     * games). The home team's log stays canonical; conflicts between the two
+     * logs are surfaced after the game is marked done. Requires the opponent
+     * to be a linked DiamondOS team; otherwise this is a no-op.
+     */
+    dualScorekeeper: boolean;
+  };
 }
