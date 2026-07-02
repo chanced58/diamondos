@@ -3,24 +3,10 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { getMaxBattingOrder } from '@baseball/shared';
+import { getMaxBattingOrder, POSITION_TO_DB } from '@baseball/shared';
 import { getLeagueSettingsForTeam } from '@/lib/league-settings';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
-
-/** Map UI abbreviations to the player_position database enum values. */
-const POSITION_TO_DB: Record<string, string> = {
-  P: 'pitcher',
-  C: 'catcher',
-  '1B': 'first_base',
-  '2B': 'second_base',
-  '3B': 'third_base',
-  SS: 'shortstop',
-  LF: 'left_field',
-  CF: 'center_field',
-  RF: 'right_field',
-  DH: 'designated_hitter',
-};
 
 export async function saveLineupAction(
   _prevState: string | null | undefined,
