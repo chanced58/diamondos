@@ -1,7 +1,15 @@
+import { Q } from '@nozbe/watermelondb';
 import { synchronize, type SyncPullArgs, type SyncPushArgs } from '@nozbe/watermelondb/sync';
+import { computeLineupDeletes } from '@baseball/shared';
 import { database } from '../db';
 import type { GameEvent } from '../db/models/GameEvent';
+import type { GameLineup } from '../db/models/GameLineup';
 import { getSupabaseClient } from '../lib/supabase';
+import {
+  applyServerLineupSnapshot,
+  getDirtyLineupState,
+  pushLineupsForGame,
+} from './lineup-sync';
 
 
 /**
@@ -105,13 +113,25 @@ async function reconcileSequenceNumbers(
 export async function syncWithSupabase(): Promise<void> {
   const supabase = getSupabaseClient();
 
+  // Games whose lineup push deferred to the server version (LWW skip);
+  // converged after the sync cycle via applyServerLineupSnapshot.
+  const skippedLineupGames: string[] = [];
+
   await synchronize({
     database,
 
-    pullChanges: async ({ lastPulledAt }: SyncPullArgs) => {
-      const since = lastPulledAt
-        ? new Date(lastPulledAt).toISOString()
-        : new Date(0).toISOString();
+    pullChanges: async ({ lastPulledAt, migration }: SyncPullArgs) => {
+      const epoch = new Date(0).toISOString();
+      const since = lastPulledAt ? new Date(lastPulledAt).toISOString() : epoch;
+
+      // On the first sync after a local schema migration, WatermelonDB tells
+      // us which tables/columns are new so we can backfill them from epoch
+      // without resetting the whole database.
+      const migratedTables = new Set(migration?.tables ?? []);
+      const migratedColumnTables = new Set((migration?.columns ?? []).map((c) => c.table));
+      const lineupsSince = migratedTables.has('game_lineups') ? epoch : since;
+      const leaguePlayersSince = migratedTables.has('league_players') ? epoch : since;
+      const playersSince = migratedColumnTables.has('players') ? epoch : since;
 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user?.id) {
@@ -119,18 +139,58 @@ export async function syncWithSupabase(): Promise<void> {
       }
       const userId = user.id;
 
-      const [gamesResult, eventsResult, playersResult, channelsResult, messagesResult] =
+      const [gamesResult, eventsResult, playersResult, channelsResult, messagesResult, lineupsResult, leaguePlayersResult] =
         await Promise.all([
           supabase.from('games').select('*').gte('updated_at', since),
           supabase.from('game_events').select('*').gte('synced_at', since),
-          supabase.from('players').select('*').gte('updated_at', since),
+          supabase.from('players').select('*').gte('updated_at', playersSince),
           supabase
             .from('channels')
             .select('*, channel_members!inner(user_id, can_post)')
             .eq('channel_members.user_id', userId)
             .gte('updated_at', since),
           supabase.from('messages').select('*, user_profiles!sender_id(first_name, last_name)').gte('created_at', since),
+          supabase.from('game_lineups').select('*').gte('updated_at', lineupsSince),
+          supabase.from('league_players').select('*').gte('registered_at', leaguePlayersSince),
         ]);
+
+      const firstError = [gamesResult, eventsResult, playersResult, channelsResult, messagesResult, lineupsResult, leaguePlayersResult]
+        .map((r) => r.error)
+        .find((e) => e != null);
+      if (firstError) throw firstError;
+
+      // Lineups are mutable, so the pull needs two extra steps:
+      //  1. Drop pulled rows for games with unsynced local lineup edits —
+      //    pull runs before push inside synchronize(), and applying a web
+      //    delete-reinsert here would destroy the device's rows before the
+      //    mobile-wins push gets to run.
+      //  2. Derive deletions for the remaining touched games by diffing the
+      //    server's full id set against local rows — a web save deletes and
+      //    reinserts rows, and Postgres keeps no tombstones. (A web save that
+      //    empties a lineup entirely leaves no pulled rows to flag the game,
+      //    so stale local rows persist until the next lineup change — known
+      //    limitation.)
+      const { dirtyGameIds } = await getDirtyLineupState(database);
+      const pulledLineups = (lineupsResult.data ?? []).filter(
+        (r) => !dirtyGameIds.has(r.game_id),
+      );
+      const touchedGameIds = [...new Set(pulledLineups.map((r) => r.game_id))];
+      let deletedLineupIds: string[] = [];
+      if (touchedGameIds.length > 0) {
+        const { data: serverIdRows, error: serverIdsError } = await supabase
+          .from('game_lineups')
+          .select('id')
+          .in('game_id', touchedGameIds);
+        if (serverIdsError) throw serverIdsError;
+        const localRows = await database
+          .get<GameLineup>('game_lineups')
+          .query(Q.where('game_remote_id', Q.oneOf(touchedGameIds)))
+          .fetch();
+        deletedLineupIds = computeLineupDeletes(
+          (serverIdRows ?? []).map((r) => r.id),
+          localRows.map((r) => r.id),
+        );
+      }
 
       return {
         changes: {
@@ -159,19 +219,105 @@ export async function syncWithSupabase(): Promise<void> {
             updated: [],
             deleted: [],
           },
+          game_lineups: {
+            created: pulledLineups.map(mapGameLineup),
+            updated: [],
+            deleted: deletedLineupIds,
+          },
+          league_players: {
+            created: (leaguePlayersResult.data ?? []).map(mapLeaguePlayer),
+            updated: [],
+            deleted: [],
+          },
         },
         timestamp: Date.now(),
       };
     },
 
     pushChanges: async ({ changes }: SyncPushArgs) => {
-      // Push locally-created game events (the main offline use case).
       // SyncDatabaseChangeSet in this codebase's @nozbe/watermelondb types
-      // does not declare game_events / messages, so we cast through unknown.
-      const createdEvents = (
-        (changes as unknown as { game_events?: { created?: Array<Record<string, unknown>> } })
-          .game_events?.created ?? []
+      // does not declare our tables, so we cast through unknown.
+      const tableChanges = changes as unknown as Record<
+        string,
+        {
+          created?: Array<Record<string, unknown>>;
+          updated?: Array<Record<string, unknown>>;
+          deleted?: string[];
+        }
+      >;
+
+      // Push order matters: guest players before league_players and lineups
+      // (both FK to players), lineups after both.
+
+      // 1. Guest players created offline. Mobile only ever creates guest-only
+      // identities; filter defensively so a pulled roster row can never leak
+      // into an insert. Client UUID becomes the server PK, like game_events.
+      const createdGuests = (tableChanges.players?.created ?? []).filter(
+        (p) => p.is_guest_only === true,
       );
+      if (createdGuests.length > 0) {
+        const { error } = await supabase.from('players').upsert(
+          createdGuests.map((p) => ({
+            id: p.remote_id as string,
+            team_id: null,
+            first_name: p.first_name as string,
+            last_name: p.last_name as string,
+            jersey_number: (p.jersey_number as number | null) ?? null,
+            is_guest_only: true,
+            is_active: true,
+          })),
+          { onConflict: 'id', ignoreDuplicates: true },
+        );
+        if (error) throw error;
+      }
+
+      // Guest identity edits (e.g. jersey fixes) — allowed by RLS only for
+      // guest-only rows, so filter to those.
+      const updatedGuests = (tableChanges.players?.updated ?? []).filter(
+        (p) => p.is_guest_only === true,
+      );
+      for (const p of updatedGuests) {
+        const { error } = await supabase
+          .from('players')
+          .update({
+            first_name: p.first_name as string,
+            last_name: p.last_name as string,
+            jersey_number: (p.jersey_number as number | null) ?? null,
+          })
+          .eq('id', p.remote_id as string);
+        if (error) throw error;
+      }
+
+      // 2. League guest-pool registrations created offline.
+      const createdLeaguePlayers = tableChanges.league_players?.created ?? [];
+      if (createdLeaguePlayers.length > 0) {
+        const { error } = await supabase.from('league_players').upsert(
+          createdLeaguePlayers.map((lp) => ({
+            league_id: lp.league_id as string,
+            player_id: lp.player_remote_id as string,
+          })),
+          { onConflict: 'league_id,player_id', ignoreDuplicates: true },
+        );
+        if (error) throw error;
+      }
+
+      // 3. Lineups — per-game whole-lineup replace, guarded by the conflict
+      // policy in @baseball/shared (mobile wins live, LWW pre-game). Dirty
+      // state is recomputed via raw SQL because the deleted bucket in
+      // `changes` carries only ids, not the game they belonged to.
+      const { dirtyGameIds, localEditedAtMsByGame } = await getDirtyLineupState(database);
+      for (const gameRemoteId of dirtyGameIds) {
+        const result = await pushLineupsForGame(
+          supabase,
+          database,
+          gameRemoteId,
+          localEditedAtMsByGame.get(gameRemoteId) ?? 0,
+        );
+        if (result === 'skipped') skippedLineupGames.push(gameRemoteId);
+      }
+
+      // 4. Push locally-created game events (the main offline use case).
+      const createdEvents = tableChanges.game_events?.created ?? [];
       if (createdEvents.length > 0) {
         // Skip events whose payload can't be parsed rather than aborting the
         // whole sync. Offenders stay in WatermelonDB with synced_at=null and
@@ -233,8 +379,8 @@ export async function syncWithSupabase(): Promise<void> {
         }
       }
 
-      // Push locally-created messages
-      const createdMessages = changes.messages?.created ?? [];
+      // 5. Push locally-created messages
+      const createdMessages = tableChanges.messages?.created ?? [];
       if (createdMessages.length > 0) {
         const { data: { user } } = await supabase.auth.getUser();
         const { error } = await supabase.from('messages').insert(
@@ -252,6 +398,17 @@ export async function syncWithSupabase(): Promise<void> {
     sendCreatedAsUpdated: false,
     migrationsEnabledAtVersion: 1,
   });
+
+  // Converge games whose lineup push deferred to the server (LWW skip).
+  // WatermelonDB marked their local rows synced, so replace them with the
+  // server rows here. Never throw — a failure self-heals next cycle.
+  for (const gameRemoteId of skippedLineupGames) {
+    try {
+      await applyServerLineupSnapshot(database, supabase, gameRemoteId);
+    } catch (err) {
+      console.warn('sync: failed to apply server lineup snapshot', gameRemoteId, err);
+    }
+  }
 }
 
 // ─── mapping helpers ─────────────────────────────────────────────────────────
@@ -302,7 +459,7 @@ function mapPlayer(r: Record<string, unknown>) {
   return {
     id: r.id,
     remote_id: r.id,
-    team_id: r.team_id,
+    team_id: r.team_id ?? null,   // NULL for guest-only identities
     first_name: r.first_name,
     last_name: r.last_name,
     jersey_number: r.jersey_number ?? null,
@@ -310,6 +467,36 @@ function mapPlayer(r: Record<string, unknown>) {
     bats: r.bats ?? null,
     throws: r.throws ?? null,
     is_active: r.is_active,
+    is_guest_only: r.is_guest_only ?? false,
+    synced_at: Date.now(),
+  };
+}
+
+function mapGameLineup(r: Record<string, unknown>) {
+  return {
+    id: r.id,
+    remote_id: r.id,
+    game_remote_id: r.game_id,
+    player_remote_id: r.player_id,
+    batting_order: r.batting_order ?? null,
+    starting_position: r.starting_position ?? null,
+    is_starter: r.is_starter,
+    is_guest: r.is_guest,
+    guest_display_name: r.guest_display_name ?? null,
+    count_toward_stats: r.count_toward_stats,
+    updated_at: new Date(r.updated_at as string).getTime(),
+    synced_at: Date.now(),
+  };
+}
+
+function mapLeaguePlayer(r: Record<string, unknown>) {
+  // Composite server PK flattened into the WDB record id; local creation
+  // uses the same form (leaguePlayerRecordId) so upsert echoes merge by id.
+  return {
+    id: `${r.league_id}:${r.player_id}`,
+    league_id: r.league_id,
+    player_remote_id: r.player_id,
+    registered_at: new Date(r.registered_at as string).getTime(),
     synced_at: Date.now(),
   };
 }
