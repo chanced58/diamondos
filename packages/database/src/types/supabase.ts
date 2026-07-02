@@ -511,6 +511,7 @@ export type Database = {
           starting_position:
             | Database["public"]["Enums"]["player_position"]
             | null
+          updated_at: string
         }
         Insert: {
           batting_order?: number | null
@@ -525,6 +526,7 @@ export type Database = {
           starting_position?:
             | Database["public"]["Enums"]["player_position"]
             | null
+          updated_at?: string
         }
         Update: {
           batting_order?: number | null
@@ -539,6 +541,7 @@ export type Database = {
           starting_position?:
             | Database["public"]["Enums"]["player_position"]
             | null
+          updated_at?: string
         }
         Relationships: [
           {
@@ -4954,6 +4957,10 @@ export type Database = {
         Args: { p_team_id: string; p_user_id: string }
         Returns: boolean
       }
+      is_guest_only_player: {
+        Args: { p_player_id: string }
+        Returns: boolean
+      }
       is_head_coach_or_ad: {
         Args: { p_team_id: string; p_user_id: string }
         Returns: boolean
@@ -4975,6 +4982,10 @@ export type Database = {
         Returns: boolean
       }
       is_platform_admin: { Args: never; Returns: boolean }
+      is_player_in_users_league: {
+        Args: { p_player_id: string; p_user_id: string }
+        Returns: boolean
+      }
       is_player_owner: {
         Args: { p_player_id: string; p_user_id: string }
         Returns: boolean
