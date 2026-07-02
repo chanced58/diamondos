@@ -23,7 +23,7 @@ function leagueIdCacheKey(teamId: string): string {
  * Returns null when the team has no league or the lookup has never succeeded
  * online for this team ('' is cached for "no league").
  */
-export async function getCachedLeagueId(teamId: string): Promise<string | null> {
+async function getCachedLeagueId(teamId: string): Promise<string | null> {
   try {
     const raw = await SecureStore.getItemAsync(leagueIdCacheKey(teamId));
     return raw ? raw : null;
@@ -69,22 +69,6 @@ async function writeCache(teamId: string, settings: LeagueScoringSettings): Prom
   }
 }
 
-/**
- * Resolve the active league settings for a team, with SecureStore-backed
- * offline caching.
- *
- * On mount we (a) seed from any cached value so scoring respects the league
- * gates immediately even with no network, then (b) refresh from Supabase in
- * the background and update both state and cache when the fetch returns.
- *
- * This keeps the offline-first promise of the mobile scoring app without
- * having to add a full WatermelonDB table for what is effectively a small
- * per-team JSON blob.
- */
-export function useLeagueSettings(teamId: string | undefined): LeagueScoringSettings {
-  return useLeagueContext(teamId).settings;
-}
-
 export interface LeagueContext {
   settings: LeagueScoringSettings;
   /** Active league id for the team; null when unknown or the team has no league. */
@@ -92,10 +76,17 @@ export interface LeagueContext {
 }
 
 /**
- * League settings plus the resolved league id (needed offline by the guest
- * flow to register new guests in the league pool). Same cache-then-refresh
- * behavior as useLeagueSettings; the league id gets its own SecureStore key
- * so it survives offline launches.
+ * Resolve the active league settings and league id for a team, with
+ * SecureStore-backed offline caching (the league id is needed offline by the
+ * guest flow to register new guests in the league pool).
+ *
+ * On mount we (a) seed from any cached values so scoring respects the league
+ * gates immediately even with no network, then (b) refresh from Supabase in
+ * the background and update both state and cache when the fetch returns.
+ *
+ * This keeps the offline-first promise of the mobile scoring app without
+ * having to add a full WatermelonDB table for what is effectively a small
+ * per-team JSON blob.
  */
 export function useLeagueContext(teamId: string | undefined): LeagueContext {
   const [settings, setSettings] = useState<LeagueScoringSettings>(defaultLeagueScoringSettings);

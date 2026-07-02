@@ -18,11 +18,11 @@ import { useLeagueContext } from '../../../../src/lib/league-settings';
 import { database } from '../../../../src/db';
 import type { GameEvent as WdbGameEvent } from '../../../../src/db/models/GameEvent';
 import type { Game } from '../../../../src/db/models/Game';
-import type { GameLineup } from '../../../../src/db/models/GameLineup';
 import type { Player } from '../../../../src/db/models/Player';
 import type { BattedOutType, RosterPlayer, RunnerOutcome } from '../../../../src/features/scoring/PitchInput';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
-import { randomUUID } from 'expo-crypto';
+import { addLineupRow } from '../../../../src/features/lineup/local-guest';
+import { useGameLineups } from '../../../../src/features/lineup/use-game-lineups';
 
 /**
  * Live game scoring screen — the core feature of the mobile app.
@@ -113,28 +113,16 @@ export default function ScoringScreen() {
   // The current batting order, observed reactively from the local WatermelonDB
   // game_lineups mirror (synced both ways with Supabase). The Add Batter flow
   // uses it to know (a) which players are already in the order and (b) the
-  // current max batting_order so the new batter lands at end+1. lineupLoaded
-  // flips once the observation has fired — always quickly, since it's a local
-  // read, but keep the gate so a race can't compute batting_order=1 against an
-  // unloaded lineup.
-  const [lineupRows, setLineupRows] = useState<{ player_id: string; batting_order: number | null }[]>([]);
-  const [lineupLoaded, setLineupLoaded] = useState(false);
-  useEffect(() => {
-    const subscription = database
-      .get<GameLineup>('game_lineups')
-      .query(Q.where('game_remote_id', gameId))
-      .observe()
-      .subscribe((rows) => {
-        setLineupRows(
-          rows.map((row) => ({
-            player_id: row.playerRemoteId,
-            batting_order: row.battingOrder ?? null,
-          })),
-        );
-        setLineupLoaded(true);
-      });
-    return () => subscription.unsubscribe();
-  }, [gameId]);
+  // current max batting_order so the new batter lands at end+1.
+  const { rows: observedLineupRows, loaded: lineupLoaded } = useGameLineups(gameId);
+  const lineupRows = useMemo(
+    () =>
+      observedLineupRows.map((row) => ({
+        player_id: row.playerRemoteId,
+        batting_order: row.battingOrder ?? null,
+      })),
+    [observedLineupRows],
+  );
 
   // Dropped-third-strike modal — opened either by the manual button in
   // PitchInput, or automatically by handlePitch when a 3rd-strike pitch is
@@ -573,20 +561,23 @@ export default function ScoringScreen() {
     // them as a late addition. Offline-first like everything else on this
     // screen; the SUBSTITUTION event above remains the authoritative source
     // for live state and the shared stats derivers.
-    await database.write(async () => {
-      await database.get<GameLineup>('game_lineups').create((r) => {
-        const lineupId = randomUUID();
-        r._raw.id = lineupId;
-        r.remoteId = lineupId;
-        r.gameRemoteId = gameId;
-        r.playerRemoteId = newBatterId;
-        r.battingOrder = battingOrderPosition;
-        r.isStarter = false;
-        r.isGuest = false;
-        r.countTowardStats = true;
-        r.updatedAt = Date.now();
+    try {
+      await addLineupRow({
+        gameRemoteId: gameId,
+        playerRemoteId: newBatterId,
+        battingOrder: battingOrderPosition,
+        isStarter: false,
+        isGuest: false,
+        countTowardStats: true,
       });
-    });
+    } catch (err) {
+      // The SUBSTITUTION event above already keeps live play correct; log
+      // with context so a missing post-game lineup row can be traced.
+      console.warn(
+        `Add Batter lineup row write failed game=${gameId} player=${newBatterId}:`,
+        err,
+      );
+    }
     triggerSync().catch(console.warn);
   }
 

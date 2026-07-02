@@ -14,6 +14,48 @@ export type LocalLineupWriteResult =
   | { ok: true; playerRemoteId: string; battingOrder: number }
   | { ok: false; message: string };
 
+export interface LineupRowInput {
+  gameRemoteId: string;
+  playerRemoteId: string;
+  battingOrder: number | null;
+  startingPosition?: string | null;
+  isStarter: boolean;
+  isGuest: boolean;
+  guestDisplayName?: string | null;
+  countTowardStats: boolean;
+}
+
+/**
+ * The one place that builds a local game_lineups row. Two invariants every
+ * creation site must uphold live here: the WDB record id equals the client
+ * UUID that becomes the server PK (so the post-push echo pull merges by id
+ * instead of duplicating), and updated_at is stamped at write time (it feeds
+ * the last-write-wins conflict guard).
+ */
+export function prepareLineupRow(input: LineupRowInput): GameLineup {
+  return database.get<GameLineup>('game_lineups').prepareCreate((r) => {
+    const lineupId = randomUUID();
+    r._raw.id = lineupId;
+    r.remoteId = lineupId;
+    r.gameRemoteId = input.gameRemoteId;
+    r.playerRemoteId = input.playerRemoteId;
+    r.battingOrder = input.battingOrder ?? undefined;
+    r.startingPosition = input.startingPosition ?? undefined;
+    r.isStarter = input.isStarter;
+    r.isGuest = input.isGuest;
+    r.guestDisplayName = input.guestDisplayName ?? undefined;
+    r.countTowardStats = input.countTowardStats;
+    r.updatedAt = Date.now();
+  });
+}
+
+/** Create a single lineup row in its own transaction. */
+export async function addLineupRow(input: LineupRowInput): Promise<void> {
+  await database.write(async () => {
+    await database.batch(prepareLineupRow(input));
+  });
+}
+
 async function nextBattingOrder(
   gameRemoteId: string,
   maxBatters: number,
@@ -68,18 +110,14 @@ export async function createLocalGuest(
         r.isActive = true;
         r.isGuestOnly = true;
       }),
-      database.get<GameLineup>('game_lineups').prepareCreate((r) => {
-        const lineupId = randomUUID();
-        r._raw.id = lineupId;
-        r.remoteId = lineupId;
-        r.gameRemoteId = input.gameRemoteId;
-        r.playerRemoteId = playerRemoteId;
-        r.battingOrder = slot.order;
-        r.isStarter = false;
-        r.isGuest = true;
-        r.guestDisplayName = `${input.firstName} ${input.lastName}`;
-        r.countTowardStats = input.countTowardStats;
-        r.updatedAt = now;
+      prepareLineupRow({
+        gameRemoteId: input.gameRemoteId,
+        playerRemoteId,
+        battingOrder: slot.order,
+        isStarter: false,
+        isGuest: true,
+        guestDisplayName: `${input.firstName} ${input.lastName}`,
+        countTowardStats: input.countTowardStats,
       }),
     ];
     if (input.leagueId) {
@@ -126,19 +164,13 @@ export async function addExistingGuestToLineup(
   const slot = await nextBattingOrder(input.gameRemoteId, input.maxBatters);
   if (!slot.ok) return slot;
 
-  await database.write(async () => {
-    await database.get<GameLineup>('game_lineups').create((r) => {
-      const lineupId = randomUUID();
-      r._raw.id = lineupId;
-      r.remoteId = lineupId;
-      r.gameRemoteId = input.gameRemoteId;
-      r.playerRemoteId = input.playerRemoteId;
-      r.battingOrder = slot.order;
-      r.isStarter = false;
-      r.isGuest = true;
-      r.countTowardStats = input.countTowardStats;
-      r.updatedAt = Date.now();
-    });
+  await addLineupRow({
+    gameRemoteId: input.gameRemoteId,
+    playerRemoteId: input.playerRemoteId,
+    battingOrder: slot.order,
+    isStarter: false,
+    isGuest: true,
+    countTowardStats: input.countTowardStats,
   });
 
   return { ok: true, playerRemoteId: input.playerRemoteId, battingOrder: slot.order };

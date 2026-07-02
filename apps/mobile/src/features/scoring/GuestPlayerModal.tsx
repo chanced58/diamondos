@@ -25,8 +25,6 @@ interface GuestPlayerModalProps {
   /** Cap from the league's lineup.maxBatters (or 9 if expanded lineups are off). */
   maxBatters: number;
   onClose: () => void;
-  /** Called after a guest lands in the lineup (rows update reactively via WDB). */
-  onAdded?: () => void;
 }
 
 interface PoolCandidate {
@@ -52,7 +50,6 @@ export function GuestPlayerModal({
   defaultCountTowardStats,
   maxBatters,
   onClose,
-  onAdded,
 }: GuestPlayerModalProps) {
   const { triggerSync } = useSyncContext();
   const [tab, setTab] = useState<'new' | 'pool'>('new');
@@ -76,11 +73,12 @@ export function GuestPlayerModal({
     setPoolSearch('');
   }
 
-  // Load the league guest pool from local data whenever the modal opens:
-  // league_players joined (in JS) to players, minus the coach's own roster
-  // and anyone already in this game's lineup.
+  // Load the league guest pool from local data lazily, on first switch to
+  // the pool tab (most opens never leave the new-guest form): league_players
+  // joined (in JS) to players, minus the coach's own roster and anyone
+  // already in this game's lineup.
   useEffect(() => {
-    if (!visible || !leagueId) {
+    if (!visible || tab !== 'pool' || !leagueId) {
       setPoolCandidates([]);
       return;
     }
@@ -122,7 +120,7 @@ export function GuestPlayerModal({
     return () => {
       cancelled = true;
     };
-  }, [visible, leagueId, gameId, teamId]);
+  }, [visible, tab, leagueId, gameId, teamId]);
 
   async function handleAddNew() {
     const trimmedFirst = firstName.trim();
@@ -150,8 +148,10 @@ export function GuestPlayerModal({
       }
       triggerSync().catch(console.warn);
       reset();
-      onAdded?.();
       onClose();
+    } catch (err) {
+      console.warn(`[guest-modal] local guest create failed game=${gameId} team=${teamId}:`, err);
+      setError('Could not save the guest on this device. Try again.');
     } finally {
       setSubmitting(false);
     }
@@ -173,17 +173,21 @@ export function GuestPlayerModal({
       }
       triggerSync().catch(console.warn);
       reset();
-      onAdded?.();
       onClose();
+    } catch (err) {
+      console.warn(
+        `[guest-modal] pool guest add failed game=${gameId} player=${candidate.playerRemoteId}:`,
+        err,
+      );
+      setError('Could not add the guest on this device. Try again.');
     } finally {
       setSubmitting(false);
     }
   }
 
-  const filteredPool = poolSearch.trim()
-    ? poolCandidates.filter((c) =>
-        c.name.toLowerCase().includes(poolSearch.trim().toLowerCase()),
-      )
+  const normalizedPoolSearch = poolSearch.trim().toLowerCase();
+  const filteredPool = normalizedPoolSearch
+    ? poolCandidates.filter((c) => c.name.toLowerCase().includes(normalizedPoolSearch))
     : poolCandidates;
 
   return (

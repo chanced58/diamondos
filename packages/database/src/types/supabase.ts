@@ -4953,6 +4953,10 @@ export type Database = {
         Args: { p_channel_id: string; p_user_id: string }
         Returns: boolean
       }
+      is_any_league_coach: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
       is_coach: {
         Args: { p_team_id: string; p_user_id: string }
         Returns: boolean
@@ -4973,6 +4977,14 @@ export type Database = {
         Args: { p_team_id: string; p_user_id: string }
         Returns: boolean
       }
+      is_league_coach: {
+        Args: { p_league_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      is_league_coach_for_player: {
+        Args: { p_player_id: string; p_user_id: string }
+        Returns: boolean
+      }
       is_league_member: {
         Args: { p_league_id: string; p_user_id: string }
         Returns: boolean
@@ -4982,13 +4994,27 @@ export type Database = {
         Returns: boolean
       }
       is_platform_admin: { Args: never; Returns: boolean }
-      is_player_in_users_league: {
-        Args: { p_player_id: string; p_user_id: string }
-        Returns: boolean
-      }
       is_player_owner: {
         Args: { p_player_id: string; p_user_id: string }
         Returns: boolean
+      }
+      league_player_identities: {
+        Args: { p_since?: string }
+        Returns: {
+          id: string
+          team_id: string | null
+          first_name: string
+          last_name: string
+          jersey_number: number | null
+          primary_position:
+            | Database["public"]["Enums"]["player_position"]
+            | null
+          bats: Database["public"]["Enums"]["bats_throws"] | null
+          throws: Database["public"]["Enums"]["bats_throws"] | null
+          is_active: boolean
+          is_guest_only: boolean
+          updated_at: string
+        }[]
       }
       match_player_by_external_id: {
         Args: { p_external_id: string; p_service: string }

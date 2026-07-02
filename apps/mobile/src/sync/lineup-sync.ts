@@ -1,5 +1,5 @@
 import { Q } from '@nozbe/watermelondb';
-import { decideLineupPush } from '@baseball/shared';
+import { decideLineupPush, resolveBattingOrderCollisions } from '@baseball/shared';
 import type { Database } from '@nozbe/watermelondb';
 import type { GameLineup } from '../db/models/GameLineup';
 import type { getSupabaseClient } from '../lib/supabase';
@@ -15,6 +15,10 @@ type SupabaseClient = ReturnType<typeof getSupabaseClient>;
  * last write wins by timestamp. Skipped (server-wins) games are converged
  * after the sync cycle by applyServerLineupSnapshot.
  */
+
+// The DB check constraint caps batting_order at 30 regardless of league
+// settings; the collision renumberer must never exceed it.
+const DB_BATTING_ORDER_CAP = 30;
 
 export interface DirtyLineupState {
   /** Games whose local lineup has unsynced creates/updates/deletes. */
@@ -55,6 +59,17 @@ export async function getDirtyLineupState(database: Database): Promise<DirtyLine
  * error so WatermelonDB keeps the local rows unsynced and retries next cycle
  * (a 23505 here means a concurrent web save raced our delete+insert).
  *
+ * Two safety guards beyond the LWW/mobile-wins decision:
+ *  - Never-hydrated guard: if the server has rows but this device has never
+ *    pulled any of them (no synced local rows), a replace would blow away a
+ *    lineup the device has never seen — e.g. Add Batter used offline right
+ *    after install. Skip instead; the snapshot fallback hydrates the mirror
+ *    (preserving the dirty rows) and the next cycle pushes the merged set.
+ *  - Collision renumbering: duplicate batting orders in the local set would
+ *    fail the insert AFTER the delete committed, leaving the server lineup
+ *    empty and the push poisoned. Dirty rows lose their slot and move to the
+ *    end of the order (see resolveBattingOrderCollisions).
+ *
  * Returns 'pushed' or 'skipped'.
  */
 export async function pushLineupsForGame(
@@ -64,7 +79,7 @@ export async function pushLineupsForGame(
   localEditedAtMs: number,
 ): Promise<'pushed' | 'skipped'> {
   const [gameResult, serverMaxResult] = await Promise.all([
-    supabase.from('games').select('status').eq('id', gameRemoteId).single(),
+    supabase.from('games').select('status').eq('id', gameRemoteId).maybeSingle(),
     supabase
       .from('game_lineups')
       .select('updated_at')
@@ -76,14 +91,13 @@ export async function pushLineupsForGame(
   if (gameResult.error) throw gameResult.error;
   if (serverMaxResult.error) throw serverMaxResult.error;
 
-  const decision = decideLineupPush({
-    gameStatus: gameResult.data.status,
-    serverMaxUpdatedAtMs: serverMaxResult.data
-      ? new Date(serverMaxResult.data.updated_at).getTime()
-      : null,
-    localEditedAtMs,
-  });
-  if (decision === 'skip') return 'skipped';
+  // Game gone from the server (deleted on web, or hidden from this user).
+  // Treat as server-wins: the snapshot fallback will clear the local rows.
+  if (!gameResult.data) return 'skipped';
+
+  const serverMaxUpdatedAtMs = serverMaxResult.data
+    ? new Date(serverMaxResult.data.updated_at).getTime()
+    : null;
 
   // The device's full current row set — not just the changed rows — because
   // the push replaces the game's entire lineup. Soft-deleted rows are
@@ -93,6 +107,37 @@ export async function pushLineupsForGame(
     .query(Q.where('game_remote_id', gameRemoteId))
     .fetch();
 
+  const hasHydratedRows = localRows.some((row) => row.syncStatus === 'synced');
+  if (serverMaxUpdatedAtMs !== null && !hasHydratedRows) return 'skipped';
+
+  const decision = decideLineupPush({
+    gameStatus: gameResult.data.status,
+    serverMaxUpdatedAtMs,
+    localEditedAtMs,
+  });
+  if (decision === 'skip') return 'skipped';
+
+  const adjustments = resolveBattingOrderCollisions(
+    localRows.map((row) => ({
+      id: row.id,
+      battingOrder: row.battingOrder ?? null,
+      isDirty: row.syncStatus !== 'synced',
+      updatedAtMs: row.updatedAt,
+    })),
+    DB_BATTING_ORDER_CAP,
+  );
+  if (adjustments.size > 0) {
+    // Persist the renumbering locally so the mirror matches what we insert.
+    await database.write(async () => {
+      for (const row of localRows) {
+        if (!adjustments.has(row.id)) continue;
+        await row.update((r) => {
+          r.battingOrder = adjustments.get(row.id) ?? undefined;
+        });
+      }
+    });
+  }
+
   const { error: deleteError } = await supabase
     .from('game_lineups')
     .delete()
@@ -101,18 +146,23 @@ export async function pushLineupsForGame(
 
   if (localRows.length > 0) {
     const { error: insertError } = await supabase.from('game_lineups').insert(
-      localRows.map((row) => ({
-        id: row.remoteId,
-        game_id: row.gameRemoteId,
-        player_id: row.playerRemoteId,
-        batting_order: row.battingOrder ?? null,
-        // Cast: local column is a plain string; server validates the enum.
-        starting_position: (row.startingPosition ?? null) as never,
-        is_starter: row.isStarter,
-        is_guest: row.isGuest,
-        guest_display_name: row.guestDisplayName ?? null,
-        count_toward_stats: row.countTowardStats,
-      })),
+      localRows.map((row) => {
+        const battingOrder = adjustments.has(row.id)
+          ? adjustments.get(row.id)
+          : row.battingOrder ?? null;
+        return {
+          id: row.remoteId,
+          game_id: row.gameRemoteId,
+          player_id: row.playerRemoteId,
+          batting_order: battingOrder ?? null,
+          // Cast: local column is a plain string; server validates the enum.
+          starting_position: (row.startingPosition ?? null) as never,
+          is_starter: row.isStarter,
+          is_guest: row.isGuest,
+          guest_display_name: row.guestDisplayName ?? null,
+          count_toward_stats: row.countTowardStats,
+        };
+      }),
     );
     if (insertError) throw insertError;
   }
@@ -120,11 +170,12 @@ export async function pushLineupsForGame(
 }
 
 /**
- * Converge a skipped (server-wins) game: replace the device's local rows with
- * the server's. Runs after the sync cycle, so any soft-deleted local rows are
- * already gone and the remaining rows are marked synced. Recreated/updated
- * rows land as dirty and echo back an identical replace next cycle, which is
- * idempotent.
+ * Converge a skipped (server-wins) game: replace the device's synced rows
+ * with the server's while PRESERVING locally-dirty rows (unsynced edits made
+ * mid-cycle, or rows the never-hydrated guard deferred) — those push on the
+ * next cycle against the now-hydrated mirror. Applied rows are stamped
+ * _status='synced' directly so this hydration never echoes back to the
+ * server as a fresh local edit.
  */
 export async function applyServerLineupSnapshot(
   database: Database,
@@ -145,9 +196,24 @@ export async function applyServerLineupSnapshot(
   await database.write(async () => {
     const batch: Array<GameLineup> = [];
     for (const row of localRows) {
-      if (!serverIds.has(row.id)) batch.push(row.prepareDestroyPermanently());
+      if (serverIds.has(row.id)) continue;
+      if (row.syncStatus !== 'synced') continue; // dirty mid-cycle edit — keep
+      if (row.syncedAt == null) {
+        // Device-authored row the cycle marked "synced" without it ever
+        // reaching the server (the never-hydrated guard deferred its game's
+        // push). Re-mark it dirty so the next cycle pushes the merged set.
+        batch.push(
+          row.prepareUpdate((r) => {
+            r._raw._status = 'created';
+          }),
+        );
+        continue;
+      }
+      batch.push(row.prepareDestroyPermanently());
     }
     for (const server of serverRows ?? []) {
+      const existing = localById.get(server.id);
+      if (existing && existing.syncStatus !== 'synced') continue; // keep local edit
       const apply = (r: GameLineup) => {
         r.remoteId = server.id;
         r.gameRemoteId = server.game_id;
@@ -160,8 +226,11 @@ export async function applyServerLineupSnapshot(
         r.countTowardStats = server.count_toward_stats;
         r.updatedAt = new Date(server.updated_at).getTime();
         r.syncedAt = Date.now();
+        // Raw escape hatch: mark the row clean so hydration doesn't get
+        // pushed back to the server as if the coach had edited it.
+        r._raw._status = 'synced';
+        r._raw._changed = '';
       };
-      const existing = localById.get(server.id);
       if (existing) {
         batch.push(existing.prepareUpdate(apply));
       } else {

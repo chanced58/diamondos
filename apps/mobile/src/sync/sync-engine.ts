@@ -116,6 +116,10 @@ export async function syncWithSupabase(): Promise<void> {
   // Games whose lineup push deferred to the server version (LWW skip);
   // converged after the sync cycle via applyServerLineupSnapshot.
   const skippedLineupGames: string[] = [];
+  // Dirty lineup state computed once per cycle (pull runs before push inside
+  // synchronize, and pull applies server rows as already-synced, so the two
+  // phases can share one snapshot).
+  let dirtyLineupState: Awaited<ReturnType<typeof getDirtyLineupState>> | null = null;
 
   await synchronize({
     database,
@@ -139,11 +143,14 @@ export async function syncWithSupabase(): Promise<void> {
       }
       const userId = user.id;
 
-      const [gamesResult, eventsResult, playersResult, channelsResult, messagesResult, lineupsResult, leaguePlayersResult] =
+      const [gamesResult, eventsResult, playersResult, leagueIdentitiesResult, channelsResult, messagesResult, lineupsResult, leaguePlayersResult, pulledDirtyState] =
         await Promise.all([
           supabase.from('games').select('*').gte('updated_at', since),
           supabase.from('game_events').select('*').gte('synced_at', since),
           supabase.from('players').select('*').gte('updated_at', playersSince),
+          // PII-free identities of league-registered players (other teams'
+          // rosters, guests, free agents) — feeds the offline guest picker.
+          supabase.rpc('league_player_identities', { p_since: playersSince }),
           supabase
             .from('channels')
             .select('*, channel_members!inner(user_id, can_post)')
@@ -152,12 +159,22 @@ export async function syncWithSupabase(): Promise<void> {
           supabase.from('messages').select('*, user_profiles!sender_id(first_name, last_name)').gte('created_at', since),
           supabase.from('game_lineups').select('*').gte('updated_at', lineupsSince),
           supabase.from('league_players').select('*').gte('registered_at', leaguePlayersSince),
+          getDirtyLineupState(database),
         ]);
 
-      const firstError = [gamesResult, eventsResult, playersResult, channelsResult, messagesResult, lineupsResult, leaguePlayersResult]
+      const firstError = [gamesResult, eventsResult, playersResult, leagueIdentitiesResult, channelsResult, messagesResult, lineupsResult, leaguePlayersResult]
         .map((r) => r.error)
         .find((e) => e != null);
       if (firstError) throw firstError;
+
+      dirtyLineupState = pulledDirtyState;
+
+      // Merge the RLS-scoped players pull with the league-identity RPC,
+      // preferring the full table row when a player appears in both (the
+      // coach's own roster is registered in the league too).
+      const playerRowsById = new Map<string, Record<string, unknown>>();
+      for (const row of leagueIdentitiesResult.data ?? []) playerRowsById.set(row.id, row);
+      for (const row of playersResult.data ?? []) playerRowsById.set(row.id, row);
 
       // Lineups are mutable, so the pull needs two extra steps:
       //  1. Drop pulled rows for games with unsynced local lineup edits —
@@ -170,24 +187,23 @@ export async function syncWithSupabase(): Promise<void> {
       //    empties a lineup entirely leaves no pulled rows to flag the game,
       //    so stale local rows persist until the next lineup change — known
       //    limitation.)
-      const { dirtyGameIds } = await getDirtyLineupState(database);
+      const { dirtyGameIds } = pulledDirtyState;
       const pulledLineups = (lineupsResult.data ?? []).filter(
         (r) => !dirtyGameIds.has(r.game_id),
       );
       const touchedGameIds = [...new Set(pulledLineups.map((r) => r.game_id))];
       let deletedLineupIds: string[] = [];
       if (touchedGameIds.length > 0) {
-        const { data: serverIdRows, error: serverIdsError } = await supabase
-          .from('game_lineups')
-          .select('id')
-          .in('game_id', touchedGameIds);
-        if (serverIdsError) throw serverIdsError;
-        const localRows = await database
-          .get<GameLineup>('game_lineups')
-          .query(Q.where('game_remote_id', Q.oneOf(touchedGameIds)))
-          .fetch();
+        const [serverIdsResult, localRows] = await Promise.all([
+          supabase.from('game_lineups').select('id').in('game_id', touchedGameIds),
+          database
+            .get<GameLineup>('game_lineups')
+            .query(Q.where('game_remote_id', Q.oneOf(touchedGameIds)))
+            .fetch(),
+        ]);
+        if (serverIdsResult.error) throw serverIdsResult.error;
         deletedLineupIds = computeLineupDeletes(
-          (serverIdRows ?? []).map((r) => r.id),
+          (serverIdsResult.data ?? []).map((r) => r.id),
           localRows.map((r) => r.id),
         );
       }
@@ -205,7 +221,7 @@ export async function syncWithSupabase(): Promise<void> {
             deleted: [],
           },
           players: {
-            created: (playersResult.data ?? []).map(mapPlayer),
+            created: [...playerRowsById.values()].map(mapPlayer),
             updated: [],
             deleted: [],
           },
@@ -246,77 +262,17 @@ export async function syncWithSupabase(): Promise<void> {
         }
       >;
 
-      // Push order matters: guest players before league_players and lineups
-      // (both FK to players), lineups after both.
+      // Push order: game events FIRST — they're the live-game lifeline
+      // (parents' live scores, pitch counts) and must never be starved by a
+      // lineup or guest failure. Then guest players before league_players and
+      // lineups (both FK to players); their errors are collected and thrown
+      // at the END so a poisoned row can't block the other steps while WDB
+      // still keeps everything unsynced for retry (the events upsert is
+      // idempotent, so re-pushing next cycle is safe). Messages go LAST,
+      // after the deferred throw — their insert is NOT idempotent, so they
+      // must not run in a cycle that is already destined to fail and retry.
 
-      // 1. Guest players created offline. Mobile only ever creates guest-only
-      // identities; filter defensively so a pulled roster row can never leak
-      // into an insert. Client UUID becomes the server PK, like game_events.
-      const createdGuests = (tableChanges.players?.created ?? []).filter(
-        (p) => p.is_guest_only === true,
-      );
-      if (createdGuests.length > 0) {
-        const { error } = await supabase.from('players').upsert(
-          createdGuests.map((p) => ({
-            id: p.remote_id as string,
-            team_id: null,
-            first_name: p.first_name as string,
-            last_name: p.last_name as string,
-            jersey_number: (p.jersey_number as number | null) ?? null,
-            is_guest_only: true,
-            is_active: true,
-          })),
-          { onConflict: 'id', ignoreDuplicates: true },
-        );
-        if (error) throw error;
-      }
-
-      // Guest identity edits (e.g. jersey fixes) — allowed by RLS only for
-      // guest-only rows, so filter to those.
-      const updatedGuests = (tableChanges.players?.updated ?? []).filter(
-        (p) => p.is_guest_only === true,
-      );
-      for (const p of updatedGuests) {
-        const { error } = await supabase
-          .from('players')
-          .update({
-            first_name: p.first_name as string,
-            last_name: p.last_name as string,
-            jersey_number: (p.jersey_number as number | null) ?? null,
-          })
-          .eq('id', p.remote_id as string);
-        if (error) throw error;
-      }
-
-      // 2. League guest-pool registrations created offline.
-      const createdLeaguePlayers = tableChanges.league_players?.created ?? [];
-      if (createdLeaguePlayers.length > 0) {
-        const { error } = await supabase.from('league_players').upsert(
-          createdLeaguePlayers.map((lp) => ({
-            league_id: lp.league_id as string,
-            player_id: lp.player_remote_id as string,
-          })),
-          { onConflict: 'league_id,player_id', ignoreDuplicates: true },
-        );
-        if (error) throw error;
-      }
-
-      // 3. Lineups — per-game whole-lineup replace, guarded by the conflict
-      // policy in @baseball/shared (mobile wins live, LWW pre-game). Dirty
-      // state is recomputed via raw SQL because the deleted bucket in
-      // `changes` carries only ids, not the game they belonged to.
-      const { dirtyGameIds, localEditedAtMsByGame } = await getDirtyLineupState(database);
-      for (const gameRemoteId of dirtyGameIds) {
-        const result = await pushLineupsForGame(
-          supabase,
-          database,
-          gameRemoteId,
-          localEditedAtMsByGame.get(gameRemoteId) ?? 0,
-        );
-        if (result === 'skipped') skippedLineupGames.push(gameRemoteId);
-      }
-
-      // 4. Push locally-created game events (the main offline use case).
+      // 1. Push locally-created game events (the main offline use case).
       const createdEvents = tableChanges.game_events?.created ?? [];
       if (createdEvents.length > 0) {
         // Skip events whose payload can't be parsed rather than aborting the
@@ -379,7 +335,96 @@ export async function syncWithSupabase(): Promise<void> {
         }
       }
 
-      // 5. Push locally-created messages
+      // Steps 2-4 collect failures instead of throwing immediately: a single
+      // poisoned guest row or lineup game must not abort the cycle before the
+      // other lineup games push. The aggregate throw at the end still fails
+      // the cycle so WDB leaves everything unsynced and retries.
+      const deferredErrors: string[] = [];
+
+      // 2. Guest players created offline. Mobile only ever creates guest-only
+      // identities; filter defensively so a pulled roster row can never leak
+      // into an insert. Client UUID becomes the server PK, like game_events.
+      const createdGuests = (tableChanges.players?.created ?? []).filter(
+        (p) => p.is_guest_only === true,
+      );
+      if (createdGuests.length > 0) {
+        const { error } = await supabase.from('players').upsert(
+          createdGuests.map((p) => ({
+            id: p.remote_id as string,
+            team_id: null,
+            first_name: p.first_name as string,
+            last_name: p.last_name as string,
+            jersey_number: (p.jersey_number as number | null) ?? null,
+            is_guest_only: true,
+            is_active: true,
+          })),
+          { onConflict: 'id', ignoreDuplicates: true },
+        );
+        if (error) deferredErrors.push(`guest players upsert: ${error.message}`);
+      }
+
+      // Guest identity edits (e.g. jersey fixes) — allowed by RLS only for
+      // guest-only rows, so filter to those.
+      const updatedGuests = (tableChanges.players?.updated ?? []).filter(
+        (p) => p.is_guest_only === true,
+      );
+      for (const p of updatedGuests) {
+        const { error } = await supabase
+          .from('players')
+          .update({
+            first_name: p.first_name as string,
+            last_name: p.last_name as string,
+            jersey_number: (p.jersey_number as number | null) ?? null,
+          })
+          .eq('id', p.remote_id as string);
+        if (error) {
+          deferredErrors.push(`guest player update ${p.remote_id}: ${error.message}`);
+        }
+      }
+
+      // 3. League guest-pool registrations created offline.
+      const createdLeaguePlayers = tableChanges.league_players?.created ?? [];
+      if (createdLeaguePlayers.length > 0) {
+        const { error } = await supabase.from('league_players').upsert(
+          createdLeaguePlayers.map((lp) => ({
+            league_id: lp.league_id as string,
+            player_id: lp.player_remote_id as string,
+          })),
+          { onConflict: 'league_id,player_id', ignoreDuplicates: true },
+        );
+        if (error) deferredErrors.push(`league_players upsert: ${error.message}`);
+      }
+
+      // 4. Lineups — per-game whole-lineup replace, guarded by the conflict
+      // policy in @baseball/shared (mobile wins live, LWW pre-game). Reuses
+      // the dirty state computed during this cycle's pull; the deleted bucket
+      // in `changes` carries only ids, not the game they belonged to, which
+      // is why dirty detection lives in getDirtyLineupState.
+      const { dirtyGameIds, localEditedAtMsByGame } =
+        dirtyLineupState ?? (await getDirtyLineupState(database));
+      for (const gameRemoteId of dirtyGameIds) {
+        try {
+          const result = await pushLineupsForGame(
+            supabase,
+            database,
+            gameRemoteId,
+            localEditedAtMsByGame.get(gameRemoteId) ?? 0,
+          );
+          if (result === 'skipped') skippedLineupGames.push(gameRemoteId);
+        } catch (err) {
+          deferredErrors.push(
+            `lineup push game=${gameRemoteId}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      if (deferredErrors.length > 0) {
+        throw new Error(`sync: deferred push failures — ${deferredErrors.join('; ')}`);
+      }
+
+      // 5. Push locally-created messages. Last and after the deferred throw:
+      // this insert is not idempotent, so it must only run in a cycle that
+      // will be marked complete (otherwise retries would duplicate messages).
       const createdMessages = tableChanges.messages?.created ?? [];
       if (createdMessages.length > 0) {
         const { data: { user } } = await supabase.auth.getUser();

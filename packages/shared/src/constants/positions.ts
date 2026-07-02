@@ -1,3 +1,5 @@
+import { POSITION_ABBREVIATIONS } from './baseball';
+
 /**
  * Canonical lineup-position mappings between UI abbreviations and the
  * `player_position` database enum. Lifted from the web lineup builder so the
@@ -41,20 +43,11 @@ export const POSITION_TO_DB: Record<string, string> = {
 /**
  * Map database enum values back to UI abbreviations. Includes the roster-only
  * enum values (infield/outfield/utility) that never appear in LINEUP_POSITIONS
- * but can arrive via a player's primary position.
+ * but can arrive via a player's primary position. Derived from
+ * POSITION_ABBREVIATIONS so the two maps can't drift; lineup builders
+ * historically render utility as 'UTIL' rather than the display map's 'UT'.
  */
 export const DB_TO_POSITION: Record<string, string> = {
-  pitcher: 'P',
-  catcher: 'C',
-  first_base: '1B',
-  second_base: '2B',
-  third_base: '3B',
-  shortstop: 'SS',
-  left_field: 'LF',
-  center_field: 'CF',
-  right_field: 'RF',
-  designated_hitter: 'DH',
-  infield: 'IF',
-  outfield: 'OF',
+  ...POSITION_ABBREVIATIONS,
   utility: 'UTIL',
 };

@@ -10,9 +10,9 @@
 --      player identities and register them in their own league's guest pool —
 --      previously service-role-only (web server actions), which made the
 --      mobile guest flow fail silently for ordinary coaches.
---   4. A players SELECT policy exposing league-registered player identities
---      to league team members, so the mobile sync pull can mirror the league
---      roster locally for the guest picker.
+--   4. A league_player_identities() RPC exposing PII-free player identity
+--      columns to league coaches, so the mobile sync can mirror the league
+--      roster locally for the guest picker without widening players SELECT.
 
 -- ── updated_at columns + touch triggers ───────────────────────────────────
 
@@ -95,25 +95,62 @@ $$;
 alter function public.is_guest_only_player(uuid)
   set search_path = public, pg_temp;
 
--- TRUE if the player is registered (league_players) in a league that one of
--- the user's active teams belongs to. Powers league-roster visibility.
-create or replace function public.is_player_in_users_league(p_player_id uuid, p_user_id uuid)
+-- TRUE if the user is an active head/assistant coach of a team that is an
+-- active member of the given league. (is_coach() is team-scoped; the guest
+-- policies below need the league scope.)
+create or replace function public.is_league_coach(p_league_id uuid, p_user_id uuid)
+returns boolean
+language sql security definer stable
+as $$
+  select exists (
+    select 1
+    from public.team_members tm
+    join public.league_members lm
+      on lm.team_id = tm.team_id and lm.is_active = true
+    where lm.league_id = p_league_id
+      and tm.user_id = p_user_id
+      and tm.role in ('head_coach', 'assistant_coach')
+      and tm.is_active = true
+  );
+$$;
+
+alter function public.is_league_coach(uuid, uuid)
+  set search_path = public, pg_temp;
+
+-- TRUE if the user is an active head/assistant coach of a team in ANY active
+-- league (guest identities aren't scoped to a league at insert time).
+create or replace function public.is_any_league_coach(p_user_id uuid)
+returns boolean
+language sql security definer stable
+as $$
+  select exists (
+    select 1
+    from public.team_members tm
+    join public.league_members lm
+      on lm.team_id = tm.team_id and lm.is_active = true
+    where tm.user_id = p_user_id
+      and tm.role in ('head_coach', 'assistant_coach')
+      and tm.is_active = true
+  );
+$$;
+
+alter function public.is_any_league_coach(uuid)
+  set search_path = public, pg_temp;
+
+-- TRUE if the user coaches in a league where the player is registered.
+create or replace function public.is_league_coach_for_player(p_player_id uuid, p_user_id uuid)
 returns boolean
 language sql security definer stable
 as $$
   select exists (
     select 1
     from public.league_players lp
-    join public.league_members lm
-      on lm.league_id = lp.league_id and lm.is_active = true
-    join public.team_members tm
-      on tm.team_id = lm.team_id and tm.is_active = true
     where lp.player_id = p_player_id
-      and tm.user_id = p_user_id
+      and public.is_league_coach(lp.league_id, p_user_id)
   );
 $$;
 
-alter function public.is_player_in_users_league(uuid, uuid)
+alter function public.is_league_coach_for_player(uuid, uuid)
   set search_path = public, pg_temp;
 
 -- ── players: coach guest-only INSERT ───────────────────────────────────────
@@ -128,25 +165,8 @@ create policy "coaches_insert_guest_only_players"
     team_id is null
     and is_guest_only = true
     and user_id is null
-    and exists (
-      select 1
-      from public.team_members tm
-      join public.league_members lm
-        on lm.team_id = tm.team_id and lm.is_active = true
-      where tm.user_id = auth.uid()
-        and tm.role in ('head_coach', 'assistant_coach')
-        and tm.is_active = true
-    )
+    and public.is_any_league_coach(auth.uid())
   );
-
--- ── players: league roster visibility ──────────────────────────────────────
-
--- League team members can see the identities of players registered in their
--- league (guests, free agents, other teams' rostered players). This is what
--- lets the mobile players pull mirror the league pool for the guest picker.
-create policy "league_members_view_league_player_identities"
-  on public.players for select
-  using (public.is_player_in_users_league(id, auth.uid()));
 
 -- ── players: coach guest-only UPDATE (e.g. jersey fixes) ───────────────────
 
@@ -158,18 +178,7 @@ create policy "coaches_update_guest_only_players"
   using (
     is_guest_only = true
     and team_id is null
-    and exists (
-      select 1
-      from public.league_players lp
-      join public.league_members lm
-        on lm.league_id = lp.league_id and lm.is_active = true
-      join public.team_members tm
-        on tm.team_id = lm.team_id and tm.is_active = true
-      where lp.player_id = public.players.id
-        and tm.user_id = auth.uid()
-        and tm.role in ('head_coach', 'assistant_coach')
-        and tm.is_active = true
-    )
+    and public.is_league_coach_for_player(id, auth.uid())
   )
   with check (
     is_guest_only = true
@@ -186,14 +195,48 @@ create policy "league_coaches_insert_guest_league_players"
   on public.league_players for insert
   with check (
     public.is_guest_only_player(player_id)
-    and exists (
-      select 1
-      from public.team_members tm
-      join public.league_members lm
-        on lm.team_id = tm.team_id and lm.is_active = true
-      where lm.league_id = public.league_players.league_id
-        and tm.user_id = auth.uid()
-        and tm.role in ('head_coach', 'assistant_coach')
-        and tm.is_active = true
-    )
+    and public.is_league_coach(league_id, auth.uid())
   );
+
+-- ── league roster identities for the mobile guest picker ───────────────────
+
+-- Deliberately an RPC rather than a players SELECT policy: players carries
+-- FERPA-sensitive PII (date_of_birth, notes, plus a linkable user_id), and a
+-- row-level policy cannot restrict columns. This function exposes only
+-- baseball-identity columns, only to active head/assistant coaches, only for
+-- players registered in one of their leagues. The mobile sync engine calls it
+-- (incrementally via p_since) to mirror the league pool locally for the
+-- offline guest picker.
+create or replace function public.league_player_identities(p_since timestamptz default '-infinity')
+returns table (
+  id uuid,
+  team_id uuid,
+  first_name text,
+  last_name text,
+  jersey_number smallint,
+  primary_position public.player_position,
+  bats public.bats_throws,
+  throws public.bats_throws,
+  is_active boolean,
+  is_guest_only boolean,
+  updated_at timestamptz
+)
+language sql security definer stable
+as $$
+  select distinct
+    p.id, p.team_id, p.first_name, p.last_name, p.jersey_number,
+    p.primary_position, p.bats, p.throws, p.is_active, p.is_guest_only,
+    p.updated_at
+  from public.players p
+  join public.league_players lp on lp.player_id = p.id
+  join public.league_members lm
+    on lm.league_id = lp.league_id and lm.is_active = true
+  join public.team_members tm
+    on tm.team_id = lm.team_id and tm.is_active = true
+  where tm.user_id = auth.uid()
+    and tm.role in ('head_coach', 'assistant_coach')
+    and p.updated_at >= p_since;
+$$;
+
+alter function public.league_player_identities(timestamptz)
+  set search_path = public, pg_temp;

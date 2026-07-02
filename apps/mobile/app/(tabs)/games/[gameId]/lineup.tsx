@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
 import { Q } from '@nozbe/watermelondb';
-import { randomUUID } from 'expo-crypto';
 import {
   DB_TO_POSITION,
   LINEUP_POSITIONS,
   POSITION_TO_DB,
+  getLineupSlotCap,
   getMaxBattingOrder,
 } from '@baseball/shared';
 import { LoadingSpinner } from '@baseball/ui';
@@ -15,7 +15,8 @@ import type { Game } from '../../../../src/db/models/Game';
 import type { GameLineup } from '../../../../src/db/models/GameLineup';
 import type { Player } from '../../../../src/db/models/Player';
 import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerModal';
-import { removeLineupRow } from '../../../../src/features/lineup/local-guest';
+import { prepareLineupRow, removeLineupRow } from '../../../../src/features/lineup/local-guest';
+import { useGameLineups } from '../../../../src/features/lineup/use-game-lineups';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
 
@@ -77,19 +78,7 @@ export default function LineupScreen() {
   }, [teamId]);
 
   // Current lineup rows, observed reactively.
-  const [lineupRows, setLineupRows] = useState<GameLineup[]>([]);
-  const [lineupLoaded, setLineupLoaded] = useState(false);
-  useEffect(() => {
-    const subscription = database
-      .get<GameLineup>('game_lineups')
-      .query(Q.where('game_remote_id', gameId))
-      .observe()
-      .subscribe((rows) => {
-        setLineupRows(rows);
-        setLineupLoaded(true);
-      });
-    return () => subscription.unsubscribe();
-  }, [gameId]);
+  const { rows: lineupRows, loaded: lineupLoaded } = useGameLineups(gameId);
 
   // Names for guest rows whose identity lives outside the team roster.
   const guestRows = useMemo(() => lineupRows.filter((row) => row.isGuest), [lineupRows]);
@@ -98,7 +87,10 @@ export default function LineupScreen() {
     const missing = guestRows
       .filter((row) => !row.guestDisplayName)
       .map((row) => row.playerRemoteId);
-    if (missing.length === 0) return;
+    if (missing.length === 0) {
+      setGuestNames({});
+      return;
+    }
     let cancelled = false;
     (async () => {
       const players = await database
@@ -106,24 +98,21 @@ export default function LineupScreen() {
         .query(Q.where('remote_id', Q.oneOf(missing)))
         .fetch();
       if (cancelled) return;
-      setGuestNames((prev) => {
-        const next = { ...prev };
-        for (const p of players) next[p.remoteId] = p.fullName;
-        return next;
-      });
+      setGuestNames(Object.fromEntries(players.map((p) => [p.remoteId, p.fullName])));
     })();
     return () => {
       cancelled = true;
     };
   }, [guestRows]);
 
-  // Editor state, seeded once from the observed lineup so in-flight edits
-  // aren't clobbered by background syncs.
+  // Editor state, seeded from the observed lineup. Re-seeds whenever the
+  // underlying rows change (background sync pulling a web edit, server-wins
+  // snapshot) as long as the coach has no unsaved edits — unsaved edits are
+  // never clobbered.
   const [assignments, setAssignments] = useState<Record<string, Assignment>>({});
-  const seededRef = useRef(false);
+  const [editorDirty, setEditorDirty] = useState(false);
   useEffect(() => {
-    if (seededRef.current || !lineupLoaded || roster.length === 0) return;
-    seededRef.current = true;
+    if (editorDirty || !lineupLoaded || roster.length === 0) return;
     const byPlayer = new Map(
       lineupRows.filter((row) => !row.isGuest).map((row) => [row.playerRemoteId, row]),
     );
@@ -138,7 +127,7 @@ export default function LineupScreen() {
       };
     }
     setAssignments(seeded);
-  }, [lineupLoaded, lineupRows, roster]);
+  }, [editorDirty, lineupLoaded, lineupRows, roster]);
 
   const [picker, setPicker] = useState<{ playerId: string; field: 'order' | 'position' } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -147,10 +136,24 @@ export default function LineupScreen() {
   const [showGuestModal, setShowGuestModal] = useState(false);
 
   // Same slot cap rule as the web builder.
-  const orderCap = Math.min(Math.max(roster.length, 9), maxBatters);
+  const orderCap = getLineupSlotCap(roster.length, maxBatters);
   const orderOptions = useMemo(
     () => Array.from({ length: orderCap }, (_, i) => i + 1),
     [orderCap],
+  );
+
+  // Lookup maps for the slot picker — avoids re-scanning assignments and the
+  // roster for every option row on every render.
+  const playerBySlot = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const [playerId, assignment] of Object.entries(assignments)) {
+      if (assignment.order !== null) map.set(assignment.order, playerId);
+    }
+    return map;
+  }, [assignments]);
+  const rosterById = useMemo(
+    () => new Map(roster.map((p) => [p.remoteId, p])),
+    [roster],
   );
 
   function setAssignment(playerId: string, patch: Partial<Assignment>) {
@@ -158,6 +161,7 @@ export default function LineupScreen() {
       const current = prev[playerId] ?? { order: null, position: null };
       return { ...prev, [playerId]: { ...current, ...patch } };
     });
+    setEditorDirty(true);
     setNotice(null);
   }
 
@@ -187,36 +191,53 @@ export default function LineupScreen() {
       setError('Duplicate batting order positions. Each spot can only be assigned once.');
       return;
     }
+    // Guests keep their slots across saves (managed individually below), so
+    // the main order must not collide with them.
+    const guestSlots = new Set(
+      guestRows.map((row) => row.battingOrder).filter((o): o is number => o != null),
+    );
+    const guestCollision = orders.find((o) => guestSlots.has(o));
+    if (guestCollision !== undefined) {
+      setError(`Slot ${guestCollision} is taken by a guest. Remove the guest or pick another slot.`);
+      return;
+    }
 
     setSaving(true);
     try {
-      const now = Date.now();
       await database.write(async () => {
         const collection = database.get<GameLineup>('game_lineups');
         const existing = await collection
           .query(Q.where('game_remote_id', gameId), Q.where('is_guest', false))
           .fetch();
+        // Touch updated_at before the soft delete so a save whose net effect
+        // is only removals still counts as a fresh edit in the LWW guard.
+        const now = Date.now();
+        for (const row of existing) {
+          await row.update((r) => {
+            r.updatedAt = now;
+          });
+          await row.markAsDeleted();
+        }
         await database.batch(
-          ...existing.map((row) => row.prepareMarkAsDeleted()),
           ...entries.map((entry) =>
-            collection.prepareCreate((r) => {
-              const lineupId = randomUUID();
-              r._raw.id = lineupId;
-              r.remoteId = lineupId;
-              r.gameRemoteId = gameId;
-              r.playerRemoteId = entry.playerId;
-              r.battingOrder = entry.order ?? undefined;
-              r.startingPosition = entry.positionDb ?? undefined;
-              r.isStarter = true;
-              r.isGuest = false;
-              r.countTowardStats = true;
-              r.updatedAt = now;
+            prepareLineupRow({
+              gameRemoteId: gameId,
+              playerRemoteId: entry.playerId,
+              battingOrder: entry.order,
+              startingPosition: entry.positionDb,
+              isStarter: true,
+              isGuest: false,
+              countTowardStats: true,
             }),
           ),
         );
       });
+      setEditorDirty(false);
       triggerSync().catch(console.warn);
       setNotice('Lineup saved. Syncs automatically when online.');
+    } catch (err) {
+      console.warn(`Lineup save failed game=${gameId}:`, err);
+      setError('Could not save the lineup on this device. Try again.');
     } finally {
       setSaving(false);
     }
@@ -224,7 +245,13 @@ export default function LineupScreen() {
 
   async function handleRemoveGuest(row: GameLineup) {
     if (!editable) return;
-    await removeLineupRow(row);
+    try {
+      await removeLineupRow(row);
+    } catch (err) {
+      console.warn(`Guest removal failed game=${gameId} lineupRow=${row.id}:`, err);
+      setError('Could not remove the guest. Try again.');
+      return;
+    }
     triggerSync().catch(console.warn);
   }
 
@@ -428,12 +455,12 @@ export default function LineupScreen() {
                     }}
                   />
                   {orderOptions.map((option) => {
-                    const takenBy = Object.entries(assignments).find(
-                      ([pid, a]) => a.order === option && pid !== picker.playerId,
-                    );
-                    const takenName = takenBy
-                      ? roster.find((p) => p.remoteId === takenBy[0])?.lastName
-                      : undefined;
+                    const takenByPlayerId = playerBySlot.get(option);
+                    const takenBy =
+                      takenByPlayerId && takenByPlayerId !== picker.playerId
+                        ? takenByPlayerId
+                        : undefined;
+                    const takenName = takenBy ? rosterById.get(takenBy)?.lastName : undefined;
                     return (
                       <PickerRow
                         key={option}
@@ -441,7 +468,7 @@ export default function LineupScreen() {
                         onPress={() => {
                           // Taking an occupied slot benches the previous occupant,
                           // mirroring how a coach reshuffles on paper.
-                          if (takenBy) setAssignment(takenBy[0], { order: null });
+                          if (takenBy) setAssignment(takenBy, { order: null });
                           setAssignment(picker.playerId, { order: option });
                           setPicker(null);
                         }}
