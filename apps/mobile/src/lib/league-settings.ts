@@ -99,13 +99,16 @@ export function useLeagueContext(teamId: string | undefined): LeagueContext {
       return;
     }
     let cancelled = false;
+    // Guards the cache seeds against racing the network refresh: SecureStore
+    // resolving late must not clobber fresher Supabase-derived state.
+    let refreshed = false;
 
     // (a) seed from cache immediately
     void readCache(teamId).then((cached) => {
-      if (!cancelled && cached) setSettings(cached);
+      if (!cancelled && !refreshed && cached) setSettings(cached);
     });
     void getCachedLeagueId(teamId).then((cached) => {
-      if (!cancelled && cached) setLeagueId(cached);
+      if (!cancelled && !refreshed && cached) setLeagueId(cached);
     });
 
     // (b) refresh in the background
@@ -125,6 +128,8 @@ export function useLeagueContext(teamId: string | undefined): LeagueContext {
         );
         return; // keep cached values
       }
+      // From here on the network is authoritative — stop late cache seeds.
+      refreshed = true;
       if (!membership?.league_id) {
         const defaults = defaultLeagueScoringSettings();
         if (!cancelled) {

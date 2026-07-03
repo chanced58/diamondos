@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, FlatList } from 'react-native';
 import { Q } from '@nozbe/watermelondb';
 import { database } from '../../../src/db';
@@ -46,41 +46,52 @@ function RosterList({ players }: { players: Player[] }) {
 export default function RosterScreen() {
   // The local players table also mirrors league-pool identities (guests and
   // other teams' players, for the offline guest picker), so the roster tab
-  // must scope to the user's own team(s). Those team ids are derived from the
-  // locally synced games and channels — both are RLS-scoped to the user's
-  // memberships on the server.
+  // must scope to the user's own team(s). Those team ids are derived from
+  // the locally synced games and channels — both RLS-scoped to the user's
+  // memberships on the server — and observed reactively so the roster
+  // appears as soon as the first sync lands (no remount needed).
+  const [gameTeamIds, setGameTeamIds] = useState<string[]>([]);
+  const [channelTeamIds, setChannelTeamIds] = useState<string[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
 
   useEffect(() => {
-    let playersSubscription: { unsubscribe: () => void } | null = null;
-    let cancelled = false;
-
-    (async () => {
-      const [games, channels] = await Promise.all([
-        database.get<Game>('games').query().fetch(),
-        database.get<Channel>('channels').query().fetch(),
-      ]);
-      if (cancelled) return;
-      const myTeamIds = [
-        ...new Set([...games.map((g) => g.teamId), ...channels.map((c) => c.teamId)]),
-      ].filter(Boolean);
-
-      playersSubscription = database
-        .get<Player>('players')
-        .query(
-          Q.where('team_id', Q.oneOf(myTeamIds)),
-          Q.where('is_active', true),
-          Q.sortBy('last_name', Q.asc),
-        )
-        .observe()
-        .subscribe(setPlayers);
-    })();
-
+    const gamesSubscription = database
+      .get<Game>('games')
+      .query()
+      .observe()
+      .subscribe((games) => setGameTeamIds([...new Set(games.map((g) => g.teamId))]));
+    const channelsSubscription = database
+      .get<Channel>('channels')
+      .query()
+      .observe()
+      .subscribe((channels) => setChannelTeamIds([...new Set(channels.map((c) => c.teamId))]));
     return () => {
-      cancelled = true;
-      playersSubscription?.unsubscribe();
+      gamesSubscription.unsubscribe();
+      channelsSubscription.unsubscribe();
     };
   }, []);
+
+  const myTeamIds = useMemo(
+    () => [...new Set([...gameTeamIds, ...channelTeamIds])].filter(Boolean).sort(),
+    [gameTeamIds, channelTeamIds],
+  );
+  // Stable key so the players subscription only recreates when the derived
+  // team set actually changes, not on every source emission.
+  const teamIdsKey = myTeamIds.join(',');
+
+  useEffect(() => {
+    const teamIds = teamIdsKey ? teamIdsKey.split(',') : [];
+    const subscription = database
+      .get<Player>('players')
+      .query(
+        Q.where('team_id', Q.oneOf(teamIds)),
+        Q.where('is_active', true),
+        Q.sortBy('last_name', Q.asc),
+      )
+      .observe()
+      .subscribe(setPlayers);
+    return () => subscription.unsubscribe();
+  }, [teamIdsKey]);
 
   return (
     <View className="flex-1 bg-gray-50">

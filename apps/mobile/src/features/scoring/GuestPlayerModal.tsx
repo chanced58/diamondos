@@ -61,6 +61,7 @@ export function GuestPlayerModal({
   const [submitting, setSubmitting] = useState(false);
   const [poolSearch, setPoolSearch] = useState('');
   const [poolCandidates, setPoolCandidates] = useState<PoolCandidate[]>([]);
+  const [poolLoading, setPoolLoading] = useState(false);
 
   function reset() {
     setTab('new');
@@ -83,39 +84,44 @@ export function GuestPlayerModal({
       return;
     }
     let cancelled = false;
+    setPoolLoading(true);
     (async () => {
-      const registrations = await database
-        .get<LeaguePlayer>('league_players')
-        .query(Q.where('league_id', leagueId))
-        .fetch();
-      if (registrations.length === 0) {
-        if (!cancelled) setPoolCandidates([]);
-        return;
+      try {
+        const registrations = await database
+          .get<LeaguePlayer>('league_players')
+          .query(Q.where('league_id', leagueId))
+          .fetch();
+        if (registrations.length === 0) {
+          if (!cancelled) setPoolCandidates([]);
+          return;
+        }
+        const registeredIds = registrations.map((r) => r.playerRemoteId);
+        const [players, lineupRows] = await Promise.all([
+          database
+            .get<Player>('players')
+            .query(Q.where('remote_id', Q.oneOf(registeredIds)), Q.where('is_active', true))
+            .fetch(),
+          database
+            .get<GameLineup>('game_lineups')
+            .query(Q.where('game_remote_id', gameId))
+            .fetch(),
+        ]);
+        const inLineup = new Set(lineupRows.map((row) => row.playerRemoteId));
+        if (cancelled) return;
+        setPoolCandidates(
+          players
+            .filter((p) => p.teamId !== teamId && !inLineup.has(p.remoteId))
+            .map((p) => ({
+              playerRemoteId: p.remoteId,
+              name: p.fullName,
+              jerseyNumber: p.jerseyNumber,
+              isGuestOnly: p.isGuestOnly,
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        );
+      } finally {
+        if (!cancelled) setPoolLoading(false);
       }
-      const registeredIds = registrations.map((r) => r.playerRemoteId);
-      const [players, lineupRows] = await Promise.all([
-        database
-          .get<Player>('players')
-          .query(Q.where('remote_id', Q.oneOf(registeredIds)), Q.where('is_active', true))
-          .fetch(),
-        database
-          .get<GameLineup>('game_lineups')
-          .query(Q.where('game_remote_id', gameId))
-          .fetch(),
-      ]);
-      const inLineup = new Set(lineupRows.map((row) => row.playerRemoteId));
-      if (cancelled) return;
-      setPoolCandidates(
-        players
-          .filter((p) => p.teamId !== teamId && !inLineup.has(p.remoteId))
-          .map((p) => ({
-            playerRemoteId: p.remoteId,
-            name: p.fullName,
-            jerseyNumber: p.jerseyNumber,
-            isGuestOnly: p.isGuestOnly,
-          }))
-          .sort((a, b) => a.name.localeCompare(b.name)),
-      );
     })();
     return () => {
       cancelled = true;
@@ -214,6 +220,7 @@ export function GuestPlayerModal({
             <View className="flex-row mb-4 bg-gray-100 rounded-lg p-1">
               <TouchableOpacity
                 onPress={() => setTab('new')}
+                disabled={submitting}
                 className={`flex-1 rounded-md py-1.5 items-center ${tab === 'new' ? 'bg-white' : ''}`}
               >
                 <Text className={`text-sm font-semibold ${tab === 'new' ? 'text-gray-900' : 'text-gray-500'}`}>
@@ -222,6 +229,7 @@ export function GuestPlayerModal({
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => setTab('pool')}
+                disabled={submitting}
                 className={`flex-1 rounded-md py-1.5 items-center ${tab === 'pool' ? 'bg-white' : ''}`}
               >
                 <Text className={`text-sm font-semibold ${tab === 'pool' ? 'text-gray-900' : 'text-gray-500'}`}>
@@ -284,7 +292,9 @@ export function GuestPlayerModal({
                   className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 mb-3"
                   editable={!submitting}
                 />
-                {filteredPool.length === 0 ? (
+                {poolLoading ? (
+                  <Text className="text-sm text-gray-500 mb-4">Loading league players…</Text>
+                ) : filteredPool.length === 0 ? (
                   <Text className="text-sm text-gray-500 mb-4">
                     {poolCandidates.length === 0
                       ? 'No league players synced yet.'

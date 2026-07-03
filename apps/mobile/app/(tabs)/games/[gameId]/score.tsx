@@ -511,11 +511,14 @@ export default function ScoringScreen() {
     // slot-1 occupant.
     if (!lineupLoaded) return;
 
-    // Build the set of player ids already in the order, including pending
-    // in-game LINEUP_EXTENSION events that haven't been reflected in the
-    // Supabase snapshot yet (defense-in-depth against picker filter bypass
-    // / two rapid taps before refreshLineupRows completes).
-    const activePlayerIds = new Set(lineupRows.map((row) => row.player_id));
+    // Build the set of player ids already in the BATTING ORDER (bench rows
+    // with a null order — e.g. a non-batting pitcher under DH rules — stay
+    // addable), including pending in-game LINEUP_EXTENSION events that
+    // haven't been reflected in the local rows yet (defense-in-depth against
+    // picker filter bypass / two rapid taps).
+    const activePlayerIds = new Set(
+      lineupRows.filter((row) => row.batting_order != null).map((row) => row.player_id),
+    );
 
     // Compute current max from both the DB snapshot AND any in-game
     // SUBSTITUTION events that already extended the lineup but haven't yet
@@ -555,21 +558,33 @@ export default function ScoringScreen() {
     };
     await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
 
-    // Persist the new batter as a local game_lineups row so post-game
+    // Persist the new batter to the local game_lineups mirror so post-game
     // consumers (MaxPreps export, season-stat rollups) see them alongside the
-    // pre-game starters once the sync engine pushes it. is_starter=false marks
-    // them as a late addition. Offline-first like everything else on this
+    // pre-game starters once the sync engine pushes it. A player may already
+    // have a bench row (null batting order — e.g. a non-batting pitcher);
+    // unique(game_id, player_id) forbids a second row, so that row is UPDATED
+    // into the order instead. Offline-first like everything else on this
     // screen; the SUBSTITUTION event above remains the authoritative source
     // for live state and the shared stats derivers.
     try {
-      await addLineupRow({
-        gameRemoteId: gameId,
-        playerRemoteId: newBatterId,
-        battingOrder: battingOrderPosition,
-        isStarter: false,
-        isGuest: false,
-        countTowardStats: true,
-      });
+      const existingRow = observedLineupRows.find((row) => row.playerRemoteId === newBatterId);
+      if (existingRow) {
+        await database.write(async () => {
+          await existingRow.update((r) => {
+            r.battingOrder = battingOrderPosition;
+            r.updatedAt = Date.now();
+          });
+        });
+      } else {
+        await addLineupRow({
+          gameRemoteId: gameId,
+          playerRemoteId: newBatterId,
+          battingOrder: battingOrderPosition,
+          isStarter: false,
+          isGuest: false,
+          countTowardStats: true,
+        });
+      }
     } catch (err) {
       // The SUBSTITUTION event above already keeps live play correct; log
       // with context so a missing post-game lineup row can be traced.
@@ -891,7 +906,9 @@ export default function ScoringScreen() {
         onRecordDefensiveSub={handleDefensiveSub}
         onRecordPositionChange={handlePositionChange}
         onRecordAddBatter={midGameExtensionAllowed ? handleAddBatter : undefined}
-        activeBattingOrderPlayerIds={lineupRows.map((l) => l.player_id)}
+        activeBattingOrderPlayerIds={lineupRows
+          .filter((l) => l.batting_order != null)
+          .map((l) => l.player_id)}
         defensiveLineup={defensiveLineup}
         roster={roster}
         onUndoLastEvent={handleUndo}

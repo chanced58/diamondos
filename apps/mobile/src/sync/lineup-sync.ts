@@ -54,10 +54,10 @@ export async function getDirtyLineupState(database: Database): Promise<DirtyLine
 }
 
 /**
- * Push one game's lineup to the server as a whole-lineup replace, or skip if
- * the conflict policy says the server version wins. Throws on any server
- * error so WatermelonDB keeps the local rows unsynced and retries next cycle
- * (a 23505 here means a concurrent web save raced our delete+insert).
+ * Push one game's lineup to the server as an atomic whole-lineup replace
+ * (fn_replace_game_lineup RPC — delete + insert in one transaction), or skip
+ * if the conflict policy says the server version wins. Throws on any server
+ * error so WatermelonDB keeps the local rows unsynced and retries next cycle.
  *
  * Two safety guards beyond the LWW/mobile-wins decision:
  *  - Never-hydrated guard: if the server has rows but this device has never
@@ -66,9 +66,9 @@ export async function getDirtyLineupState(database: Database): Promise<DirtyLine
  *    after install. Skip instead; the snapshot fallback hydrates the mirror
  *    (preserving the dirty rows) and the next cycle pushes the merged set.
  *  - Collision renumbering: duplicate batting orders in the local set would
- *    fail the insert AFTER the delete committed, leaving the server lineup
- *    empty and the push poisoned. Dirty rows lose their slot and move to the
- *    end of the order (see resolveBattingOrderCollisions).
+ *    make the replace fail every cycle, poisoning the push. Dirty rows lose
+ *    their slot and move to the end of the order (see
+ *    resolveBattingOrderCollisions).
  *
  * Returns 'pushed' or 'skipped'.
  */
@@ -107,8 +107,20 @@ export async function pushLineupsForGame(
     .query(Q.where('game_remote_id', gameRemoteId))
     .fetch();
 
-  const hasHydratedRows = localRows.some((row) => row.syncStatus === 'synced');
-  if (serverMaxUpdatedAtMs !== null && !hasHydratedRows) return 'skipped';
+  // Hydration must be checked against ALL rows including soft-deleted ones
+  // (raw SQL — normal queries hide _status='deleted'): a coach clearing a
+  // previously synced lineup leaves only deleted rows, and that is a
+  // legitimate edit to push, not a never-hydrated mirror.
+  const hydratedRows = (await database
+    .get<GameLineup>('game_lineups')
+    .query(
+      Q.unsafeSqlQuery(
+        "select id from game_lineups where game_remote_id = ? and (synced_at is not null or _status is 'synced') limit 1",
+        [gameRemoteId],
+      ),
+    )
+    .unsafeFetchRaw()) as Array<{ id: string }>;
+  if (serverMaxUpdatedAtMs !== null && hydratedRows.length === 0) return 'skipped';
 
   const decision = decideLineupPush({
     gameStatus: gameResult.data.status,
@@ -138,34 +150,27 @@ export async function pushLineupsForGame(
     });
   }
 
-  const { error: deleteError } = await supabase
-    .from('game_lineups')
-    .delete()
-    .eq('game_id', gameRemoteId);
-  if (deleteError) throw deleteError;
-
-  if (localRows.length > 0) {
-    const { error: insertError } = await supabase.from('game_lineups').insert(
-      localRows.map((row) => {
-        const battingOrder = adjustments.has(row.id)
-          ? adjustments.get(row.id)
-          : row.battingOrder ?? null;
-        return {
-          id: row.remoteId,
-          game_id: row.gameRemoteId,
-          player_id: row.playerRemoteId,
-          batting_order: battingOrder ?? null,
-          // Cast: local column is a plain string; server validates the enum.
-          starting_position: (row.startingPosition ?? null) as never,
-          is_starter: row.isStarter,
-          is_guest: row.isGuest,
-          guest_display_name: row.guestDisplayName ?? null,
-          count_toward_stats: row.countTowardStats,
-        };
-      }),
-    );
-    if (insertError) throw insertError;
-  }
+  // Atomic replace: fn_replace_game_lineup deletes and inserts in one
+  // transaction server-side, so a failure can never strand an empty lineup.
+  const { error: replaceError } = await supabase.rpc('fn_replace_game_lineup', {
+    p_game_id: gameRemoteId,
+    p_rows: localRows.map((row) => {
+      const battingOrder = adjustments.has(row.id)
+        ? adjustments.get(row.id)
+        : row.battingOrder ?? null;
+      return {
+        id: row.remoteId,
+        player_id: row.playerRemoteId,
+        batting_order: battingOrder ?? null,
+        starting_position: row.startingPosition ?? null,
+        is_starter: row.isStarter,
+        is_guest: row.isGuest,
+        guest_display_name: row.guestDisplayName ?? null,
+        count_toward_stats: row.countTowardStats,
+      };
+    }),
+  });
+  if (replaceError) throw replaceError;
   return 'pushed';
 }
 

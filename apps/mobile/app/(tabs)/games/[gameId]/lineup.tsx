@@ -171,19 +171,32 @@ export default function LineupScreen() {
 
     // Same semantics as the web saveLineupAction: batters get their slot and
     // position; benched players are dropped except pitchers, kept with a null
-    // batting order so pitch-count tracking survives a DH lineup.
-    const entries: { playerId: string; order: number | null; positionDb: string | null }[] = [];
+    // batting order so pitch-count tracking survives a DH lineup. isStarter
+    // is preserved from the row being replaced so a mid-game Add Batter
+    // (is_starter=false) isn't converted into a starter by a later save.
+    const isStarterByPlayer = new Map(
+      lineupRows
+        .filter((row) => !row.isGuest)
+        .map((row) => [row.playerRemoteId, row.isStarter]),
+    );
+    const entries: {
+      playerId: string;
+      order: number | null;
+      positionDb: string | null;
+      isStarter: boolean;
+    }[] = [];
     for (const player of roster) {
       const assignment = assignments[player.remoteId];
       if (!assignment) continue;
       const positionDb = assignment.position ? POSITION_TO_DB[assignment.position] ?? null : null;
+      const isStarter = isStarterByPlayer.get(player.remoteId) ?? true;
       if (assignment.order === null) {
         if (positionDb === 'pitcher') {
-          entries.push({ playerId: player.remoteId, order: null, positionDb });
+          entries.push({ playerId: player.remoteId, order: null, positionDb, isStarter });
         }
         continue;
       }
-      entries.push({ playerId: player.remoteId, order: assignment.order, positionDb });
+      entries.push({ playerId: player.remoteId, order: assignment.order, positionDb, isStarter });
     }
 
     const orders = entries.map((e) => e.order).filter((o): o is number => o !== null);
@@ -225,7 +238,7 @@ export default function LineupScreen() {
               playerRemoteId: entry.playerId,
               battingOrder: entry.order,
               startingPosition: entry.positionDb,
-              isStarter: true,
+              isStarter: entry.isStarter,
               isGuest: false,
               countTowardStats: true,
             }),

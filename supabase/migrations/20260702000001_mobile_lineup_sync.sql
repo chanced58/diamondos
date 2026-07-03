@@ -1,5 +1,5 @@
 -- Mobile offline-first lineup sync support.
--- Adds four things:
+-- Adds:
 --   1. game_lineups.updated_at + touch triggers so the mobile sync engine can
 --      pull lineups incrementally (games/players also gain the missing touch
 --      triggers their existing incremental pulls already assume).
@@ -13,6 +13,10 @@
 --   4. A league_player_identities() RPC exposing PII-free player identity
 --      columns to league coaches, so the mobile sync can mirror the league
 --      roster locally for the guest picker without widening players SELECT.
+--   5. server_time() so mobile sync checkpoints use the server clock.
+--   6. A parent-game touch trigger on game_lineups (tombstone substitute for
+--      emptied lineups) and fn_replace_game_lineup() so the mobile push can
+--      replace a game's lineup atomically.
 
 -- ── updated_at columns + touch triggers ───────────────────────────────────
 
@@ -158,13 +162,19 @@ alter function public.is_league_coach_for_player(uuid, uuid)
 -- An active head/assistant coach of a team that belongs to an active league
 -- may create guest-only identities (mobile offline guest flow syncs these).
 -- The column checks pin the row to the guest shape: no team, guest flag set,
--- and no linked account — a guest identity can never claim a login.
+-- no linked account (a guest identity can never claim a login), and no PII
+-- columns — RLS cannot restrict columns, so the value constraints keep
+-- email/DOB/notes/graduation_year unwritable through this policy.
 create policy "coaches_insert_guest_only_players"
   on public.players for insert
   with check (
     team_id is null
     and is_guest_only = true
     and user_id is null
+    and email is null
+    and date_of_birth is null
+    and notes is null
+    and graduation_year is null
     and public.is_any_league_coach(auth.uid())
   );
 
@@ -172,7 +182,8 @@ create policy "coaches_insert_guest_only_players"
 
 -- Coaches in the guest's league may edit guest-only identities. WITH CHECK
 -- keeps the row in the guest shape — a coach cannot promote a guest onto a
--- roster or link an account through this policy.
+-- roster, link an account, or write PII columns through this policy (same
+-- value constraints as the insert policy above).
 create policy "coaches_update_guest_only_players"
   on public.players for update
   using (
@@ -184,6 +195,10 @@ create policy "coaches_update_guest_only_players"
     is_guest_only = true
     and team_id is null
     and user_id is null
+    and email is null
+    and date_of_birth is null
+    and notes is null
+    and graduation_year is null
   );
 
 -- ── league_players: coach guest registration ───────────────────────────────
@@ -239,4 +254,86 @@ as $$
 $$;
 
 alter function public.league_player_identities(timestamptz)
+  set search_path = public, pg_temp;
+
+-- ── server time for sync checkpoints ───────────────────────────────────────
+
+-- The mobile sync engine's incremental pulls filter on server-generated
+-- timestamps; the checkpoint they compare against must come from the same
+-- clock. A device clock running fast would otherwise permanently skip rows
+-- committed before its inflated checkpoint.
+create or replace function public.server_time()
+returns timestamptz
+language sql stable
+as $$
+  select now();
+$$;
+
+alter function public.server_time()
+  set search_path = public, pg_temp;
+
+-- ── lineup tombstone: touch the parent game on any lineup change ───────────
+
+-- game_lineups deletions leave no tombstones, so a web save that EMPTIES a
+-- lineup would otherwise be invisible to incremental pulls. Touching the
+-- parent game's updated_at makes the game row re-pull, and the mobile sync
+-- derives lineup deletions for re-pulled games by diffing id sets.
+create or replace function public.touch_parent_game_on_lineup_change()
+returns trigger language plpgsql as $$
+begin
+  update public.games set updated_at = now()
+  where id = coalesce(new.game_id, old.game_id);
+  return coalesce(new, old);
+end;
+$$;
+
+alter function public.touch_parent_game_on_lineup_change()
+  set search_path = public, pg_temp;
+
+create trigger trg_game_lineups_touch_parent_game
+  after insert or update or delete on public.game_lineups
+  for each row execute function public.touch_parent_game_on_lineup_change();
+
+-- ── atomic whole-lineup replace for the mobile push ────────────────────────
+
+-- The mobile sync replaces a game's entire lineup. Two separate REST calls
+-- (delete, then insert) would leave the server lineup empty if the insert
+-- failed after the delete committed; this RPC does both in one transaction.
+-- SECURITY DEFINER with an explicit coach check mirroring the
+-- coaches_manage_lineups policy.
+create or replace function public.fn_replace_game_lineup(p_game_id uuid, p_rows jsonb)
+returns void
+language plpgsql security definer
+as $$
+declare
+  v_team_id uuid;
+begin
+  select team_id into v_team_id from public.games where id = p_game_id;
+  if v_team_id is null then
+    raise exception 'REPLACE_LINEUP_GAME_NOT_FOUND';
+  end if;
+  if not public.is_coach(v_team_id, auth.uid()) then
+    raise exception 'REPLACE_LINEUP_NOT_AUTHORIZED';
+  end if;
+
+  delete from public.game_lineups where game_id = p_game_id;
+
+  insert into public.game_lineups
+    (id, game_id, player_id, batting_order, starting_position,
+     is_starter, is_guest, guest_display_name, count_toward_stats)
+  select
+    (r->>'id')::uuid,
+    p_game_id,
+    (r->>'player_id')::uuid,
+    (r->>'batting_order')::smallint,
+    nullif(r->>'starting_position', '')::public.player_position,
+    coalesce((r->>'is_starter')::boolean, true),
+    coalesce((r->>'is_guest')::boolean, false),
+    nullif(r->>'guest_display_name', ''),
+    coalesce((r->>'count_toward_stats')::boolean, true)
+  from jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) as r;
+end;
+$$;
+
+alter function public.fn_replace_game_lineup(uuid, jsonb)
   set search_path = public, pg_temp;

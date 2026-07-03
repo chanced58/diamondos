@@ -4904,6 +4904,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      fn_replace_game_lineup: {
+        Args: { p_game_id: string; p_rows: Json }
+        Returns: undefined
+      }
       fn_rollback_import_batch: {
         Args: { p_actor: string; p_batch_id: string }
         Returns: undefined
@@ -5036,6 +5040,7 @@ export type Database = {
         Args: { p_game_date?: string; p_player_id: string }
         Returns: string
       }
+      server_time: { Args: never; Returns: string }
       set_reconciliation_override: {
         Args: {
           p_key: string

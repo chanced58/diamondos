@@ -61,7 +61,7 @@ export interface LineupOrderRow {
   battingOrder: number | null;
   /** True for rows with unsynced local edits; dirty rows yield in collisions. */
   isDirty: boolean;
-  /** Local edit timestamp (Unix ms) — later edits move first in a collision. */
+  /** Local edit timestamp (Unix ms) — oldest edits are renumbered first in a collision. */
   updatedAtMs: number;
 }
 

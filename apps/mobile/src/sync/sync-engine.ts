@@ -101,6 +101,12 @@ async function reconcileSequenceNumbers(
   });
 }
 
+// Games whose post-sync server-snapshot convergence failed and must be
+// retried on subsequent cycles. In-memory only: an app restart loses the
+// set, leaving those games stale-but-consistent until the next server-side
+// lineup edit re-pulls them.
+const pendingSnapshotGames = new Set<string>();
+
 /**
  * Syncs the local WatermelonDB with Supabase.
  *
@@ -143,6 +149,15 @@ export async function syncWithSupabase(): Promise<void> {
       }
       const userId = user.id;
 
+      // The next checkpoint must come from the SERVER clock — the pull
+      // filters on server-generated timestamps, and a fast device clock
+      // would permanently skip rows committed "before" its inflated time.
+      // Captured BEFORE the queries so overlap re-pulls (idempotent) rather
+      // than gaps.
+      const serverTimeResult = await supabase.rpc('server_time');
+      if (serverTimeResult.error) throw serverTimeResult.error;
+      const pullTimestamp = new Date(serverTimeResult.data as string).getTime();
+
       const [gamesResult, eventsResult, playersResult, leagueIdentitiesResult, channelsResult, messagesResult, lineupsResult, leaguePlayersResult, pulledDirtyState] =
         await Promise.all([
           supabase.from('games').select('*').gte('updated_at', since),
@@ -181,17 +196,30 @@ export async function syncWithSupabase(): Promise<void> {
       //    pull runs before push inside synchronize(), and applying a web
       //    delete-reinsert here would destroy the device's rows before the
       //    mobile-wins push gets to run.
-      //  2. Derive deletions for the remaining touched games by diffing the
-      //    server's full id set against local rows — a web save deletes and
-      //    reinserts rows, and Postgres keeps no tombstones. (A web save that
-      //    empties a lineup entirely leaves no pulled rows to flag the game,
-      //    so stale local rows persist until the next lineup change — known
-      //    limitation.)
+      //  2. Derive deletions for touched games by diffing the server's full
+      //    id set against local rows — a web save deletes and reinserts
+      //    rows, and Postgres keeps no tombstones. "Touched" games come from
+      //    pulled lineup rows AND pulled game rows that have local lineup
+      //    rows: the game_lineups tombstone trigger touches the parent
+      //    game's updated_at on every lineup change, so even a web save that
+      //    EMPTIES a lineup re-pulls the game and its deletions propagate.
       const { dirtyGameIds } = pulledDirtyState;
       const pulledLineups = (lineupsResult.data ?? []).filter(
         (r) => !dirtyGameIds.has(r.game_id),
       );
-      const touchedGameIds = [...new Set(pulledLineups.map((r) => r.game_id))];
+      const pulledGameIds = (gamesResult.data ?? []).map((g) => g.id);
+      const gamesWithLocalLineups =
+        pulledGameIds.length > 0
+          ? (
+              await database
+                .get<GameLineup>('game_lineups')
+                .query(Q.where('game_remote_id', Q.oneOf(pulledGameIds)))
+                .fetch()
+            ).map((r) => r.gameRemoteId)
+          : [];
+      const touchedGameIds = [
+        ...new Set([...pulledLineups.map((r) => r.game_id), ...gamesWithLocalLineups]),
+      ].filter((id) => !dirtyGameIds.has(id));
       let deletedLineupIds: string[] = [];
       if (touchedGameIds.length > 0) {
         const [serverIdsResult, localRows] = await Promise.all([
@@ -246,7 +274,7 @@ export async function syncWithSupabase(): Promise<void> {
             deleted: [],
           },
         },
-        timestamp: Date.now(),
+        timestamp: pullTimestamp,
       };
     },
 
@@ -446,12 +474,17 @@ export async function syncWithSupabase(): Promise<void> {
 
   // Converge games whose lineup push deferred to the server (LWW skip).
   // WatermelonDB marked their local rows synced, so replace them with the
-  // server rows here. Never throw — a failure self-heals next cycle.
-  for (const gameRemoteId of skippedLineupGames) {
+  // server rows here. Never throw, but track failures in
+  // pendingSnapshotGames — the rows carry no dirty marker anymore, so
+  // without the retry set a failed convergence would never be reattempted.
+  const snapshotGames = new Set([...skippedLineupGames, ...pendingSnapshotGames]);
+  for (const gameRemoteId of snapshotGames) {
     try {
       await applyServerLineupSnapshot(database, supabase, gameRemoteId);
+      pendingSnapshotGames.delete(gameRemoteId);
     } catch (err) {
-      console.warn('sync: failed to apply server lineup snapshot', gameRemoteId, err);
+      pendingSnapshotGames.add(gameRemoteId);
+      console.warn('sync: failed to apply server lineup snapshot; will retry', gameRemoteId, err);
     }
   }
 }

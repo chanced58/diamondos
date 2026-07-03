@@ -22,9 +22,17 @@ export function useGameLineups(gameRemoteId: string): {
       .get<GameLineup>('game_lineups')
       .query(Q.where('game_remote_id', gameRemoteId))
       .observe()
-      .subscribe((next) => {
-        setRows(next);
-        setLoaded(true);
+      .subscribe({
+        next: (nextRows) => {
+          setRows(nextRows);
+          setLoaded(true);
+        },
+        error: (err) => {
+          // Surface adapter/query failures instead of leaving callers stuck
+          // on loaded=false; rows stay at their last known value.
+          console.warn(`[use-game-lineups] observe failed game=${gameRemoteId}:`, err);
+          setLoaded(true);
+        },
       });
     return () => subscription.unsubscribe();
   }, [gameRemoteId]);

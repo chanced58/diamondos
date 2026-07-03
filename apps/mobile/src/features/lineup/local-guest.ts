@@ -56,7 +56,13 @@ export async function addLineupRow(input: LineupRowInput): Promise<void> {
   });
 }
 
-async function nextBattingOrder(
+/**
+ * Compute the next open batting slot. MUST be called from inside an active
+ * database.write() so the read and the subsequent insert are part of the same
+ * serialized writer — computing the slot outside the writer is a TOCTOU race:
+ * two in-flight guest adds could both read the same max and pick the same slot.
+ */
+async function nextBattingOrderInWriter(
   gameRemoteId: string,
   maxBatters: number,
 ): Promise<{ ok: true; order: number } | { ok: false; message: string }> {
@@ -92,13 +98,13 @@ export interface CreateLocalGuestInput {
 export async function createLocalGuest(
   input: CreateLocalGuestInput,
 ): Promise<LocalLineupWriteResult> {
-  const slot = await nextBattingOrder(input.gameRemoteId, input.maxBatters);
-  if (!slot.ok) return slot;
-
   const playerRemoteId = randomUUID();
   const now = Date.now();
 
-  await database.write(async () => {
+  return database.write(async (): Promise<LocalLineupWriteResult> => {
+    const slot = await nextBattingOrderInWriter(input.gameRemoteId, input.maxBatters);
+    if (!slot.ok) return slot;
+
     const batch: Model[] = [
       database.get<Player>('players').prepareCreate((r) => {
         r._raw.id = playerRemoteId;
@@ -131,9 +137,8 @@ export async function createLocalGuest(
       );
     }
     await database.batch(...batch);
+    return { ok: true, playerRemoteId, battingOrder: slot.order };
   });
-
-  return { ok: true, playerRemoteId, battingOrder: slot.order };
 }
 
 export interface AddExistingGuestInput {
@@ -150,30 +155,33 @@ export interface AddExistingGuestInput {
 export async function addExistingGuestToLineup(
   input: AddExistingGuestInput,
 ): Promise<LocalLineupWriteResult> {
-  const existing = await database
-    .get<GameLineup>('game_lineups')
-    .query(
-      Q.where('game_remote_id', input.gameRemoteId),
-      Q.where('player_remote_id', input.playerRemoteId),
-    )
-    .fetch();
-  if (existing.length > 0) {
-    return { ok: false, message: 'That player is already in the lineup.' };
-  }
+  return database.write(async (): Promise<LocalLineupWriteResult> => {
+    const existing = await database
+      .get<GameLineup>('game_lineups')
+      .query(
+        Q.where('game_remote_id', input.gameRemoteId),
+        Q.where('player_remote_id', input.playerRemoteId),
+      )
+      .fetch();
+    if (existing.length > 0) {
+      return { ok: false, message: 'That player is already in the lineup.' };
+    }
 
-  const slot = await nextBattingOrder(input.gameRemoteId, input.maxBatters);
-  if (!slot.ok) return slot;
+    const slot = await nextBattingOrderInWriter(input.gameRemoteId, input.maxBatters);
+    if (!slot.ok) return slot;
 
-  await addLineupRow({
-    gameRemoteId: input.gameRemoteId,
-    playerRemoteId: input.playerRemoteId,
-    battingOrder: slot.order,
-    isStarter: false,
-    isGuest: true,
-    countTowardStats: input.countTowardStats,
+    await database.batch(
+      prepareLineupRow({
+        gameRemoteId: input.gameRemoteId,
+        playerRemoteId: input.playerRemoteId,
+        battingOrder: slot.order,
+        isStarter: false,
+        isGuest: true,
+        countTowardStats: input.countTowardStats,
+      }),
+    );
+    return { ok: true, playerRemoteId: input.playerRemoteId, battingOrder: slot.order };
   });
-
-  return { ok: true, playerRemoteId: input.playerRemoteId, battingOrder: slot.order };
 }
 
 /**
