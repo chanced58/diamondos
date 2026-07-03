@@ -8,9 +8,41 @@ import {
 import { getSupabaseClient } from './supabase';
 
 const CACHE_KEY_PREFIX = 'league_scoring_settings_v1__';
+const LEAGUE_ID_CACHE_KEY_PREFIX = 'league_id_v1__';
 
 function cacheKey(teamId: string): string {
   return `${CACHE_KEY_PREFIX}${teamId}`;
+}
+
+function leagueIdCacheKey(teamId: string): string {
+  return `${LEAGUE_ID_CACHE_KEY_PREFIX}${teamId}`;
+}
+
+/**
+ * The team's league id from the SecureStore cache, without a network call.
+ * Returns null when the team has no league or the lookup has never succeeded
+ * online for this team ('' is cached for "no league").
+ */
+async function getCachedLeagueId(teamId: string): Promise<string | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(leagueIdCacheKey(teamId));
+    return raw ? raw : null;
+  } catch (err) {
+    console.warn(
+      `[league-settings] getCachedLeagueId failed team=${teamId}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
+}
+
+async function writeLeagueIdCache(teamId: string, leagueId: string): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(leagueIdCacheKey(teamId), leagueId);
+  } catch (err) {
+    console.warn(
+      `[league-settings] writeLeagueIdCache failed team=${teamId}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
 
 async function readCache(teamId: string): Promise<LeagueScoringSettings | null> {
@@ -37,11 +69,18 @@ async function writeCache(teamId: string, settings: LeagueScoringSettings): Prom
   }
 }
 
+export interface LeagueContext {
+  settings: LeagueScoringSettings;
+  /** Active league id for the team; null when unknown or the team has no league. */
+  leagueId: string | null;
+}
+
 /**
- * Resolve the active league settings for a team, with SecureStore-backed
- * offline caching.
+ * Resolve the active league settings and league id for a team, with
+ * SecureStore-backed offline caching (the league id is needed offline by the
+ * guest flow to register new guests in the league pool).
  *
- * On mount we (a) seed from any cached value so scoring respects the league
+ * On mount we (a) seed from any cached values so scoring respects the league
  * gates immediately even with no network, then (b) refresh from Supabase in
  * the background and update both state and cache when the fetch returns.
  *
@@ -49,19 +88,31 @@ async function writeCache(teamId: string, settings: LeagueScoringSettings): Prom
  * having to add a full WatermelonDB table for what is effectively a small
  * per-team JSON blob.
  */
-export function useLeagueSettings(teamId: string | undefined): LeagueScoringSettings {
+export function useLeagueContext(teamId: string | undefined): LeagueContext {
   const [settings, setSettings] = useState<LeagueScoringSettings>(defaultLeagueScoringSettings);
+  const [leagueId, setLeagueId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!teamId) {
       setSettings(defaultLeagueScoringSettings());
+      setLeagueId(null);
       return;
     }
+    // Reset before seeding the new team so a previous team's league can't
+    // leak into callers (e.g. guest registration) while the cache resolves.
+    setSettings(defaultLeagueScoringSettings());
+    setLeagueId(null);
     let cancelled = false;
+    // Guards the cache seeds against racing the network refresh: SecureStore
+    // resolving late must not clobber fresher Supabase-derived state.
+    let refreshed = false;
 
     // (a) seed from cache immediately
     void readCache(teamId).then((cached) => {
-      if (!cancelled && cached) setSettings(cached);
+      if (!cancelled && !refreshed && cached) setSettings(cached);
+    });
+    void getCachedLeagueId(teamId).then((cached) => {
+      if (!cancelled && !refreshed && cached) setLeagueId(cached);
     });
 
     // (b) refresh in the background
@@ -79,14 +130,23 @@ export function useLeagueSettings(teamId: string | undefined): LeagueScoringSett
         console.warn(
           `[league-settings] league_members lookup failed team=${teamId}: ${membershipErr.message}`,
         );
-        return; // keep cached value
+        return; // keep cached values
       }
+      // From here on the network is authoritative — stop late cache seeds.
+      refreshed = true;
       if (!membership?.league_id) {
         const defaults = defaultLeagueScoringSettings();
-        if (!cancelled) setSettings(defaults);
+        if (!cancelled) {
+          setSettings(defaults);
+          setLeagueId(null);
+        }
         await writeCache(teamId, defaults);
+        await writeLeagueIdCache(teamId, ''); // '' = confirmed no league
         return;
       }
+
+      if (!cancelled) setLeagueId(membership.league_id);
+      await writeLeagueIdCache(teamId, membership.league_id);
 
       const { data: leagueRow, error: leagueErr } = await supabase
         .from('leagues')
@@ -110,5 +170,5 @@ export function useLeagueSettings(teamId: string | undefined): LeagueScoringSett
     };
   }, [teamId]);
 
-  return settings;
+  return { settings, leagueId };
 }

@@ -4,14 +4,13 @@ import type { JSX } from 'react';
 import { useState, useTransition } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
+import { LINEUP_POSITIONS as POSITIONS, getLineupSlotCap } from '@baseball/shared';
 import { saveLineupAction } from './actions';
 import { removeGuestFromLineupAction } from './guest-actions';
 import { GuestPlayerPicker } from './GuestPlayerPicker';
 
-const POSITIONS = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH'] as const;
-
 function orderOptions(rosterSize: number, maxBatters: number): readonly string[] {
-  const cap = Math.min(Math.max(rosterSize, 9), maxBatters);
+  const cap = getLineupSlotCap(rosterSize, maxBatters);
   return ['Bench', ...Array.from({ length: cap }, (_, i) => String(i + 1))];
 }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Modal,
   View,
@@ -7,54 +7,134 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
-import { getSupabaseClient } from '../../lib/supabase';
+import { Q } from '@nozbe/watermelondb';
+import { database, GameLineup, LeaguePlayer, Player } from '../../db';
+import {
+  addExistingGuestToLineup,
+  createLocalGuest,
+} from '../lineup/local-guest';
+import { useSyncContext } from '../../providers/SyncProvider';
 
 interface GuestPlayerModalProps {
   visible: boolean;
   gameId: string;
   teamId: string;
+  /** Active league id (from useLeagueContext); null skips pool registration and hides the pool tab. */
+  leagueId: string | null;
   defaultCountTowardStats: boolean;
   /** Cap from the league's lineup.maxBatters (or 9 if expanded lineups are off). */
   maxBatters: number;
   onClose: () => void;
-  onAdded: () => void;
+}
+
+interface PoolCandidate {
+  playerRemoteId: string;
+  name: string;
+  jerseyNumber: number | undefined;
+  isGuestOnly: boolean;
 }
 
 /**
- * Minimal v1 mobile guest-player flow: ad-hoc new guest only.
- *
- * Creates a `players` row with `team_id=null, is_guest_only=true`, links the
- * player to the team's league via `league_players`, and inserts a guest
- * lineup row at the next available batting-order slot. The search-from-
- * history flow (mirroring the web picker tabs) is intentionally deferred to
- * a follow-up to keep the in-game UX simple.
+ * Offline-first guest-player flow. Two tabs:
+ *  - "New guest": creates a guest-only identity + lineup row + league-pool
+ *    registration locally (createLocalGuest); the sync engine pushes them
+ *    when connectivity returns.
+ *  - "League pool": picks from the locally synced league_players registry
+ *    (players from any team who have appeared in the league).
  */
 export function GuestPlayerModal({
   visible,
   gameId,
   teamId,
+  leagueId,
   defaultCountTowardStats,
   maxBatters,
   onClose,
-  onAdded,
 }: GuestPlayerModalProps) {
+  const { triggerSync } = useSyncContext();
+  const [tab, setTab] = useState<'new' | 'pool'>('new');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [jerseyNumber, setJerseyNumber] = useState('');
   const [countTowardStats, setCountTowardStats] = useState(defaultCountTowardStats);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [poolSearch, setPoolSearch] = useState('');
+  const [poolCandidates, setPoolCandidates] = useState<PoolCandidate[]>([]);
+  const [poolLoading, setPoolLoading] = useState(false);
 
   function reset() {
+    setTab('new');
     setFirstName('');
     setLastName('');
     setJerseyNumber('');
     setCountTowardStats(defaultCountTowardStats);
     setError(null);
     setSubmitting(false);
+    setPoolSearch('');
   }
 
-  async function handleAdd() {
+  // Load the league guest pool from local data lazily, on first switch to
+  // the pool tab (most opens never leave the new-guest form): league_players
+  // joined (in JS) to players, minus the coach's own roster and anyone
+  // already in this game's lineup.
+  useEffect(() => {
+    if (!visible || tab !== 'pool' || !leagueId) {
+      setPoolCandidates([]);
+      return;
+    }
+    let cancelled = false;
+    setPoolLoading(true);
+    (async () => {
+      try {
+        const registrations = await database
+          .get<LeaguePlayer>('league_players')
+          .query(Q.where('league_id', leagueId))
+          .fetch();
+        if (registrations.length === 0) {
+          if (!cancelled) setPoolCandidates([]);
+          return;
+        }
+        const registeredIds = registrations.map((r) => r.playerRemoteId);
+        const [players, lineupRows] = await Promise.all([
+          database
+            .get<Player>('players')
+            .query(Q.where('remote_id', Q.oneOf(registeredIds)), Q.where('is_active', true))
+            .fetch(),
+          database
+            .get<GameLineup>('game_lineups')
+            .query(Q.where('game_remote_id', gameId))
+            .fetch(),
+        ]);
+        const inLineup = new Set(lineupRows.map((row) => row.playerRemoteId));
+        if (cancelled) return;
+        setPoolCandidates(
+          players
+            .filter((p) => p.teamId !== teamId && !inLineup.has(p.remoteId))
+            .map((p) => ({
+              playerRemoteId: p.remoteId,
+              name: p.fullName,
+              jerseyNumber: p.jerseyNumber,
+              isGuestOnly: p.isGuestOnly,
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        );
+      } catch (err) {
+        console.warn(`[guest-modal] league pool load failed league=${leagueId} game=${gameId}:`, err);
+        if (!cancelled) {
+          setPoolCandidates([]);
+          setError('Could not load league players on this device. Try again.');
+        }
+      } finally {
+        if (!cancelled) setPoolLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, tab, leagueId, gameId, teamId]);
+
+  async function handleAddNew() {
     const trimmedFirst = firstName.trim();
     const trimmedLast = lastName.trim();
     if (!trimmedFirst || !trimmedLast) {
@@ -63,124 +143,64 @@ export function GuestPlayerModal({
     }
     setSubmitting(true);
     setError(null);
-
-    const supabase = getSupabaseClient();
-
     try {
-      // 1. Pick the next batting_order slot and enforce the league cap. We
-      //    rely on the (game_id, batting_order) unique constraint as the
-      //    final-line race guard: two concurrent adds will both try the
-      //    same slot and the second will get a 23505, which we surface
-      //    cleanly to the coach.
-      const { data: maxRow, error: maxErr } = await supabase
-        .from('game_lineups')
-        .select('batting_order')
-        .eq('game_id', gameId)
-        .not('batting_order', 'is', null)
-        .order('batting_order', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (maxErr) {
-        console.warn(
-          `[guest-modal] batting_order lookup failed game=${gameId}: ${maxErr.message}`,
-        );
-        setError('Could not load current lineup. Try again.');
-        return;
-      }
-      const nextOrder = ((maxRow?.batting_order as number | null) ?? 0) + 1;
-      if (nextOrder > maxBatters) {
-        setError(`Lineup is already at the league cap (${maxBatters}).`);
-        return;
-      }
-
-      // 2. Create the guest-only player identity.
       const parsedJersey = jerseyNumber.trim() === '' ? null : Number.parseInt(jerseyNumber, 10);
-      const { data: newPlayer, error: playerErr } = await supabase
-        .from('players')
-        .insert({
-          team_id: null,
-          first_name: trimmedFirst,
-          last_name: trimmedLast,
-          jersey_number: Number.isFinite(parsedJersey ?? NaN) ? parsedJersey : null,
-          is_guest_only: true,
-          is_active: true,
-        })
-        .select('id')
-        .single();
-      if (playerErr || !newPlayer) {
-        console.warn(
-          `[guest-modal] players insert failed game=${gameId} team=${teamId}: ${playerErr?.message ?? 'no row'}`,
-        );
-        setError(playerErr?.message ?? 'Could not create the guest player.');
-        return;
-      }
-
-      // 3. Insert the guest lineup row.
-      const { error: lineupErr } = await supabase.from('game_lineups').insert({
-        game_id: gameId,
-        player_id: newPlayer.id,
-        batting_order: nextOrder,
-        is_guest: true,
-        guest_display_name: `${trimmedFirst} ${trimmedLast}`,
-        count_toward_stats: countTowardStats,
-        is_starter: false,
+      const result = await createLocalGuest({
+        gameRemoteId: gameId,
+        leagueId,
+        firstName: trimmedFirst,
+        lastName: trimmedLast,
+        jerseyNumber: Number.isFinite(parsedJersey ?? NaN) ? parsedJersey : null,
+        countTowardStats,
+        maxBatters,
       });
-      if (lineupErr) {
-        console.warn(
-          `[guest-modal] game_lineups insert failed game=${gameId} player=${newPlayer.id}: ${lineupErr.message}`,
-        );
-        // Best-effort cleanup of the orphaned player row — log if it fails
-        // so we can spot dangling guest identities.
-        const { error: cleanupErr } = await supabase
-          .from('players')
-          .delete()
-          .eq('id', newPlayer.id);
-        if (cleanupErr) {
-          console.warn(
-            `[guest-modal] orphan cleanup failed player=${newPlayer.id}: ${cleanupErr.message}`,
-          );
-        }
-        setError(
-          lineupErr.code === '23505'
-            ? 'Another batter just took that slot — try again.'
-            : 'Could not add the guest to the lineup.',
-        );
+      if (!result.ok) {
+        setError(result.message);
         return;
       }
-
-      // 4. Register the guest in the team's league pool (best-effort).
-      const { data: membership, error: membershipErr } = await supabase
-        .from('league_members')
-        .select('league_id')
-        .eq('team_id', teamId)
-        .eq('is_active', true)
-        .limit(1)
-        .maybeSingle();
-      if (membershipErr) {
-        console.warn(
-          `[guest-modal] league_members lookup failed team=${teamId}: ${membershipErr.message}`,
-        );
-      } else if (membership?.league_id) {
-        const { error: upsertErr } = await supabase
-          .from('league_players')
-          .upsert(
-            { league_id: membership.league_id, player_id: newPlayer.id },
-            { onConflict: 'league_id,player_id', ignoreDuplicates: true },
-          );
-        if (upsertErr) {
-          console.warn(
-            `[guest-modal] league_players upsert failed league=${membership.league_id} player=${newPlayer.id}: ${upsertErr.message}`,
-          );
-        }
-      }
-
+      triggerSync().catch(console.warn);
       reset();
-      onAdded();
       onClose();
+    } catch (err) {
+      console.warn(`[guest-modal] local guest create failed game=${gameId} team=${teamId}:`, err);
+      setError('Could not save the guest on this device. Try again.');
     } finally {
       setSubmitting(false);
     }
   }
+
+  async function handleAddExisting(candidate: PoolCandidate) {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await addExistingGuestToLineup({
+        gameRemoteId: gameId,
+        playerRemoteId: candidate.playerRemoteId,
+        countTowardStats,
+        maxBatters,
+      });
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      triggerSync().catch(console.warn);
+      reset();
+      onClose();
+    } catch (err) {
+      console.warn(
+        `[guest-modal] pool guest add failed game=${gameId} player=${candidate.playerRemoteId}:`,
+        err,
+      );
+      setError('Could not add the guest on this device. Try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const normalizedPoolSearch = poolSearch.trim().toLowerCase();
+  const filteredPool = normalizedPoolSearch
+    ? poolCandidates.filter((c) => c.name.toLowerCase().includes(normalizedPoolSearch))
+    : poolCandidates;
 
   return (
     <Modal
@@ -197,10 +217,33 @@ export function GuestPlayerModal({
       <View className="flex-1 justify-end bg-black/50">
         <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '85%' }}>
           <Text className="text-lg font-bold text-gray-900 mb-1">Add Guest Player</Text>
-          <Text className="text-sm text-gray-500 mb-4">
-            Adds a non-roster batter to the end of the order. They'll be saved
-            to this league's guest pool for next game.
+          <Text className="text-sm text-gray-500 mb-3">
+            Adds a non-roster batter to the end of the order. Saved offline and
+            synced when you're back online.
           </Text>
+
+          {leagueId && (
+            <View className="flex-row mb-4 bg-gray-100 rounded-lg p-1">
+              <TouchableOpacity
+                onPress={() => setTab('new')}
+                disabled={submitting}
+                className={`flex-1 rounded-md py-1.5 items-center ${tab === 'new' ? 'bg-white' : ''}`}
+              >
+                <Text className={`text-sm font-semibold ${tab === 'new' ? 'text-gray-900' : 'text-gray-500'}`}>
+                  New guest
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setTab('pool')}
+                disabled={submitting}
+                className={`flex-1 rounded-md py-1.5 items-center ${tab === 'pool' ? 'bg-white' : ''}`}
+              >
+                <Text className={`text-sm font-semibold ${tab === 'pool' ? 'text-gray-900' : 'text-gray-500'}`}>
+                  League pool
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           <ScrollView keyboardShouldPersistTaps="handled">
             {error && (
@@ -209,40 +252,84 @@ export function GuestPlayerModal({
               </View>
             )}
 
-            <View className="flex-row gap-3 mb-3">
-              <View className="flex-1">
-                <Text className="text-xs font-medium text-gray-500 mb-1">First name</Text>
-                <TextInput
-                  value={firstName}
-                  onChangeText={setFirstName}
-                  placeholder="First"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
-                  editable={!submitting}
-                />
-              </View>
-              <View className="flex-1">
-                <Text className="text-xs font-medium text-gray-500 mb-1">Last name</Text>
-                <TextInput
-                  value={lastName}
-                  onChangeText={setLastName}
-                  placeholder="Last"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
-                  editable={!submitting}
-                />
-              </View>
-            </View>
+            {tab === 'new' ? (
+              <>
+                <View className="flex-row gap-3 mb-3">
+                  <View className="flex-1">
+                    <Text className="text-xs font-medium text-gray-500 mb-1">First name</Text>
+                    <TextInput
+                      value={firstName}
+                      onChangeText={setFirstName}
+                      placeholder="First"
+                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
+                      editable={!submitting}
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-xs font-medium text-gray-500 mb-1">Last name</Text>
+                    <TextInput
+                      value={lastName}
+                      onChangeText={setLastName}
+                      placeholder="Last"
+                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
+                      editable={!submitting}
+                    />
+                  </View>
+                </View>
 
-            <View className="mb-4 w-32">
-              <Text className="text-xs font-medium text-gray-500 mb-1">Jersey # (optional)</Text>
-              <TextInput
-                value={jerseyNumber}
-                onChangeText={setJerseyNumber}
-                keyboardType="number-pad"
-                placeholder="##"
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
-                editable={!submitting}
-              />
-            </View>
+                <View className="mb-4 w-32">
+                  <Text className="text-xs font-medium text-gray-500 mb-1">Jersey # (optional)</Text>
+                  <TextInput
+                    value={jerseyNumber}
+                    onChangeText={setJerseyNumber}
+                    keyboardType="number-pad"
+                    placeholder="##"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
+                    editable={!submitting}
+                  />
+                </View>
+              </>
+            ) : (
+              <>
+                <TextInput
+                  value={poolSearch}
+                  onChangeText={setPoolSearch}
+                  placeholder="Search league players…"
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 mb-3"
+                  editable={!submitting}
+                />
+                {poolLoading ? (
+                  <Text className="text-sm text-gray-500 mb-4">Loading league players…</Text>
+                ) : filteredPool.length === 0 ? (
+                  <Text className="text-sm text-gray-500 mb-4">
+                    {poolCandidates.length === 0
+                      ? 'No league players synced yet.'
+                      : 'No matches.'}
+                  </Text>
+                ) : (
+                  <View className="mb-4" style={{ maxHeight: 240 }}>
+                    <ScrollView nestedScrollEnabled>
+                      {filteredPool.map((candidate) => (
+                        <TouchableOpacity
+                          key={candidate.playerRemoteId}
+                          onPress={() => handleAddExisting(candidate)}
+                          disabled={submitting}
+                          className="flex-row items-center justify-between border-b border-gray-100 py-2.5"
+                        >
+                          <Text className="text-sm text-gray-900">
+                            {candidate.name}
+                            {candidate.jerseyNumber != null ? `  #${candidate.jerseyNumber}` : ''}
+                          </Text>
+                          <Text className="text-xs text-gray-400">
+                            {candidate.isGuestOnly ? 'Guest pool' : 'Other team'}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </>
+            )}
 
             <TouchableOpacity
               onPress={() => setCountTowardStats((v) => !v)}
@@ -270,19 +357,21 @@ export function GuestPlayerModal({
               >
                 <Text className="text-gray-700 font-semibold">Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleAdd}
-                disabled={submitting || !firstName.trim() || !lastName.trim()}
-                className={`flex-1 rounded-xl px-5 py-3 items-center ${
-                  submitting || !firstName.trim() || !lastName.trim()
-                    ? 'bg-emerald-300'
-                    : 'bg-emerald-600'
-                }`}
-              >
-                <Text className="text-white font-semibold">
-                  {submitting ? 'Adding…' : 'Add Guest'}
-                </Text>
-              </TouchableOpacity>
+              {tab === 'new' && (
+                <TouchableOpacity
+                  onPress={handleAddNew}
+                  disabled={submitting || !firstName.trim() || !lastName.trim()}
+                  className={`flex-1 rounded-xl px-5 py-3 items-center ${
+                    submitting || !firstName.trim() || !lastName.trim()
+                      ? 'bg-emerald-300'
+                      : 'bg-emerald-600'
+                  }`}
+                >
+                  <Text className="text-white font-semibold">
+                    {submitting ? 'Adding…' : 'Add Guest'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </ScrollView>
         </View>

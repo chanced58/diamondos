@@ -4,7 +4,7 @@ export class Player extends Model {
   static table = 'players';
 
   @field('remote_id') remoteId!: string;
-  @field('team_id') teamId!: string;
+  @field('team_id') teamId!: string | undefined; // undefined for guest-only identities
   @field('first_name') firstName!: string;
   @field('last_name') lastName!: string;
   @field('jersey_number') jerseyNumber!: number | undefined;
@@ -12,6 +12,7 @@ export class Player extends Model {
   @field('bats') bats!: string | undefined;
   @field('throws') throws!: string | undefined;
   @field('is_active') isActive!: boolean;
+  @field('is_guest_only') isGuestOnly!: boolean;
   @field('synced_at') syncedAt!: number | undefined;
 
   get fullName() {

@@ -60,6 +60,19 @@ function GamesList({ games }: GamesListProps) {
               </Text>
             </View>
           )}
+          {game.status !== 'cancelled' && (
+            <TouchableOpacity
+              onPress={() =>
+                router.push({
+                  pathname: '/(tabs)/games/[gameId]/lineup',
+                  params: { gameId: game.remoteId },
+                })
+              }
+              className="mt-3 self-start px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200"
+            >
+              <Text className="text-xs font-semibold text-gray-700">Lineup</Text>
+            </TouchableOpacity>
+          )}
         </TouchableOpacity>
       )}
     />
