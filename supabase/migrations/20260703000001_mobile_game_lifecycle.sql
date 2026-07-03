@@ -46,5 +46,12 @@ $$;
 alter function public.fn_start_game(uuid)
   set search_path = public, pg_temp;
 
+-- Least privilege: the internal role check already rejects anon/non-coaches,
+-- but narrow the exposed RPC surface so only authenticated clients can call it.
+-- Supabase pre-grants EXECUTE to anon directly (not only via PUBLIC), so revoke
+-- from both.
+revoke all on function public.fn_start_game(uuid) from public, anon;
+grant execute on function public.fn_start_game(uuid) to authenticated;
+
 comment on function public.fn_start_game(uuid) is
   'Coach-authorized scheduled → in_progress transition, called by the mobile sync engine when a locally recorded game_start event reaches the server.';

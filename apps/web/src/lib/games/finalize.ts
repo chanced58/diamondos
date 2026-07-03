@@ -15,7 +15,9 @@ export async function getAuthorizedCoach(supabase: SupabaseClient, userId: strin
     .select('team_id, opponent_name, opponent_team_id, scheduled_at, status, location_type, neutral_home_team')
     .eq('id', gameId)
     .single();
-  if (!game) return { error: 'Game not found.' };
+  // `code` lets callers branch on the failure kind (e.g. 404 vs 403) without
+  // matching on the human-readable message text.
+  if (!game) return { error: 'Game not found.', code: 'not_found' as const };
 
   // Check platform admin first (they have full access to every team)
   const { data: profile } = await supabase
@@ -35,7 +37,7 @@ export async function getAuthorizedCoach(supabase: SupabaseClient, userId: strin
     .single();
 
   if (!membership || !COACH_ROLES.includes(membership.role)) {
-    return { error: 'Only coaches can perform this action.' };
+    return { error: 'Only coaches can perform this action.', code: 'forbidden' as const };
   }
 
   return { game };

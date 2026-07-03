@@ -100,7 +100,6 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         triggerSync();
       }
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Sync on sign-in — a fresh login on a new device should hydrate
@@ -117,7 +116,6 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       });
     });
     return () => subscription.unsubscribe();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Sync when the app returns to the foreground — locking the phone
@@ -133,7 +131,6 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       });
     });
     return () => subscription.remove();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Sync when network is restored after being offline
@@ -149,7 +146,6 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     });
 
     return unsubscribe;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Periodic sync every 30 seconds when app is active
@@ -163,7 +159,6 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     }, 30_000);
 
     return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

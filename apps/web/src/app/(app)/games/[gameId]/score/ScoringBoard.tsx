@@ -758,7 +758,13 @@ export function ScoringBoard({
       } else if (etype === 'event_voided') {
         const p = (row.payload ?? {}) as Record<string, unknown>;
         const voidedId = p.voidedEventId as string | undefined;
-        const idx = voidedId ? result.findIndex((r) => (r.id as string) === voidedId) : -1;
+        let idx = voidedId ? result.findIndex((r) => (r.id as string) === voidedId) : -1;
+        // Fall back to the sequence number (mirrors the shared filter) so a
+        // voided play is removed even when the id is missing or differs.
+        if (idx === -1 && typeof p.voidedSequenceNumber === 'number') {
+          const voidedSeq = p.voidedSequenceNumber;
+          idx = result.findIndex((r) => (r.sequence_number as number) === voidedSeq);
+        }
         if (idx !== -1) result.splice(idx, 1);
         // The event_voided marker itself is NOT added to the result
       } else {

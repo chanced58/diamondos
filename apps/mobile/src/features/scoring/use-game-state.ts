@@ -62,11 +62,14 @@ export function useGameState(gameRemoteId: string, homeTeamId: string) {
         // line score stays consistent with `gameState`.
         const lineScoreRows = filterResetAndReverted(
           events.map((e) => ({
+            // id lets filterResetAndReverted match EVENT_VOIDED by
+            // voidedEventId; sequence_number is the fallback the filter uses
+            // when a row carries no id.
+            id: e.remoteId || e.id,
             event_type: e.eventType,
             inning: e.inning,
             is_top_of_inning: e.isTopOfInning,
             payload: e.payload,
-            // Sequence number drives the EVENT_VOIDED back-reference.
             sequence_number: e.sequenceNumber,
           })),
         );

@@ -63,8 +63,15 @@ export function applyPitchReverted(events: Record<string, unknown>[]): Record<st
       ));
     } else if (etype === 'event_voided') {
       const payload = (event.payload ?? {}) as Record<string, unknown>;
-      const voidedId = payload.voidedEventId as string;
-      const idx = result.findIndex((e) => (e.id as string) === voidedId);
+      const voidedId = payload.voidedEventId as string | undefined;
+      let idx = voidedId ? result.findIndex((e) => (e.id as string) === voidedId) : -1;
+      // Fall back to the sequence number when the rows carry no id — mobile's
+      // line-score rows omit id, so an id-only match would leave voided plays
+      // in the line score and the mercy/run-cap advisories.
+      if (idx === -1 && typeof payload.voidedSequenceNumber === 'number') {
+        const voidedSeq = payload.voidedSequenceNumber;
+        idx = result.findIndex((e) => (e.sequence_number as number) === voidedSeq);
+      }
       if (idx !== -1) result.splice(idx, 1);
     } else {
       result.push(event);

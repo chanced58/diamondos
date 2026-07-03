@@ -61,6 +61,11 @@ export default function ScoringScreen() {
   }, [gameId]);
   const teamId = game?.teamId ?? (teamIdParam as string);
   const isHome = game ? weAreHome(game.locationType, game.neutralHomeTeam ?? null) : true;
+  // ScoreBoard maps teamName→homeScore and opponentName→awayScore, so the
+  // labels must be the actual home/away teams, not our-team/opponent — for a
+  // road game those are swapped.
+  const homeLabel = isHome ? (teamName as string) : (opponentName as string);
+  const awayLabel = isHome ? (opponentName as string) : (teamName as string);
 
   const { gameState, lineScore, events, loading } = useGameState(gameId, teamId);
   const { recordEvent } = useRecordEvent(gameId);
@@ -617,6 +622,7 @@ export default function ScoringScreen() {
     // game can't seed the home* lineup slots by mistake.
     if (!game) {
       console.warn(`handleStartGame: game row not loaded yet game=${gameId}`);
+      Alert.alert('Game still loading', 'Try again once the local game record has loaded.');
       return;
     }
     // Which team are we scoring? `isHome` comes from the resolved Game row's
@@ -1030,8 +1036,6 @@ export default function ScoringScreen() {
     const inningCount = lineScore
       ? Math.max(lineScore.awayRunsByInning.length, lineScore.homeRunsByInning.length)
       : 0;
-    const awayLabel = isHome ? (opponentName as string) : (teamName as string);
-    const homeLabel = isHome ? (teamName as string) : (opponentName as string);
     const lineRow = (
       label: string,
       runsByInning: number[],
@@ -1060,8 +1064,8 @@ export default function ScoringScreen() {
         <Stack.Screen options={{ title: `vs ${opponentName}`, headerShown: true }} />
         <ScoreBoard
           gameState={gameState}
-          opponentName={opponentName as string}
-          teamName={teamName as string}
+          opponentName={awayLabel}
+          teamName={homeLabel}
         />
         <View className="items-center pt-6 pb-2">
           <View className="px-3 py-1 rounded-full bg-gray-900">
@@ -1108,8 +1112,8 @@ export default function ScoringScreen() {
       {/* Top: scoreboard */}
       <ScoreBoard
         gameState={gameState}
-        opponentName={opponentName as string}
-        teamName={teamName as string}
+        opponentName={awayLabel}
+        teamName={homeLabel}
       />
 
       {/* League-rule advisories (mercy / run cap / regulation complete) */}

@@ -127,6 +127,15 @@ export async function syncWithSupabase(): Promise<void> {
   // phases can share one snapshot).
   let dirtyLineupState: Awaited<ReturnType<typeof getDirtyLineupState>> | null = null;
 
+  // Whether game_events reached the server this cycle. Set inside pushChanges
+  // after the game_events upsert succeeds — used so lifecycle reconciliation
+  // still runs when a LATER deferred step (lineup/guest) fails the cycle, but
+  // NOT when the event push itself failed (which would risk finalizing a game
+  // whose events are not yet on the server).
+  let eventsPushed = false;
+  let syncOk = false;
+
+  try {
   await synchronize({
     database,
 
@@ -348,6 +357,10 @@ export async function syncWithSupabase(): Promise<void> {
             }
             throw error;
           }
+          // Parseable events (incl. game_start/game_end, whose payloads are
+          // always parseable) are now committed server-side, even if the
+          // skipped-payload guard below throws for other rows.
+          eventsPushed = true;
         }
 
         // If any rows were skipped due to unparseable payloads, fail the
@@ -475,6 +488,7 @@ export async function syncWithSupabase(): Promise<void> {
     sendCreatedAsUpdated: false,
     migrationsEnabledAtVersion: 1,
   });
+  syncOk = true;
 
   // Converge games whose lineup push deferred to the server (LWW skip).
   // WatermelonDB marked their local rows synced, so replace them with the
@@ -499,15 +513,21 @@ export async function syncWithSupabase(): Promise<void> {
       }
     }
   }
-
-  // Reconcile game lifecycle transitions (scheduled → in_progress →
-  // completed) against the server. Events are pushed FIRST in this same
-  // cycle, so the server already has the game_start / game_end rows this
-  // scan keys off. Never throws — a failed transition retries next cycle.
-  try {
-    await reconcileGameLifecycle(supabase);
-  } catch (err) {
-    console.warn('sync: game lifecycle reconciliation failed; will retry', err);
+  } finally {
+    // Reconcile game lifecycle transitions (scheduled → in_progress →
+    // completed) against the server. Runs when the cycle succeeded OR when the
+    // event push reached the server but a later deferred step (lineup/guest)
+    // failed the cycle — game_events are pushed first, so a lineup error must
+    // not starve start/finalize. Skipped only when the event push itself
+    // failed (eventsPushed false and the cycle threw), so a game is never
+    // finalized before its events reach the server. Never throws.
+    if (syncOk || eventsPushed) {
+      try {
+        await reconcileGameLifecycle(supabase);
+      } catch (err) {
+        console.warn('sync: game lifecycle reconciliation failed; will retry', err);
+      }
+    }
   }
 }
 

@@ -58,7 +58,9 @@ export function filterVoidedAndRevertedEvents(events: GameEvent[]): GameEvent[] 
 export function deriveGameState(
   gameId: string,
   events: GameEvent[],
-  homeTeamId: string,
+  // Home/away is derived from isTopOfInning, not the team id — kept for a
+  // stable call signature across web/mobile callers.
+  _homeTeamId: string,
 ): LiveGameState {
   const activeEvents = filterVoidedAndRevertedEvents(events);
   const runnerOverridesByParentId = buildRunnerOverrideMap(activeEvents);

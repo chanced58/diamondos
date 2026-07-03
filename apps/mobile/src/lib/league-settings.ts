@@ -227,7 +227,12 @@ export function useLeagueContext(teamId: string | undefined): LeagueContext {
         console.warn(
           `[league-settings] pitch_compliance_rules lookup failed team=${teamId} rule=${ruleId}: ${ruleErr.message}`,
         );
-        return; // keep cached rule
+        // refreshed=true above suppresses the mount cache seed, so read the
+        // cached rule back here — otherwise a failed refresh leaves pitchRule
+        // null even when a valid cached rule exists.
+        const cached = await readPitchRuleCache(teamId);
+        if (!cancelled) setPitchRule(cached);
+        return;
       }
       const rule: PitchComplianceRule | null = ruleRow
         ? {
