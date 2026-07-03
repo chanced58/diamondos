@@ -372,6 +372,10 @@ export async function syncWithSupabase(): Promise<void> {
       // 2. Guest players created offline. Mobile only ever creates guest-only
       // identities; filter defensively so a pulled roster row can never leak
       // into an insert. Client UUID becomes the server PK, like game_events.
+      // No ignoreDuplicates: a retried cycle may carry newer name/jersey
+      // values on a still-'created' row (e.g. the coach edited the guest
+      // after an earlier push inserted it but the cycle later failed) — the
+      // conflict path must merge, not no-op, or the edit is silently lost.
       const createdGuests = (tableChanges.players?.created ?? []).filter(
         (p) => p.is_guest_only === true,
       );
@@ -386,7 +390,7 @@ export async function syncWithSupabase(): Promise<void> {
             is_guest_only: true,
             is_active: true,
           })),
-          { onConflict: 'id', ignoreDuplicates: true },
+          { onConflict: 'id' },
         );
         if (error) deferredErrors.push(`guest players upsert: ${error.message}`);
       }
@@ -474,9 +478,12 @@ export async function syncWithSupabase(): Promise<void> {
 
   // Converge games whose lineup push deferred to the server (LWW skip).
   // WatermelonDB marked their local rows synced, so replace them with the
-  // server rows here. Never throw, but track failures in
-  // pendingSnapshotGames — the rows carry no dirty marker anymore, so
-  // without the retry set a failed convergence would never be reattempted.
+  // server rows here. Never throw. On failure, re-dirty the game's local
+  // rows so the retry survives app restarts via WDB's own _status markers
+  // (re-dirtied rows re-enter the push path: LWW skips against the newer
+  // server again → snapshot retried; in-progress games push mobile-wins,
+  // which is the policy anyway). The in-memory pendingSnapshotGames set
+  // covers the corner where the game has no local rows to re-dirty.
   const snapshotGames = new Set([...skippedLineupGames, ...pendingSnapshotGames]);
   for (const gameRemoteId of snapshotGames) {
     try {
@@ -485,8 +492,38 @@ export async function syncWithSupabase(): Promise<void> {
     } catch (err) {
       pendingSnapshotGames.add(gameRemoteId);
       console.warn('sync: failed to apply server lineup snapshot; will retry', gameRemoteId, err);
+      try {
+        await redirtyLineupRows(gameRemoteId);
+      } catch (redirtyErr) {
+        console.warn('sync: failed to re-dirty lineup rows', gameRemoteId, redirtyErr);
+      }
     }
   }
+}
+
+/**
+ * Mark a game's synced local lineup rows as locally modified so a failed
+ * server-snapshot convergence is retried on future cycles even across app
+ * restarts (the in-memory retry set alone would be lost).
+ */
+async function redirtyLineupRows(gameRemoteId: string): Promise<void> {
+  const rows = await database
+    .get<GameLineup>('game_lineups')
+    .query(Q.where('game_remote_id', gameRemoteId))
+    .fetch();
+  const syncedRows = rows.filter((row) => row.syncStatus === 'synced');
+  if (syncedRows.length === 0) return;
+  await database.write(async () => {
+    await database.batch(
+      ...syncedRows.map((row) =>
+        row.prepareUpdate((r) => {
+          // Raw escape hatch: flip the sync status without changing values,
+          // so the row re-enters the dirty set the push path scans.
+          r._raw._status = 'updated';
+        }),
+      ),
+    );
+  });
 }
 
 // ─── mapping helpers ─────────────────────────────────────────────────────────

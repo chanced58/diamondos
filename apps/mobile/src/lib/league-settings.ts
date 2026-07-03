@@ -98,6 +98,10 @@ export function useLeagueContext(teamId: string | undefined): LeagueContext {
       setLeagueId(null);
       return;
     }
+    // Reset before seeding the new team so a previous team's league can't
+    // leak into callers (e.g. guest registration) while the cache resolves.
+    setSettings(defaultLeagueScoringSettings());
+    setLeagueId(null);
     let cancelled = false;
     // Guards the cache seeds against racing the network refresh: SecureStore
     // resolving late must not clobber fresher Supabase-derived state.

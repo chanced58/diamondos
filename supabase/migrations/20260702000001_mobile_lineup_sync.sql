@@ -172,6 +172,7 @@ create policy "coaches_insert_guest_only_players"
     and is_guest_only = true
     and user_id is null
     and email is null
+    and phone is null
     and date_of_birth is null
     and notes is null
     and graduation_year is null
@@ -196,6 +197,7 @@ create policy "coaches_update_guest_only_players"
     and team_id is null
     and user_id is null
     and email is null
+    and phone is null
     and date_of_birth is null
     and notes is null
     and graduation_year is null

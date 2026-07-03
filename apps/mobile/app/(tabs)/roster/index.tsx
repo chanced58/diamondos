@@ -59,12 +59,18 @@ export default function RosterScreen() {
       .get<Game>('games')
       .query()
       .observe()
-      .subscribe((games) => setGameTeamIds([...new Set(games.map((g) => g.teamId))]));
+      .subscribe({
+        next: (games) => setGameTeamIds([...new Set(games.map((g) => g.teamId))]),
+        error: (err) => console.warn('[roster] games observe failed:', err),
+      });
     const channelsSubscription = database
       .get<Channel>('channels')
       .query()
       .observe()
-      .subscribe((channels) => setChannelTeamIds([...new Set(channels.map((c) => c.teamId))]));
+      .subscribe({
+        next: (channels) => setChannelTeamIds([...new Set(channels.map((c) => c.teamId))]),
+        error: (err) => console.warn('[roster] channels observe failed:', err),
+      });
     return () => {
       gamesSubscription.unsubscribe();
       channelsSubscription.unsubscribe();
@@ -89,7 +95,10 @@ export default function RosterScreen() {
         Q.sortBy('last_name', Q.asc),
       )
       .observe()
-      .subscribe(setPlayers);
+      .subscribe({
+        next: setPlayers,
+        error: (err) => console.warn(`[roster] players observe failed teams=${teamIdsKey}:`, err),
+      });
     return () => subscription.unsubscribe();
   }, [teamIdsKey]);
 

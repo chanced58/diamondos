@@ -47,13 +47,20 @@ export default function LineupScreen() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const matches = await database
-        .get<Game>('games')
-        .query(Q.where('remote_id', gameId))
-        .fetch();
-      if (cancelled) return;
-      setGame(matches[0] ?? null);
-      setGameLoaded(true);
+      try {
+        const matches = await database
+          .get<Game>('games')
+          .query(Q.where('remote_id', gameId))
+          .fetch();
+        if (cancelled) return;
+        setGame(matches[0] ?? null);
+      } catch (err) {
+        console.warn(`Lineup game lookup failed game=${gameId}:`, err);
+      } finally {
+        // Always resolve the loading state so the "not synced" fallback can
+        // render instead of spinning forever on a lookup failure.
+        if (!cancelled) setGameLoaded(true);
+      }
     })();
     return () => {
       cancelled = true;

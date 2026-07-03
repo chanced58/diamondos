@@ -119,6 +119,12 @@ export function GuestPlayerModal({
             }))
             .sort((a, b) => a.name.localeCompare(b.name)),
         );
+      } catch (err) {
+        console.warn(`[guest-modal] league pool load failed league=${leagueId} game=${gameId}:`, err);
+        if (!cancelled) {
+          setPoolCandidates([]);
+          setError('Could not load league players on this device. Try again.');
+        }
       } finally {
         if (!cancelled) setPoolLoading(false);
       }
