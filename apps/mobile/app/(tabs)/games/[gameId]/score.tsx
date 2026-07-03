@@ -592,6 +592,19 @@ export default function ScoringScreen() {
       ? { homeLineupPitcherId: pitcherId, homeLeadoffBatterId: batterId }
       : { awayLineupPitcherId: pitcherId, awayLeadoffBatterId: batterId };
     await recordEvent(EventType.GAME_START, gameState.inning, gameState.isTopOfInning, payload);
+    // Reflect the transition locally right away (list badge); the server
+    // flips via fn_start_game in the sync engine's lifecycle scan.
+    if (game && game.status === 'scheduled') {
+      try {
+        await database.write(async () => {
+          await game.update((g) => {
+            g.status = 'in_progress';
+          });
+        });
+      } catch (err) {
+        console.warn(`Start Game local status write failed game=${gameId}:`, err);
+      }
+    }
     setShowLineupModal(false);
   }
 
@@ -977,6 +990,83 @@ export default function ScoringScreen() {
     return <LoadingSpinner fullScreen />;
   }
 
+  // Read-only Final view — event-sourced (gameState.isFinal from GAME_END)
+  // with the pulled games row as a fallback for games completed elsewhere.
+  if (gameState.isFinal || game?.status === 'completed') {
+    const inningCount = lineScore
+      ? Math.max(lineScore.awayRunsByInning.length, lineScore.homeRunsByInning.length)
+      : 0;
+    const awayLabel = isHome ? (opponentName as string) : (teamName as string);
+    const homeLabel = isHome ? (teamName as string) : (opponentName as string);
+    const lineRow = (
+      label: string,
+      runsByInning: number[],
+      runs: number,
+      hits: number,
+      errors: number,
+      isLast: boolean,
+    ) => (
+      <View className={`flex-row ${isLast ? '' : 'border-b border-gray-100'}`}>
+        <Text className="w-24 px-2 py-1.5 text-xs font-semibold text-gray-700" numberOfLines={1}>
+          {label}
+        </Text>
+        {Array.from({ length: inningCount }, (_, i) => (
+          <Text key={i} className="w-8 py-1.5 text-center text-xs text-gray-600">
+            {runsByInning[i] ?? '-'}
+          </Text>
+        ))}
+        <Text className="w-8 py-1.5 text-center text-xs font-bold text-gray-900">{runs}</Text>
+        <Text className="w-8 py-1.5 text-center text-xs text-gray-600">{hits}</Text>
+        <Text className="w-8 py-1.5 text-center text-xs text-gray-600">{errors}</Text>
+      </View>
+    );
+
+    return (
+      <View className="flex-1 bg-white">
+        <Stack.Screen options={{ title: `vs ${opponentName}`, headerShown: true }} />
+        <ScoreBoard
+          gameState={gameState}
+          opponentName={opponentName as string}
+          teamName={teamName as string}
+        />
+        <View className="items-center pt-6 pb-2">
+          <View className="px-3 py-1 rounded-full bg-gray-900">
+            <Text className="text-white text-xs font-bold uppercase tracking-wide">Final</Text>
+          </View>
+          {pendingEventsCount > 0 && (
+            <Text className="text-amber-600 text-xs mt-2">
+              Result finalizes automatically when the device is back online.
+            </Text>
+          )}
+        </View>
+        {lineScore && (
+          <View className="mx-4 mt-3 border border-gray-200 rounded-xl overflow-hidden">
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View>
+                <View className="flex-row bg-gray-50 border-b border-gray-200">
+                  <Text className="w-24 px-2 py-1.5 text-xs font-semibold text-gray-400" />
+                  {Array.from({ length: inningCount }, (_, i) => (
+                    <Text key={i} className="w-8 py-1.5 text-center text-xs font-semibold text-gray-500">
+                      {i + 1}
+                    </Text>
+                  ))}
+                  <Text className="w-8 py-1.5 text-center text-xs font-semibold text-gray-500">R</Text>
+                  <Text className="w-8 py-1.5 text-center text-xs font-semibold text-gray-500">H</Text>
+                  <Text className="w-8 py-1.5 text-center text-xs font-semibold text-gray-500">E</Text>
+                </View>
+                {lineRow(awayLabel, lineScore.awayRunsByInning, lineScore.awayRuns, lineScore.awayHits, lineScore.awayErrors, false)}
+                {lineRow(homeLabel, lineScore.homeRunsByInning, lineScore.homeRuns, lineScore.homeHits, lineScore.homeErrors, true)}
+              </View>
+            </ScrollView>
+          </View>
+        )}
+        <Text className="text-gray-400 text-xs text-center mt-4 px-6">
+          Full box score and player stats are on the web dashboard.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1 bg-white">
       <Stack.Screen options={{ title: `vs ${opponentName}`, headerShown: true }} />
@@ -1122,6 +1212,12 @@ export default function ScoringScreen() {
       <LineupSetupModal
         visible={showLineupModal}
         roster={roster}
+        // Prefill from the saved lineup: slot 1 leads off; the player whose
+        // starting position is pitcher takes the mound.
+        initialBatterId={deriveDueBatter(battingSlots, 0)?.playerId ?? null}
+        initialPitcherId={
+          observedLineupRows.find((row) => row.startingPosition === 'pitcher')?.playerRemoteId ?? null
+        }
         onCancel={() => setShowLineupModal(false)}
         onSubmit={handleStartGame}
       />
@@ -1361,11 +1457,16 @@ function BatterPickerModal({
 function LineupSetupModal({
   visible,
   roster,
+  initialPitcherId = null,
+  initialBatterId = null,
   onCancel,
   onSubmit,
 }: {
   visible: boolean;
   roster: RosterPlayer[];
+  /** Prefill from the saved lineup (position = pitcher / batting slot 1). */
+  initialPitcherId?: string | null;
+  initialBatterId?: string | null;
   onCancel: () => void;
   onSubmit: (pitcherId: string, batterId: string) => void;
 }) {
@@ -1374,10 +1475,10 @@ function LineupSetupModal({
 
   useEffect(() => {
     if (visible) {
-      setPitcherId(null);
-      setBatterId(null);
+      setPitcherId(initialPitcherId);
+      setBatterId(initialBatterId);
     }
-  }, [visible]);
+  }, [visible, initialPitcherId, initialBatterId]);
 
   const submittable = pitcherId !== null && batterId !== null;
 

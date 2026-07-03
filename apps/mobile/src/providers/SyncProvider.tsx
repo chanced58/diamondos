@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { Q } from '@nozbe/watermelondb';
 import { syncWithSupabase } from '../sync/sync-engine';
@@ -28,6 +29,10 @@ export function useSyncContext() {
 
 /**
  * Provides background sync orchestration.
+ * - Triggers an initial sync on mount when online (bootstrap — fresh
+ *   installs / new devices hydrate immediately instead of waiting for the
+ *   30-second interval)
+ * - Triggers sync when the app returns to the foreground
  * - Triggers sync when network becomes available (was offline → online)
  * - Triggers sync every 30 seconds when online and a game is in progress
  * - Exposes a manual triggerSync() for use in the scoring screen after each event
@@ -83,6 +88,52 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       .observeCount()
       .subscribe(setPendingEventsCount);
     return () => subscription.unsubscribe();
+  }, []);
+
+  // Bootstrap sync on mount — a cold start that is already online never
+  // fires the offline→online listener (wasOfflineRef starts false), so a
+  // fresh install / new device would otherwise show empty data for up to
+  // 30 seconds. triggerSync itself no-ops when not authenticated.
+  useEffect(() => {
+    NetInfo.fetch().then((state) => {
+      if (state.isConnected && state.isInternetReachable) {
+        triggerSync();
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync on sign-in — a fresh login on a new device should hydrate
+  // immediately (the mount bootstrap already ran unauthenticated and
+  // no-oped).
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== 'SIGNED_IN') return;
+      NetInfo.fetch().then((state) => {
+        if (state.isConnected && state.isInternetReachable) {
+          triggerSync();
+        }
+      });
+    });
+    return () => subscription.unsubscribe();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync when the app returns to the foreground — locking the phone
+  // mid-game stops the interval; this catches up as soon as the scorer
+  // comes back.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') return;
+      NetInfo.fetch().then((state) => {
+        if (state.isConnected && state.isInternetReachable) {
+          triggerSync();
+        }
+      });
+    });
+    return () => subscription.remove();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Sync when network is restored after being offline

@@ -31,7 +31,10 @@ function GamesList({ games }: GamesListProps) {
         <TouchableOpacity
           className="bg-white rounded-xl border border-gray-200 p-4 mb-3"
           onPress={() => {
-            if (game.status === 'in_progress') {
+            // Scheduled games open in the pre-game state (start the game at
+            // the field), live games in the scoring surface, and completed
+            // games in the read-only Final view.
+            if (['scheduled', 'in_progress', 'completed'].includes(game.status)) {
               router.push({
                 pathname: '/(tabs)/games/[gameId]/score',
                 params: {
@@ -57,6 +60,13 @@ function GamesList({ games }: GamesListProps) {
               <View className="w-2 h-2 rounded-full bg-red-500" />
               <Text className="text-red-600 text-sm font-medium">
                 {game.homeScore}–{game.awayScore} • Inning {game.currentInning}
+              </Text>
+            </View>
+          )}
+          {game.status === 'completed' && (
+            <View className="mt-2 flex-row items-center gap-2">
+              <Text className="text-gray-700 text-sm font-medium">
+                {game.homeScore}–{game.awayScore} • Final
               </Text>
             </View>
           )}
