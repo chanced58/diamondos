@@ -15,16 +15,53 @@ interface RunnerOverrides {
 }
 
 /**
+ * Replay-order filter for correction events, in the camelCase GameEvent
+ * domain (counterpart of applyPitchReverted in event-filters.ts, which
+ * operates on snake_case DB rows). PITCH_REVERTED trims the accumulated
+ * stream back to a sequence number; EVENT_VOIDED removes its target event
+ * (matched by id, falling back to voidedSequenceNumber). The correction
+ * markers themselves never reach the replay loop.
+ */
+export function filterVoidedAndRevertedEvents(events: GameEvent[]): GameEvent[] {
+  const result: GameEvent[] = [];
+  for (const event of events) {
+    if (event.eventType === EventType.PITCH_REVERTED) {
+      const p = event.payload as { revertToSequenceNumber?: number };
+      if (typeof p.revertToSequenceNumber === 'number') {
+        const keepUntilSeq = p.revertToSequenceNumber;
+        // Filter the accumulated result (not the original array) so that
+        // earlier corrections are respected — mirrors applyPitchReverted.
+        result.splice(0, result.length, ...result.filter((r) => r.sequenceNumber <= keepUntilSeq));
+      }
+    } else if (event.eventType === EventType.EVENT_VOIDED) {
+      const p = event.payload as { voidedEventId?: string; voidedSequenceNumber?: number };
+      let idx = p.voidedEventId ? result.findIndex((r) => r.id === p.voidedEventId) : -1;
+      if (idx === -1 && typeof p.voidedSequenceNumber === 'number') {
+        idx = result.findIndex((r) => r.sequenceNumber === p.voidedSequenceNumber);
+      }
+      if (idx !== -1) result.splice(idx, 1);
+    } else {
+      result.push(event);
+    }
+  }
+  return result;
+}
+
+/**
  * Derives the current live game state by replaying a sorted array of GameEvents.
  * This is a pure function — same inputs always produce the same output.
  * Events must be sorted by sequenceNumber ascending before calling.
+ * EVENT_VOIDED / PITCH_REVERTED corrections are applied internally, so
+ * callers may pass the raw event stream (pre-filtered input is also fine —
+ * the filter is idempotent).
  */
 export function deriveGameState(
   gameId: string,
   events: GameEvent[],
   homeTeamId: string,
 ): LiveGameState {
-  const runnerOverridesByParentId = buildRunnerOverrideMap(events);
+  const activeEvents = filterVoidedAndRevertedEvents(events);
+  const runnerOverridesByParentId = buildRunnerOverrideMap(activeEvents);
   const state: LiveGameState = {
     gameId,
     inning: 1,
@@ -42,11 +79,15 @@ export function deriveGameState(
     completedBottomHalfPAs: 0,
     homeLeadoffBatterId: null,
     awayLeadoffBatterId: null,
+    isFinal: false,
+    pitcherPitchCounts: {},
   };
 
-  const pitcherCounts: Record<string, number> = {};
+  // Alias — mutated by PITCH_THROWN below; exposed on the returned state so
+  // consumers (pitch-count compliance UI) can read every pitcher's total.
+  const pitcherCounts = state.pitcherPitchCounts;
 
-  for (const event of events) {
+  for (const event of activeEvents) {
     switch (event.eventType) {
       case EventType.GAME_START: {
         const p = event.payload as {
@@ -440,6 +481,14 @@ export function deriveGameState(
         runners.second = runners.first;
         runners.first  = null;
         state.runnersOnBase = runners;
+        break;
+      }
+
+      case EventType.GAME_END: {
+        // Marks the game final. Scores/runners are left untouched — the
+        // event's payload scores are advisory (the server re-derives finals
+        // from the full log when completing the game).
+        state.isFinal = true;
         break;
       }
     }

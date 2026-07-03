@@ -572,3 +572,185 @@ describe('deriveGameState — runner outcomes linked to a HIT via relatedEventId
     expect(state.runnersOnBase.third).toBe(null);
   });
 });
+
+describe('deriveGameState — EVENT_VOIDED / PITCH_REVERTED filtering', () => {
+  beforeEach(resetSeq);
+
+  const start = () => [
+    e(EventType.GAME_START, {
+      awayLineupPitcherId: 'home-p',
+      homeLineupPitcherId: 'away-p',
+      awayLeadoffBatterId: 'a1',
+      homeLeadoffBatterId: 'h1',
+    }),
+  ];
+
+  /** EVENT_VOIDED marker targeting a previously recorded event. */
+  function voided(target: GameEvent): GameEvent {
+    return e(EventType.EVENT_VOIDED, {
+      voidedEventId: target.id,
+      voidedSequenceNumber: target.sequenceNumber,
+    });
+  }
+
+  it('a voided HIT restores runners and the PA count', () => {
+    const pitch1 = e(EventType.PITCH_THROWN, { batterId: 'a1', outcome: PitchOutcome.IN_PLAY });
+    const hit1 = e(EventType.HIT, { batterId: 'a1', hitType: HitType.SINGLE });
+    const state = deriveGameState(GAME, [...start(), pitch1, hit1, voided(hit1)], HOME_TEAM);
+
+    expect(state.runnersOnBase.first).toBe(null);
+    expect(state.completedTopHalfPAs).toBe(0);
+    expect(state.awayScore).toBe(0);
+  });
+
+  it('a voided OUT restores the out count and PA count', () => {
+    const pitch1 = e(EventType.PITCH_THROWN, { batterId: 'a1', outcome: PitchOutcome.IN_PLAY });
+    const out1 = e(EventType.OUT, { batterId: 'a1', outType: 'groundout' });
+    const state = deriveGameState(GAME, [...start(), pitch1, out1, voided(out1)], HOME_TEAM);
+
+    expect(state.outs).toBe(0);
+    expect(state.completedTopHalfPAs).toBe(0);
+  });
+
+  it('voiding only a linked BASERUNNER_OUT restores the parent HIT default advance', () => {
+    // a1 singles; a2 doubles with a linked "a1 thrown out at 3B" override.
+    // Voiding just the child outcome event should restore the default
+    // advance (a1 → 3rd on a double) and remove the out.
+    const pa1 = batterHit('a1', HitType.SINGLE);
+    const pitch2 = e(EventType.PITCH_THROWN, { batterId: 'a2', outcome: PitchOutcome.IN_PLAY });
+    const hit2 = e(EventType.HIT, { batterId: 'a2', hitType: HitType.DOUBLE });
+    const childOut = e(EventType.BASERUNNER_OUT, {
+      runnerId: 'a1',
+      fromBase: 1,
+      relatedEventId: hit2.id,
+    });
+    const state = deriveGameState(
+      GAME,
+      [...start(), ...pa1, pitch2, hit2, childOut, voided(childOut)],
+      HOME_TEAM,
+    );
+
+    expect(state.outs).toBe(0);
+    expect(state.runnersOnBase.third).toBe('a1');
+    expect(state.runnersOnBase.second).toBe('a2');
+  });
+
+  it('a voided WALK restores balls/strikes and baserunners', () => {
+    const walk1 = e(EventType.WALK, { batterId: 'a1' });
+    const state = deriveGameState(GAME, [...start(), walk1, voided(walk1)], HOME_TEAM);
+
+    expect(state.runnersOnBase.first).toBe(null);
+    expect(state.completedTopHalfPAs).toBe(0);
+  });
+
+  it('PITCH_REVERTED trims replay back to revertToSequenceNumber', () => {
+    // Two strikes recorded, then the second is reverted (web-style undo).
+    const strike1 = e(EventType.PITCH_THROWN, { batterId: 'a1', outcome: PitchOutcome.CALLED_STRIKE });
+    const strike2 = e(EventType.PITCH_THROWN, { batterId: 'a1', outcome: PitchOutcome.CALLED_STRIKE });
+    const revert = e(EventType.PITCH_REVERTED, {
+      revertToSequenceNumber: strike1.sequenceNumber,
+    });
+    const state = deriveGameState(GAME, [...start(), strike1, strike2, revert], HOME_TEAM);
+
+    expect(state.strikes).toBe(1);
+  });
+});
+
+describe('deriveGameState — GAME_END / isFinal', () => {
+  beforeEach(resetSeq);
+
+  const start = () => [
+    e(EventType.GAME_START, {
+      awayLineupPitcherId: 'home-p',
+      homeLineupPitcherId: 'away-p',
+      awayLeadoffBatterId: 'a1',
+      homeLeadoffBatterId: 'h1',
+    }),
+  ];
+
+  it('isFinal is false while the game is live', () => {
+    const state = deriveGameState(GAME, [...start(), ...batterHit('a1', HitType.SINGLE)], HOME_TEAM);
+    expect(state.isFinal).toBe(false);
+  });
+
+  it('GAME_END sets isFinal without disturbing other state', () => {
+    const events = [
+      ...start(),
+      ...batterHit('a1', HitType.SINGLE),
+      e(EventType.GAME_END, { homeScore: 0, awayScore: 0 }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    expect(state.isFinal).toBe(true);
+    expect(state.runnersOnBase.first).toBe('a1');
+  });
+
+  it('a voided GAME_END leaves the game live', () => {
+    const end = e(EventType.GAME_END, { homeScore: 0, awayScore: 0 });
+    const events = [
+      ...start(),
+      end,
+      e(EventType.EVENT_VOIDED, { voidedEventId: end.id, voidedSequenceNumber: end.sequenceNumber }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    expect(state.isFinal).toBe(false);
+  });
+});
+
+describe('deriveGameState — pitcherPitchCounts', () => {
+  beforeEach(resetSeq);
+
+  it('accumulates cumulative totals per pitcher across pitching and inning changes', () => {
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, {
+        awayLineupPitcherId: 'p1',
+        homeLineupPitcherId: 'p3',
+        awayLeadoffBatterId: 'a1',
+        homeLeadoffBatterId: 'h1',
+      }),
+      // Top 1: p1 throws 2 pitches.
+      e(EventType.PITCH_THROWN, { pitcherId: 'p1', batterId: 'a1', outcome: PitchOutcome.BALL }),
+      e(EventType.PITCH_THROWN, { pitcherId: 'p1', batterId: 'a1', outcome: PitchOutcome.CALLED_STRIKE }),
+      // Mid-inning pitching change: p2 throws 3.
+      e(EventType.PITCHING_CHANGE, { newPitcherId: 'p2', outgoingPitcherId: 'p1' }),
+      e(EventType.PITCH_THROWN, { pitcherId: 'p2', batterId: 'a1', outcome: PitchOutcome.BALL }),
+      e(EventType.PITCH_THROWN, { pitcherId: 'p2', batterId: 'a1', outcome: PitchOutcome.BALL }),
+      e(EventType.PITCH_THROWN, { pitcherId: 'p2', batterId: 'a1', outcome: PitchOutcome.FOUL }),
+      // Bottom 1: other team's pitcher p3 throws 1.
+      advanceInning(),
+      e(EventType.PITCH_THROWN, { pitcherId: 'p3', batterId: 'h1', outcome: PitchOutcome.BALL }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+
+    expect(state.pitcherPitchCounts).toEqual({ p1: 2, p2: 3, p3: 1 });
+    expect(state.currentPitcherPitchCount).toBe(1); // p3's running total
+  });
+});
+
+describe('deriveGameState — HIT_BY_PITCH pair (regression guard)', () => {
+  beforeEach(resetSeq);
+
+  it('pitch outcome hbp + HIT_BY_PITCH event places batter on 1B and forces with bases loaded', () => {
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, {
+        awayLineupPitcherId: 'home-p',
+        homeLineupPitcherId: 'away-p',
+        awayLeadoffBatterId: 'a1',
+        homeLeadoffBatterId: 'h1',
+      }),
+      // Load the bases via three walks.
+      e(EventType.WALK, { batterId: 'a1' }),
+      e(EventType.WALK, { batterId: 'a2' }),
+      e(EventType.WALK, { batterId: 'a3' }),
+      // HBP pair for a4 — the shape mobile/web emit together.
+      e(EventType.PITCH_THROWN, { batterId: 'a4', pitcherId: 'home-p', outcome: PitchOutcome.HIT_BY_PITCH }),
+      e(EventType.HIT_BY_PITCH, { batterId: 'a4', pitcherId: 'home-p' }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+
+    expect(state.awayScore).toBe(1); // a1 forced home
+    expect(state.runnersOnBase.first).toBe('a4');
+    expect(state.runnersOnBase.second).toBe('a3');
+    expect(state.runnersOnBase.third).toBe('a2');
+    expect(state.completedTopHalfPAs).toBe(4);
+  });
+});
