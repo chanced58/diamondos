@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, Modal, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, ScrollView, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useGameState } from '../../../../src/features/scoring/use-game-state';
 import { useRecordEvent } from '../../../../src/features/scoring/use-record-event';
@@ -11,8 +11,8 @@ import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerMo
 import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf } from '@baseball/shared';
-import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus } from '@baseball/shared';
+import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
 import { database } from '../../../../src/db';
@@ -30,7 +30,7 @@ import { useGameLineups } from '../../../../src/features/lineup/use-game-lineups
  * then synced to Supabase in the background.
  */
 export default function ScoringScreen() {
-  const { gameId, teamId = '', opponentName = 'Opponent', teamName = 'Home' } =
+  const { gameId, teamId: teamIdParam = '', opponentName = 'Opponent', teamName = 'Home' } =
     useLocalSearchParams<{
       gameId: string;
       teamId: string;
@@ -39,10 +39,38 @@ export default function ScoringScreen() {
     }>();
 
   const router = useRouter();
-  const { gameState, lineScore, loading } = useGameState(gameId, teamId);
+
+  // Resolve the Game row from the local DB — the games list only passes the
+  // game id, so team identity (roster, league settings) and home/away must
+  // come from the synced games mirror, not route params.
+  const [game, setGame] = useState<Game | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const matches = await database
+          .get<Game>('games')
+          .query(Q.where('remote_id', gameId))
+          .fetch();
+        if (!cancelled) setGame(matches[0] ?? null);
+      } catch (err) {
+        console.warn(`Score game lookup failed game=${gameId}:`, err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [gameId]);
+  const teamId = game?.teamId ?? (teamIdParam as string);
+  const isHome = game ? weAreHome(game.locationType, game.neutralHomeTeam ?? null) : true;
+  // ScoreBoard maps teamName→homeScore and opponentName→awayScore, so the
+  // labels must be the actual home/away teams, not our-team/opponent — for a
+  // road game those are swapped.
+  const homeLabel = isHome ? (teamName as string) : (opponentName as string);
+  const awayLabel = isHome ? (opponentName as string) : (teamName as string);
+
+  const { gameState, lineScore, events, loading } = useGameState(gameId, teamId);
   const { recordEvent } = useRecordEvent(gameId);
   const { isSyncing, lastSyncError, pendingEventsCount, triggerSync } = useSyncContext();
-  const { settings: leagueSettings, leagueId } = useLeagueContext(teamId);
+  const { settings: leagueSettings, leagueId, pitchRule } = useLeagueContext(teamId);
   const maxBatters = getMaxBattingOrder(leagueSettings);
   const midGameExtensionAllowed = isMidGameExtensionAllowed(leagueSettings);
 
@@ -100,20 +128,20 @@ export default function ScoringScreen() {
     return () => { cancelled = true; };
   }, [teamId]);
 
-  // currentPitcherId / currentBatterId are derived from GAME_START and
+  // currentPitcherId is derived from GAME_START / PITCHING_CHANGE /
   // PITCH_THROWN events. When unset, emitted events carry undefined for
   // those fields (the payload types are optional) and stats modules skip
   // the event rather than attribute to a fake player. Scorer establishes
   // the starting values via the "Set Lineup" modal below.
   const currentPitcherId = gameState?.currentPitcherId ?? undefined;
-  const currentBatterId = gameState?.currentBatterId ?? undefined;
   const defensiveLineup = useDefensiveLineup(gameId, roster);
   const [showLineupModal, setShowLineupModal] = useState(false);
 
   // The current batting order, observed reactively from the local WatermelonDB
-  // game_lineups mirror (synced both ways with Supabase). The Add Batter flow
-  // uses it to know (a) which players are already in the order and (b) the
-  // current max batting_order so the new batter lands at end+1.
+  // game_lineups mirror (synced both ways with Supabase). Drives the due-batter
+  // rotation, and the Add Batter flow uses it to know (a) which players are
+  // already in the order and (b) the current max batting_order so the new
+  // batter lands at end+1.
   const { rows: observedLineupRows, loaded: lineupLoaded } = useGameLineups(gameId);
   const lineupRows = useMemo(
     () =>
@@ -123,6 +151,171 @@ export default function ScoringScreen() {
       })),
     [observedLineupRows],
   );
+
+  // ─── Due batter ──────────────────────────────────────────────────────────
+  // Our batting order with in-game SUBSTITUTION events (pinch hitters,
+  // lineup extensions) folded in, cycled by our team's completed PAs — the
+  // same index-based derivation the web ScoringBoard uses.
+  const battingSlots = useMemo<BattingSlot[]>(
+    () =>
+      applyLineupSubstitutions(
+        observedLineupRows
+          .filter((row) => row.battingOrder != null)
+          .map((row) => ({ playerId: row.playerRemoteId, battingOrder: row.battingOrder! })),
+        events,
+      ),
+    [observedLineupRows, events],
+  );
+  const ourTeamPAs = gameState
+    ? (isHome ? gameState.completedBottomHalfPAs : gameState.completedTopHalfPAs)
+    : 0;
+  const dueBatter = deriveDueBatter(battingSlots, ourTeamPAs);
+
+  // Per-PA manual override — the scorer can point the rotation at a
+  // different batter (lineup drifted, skipped batter). Cleared when the PA
+  // completes; a mid-PA inning change (3rd out on the bases) keeps both the
+  // PA count and the override, matching the batter carrying over.
+  const [batterOverrideId, setBatterOverrideId] = useState<string | null>(null);
+  useEffect(() => {
+    setBatterOverrideId(null);
+  }, [ourTeamPAs]);
+
+  const weBat = gameState ? (isHome ? !gameState.isTopOfInning : gameState.isTopOfInning) : false;
+  // Effective batter for our offensive half: manual override → lineup-derived
+  // due batter → engine state (GAME_START leadoff when no lineup is set).
+  const ourBatterId = batterOverrideId ?? dueBatter?.playerId ?? gameState?.currentBatterId ?? null;
+
+  // Our current pitcher, derived from the event stream so it persists across
+  // innings — gameState.currentPitcherId is reset to null by INNING_CHANGE, so
+  // relying on it would drop pitcher attribution (and pitch counts) from the
+  // second defensive inning on. GAME_START seeds our starter; our own
+  // PITCHING_CHANGE events update it.
+  const ourPitcherId = useMemo(() => {
+    let pid: string | null = null;
+    for (const ev of events) {
+      if (ev.eventType === EventType.GAME_START) {
+        const p = ev.payload as { homeLineupPitcherId?: string; awayLineupPitcherId?: string };
+        pid = (isHome ? p.homeLineupPitcherId : p.awayLineupPitcherId) ?? pid;
+      } else if (ev.eventType === EventType.PITCHING_CHANGE) {
+        const p = ev.payload as { newPitcherId?: string; isOpponentChange?: boolean };
+        if (!p.isOpponentChange && p.newPitcherId) pid = p.newPitcherId;
+      }
+    }
+    return pid;
+  }, [events, isHome]);
+
+  // Every platform player id we can safely attribute events to: our roster
+  // plus everyone in the lineup (guests included). Ids outside this set are
+  // opponent players (or stale leaks) and must go in opponent* fields.
+  const ourPlayerIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of roster) ids.add(p.id);
+    for (const row of observedLineupRows) ids.add(row.playerRemoteId);
+    return ids;
+  }, [roster, observedLineupRows]);
+
+  // Half-aware batter/pitcher payload attribution. Replaces the old fixed
+  // batterId/pitcherId spread, which mis-filed opponent ids under batterId
+  // during the opponent's offensive half.
+  const halfAttribution: HalfAttribution = gameState
+    ? attributePlayersForHalf({
+        weAreHome: isHome,
+        isTopOfInning: gameState.isTopOfInning,
+        ourBatterId,
+        ourPitcherId,
+        statePitcherId: gameState.currentPitcherId,
+        stateBatterId: gameState.currentBatterId,
+        ourPlayerIds,
+      })
+    : {};
+  // Pitcher-only subset for baserunning payloads (pickoffs, runner outs).
+  const pitcherAttribution = {
+    ...(halfAttribution.pitcherId ? { pitcherId: halfAttribution.pitcherId } : {}),
+    ...(halfAttribution.opponentPitcherId
+      ? { opponentPitcherId: halfAttribution.opponentPitcherId }
+      : {}),
+  };
+
+  // Display names for the "Now batting" strip + batter picker: roster names
+  // win; ad-hoc guests fall back to their lineup display name.
+  const nameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const row of observedLineupRows) {
+      if (row.guestDisplayName) m.set(row.playerRemoteId, row.guestDisplayName);
+    }
+    for (const p of roster) m.set(p.id, p.name);
+    return m;
+  }, [roster, observedLineupRows]);
+  const [showBatterPicker, setShowBatterPicker] = useState(false);
+
+  // League-pool guests (and any other lineup player outside the roster whose
+  // row carries no display name) still have a local players row — resolve
+  // their names so the batter strip/picker never shows "Unknown".
+  const [extraNames, setExtraNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const missing = battingSlots
+      .map((s) => s.playerId)
+      .filter((id) => !nameById.has(id));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const players = await database
+        .get<Player>('players')
+        .query(Q.where('remote_id', Q.oneOf(missing)))
+        .fetch();
+      if (cancelled) return;
+      setExtraNames((prev) => ({
+        ...prev,
+        ...Object.fromEntries(players.map((p) => [p.remoteId, p.fullName])),
+      }));
+    })();
+    return () => { cancelled = true; };
+  }, [battingSlots, nameById]);
+  const batterName = (id: string) => nameById.get(id) ?? extraNames[id] ?? 'Unknown batter';
+
+  const gameStarted = useMemo(
+    () => events.some((e) => e.eventType === EventType.GAME_START),
+    [events],
+  );
+
+  // ─── Pitch-count compliance ─────────────────────────────────────────────
+  // Cumulative game total for the pitcher of record (the old label called
+  // this "Pitches (this AB)" but currentPitcherPitchCount was always the
+  // game total). Compliance thresholds come from the league's default rule.
+  //
+  // On defense the pitcher of record is ours (from ourPitcherId, which
+  // survives inning changes); on offense it's the opponent's. The compliance
+  // chip is shown only for our own pitcher — applying our league's rule to
+  // the opponent's pitcher would be meaningless.
+  const gameDateIso = game ? new Date(game.scheduledAt).toISOString() : new Date().toISOString();
+  const displayPitcherId = weBat
+    ? (gameState?.currentPitcherId ?? null)
+    : (ourPitcherId ?? gameState?.currentPitcherId ?? null);
+  const currentPitchTotal =
+    gameState && displayPitcherId
+      ? gameState.pitcherPitchCounts[displayPitcherId] ?? 0
+      : gameState?.currentPitcherPitchCount ?? 0;
+  const pitchStatus =
+    pitchRule && displayPitcherId && ourPlayerIds.has(displayPitcherId)
+      ? getPitchComplianceStatus(displayPitcherId, currentPitchTotal, pitchRule, gameDateIso)
+      : null;
+
+  // Per-roster-player pitch totals + compliance level for the pitching-change
+  // picker, so the coach sees who is near/over their limit before choosing.
+  const pitcherBadges = useMemo(() => {
+    if (!gameState) return {};
+    const badges: Record<string, { count: number; level: 'ok' | 'warning' | 'danger' | 'over' }> = {};
+    for (const p of roster) {
+      const count = gameState.pitcherPitchCounts[p.id] ?? 0;
+      let level: 'ok' | 'warning' | 'danger' | 'over' = 'ok';
+      if (pitchRule) {
+        const s = getPitchComplianceStatus(p.id, count, pitchRule, gameDateIso);
+        level = s.isOverLimit ? 'over' : s.isAtLimit ? 'danger' : s.isAtWarning ? 'warning' : 'ok';
+      }
+      badges[p.id] = { count, level };
+    }
+    return badges;
+  }, [gameState, roster, pitchRule, gameDateIso]);
 
   // Dropped-third-strike modal — opened either by the manual button in
   // PitchInput, or automatically by handlePitch when a 3rd-strike pitch is
@@ -135,8 +328,7 @@ export default function ScoringScreen() {
   async function handlePitch(outcome: PitchOutcome, pitchType?: PitchType) {
     if (!gameState) return;
     const payload: PitchThrownPayload = {
-      pitcherId: currentPitcherId,
-      batterId: currentBatterId,
+      ...halfAttribution,
       outcome,
       ...(pitchType ? { pitchType } : {}),
     };
@@ -146,6 +338,16 @@ export default function ScoringScreen() {
       gameState.isTopOfInning,
       payload,
     );
+
+    // HBP is a two-event pair (mirrors the web ScoringBoard): the pitch
+    // records the delivery; the HIT_BY_PITCH event places the batter on
+    // first and force-advances runners in deriveGameState + stats.
+    if (outcome === PitchOutcome.HIT_BY_PITCH) {
+      await recordEvent(EventType.HIT_BY_PITCH, gameState.inning, gameState.isTopOfInning, {
+        ...halfAttribution,
+      });
+      return;
+    }
 
     // Auto-complete walks and strikeouts from pitch progression so the scorer
     // doesn't need to tap a separate button. gameState here is the pre-pitch
@@ -176,8 +378,7 @@ export default function ScoringScreen() {
   async function handleHit(hitType: HitType) {
     if (!gameState) return;
     const payload: HitPayload = {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
       hitType,
     };
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, payload);
@@ -190,8 +391,7 @@ export default function ScoringScreen() {
   async function handleHitWithRunnerOutcomes(hitType: HitType, outcomes: RunnerOutcome[]) {
     if (!gameState) return;
     const payload: HitPayload = {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
       hitType,
     };
     const hitId = await recordEvent(
@@ -206,7 +406,7 @@ export default function ScoringScreen() {
         await recordEvent(EventType.BASERUNNER_OUT, gameState.inning, gameState.isTopOfInning, {
           runnerId: outcome.runnerId,
           fromBase: outcome.fromBase,
-          pitcherId: currentPitcherId,
+          ...pitcherAttribution,
           relatedEventId: hitId,
           reason: AdvanceReason.ON_PLAY,
         });
@@ -232,8 +432,7 @@ export default function ScoringScreen() {
       : outType === 'popout' ? HitTrajectory.FLY_BALL
       : undefined;
     const payload: OutPayload = {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
       outType,
       ...(trajectory ? { trajectory } : {}),
     };
@@ -243,16 +442,14 @@ export default function ScoringScreen() {
   async function handleWalk() {
     if (!gameState) return;
     await recordEvent(EventType.WALK, gameState.inning, gameState.isTopOfInning, {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
     });
   }
 
   async function handleStrikeout() {
     if (!gameState) return;
     const payload: OutPayload = {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
       outType: 'strikeout',
     };
     await recordEvent(EventType.STRIKEOUT, gameState.inning, gameState.isTopOfInning, payload);
@@ -261,8 +458,7 @@ export default function ScoringScreen() {
   async function handleError(errorBy: number) {
     if (!gameState) return;
     await recordEvent(EventType.FIELD_ERROR, gameState.inning, gameState.isTopOfInning, {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
       errorBy,
     });
   }
@@ -270,24 +466,21 @@ export default function ScoringScreen() {
   async function handleCatcherInterference() {
     if (!gameState) return;
     await recordEvent(EventType.CATCHER_INTERFERENCE, gameState.inning, gameState.isTopOfInning, {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
     });
   }
 
   async function handleSacrificeFly() {
     if (!gameState) return;
     await recordEvent(EventType.SACRIFICE_FLY, gameState.inning, gameState.isTopOfInning, {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
     });
   }
 
   async function handleSacrificeBunt() {
     if (!gameState) return;
     await recordEvent(EventType.SACRIFICE_BUNT, gameState.inning, gameState.isTopOfInning, {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
     });
   }
 
@@ -307,8 +500,7 @@ export default function ScoringScreen() {
     if (!gameState) return;
     const trajectory = trajectoryForOutType(outType);
     await recordEvent(EventType.SACRIFICE_FLY, gameState.inning, gameState.isTopOfInning, {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
       ...(trajectory ? { trajectory } : {}),
     });
   }
@@ -317,8 +509,7 @@ export default function ScoringScreen() {
     if (!gameState) return;
     const trajectory = trajectoryForOutType(outType);
     await recordEvent(EventType.SACRIFICE_BUNT, gameState.inning, gameState.isTopOfInning, {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
       ...(trajectory ? { trajectory } : {}),
     });
   }
@@ -370,8 +561,7 @@ export default function ScoringScreen() {
     // Record the wild pitch as a thrown ball so pitch count, count state,
     // and the pitcher's wildPitches stat all update (pitching-stats.ts:288).
     const pitchPayload: PitchThrownPayload = {
-      pitcherId: currentPitcherId,
-      batterId: currentBatterId,
+      ...halfAttribution,
       outcome: PitchOutcome.BALL,
       isWildPitch: true,
     };
@@ -385,8 +575,7 @@ export default function ScoringScreen() {
     // to handle it. Flag the pitch so downstream consumers can distinguish
     // the underlying pitch from the mishandling that followed.
     const pitchPayload: PitchThrownPayload = {
-      pitcherId: currentPitcherId,
-      batterId: currentBatterId,
+      ...halfAttribution,
       outcome: PitchOutcome.BALL,
       isPassedBall: true,
     };
@@ -403,11 +592,10 @@ export default function ScoringScreen() {
     await recordEvent(EventType.BASERUNNER_OUT, gameState.inning, gameState.isTopOfInning, {
       runnerId,
       fromBase,
-      pitcherId: currentPitcherId,
+      ...pitcherAttribution,
     });
     const hitPayload: HitPayload = {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
       hitType: HitType.SINGLE,
       fieldersChoice: true,
     };
@@ -423,33 +611,109 @@ export default function ScoringScreen() {
     await recordEvent(EventType.BASERUNNER_OUT, gameState.inning, gameState.isTopOfInning, {
       runnerId,
       fromBase,
-      pitcherId: currentPitcherId,
+      ...pitcherAttribution,
     });
   }
 
   async function handleStartGame(pitcherId: string, batterId: string) {
     if (!gameState) return;
-    // Which team are we scoring? Check the Game row's locationType /
-    // neutralHomeTeam fields so road games seed the away* lineup slots
-    // instead of misattributing to home*.
-    let isHome = true;
-    try {
-      const games = await database
-        .get<Game>('games')
-        .query(Q.where('remote_id', gameId))
-        .fetch();
-      const game = games[0];
-      if (game) {
-        isHome = weAreHome(game.locationType, game.neutralHomeTeam ?? null);
-      }
-    } catch (err) {
-      console.warn('handleStartGame: could not resolve home/away, assuming home', err);
+    // `isHome` is derived from the async-resolved Game row and defaults to
+    // true before it loads. Block starting until the row is present so a road
+    // game can't seed the home* lineup slots by mistake.
+    if (!game) {
+      console.warn(`handleStartGame: game row not loaded yet game=${gameId}`);
+      Alert.alert('Game still loading', 'Try again once the local game record has loaded.');
+      return;
     }
+    // Which team are we scoring? `isHome` comes from the resolved Game row's
+    // locationType / neutralHomeTeam so road games seed the away* lineup
+    // slots instead of misattributing to home*.
     const payload = isHome
       ? { homeLineupPitcherId: pitcherId, homeLeadoffBatterId: batterId }
       : { awayLineupPitcherId: pitcherId, awayLeadoffBatterId: batterId };
     await recordEvent(EventType.GAME_START, gameState.inning, gameState.isTopOfInning, payload);
+    // Reflect the transition locally right away (list badge); the server
+    // flips via fn_start_game in the sync engine's lifecycle scan.
+    if (game && game.status === 'scheduled') {
+      try {
+        await database.write(async () => {
+          await game.update((g) => {
+            g.status = 'in_progress';
+          });
+        });
+      } catch (err) {
+        console.warn(`Start Game local status write failed game=${gameId}:`, err);
+      }
+    }
     setShowLineupModal(false);
+  }
+
+  // ─── Inning advancement ─────────────────────────────────────────────────
+  // deriveGameState never auto-flips the half at 3 outs — the scorer
+  // confirms via the 3-outs prompt (or the End Inning control for early
+  // switches like a run cap or time limit). Empty payload matches web.
+  const nextHalfLabel = gameState
+    ? gameState.isTopOfInning
+      ? `Bottom ${gameState.inning}`
+      : `Top ${gameState.inning + 1}`
+    : '';
+
+  async function handleInningChange() {
+    if (!gameState) return;
+    await recordEvent(EventType.INNING_CHANGE, gameState.inning, gameState.isTopOfInning, {});
+  }
+
+  function confirmInningChange() {
+    if (!gameState) return;
+    Alert.alert(
+      'End half-inning?',
+      `Switch sides and start the ${nextHalfLabel} with ${gameState.outs} out${gameState.outs === 1 ? '' : 's'} recorded.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Switch sides', onPress: () => { handleInningChange().catch(console.warn); } },
+      ],
+    );
+  }
+
+  // ─── End game ───────────────────────────────────────────────────────────
+  // Works fully offline: records GAME_END + marks the local games row
+  // completed. Server-side finalization (status/scores, dual-scorekeeper
+  // reconciliation, league snapshots) runs via the sync engine's lifecycle
+  // scan once connectivity returns — no web visit needed.
+  async function handleEndGame() {
+    if (!gameState || !lineScore) return;
+    await recordEvent(EventType.GAME_END, gameState.inning, gameState.isTopOfInning, {
+      homeScore: lineScore.homeRuns,
+      awayScore: lineScore.awayRuns,
+    });
+    if (game) {
+      try {
+        await database.write(async () => {
+          await game.update((g) => {
+            g.status = 'completed';
+            g.homeScore = lineScore.homeRuns;
+            g.awayScore = lineScore.awayRuns;
+          });
+        });
+      } catch (err) {
+        // The GAME_END event is authoritative (score screen keys off
+        // gameState.isFinal); a stale list badge self-heals after finalize.
+        console.warn(`End Game local status write failed game=${gameId}:`, err);
+      }
+    }
+    triggerSync().catch(console.warn);
+  }
+
+  function confirmEndGame() {
+    if (!gameState || !lineScore) return;
+    Alert.alert(
+      'End game?',
+      `Final score ${lineScore.homeRuns}–${lineScore.awayRuns}. The result finalizes automatically when the device is back online.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'End Game', style: 'destructive', onPress: () => { handleEndGame().catch(console.warn); } },
+      ],
+    );
   }
 
   async function handlePitchingChange(newPitcherId: string) {
@@ -465,7 +729,9 @@ export default function ScoringScreen() {
     if (!gameState) return;
     const payload: SubstitutionPayload = {
       inPlayerId: newBatterId,
-      outPlayerId: currentBatterId,
+      // Replace the effective batter (due-batter derivation / override), so
+      // applyLineupSubstitutions folds the sub into the right lineup slot.
+      outPlayerId: ourBatterId ?? undefined,
       substitutionType: SubstitutionType.PINCH_HITTER,
     };
     await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
@@ -681,7 +947,7 @@ export default function ScoringScreen() {
     const payload: PickoffPayload = {
       runnerId,
       base: fromBase,
-      pitcherId: currentPitcherId,
+      ...pitcherAttribution,
       outcome: 'out',
     };
     await recordEvent(EventType.PICKOFF_ATTEMPT, gameState.inning, gameState.isTopOfInning, payload);
@@ -690,7 +956,7 @@ export default function ScoringScreen() {
   async function handleBalk() {
     if (!gameState) return;
     await recordEvent(EventType.BALK, gameState.inning, gameState.isTopOfInning, {
-      pitcherId: currentPitcherId,
+      ...pitcherAttribution,
     });
     // Per OBR 6.02(a) all runners advance one base on a balk. The BALK
     // replay handler shifts r1→r2, r2→r3; the runner previously on
@@ -705,8 +971,7 @@ export default function ScoringScreen() {
   async function handleDoublePlay(runnerOut: { runnerId: string; base: 1 | 2 | 3 } | null) {
     if (!gameState) return;
     await recordEvent(EventType.DOUBLE_PLAY, gameState.inning, gameState.isTopOfInning, {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
       ...(runnerOut ? { runnerOutId: runnerOut.runnerId, runnerOutBase: runnerOut.base } : {}),
     });
   }
@@ -714,8 +979,7 @@ export default function ScoringScreen() {
   async function handleTriplePlay() {
     if (!gameState) return;
     await recordEvent(EventType.TRIPLE_PLAY, gameState.inning, gameState.isTopOfInning, {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
     });
   }
 
@@ -738,8 +1002,7 @@ export default function ScoringScreen() {
   }) {
     if (!gameState) return;
     const payload: DroppedThirdStrikePayload = {
-      batterId: currentBatterId,
-      pitcherId: currentPitcherId,
+      ...halfAttribution,
       outcome: details.outcome,
       fieldingSequence: details.fieldingSequence,
       errorBy: details.errorBy,
@@ -767,6 +1030,81 @@ export default function ScoringScreen() {
     return <LoadingSpinner fullScreen />;
   }
 
+  // Read-only Final view — event-sourced (gameState.isFinal from GAME_END)
+  // with the pulled games row as a fallback for games completed elsewhere.
+  if (gameState.isFinal || game?.status === 'completed') {
+    const inningCount = lineScore
+      ? Math.max(lineScore.awayRunsByInning.length, lineScore.homeRunsByInning.length)
+      : 0;
+    const lineRow = (
+      label: string,
+      runsByInning: number[],
+      runs: number,
+      hits: number,
+      errors: number,
+      isLast: boolean,
+    ) => (
+      <View className={`flex-row ${isLast ? '' : 'border-b border-gray-100'}`}>
+        <Text className="w-24 px-2 py-1.5 text-xs font-semibold text-gray-700" numberOfLines={1}>
+          {label}
+        </Text>
+        {Array.from({ length: inningCount }, (_, i) => (
+          <Text key={i} className="w-8 py-1.5 text-center text-xs text-gray-600">
+            {runsByInning[i] ?? '-'}
+          </Text>
+        ))}
+        <Text className="w-8 py-1.5 text-center text-xs font-bold text-gray-900">{runs}</Text>
+        <Text className="w-8 py-1.5 text-center text-xs text-gray-600">{hits}</Text>
+        <Text className="w-8 py-1.5 text-center text-xs text-gray-600">{errors}</Text>
+      </View>
+    );
+
+    return (
+      <View className="flex-1 bg-white">
+        <Stack.Screen options={{ title: `vs ${opponentName}`, headerShown: true }} />
+        <ScoreBoard
+          gameState={gameState}
+          opponentName={awayLabel}
+          teamName={homeLabel}
+        />
+        <View className="items-center pt-6 pb-2">
+          <View className="px-3 py-1 rounded-full bg-gray-900">
+            <Text className="text-white text-xs font-bold uppercase tracking-wide">Final</Text>
+          </View>
+          {pendingEventsCount > 0 && (
+            <Text className="text-amber-600 text-xs mt-2">
+              Result finalizes automatically when the device is back online.
+            </Text>
+          )}
+        </View>
+        {lineScore && (
+          <View className="mx-4 mt-3 border border-gray-200 rounded-xl overflow-hidden">
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View>
+                <View className="flex-row bg-gray-50 border-b border-gray-200">
+                  <Text className="w-24 px-2 py-1.5 text-xs font-semibold text-gray-400" />
+                  {Array.from({ length: inningCount }, (_, i) => (
+                    <Text key={i} className="w-8 py-1.5 text-center text-xs font-semibold text-gray-500">
+                      {i + 1}
+                    </Text>
+                  ))}
+                  <Text className="w-8 py-1.5 text-center text-xs font-semibold text-gray-500">R</Text>
+                  <Text className="w-8 py-1.5 text-center text-xs font-semibold text-gray-500">H</Text>
+                  <Text className="w-8 py-1.5 text-center text-xs font-semibold text-gray-500">E</Text>
+                </View>
+                {lineRow(awayLabel, lineScore.awayRunsByInning, lineScore.awayRuns, lineScore.awayHits, lineScore.awayErrors, false)}
+                {lineRow(homeLabel, lineScore.homeRunsByInning, lineScore.homeRuns, lineScore.homeHits, lineScore.homeErrors, true)}
+              </View>
+            </ScrollView>
+          </View>
+        )}
+        <Text className="text-gray-400 text-xs text-center mt-4 px-6">
+          Full box score and player stats are on the web dashboard.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1 bg-white">
       <Stack.Screen options={{ title: `vs ${opponentName}`, headerShown: true }} />
@@ -774,23 +1112,39 @@ export default function ScoringScreen() {
       {/* Top: scoreboard */}
       <ScoreBoard
         gameState={gameState}
-        opponentName={opponentName as string}
-        teamName={teamName as string}
+        opponentName={awayLabel}
+        teamName={homeLabel}
       />
 
       {/* League-rule advisories (mercy / run cap / regulation complete) */}
-      {gameEndDecision && (
-        <View className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg">
-          <Text className="text-sm font-semibold text-amber-900">End game?</Text>
-          <Text className="text-xs text-amber-800 mt-0.5">{gameEndDecision.message}</Text>
+      {gameEndDecision && !gameState.isFinal && (
+        <View className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg flex-row items-center">
+          <View className="flex-1">
+            <Text className="text-sm font-semibold text-amber-900">End game?</Text>
+            <Text className="text-xs text-amber-800 mt-0.5">{gameEndDecision.message}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={confirmEndGame}
+            className="ml-2 px-3 py-1.5 rounded-full bg-amber-600"
+          >
+            <Text className="text-xs font-semibold text-white">End Game</Text>
+          </TouchableOpacity>
         </View>
       )}
       {runCapReached && (
-        <View className="mx-4 mt-2 p-3 bg-blue-50 border border-blue-300 rounded-lg">
-          <Text className="text-sm font-semibold text-blue-900">Run cap reached</Text>
-          <Text className="text-xs text-blue-800 mt-0.5">
-            Switch sides via the Inning Change control.
-          </Text>
+        <View className="mx-4 mt-2 p-3 bg-blue-50 border border-blue-300 rounded-lg flex-row items-center">
+          <View className="flex-1">
+            <Text className="text-sm font-semibold text-blue-900">Run cap reached</Text>
+            <Text className="text-xs text-blue-800 mt-0.5">
+              This half-inning ends at the league run cap.
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={confirmInningChange}
+            className="ml-2 px-3 py-1.5 rounded-full bg-blue-600"
+          >
+            <Text className="text-xs font-semibold text-white">Switch sides</Text>
+          </TouchableOpacity>
         </View>
       )}
       {ghostRunnerBase && (
@@ -806,10 +1160,35 @@ export default function ScoringScreen() {
       <CountDisplay gameState={gameState} />
       <View className="flex-row items-center justify-between px-5 py-3 border-b border-gray-100">
         <View>
-          <Text className="text-xs text-gray-500">Pitches (this AB)</Text>
-          <Text className="text-lg font-bold text-gray-900">
-            {gameState.currentPitcherPitchCount}
-          </Text>
+          <Text className="text-xs text-gray-500">Pitches (game)</Text>
+          <View className="flex-row items-center gap-1.5">
+            <Text className="text-lg font-bold text-gray-900">{currentPitchTotal}</Text>
+            {pitchStatus && (pitchStatus.isOverLimit || pitchStatus.isAtLimit || pitchStatus.isAtWarning) && (
+              <View
+                className={`px-2 py-0.5 rounded-full ${
+                  pitchStatus.isOverLimit
+                    ? 'bg-red-600'
+                    : pitchStatus.isAtLimit
+                      ? 'bg-red-100'
+                      : 'bg-amber-100'
+                }`}
+              >
+                <Text
+                  className={`text-xs font-semibold ${
+                    pitchStatus.isOverLimit
+                      ? 'text-white'
+                      : pitchStatus.isAtLimit
+                        ? 'text-red-700'
+                        : 'text-amber-700'
+                  }`}
+                >
+                  {pitchStatus.isOverLimit
+                    ? `Over limit (${pitchStatus.maxAllowed})`
+                    : `${currentPitchTotal}/${pitchStatus.maxAllowed}`}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
         <BaserunnerDisplay
           gameState={gameState}
@@ -829,6 +1208,31 @@ export default function ScoringScreen() {
         ) : null}
       </View>
 
+      {/* Game controls — manual half-inning switch (run cap, time limit,
+          corrections) and game completion */}
+      {gameStarted && !gameState.isFinal && gameState.outs < OUTS_PER_INNING && (
+        <View className="flex-row items-center gap-2 px-4 pt-2">
+          <TouchableOpacity
+            onPress={confirmInningChange}
+            className="px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200"
+          >
+            <Text className="text-xs font-semibold text-gray-700">End Inning ▸</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={confirmEndGame}
+            className={`px-3 py-1.5 rounded-full border ${
+              gameEndDecision
+                ? 'bg-amber-100 border-amber-300'
+                : 'bg-gray-100 border-gray-200'
+            }`}
+          >
+            <Text className={`text-xs font-semibold ${gameEndDecision ? 'text-amber-800' : 'text-gray-700'}`}>
+              End Game
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Pre-game lineup prompt — visible until a starting pitcher is known */}
       {gameState.currentPitcherId === null && (
         <TouchableOpacity
@@ -846,6 +1250,12 @@ export default function ScoringScreen() {
       <LineupSetupModal
         visible={showLineupModal}
         roster={roster}
+        // Prefill from the saved lineup: slot 1 leads off; the player whose
+        // starting position is pitcher takes the mound.
+        initialBatterId={deriveDueBatter(battingSlots, 0)?.playerId ?? null}
+        initialPitcherId={
+          observedLineupRows.find((row) => row.startingPosition === 'pitcher')?.playerRemoteId ?? null
+        }
         onCancel={() => setShowLineupModal(false)}
         onSubmit={handleStartGame}
       />
@@ -853,7 +1263,7 @@ export default function ScoringScreen() {
       <GuestPlayerModal
         visible={showGuestModal}
         gameId={gameId}
-        teamId={teamId as string}
+        teamId={teamId}
         leagueId={leagueId}
         defaultCountTowardStats={leagueSettings.guests.countTowardStatsDefault}
         maxBatters={maxBatters}
@@ -881,7 +1291,93 @@ export default function ScoringScreen() {
         <Text className="text-xs font-semibold text-white">Lineup</Text>
       </TouchableOpacity>
 
-      {/* Bottom: pitch / outcome input */}
+      {/* Now batting — due-batter rotation with per-PA override */}
+      {gameStarted && (weBat ? (
+        <View className="flex-row items-center justify-between px-4 py-2 bg-emerald-50 border-t border-emerald-100">
+          <Text className="flex-1 text-sm text-emerald-900" numberOfLines={1}>
+            <Text className="text-xs text-emerald-700">Now batting{'  '}</Text>
+            <Text className="font-semibold">
+              {ourBatterId ? batterName(ourBatterId) : 'No batter set'}
+            </Text>
+            {batterOverrideId && batterOverrideId !== dueBatter?.playerId ? (
+              <Text className="text-xs text-amber-700">{'  '}(override)</Text>
+            ) : dueBatter && ourBatterId === dueBatter.playerId ? (
+              <Text className="text-xs text-emerald-700">{'  '}(slot {dueBatter.battingOrder})</Text>
+            ) : null}
+          </Text>
+          {battingSlots.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setShowBatterPicker(true)}
+              className="ml-2 px-3 py-1 rounded-full bg-emerald-600"
+            >
+              <Text className="text-xs font-semibold text-white">Change</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : (
+        <View className="px-4 py-2 bg-gray-50 border-t border-gray-100">
+          <Text className="text-xs text-gray-500">Opponent batting</Text>
+        </View>
+      ))}
+
+      <BatterPickerModal
+        visible={showBatterPicker}
+        slots={battingSlots}
+        batterName={batterName}
+        dueBatterId={dueBatter?.playerId ?? null}
+        selectedId={ourBatterId}
+        onSelect={(playerId) => {
+          setBatterOverrideId(playerId);
+          setShowBatterPicker(false);
+        }}
+        onCancel={() => setShowBatterPicker(false)}
+      />
+
+      {/* Bottom: 3-outs prompt or pitch / outcome input. deriveGameState
+          holds the half open until an explicit INNING_CHANGE, so at 3 outs
+          the input surface is replaced by the switch-sides prompt. */}
+      {gameState.outs >= OUTS_PER_INNING ? (
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-2xl font-bold text-gray-900 mb-1">3 outs</Text>
+          <Text className="text-sm text-gray-500 mb-5">
+            {gameState.isTopOfInning ? 'Top' : 'Bottom'} {gameState.inning} is over.
+          </Text>
+          {/* When the league rules say the game can end here (regulation
+              complete, mercy), ending the game leads; otherwise the next
+              half leads and End Game stays available as the secondary. */}
+          {gameEndDecision ? (
+            <>
+              <TouchableOpacity
+                onPress={confirmEndGame}
+                className="w-full bg-amber-600 rounded-2xl py-4 items-center"
+              >
+                <Text className="text-white text-lg font-bold">End Game — {lineScore ? `${lineScore.homeRuns}–${lineScore.awayRuns}` : 'Final'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => { handleInningChange().catch(console.warn); }}
+                className="w-full bg-blue-600 rounded-2xl py-3 items-center mt-3"
+              >
+                <Text className="text-white text-base font-bold">Start {nextHalfLabel} ▸</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity
+                onPress={() => { handleInningChange().catch(console.warn); }}
+                className="w-full bg-blue-600 rounded-2xl py-4 items-center"
+              >
+                <Text className="text-white text-lg font-bold">Start {nextHalfLabel} ▸</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmEndGame} className="mt-3 px-4 py-2">
+                <Text className="text-gray-600 text-sm font-semibold">End Game</Text>
+              </TouchableOpacity>
+            </>
+          )}
+          <TouchableOpacity onPress={() => { handleUndo().catch(console.warn); }} className="mt-2 px-4 py-2">
+            <Text className="text-gray-500 text-sm">Undo last event</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
       <PitchInput
         onRecordPitch={handlePitch}
         onRecordHit={handleHit}
@@ -911,24 +1407,104 @@ export default function ScoringScreen() {
           .map((l) => l.player_id)}
         defensiveLineup={defensiveLineup}
         roster={roster}
+        pitcherBadges={pitcherBadges}
         onUndoLastEvent={handleUndo}
         runnersOnBase={runnersOnBase}
         onRecordDroppedThirdStrike={handleDroppedThirdStrike}
         d3kModalOpen={showD3KModal}
         setD3KModalOpen={setShowD3KModal}
       />
+      )}
     </View>
+  );
+}
+
+/**
+ * Batting-order picker for the per-PA override — lists the effective order
+ * (subs folded in), highlights who is due up, and lets the scorer point the
+ * rotation at a different batter when the lineup has drifted.
+ */
+function BatterPickerModal({
+  visible,
+  slots,
+  batterName,
+  dueBatterId,
+  selectedId,
+  onSelect,
+  onCancel,
+}: {
+  visible: boolean;
+  slots: BattingSlot[];
+  batterName: (id: string) => string;
+  dueBatterId: string | null;
+  selectedId: string | null;
+  onSelect: (playerId: string) => void;
+  onCancel: () => void;
+}) {
+  const sorted = [...slots].sort((a, b) => a.battingOrder - b.battingOrder);
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+      <View className="flex-1 justify-end bg-black/50">
+        <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '75%' }}>
+          <Text className="text-lg font-bold text-gray-900 mb-1">Now Batting</Text>
+          <Text className="text-sm text-gray-500 mb-4">
+            Pick who is at the plate. The rotation resumes from this batter
+            after the plate appearance completes.
+          </Text>
+          <ScrollView className="max-h-96">
+            <View className="gap-2">
+              {sorted.map((slot) => {
+                const isSelected = slot.playerId === selectedId;
+                const isDue = slot.playerId === dueBatterId;
+                return (
+                  <TouchableOpacity
+                    key={`${slot.battingOrder}-${slot.playerId}`}
+                    className={`flex-row items-center rounded-xl px-4 py-3 border ${
+                      isSelected ? 'bg-emerald-600 border-emerald-700' : 'bg-white border-gray-300'
+                    }`}
+                    onPress={() => onSelect(slot.playerId)}
+                  >
+                    <Text className={`w-8 font-bold ${isSelected ? 'text-white' : 'text-gray-400'}`}>
+                      {slot.battingOrder}
+                    </Text>
+                    <Text className={`flex-1 font-semibold ${isSelected ? 'text-white' : 'text-gray-900'}`}>
+                      {batterName(slot.playerId)}
+                    </Text>
+                    {isDue && (
+                      <Text className={`text-xs font-semibold ${isSelected ? 'text-emerald-100' : 'text-emerald-700'}`}>
+                        due up
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </ScrollView>
+          <TouchableOpacity
+            className="mt-4 rounded-xl px-5 py-3 bg-gray-100 items-center"
+            onPress={onCancel}
+          >
+            <Text className="text-gray-700 font-semibold">Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
 function LineupSetupModal({
   visible,
   roster,
+  initialPitcherId = null,
+  initialBatterId = null,
   onCancel,
   onSubmit,
 }: {
   visible: boolean;
   roster: RosterPlayer[];
+  /** Prefill from the saved lineup (position = pitcher / batting slot 1). */
+  initialPitcherId?: string | null;
+  initialBatterId?: string | null;
   onCancel: () => void;
   onSubmit: (pitcherId: string, batterId: string) => void;
 }) {
@@ -937,10 +1513,10 @@ function LineupSetupModal({
 
   useEffect(() => {
     if (visible) {
-      setPitcherId(null);
-      setBatterId(null);
+      setPitcherId(initialPitcherId);
+      setBatterId(initialBatterId);
     }
-  }, [visible]);
+  }, [visible, initialPitcherId, initialBatterId]);
 
   const submittable = pitcherId !== null && batterId !== null;
 

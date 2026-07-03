@@ -4,11 +4,13 @@ import {
   defaultLeagueScoringSettings,
   mergeWithDefaults,
   type LeagueScoringSettings,
+  type PitchComplianceRule,
 } from '@baseball/shared';
 import { getSupabaseClient } from './supabase';
 
 const CACHE_KEY_PREFIX = 'league_scoring_settings_v1__';
 const LEAGUE_ID_CACHE_KEY_PREFIX = 'league_id_v1__';
+const PITCH_RULE_CACHE_KEY_PREFIX = 'pitch_rule_v1__';
 
 function cacheKey(teamId: string): string {
   return `${CACHE_KEY_PREFIX}${teamId}`;
@@ -16,6 +18,10 @@ function cacheKey(teamId: string): string {
 
 function leagueIdCacheKey(teamId: string): string {
   return `${LEAGUE_ID_CACHE_KEY_PREFIX}${teamId}`;
+}
+
+function pitchRuleCacheKey(teamId: string): string {
+  return `${PITCH_RULE_CACHE_KEY_PREFIX}${teamId}`;
 }
 
 /**
@@ -69,10 +75,41 @@ async function writeCache(teamId: string, settings: LeagueScoringSettings): Prom
   }
 }
 
+async function readPitchRuleCache(teamId: string): Promise<PitchComplianceRule | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(pitchRuleCacheKey(teamId));
+    if (!raw) return null; // '' = confirmed no rule
+    return JSON.parse(raw) as PitchComplianceRule;
+  } catch (err) {
+    console.warn(
+      `[league-settings] readPitchRuleCache failed team=${teamId}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
+}
+
+async function writePitchRuleCache(teamId: string, rule: PitchComplianceRule | null): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(pitchRuleCacheKey(teamId), rule ? JSON.stringify(rule) : '');
+  } catch (err) {
+    console.warn(
+      `[league-settings] writePitchRuleCache failed team=${teamId}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
 export interface LeagueContext {
   settings: LeagueScoringSettings;
   /** Active league id for the team; null when unknown or the team has no league. */
   leagueId: string | null;
+  /**
+   * The league's default pitch compliance rule
+   * (settings.compliance.defaultPitchRuleId), cached for offline use.
+   * v1 limitation: per-player rule overrides and DOB-based auto-matching
+   * stay server-side (resolve_compliance_rule_for_player) — mobile shows
+   * the league default only. Null when the league sets no default rule.
+   */
+  pitchRule: PitchComplianceRule | null;
 }
 
 /**
@@ -91,17 +128,20 @@ export interface LeagueContext {
 export function useLeagueContext(teamId: string | undefined): LeagueContext {
   const [settings, setSettings] = useState<LeagueScoringSettings>(defaultLeagueScoringSettings);
   const [leagueId, setLeagueId] = useState<string | null>(null);
+  const [pitchRule, setPitchRule] = useState<PitchComplianceRule | null>(null);
 
   useEffect(() => {
     if (!teamId) {
       setSettings(defaultLeagueScoringSettings());
       setLeagueId(null);
+      setPitchRule(null);
       return;
     }
     // Reset before seeding the new team so a previous team's league can't
     // leak into callers (e.g. guest registration) while the cache resolves.
     setSettings(defaultLeagueScoringSettings());
     setLeagueId(null);
+    setPitchRule(null);
     let cancelled = false;
     // Guards the cache seeds against racing the network refresh: SecureStore
     // resolving late must not clobber fresher Supabase-derived state.
@@ -113,6 +153,9 @@ export function useLeagueContext(teamId: string | undefined): LeagueContext {
     });
     void getCachedLeagueId(teamId).then((cached) => {
       if (!cancelled && !refreshed && cached) setLeagueId(cached);
+    });
+    void readPitchRuleCache(teamId).then((cached) => {
+      if (!cancelled && !refreshed && cached) setPitchRule(cached);
     });
 
     // (b) refresh in the background
@@ -139,9 +182,11 @@ export function useLeagueContext(teamId: string | undefined): LeagueContext {
         if (!cancelled) {
           setSettings(defaults);
           setLeagueId(null);
+          setPitchRule(null);
         }
         await writeCache(teamId, defaults);
         await writeLeagueIdCache(teamId, ''); // '' = confirmed no league
+        await writePitchRuleCache(teamId, null);
         return;
       }
 
@@ -163,6 +208,49 @@ export function useLeagueContext(teamId: string | undefined): LeagueContext {
       const next = mergeWithDefaults(leagueRow?.scoring_settings ?? {});
       if (!cancelled) setSettings(next);
       await writeCache(teamId, next);
+
+      // Resolve the league's default pitch compliance rule for offline
+      // pitch-count warnings. Failures keep the cached rule (best-effort).
+      const ruleId = next.compliance.defaultPitchRuleId;
+      if (!ruleId) {
+        if (!cancelled) setPitchRule(null);
+        await writePitchRuleCache(teamId, null);
+        return;
+      }
+      const { data: ruleRow, error: ruleErr } = await supabase
+        .from('pitch_compliance_rules')
+        .select('*')
+        .eq('id', ruleId)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (ruleErr) {
+        console.warn(
+          `[league-settings] pitch_compliance_rules lookup failed team=${teamId} rule=${ruleId}: ${ruleErr.message}`,
+        );
+        // refreshed=true above suppresses the mount cache seed, so read the
+        // cached rule back here — otherwise a failed refresh leaves pitchRule
+        // null even when a valid cached rule exists.
+        const cached = await readPitchRuleCache(teamId);
+        if (!cancelled) setPitchRule(cached);
+        return;
+      }
+      const rule: PitchComplianceRule | null = ruleRow
+        ? {
+            id: ruleRow.id,
+            teamId: ruleRow.team_id ?? undefined,
+            ruleName: ruleRow.rule_name,
+            maxPitchesPerDay: ruleRow.max_pitches_per_day,
+            restDayThresholds: (ruleRow.rest_day_thresholds ?? {}) as Record<string, number>,
+            ageMin: ruleRow.age_min ?? undefined,
+            ageMax: ruleRow.age_max ?? undefined,
+            appliesFrom: ruleRow.applies_from ?? undefined,
+            appliesUntil: ruleRow.applies_until ?? undefined,
+            isActive: ruleRow.is_active,
+            createdAt: ruleRow.created_at,
+          }
+        : null;
+      if (!cancelled) setPitchRule(rule);
+      await writePitchRuleCache(teamId, rule);
     })();
 
     return () => {
@@ -170,5 +258,5 @@ export function useLeagueContext(teamId: string | undefined): LeagueContext {
     };
   }, [teamId]);
 
-  return { settings, leagueId };
+  return { settings, leagueId, pitchRule };
 }

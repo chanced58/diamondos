@@ -107,4 +107,8 @@ export interface LiveGameState {
   /** Cached from GAME_START so INNING_CHANGE can restore the leadoff when a half-inning starts with no batter set. */
   homeLeadoffBatterId: string | null;
   awayLeadoffBatterId: string | null;
+  /** True once a GAME_END event has been replayed (and not voided). */
+  isFinal: boolean;
+  /** Cumulative pitch totals per pitcher id (platform + opponent ids as recorded). */
+  pitcherPitchCounts: Record<string, number>;
 }

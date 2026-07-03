@@ -267,6 +267,7 @@ Copy `.env.example` to `.env.local` in each app directory. Never commit `.env` f
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only (never client) | Supabase service role key |
 | `EXPO_PUBLIC_SUPABASE_URL` | `apps/mobile/.env.local` | Supabase project URL (mobile) |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `apps/mobile/.env.local` | Supabase anon key (mobile) |
+| `EXPO_PUBLIC_API_BASE_URL` | `apps/mobile/.env.local` | Deployed web app base URL — the mobile sync engine calls `POST {base}/api/games/:id/finalize` to complete games ended offline |
 | `EXPO_ACCESS_TOKEN` | Supabase secrets | Expo push notification API token |
 | `APP_URL` | Supabase secrets | Base URL for invite redirect |
 | `CRON_SECRET` | Server-only (Vercel env) | Bearer token authorizing the scheduled league-snapshot rebuild route (`/api/cron/rebuild-league-snapshots`) |
