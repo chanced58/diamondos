@@ -11,7 +11,7 @@ import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerMo
 import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
@@ -65,7 +65,7 @@ export default function ScoringScreen() {
   const { gameState, lineScore, events, loading } = useGameState(gameId, teamId);
   const { recordEvent } = useRecordEvent(gameId);
   const { isSyncing, lastSyncError, pendingEventsCount, triggerSync } = useSyncContext();
-  const { settings: leagueSettings, leagueId } = useLeagueContext(teamId);
+  const { settings: leagueSettings, leagueId, pitchRule } = useLeagueContext(teamId);
   const maxBatters = getMaxBattingOrder(leagueSettings);
   const midGameExtensionAllowed = isMidGameExtensionAllowed(leagueSettings);
 
@@ -252,6 +252,38 @@ export default function ScoringScreen() {
     () => events.some((e) => e.eventType === EventType.GAME_START),
     [events],
   );
+
+  // ─── Pitch-count compliance ─────────────────────────────────────────────
+  // Cumulative game total for the pitcher of record (the old label called
+  // this "Pitches (this AB)" but currentPitcherPitchCount was always the
+  // game total). Compliance thresholds come from the league's default rule.
+  const gameDateIso = game ? new Date(game.scheduledAt).toISOString() : new Date().toISOString();
+  const currentPitchTotal = gameState
+    ? (currentPitcherId
+        ? gameState.pitcherPitchCounts[currentPitcherId] ?? 0
+        : gameState.currentPitcherPitchCount)
+    : 0;
+  const pitchStatus =
+    pitchRule && currentPitcherId
+      ? getPitchComplianceStatus(currentPitcherId, currentPitchTotal, pitchRule, gameDateIso)
+      : null;
+
+  // Per-roster-player pitch totals + compliance level for the pitching-change
+  // picker, so the coach sees who is near/over their limit before choosing.
+  const pitcherBadges = useMemo(() => {
+    if (!gameState) return {};
+    const badges: Record<string, { count: number; level: 'ok' | 'warning' | 'danger' | 'over' }> = {};
+    for (const p of roster) {
+      const count = gameState.pitcherPitchCounts[p.id] ?? 0;
+      let level: 'ok' | 'warning' | 'danger' | 'over' = 'ok';
+      if (pitchRule) {
+        const s = getPitchComplianceStatus(p.id, count, pitchRule, gameDateIso);
+        level = s.isOverLimit ? 'over' : s.isAtLimit ? 'danger' : s.isAtWarning ? 'warning' : 'ok';
+      }
+      badges[p.id] = { count, level };
+    }
+    return badges;
+  }, [gameState, roster, pitchRule, gameDateIso]);
 
   // Dropped-third-strike modal — opened either by the manual button in
   // PitchInput, or automatically by handlePitch when a 3rd-strike pitch is
@@ -951,10 +983,35 @@ export default function ScoringScreen() {
       <CountDisplay gameState={gameState} />
       <View className="flex-row items-center justify-between px-5 py-3 border-b border-gray-100">
         <View>
-          <Text className="text-xs text-gray-500">Pitches (this AB)</Text>
-          <Text className="text-lg font-bold text-gray-900">
-            {gameState.currentPitcherPitchCount}
-          </Text>
+          <Text className="text-xs text-gray-500">Pitches (game)</Text>
+          <View className="flex-row items-center gap-1.5">
+            <Text className="text-lg font-bold text-gray-900">{currentPitchTotal}</Text>
+            {pitchStatus && (pitchStatus.isOverLimit || pitchStatus.isAtLimit || pitchStatus.isAtWarning) && (
+              <View
+                className={`px-2 py-0.5 rounded-full ${
+                  pitchStatus.isOverLimit
+                    ? 'bg-red-600'
+                    : pitchStatus.isAtLimit
+                      ? 'bg-red-100'
+                      : 'bg-amber-100'
+                }`}
+              >
+                <Text
+                  className={`text-xs font-semibold ${
+                    pitchStatus.isOverLimit
+                      ? 'text-white'
+                      : pitchStatus.isAtLimit
+                        ? 'text-red-700'
+                        : 'text-amber-700'
+                  }`}
+                >
+                  {pitchStatus.isOverLimit
+                    ? `Over limit (${pitchStatus.maxAllowed})`
+                    : `${currentPitchTotal}/${pitchStatus.maxAllowed}`}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
         <BaserunnerDisplay
           gameState={gameState}
@@ -1129,6 +1186,7 @@ export default function ScoringScreen() {
           .map((l) => l.player_id)}
         defensiveLineup={defensiveLineup}
         roster={roster}
+        pitcherBadges={pitcherBadges}
         onUndoLastEvent={handleUndo}
         runnersOnBase={runnersOnBase}
         onRecordDroppedThirdStrike={handleDroppedThirdStrike}
