@@ -499,6 +499,143 @@ export async function syncWithSupabase(): Promise<void> {
       }
     }
   }
+
+  // Reconcile game lifecycle transitions (scheduled → in_progress →
+  // completed) against the server. Events are pushed FIRST in this same
+  // cycle, so the server already has the game_start / game_end rows this
+  // scan keys off. Never throws — a failed transition retries next cycle.
+  try {
+    await reconcileGameLifecycle(supabase);
+  } catch (err) {
+    console.warn('sync: game lifecycle reconciliation failed; will retry', err);
+  }
+}
+
+// Games this session has already confirmed as completed on the server —
+// skipped on later scans to keep the per-cycle status query small. In-memory
+// only: a restart re-confirms with one query (idempotent).
+const lifecycleReconciledGames = new Set<string>();
+
+/**
+ * Server-side game lifecycle reconciliation, run after each sync cycle.
+ *
+ * Stateless, idempotent scan of the local event log:
+ *   - a (non-voided) local game_start for a game the server still has as
+ *     'scheduled' → rpc fn_start_game (SECURITY DEFINER coach check);
+ *   - a (non-voided) local game_end for a game the server has not completed
+ *     → POST /api/games/:id/finalize (runs the same finalizeGame as the web
+ *     End Game action: status/scores, dual-scorekeeper reconciliation,
+ *     league snapshot recompute).
+ *
+ * The mobile app cannot write the games table (RLS) nor run the web's
+ * TypeScript finalization, which is why both transitions go server-side.
+ */
+async function reconcileGameLifecycle(
+  supabase: ReturnType<typeof getSupabaseClient>,
+): Promise<void> {
+  const lifecycleEvents = await database
+    .get<GameEvent>('game_events')
+    .query(Q.where('event_type', Q.oneOf(['game_start', 'game_end', 'event_voided'])))
+    .fetch();
+  if (lifecycleEvents.length === 0) return;
+
+  // Respect undo: a voided game_start / game_end must not transition the game.
+  const voidedIds = new Set<string>();
+  for (const e of lifecycleEvents) {
+    if (e.eventType !== 'event_voided') continue;
+    const p = e.payload as { voidedEventId?: string };
+    if (p.voidedEventId) voidedIds.add(p.voidedEventId);
+  }
+
+  const startedGames = new Set<string>();
+  const endEventByGame = new Map<string, GameEvent>();
+  for (const e of lifecycleEvents) {
+    if (voidedIds.has(e.remoteId)) continue;
+    if (e.eventType === 'game_start') startedGames.add(e.gameRemoteId);
+    else if (e.eventType === 'game_end') endEventByGame.set(e.gameRemoteId, e);
+  }
+
+  const candidates = [...new Set([...startedGames, ...endEventByGame.keys()])].filter(
+    (id) => !lifecycleReconciledGames.has(id),
+  );
+  if (candidates.length === 0) return;
+
+  const { data: serverGames, error } = await supabase
+    .from('games')
+    .select('id, status')
+    .in('id', candidates);
+  if (error) {
+    console.warn('sync: lifecycle status query failed', error);
+    return;
+  }
+
+  const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+  let accessToken: string | null = null;
+
+  for (const g of serverGames ?? []) {
+    const status = g.status as string;
+
+    // Terminal on the server — nothing left to reconcile this session.
+    if (status === 'completed' || status === 'cancelled') {
+      lifecycleReconciledGames.add(g.id as string);
+      continue;
+    }
+
+    if (status === 'scheduled' && startedGames.has(g.id as string)) {
+      const { error: startErr } = await supabase.rpc('fn_start_game', {
+        p_game_id: g.id as string,
+      });
+      if (startErr) {
+        console.warn('sync: fn_start_game failed', g.id, startErr.message);
+        continue; // retry next cycle
+      }
+    }
+
+    const endEvent = endEventByGame.get(g.id as string);
+    if (!endEvent) continue;
+
+    if (!apiBaseUrl) {
+      console.warn(
+        'sync: EXPO_PUBLIC_API_BASE_URL is not set — cannot finalize game',
+        g.id,
+      );
+      continue;
+    }
+    if (accessToken === null) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      accessToken = sessionData.session?.access_token ?? '';
+      if (!accessToken) {
+        console.warn('sync: no session token for game finalize; will retry');
+        return;
+      }
+    }
+
+    try {
+      const payload = endEvent.payload as { homeScore?: number; awayScore?: number };
+      const res = await fetch(`${apiBaseUrl}/api/games/${g.id}/finalize`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          homeScore: payload.homeScore ?? 0,
+          awayScore: payload.awayScore ?? 0,
+          inning: endEvent.inning,
+          isTopOfInning: endEvent.isTopOfInning,
+          deviceId: endEvent.deviceId,
+        }),
+      });
+      if (res.ok) {
+        lifecycleReconciledGames.add(g.id as string);
+      } else {
+        const body = await res.text().catch(() => '');
+        console.warn('sync: finalize call failed', g.id, res.status, body);
+      }
+    } catch (err) {
+      console.warn('sync: finalize call errored; will retry', g.id, err);
+    }
+  }
 }
 
 /**

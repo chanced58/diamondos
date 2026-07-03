@@ -4912,6 +4912,10 @@ export type Database = {
         Args: { p_actor: string; p_batch_id: string }
         Returns: undefined
       }
+      fn_start_game: {
+        Args: { p_game_id: string }
+        Returns: undefined
+      }
       fn_transfer_player: {
         Args: {
           p_accept_jersey_clear: boolean

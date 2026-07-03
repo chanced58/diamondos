@@ -622,6 +622,47 @@ export default function ScoringScreen() {
     );
   }
 
+  // ─── End game ───────────────────────────────────────────────────────────
+  // Works fully offline: records GAME_END + marks the local games row
+  // completed. Server-side finalization (status/scores, dual-scorekeeper
+  // reconciliation, league snapshots) runs via the sync engine's lifecycle
+  // scan once connectivity returns — no web visit needed.
+  async function handleEndGame() {
+    if (!gameState || !lineScore) return;
+    await recordEvent(EventType.GAME_END, gameState.inning, gameState.isTopOfInning, {
+      homeScore: lineScore.homeRuns,
+      awayScore: lineScore.awayRuns,
+    });
+    if (game) {
+      try {
+        await database.write(async () => {
+          await game.update((g) => {
+            g.status = 'completed';
+            g.homeScore = lineScore.homeRuns;
+            g.awayScore = lineScore.awayRuns;
+          });
+        });
+      } catch (err) {
+        // The GAME_END event is authoritative (score screen keys off
+        // gameState.isFinal); a stale list badge self-heals after finalize.
+        console.warn(`End Game local status write failed game=${gameId}:`, err);
+      }
+    }
+    triggerSync().catch(console.warn);
+  }
+
+  function confirmEndGame() {
+    if (!gameState || !lineScore) return;
+    Alert.alert(
+      'End game?',
+      `Final score ${lineScore.homeRuns}–${lineScore.awayRuns}. The result finalizes automatically when the device is back online.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'End Game', style: 'destructive', onPress: () => { handleEndGame().catch(console.warn); } },
+      ],
+    );
+  }
+
   async function handlePitchingChange(newPitcherId: string) {
     if (!gameState) return;
     const payload: PitchingChangePayload = {
@@ -948,10 +989,18 @@ export default function ScoringScreen() {
       />
 
       {/* League-rule advisories (mercy / run cap / regulation complete) */}
-      {gameEndDecision && (
-        <View className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg">
-          <Text className="text-sm font-semibold text-amber-900">End game?</Text>
-          <Text className="text-xs text-amber-800 mt-0.5">{gameEndDecision.message}</Text>
+      {gameEndDecision && !gameState.isFinal && (
+        <View className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg flex-row items-center">
+          <View className="flex-1">
+            <Text className="text-sm font-semibold text-amber-900">End game?</Text>
+            <Text className="text-xs text-amber-800 mt-0.5">{gameEndDecision.message}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={confirmEndGame}
+            className="ml-2 px-3 py-1.5 rounded-full bg-amber-600"
+          >
+            <Text className="text-xs font-semibold text-white">End Game</Text>
+          </TouchableOpacity>
         </View>
       )}
       {runCapReached && (
@@ -1031,14 +1080,27 @@ export default function ScoringScreen() {
         ) : null}
       </View>
 
-      {/* Game controls — manual half-inning switch (run cap, time limit, corrections) */}
-      {gameStarted && gameState.outs < OUTS_PER_INNING && (
+      {/* Game controls — manual half-inning switch (run cap, time limit,
+          corrections) and game completion */}
+      {gameStarted && !gameState.isFinal && gameState.outs < OUTS_PER_INNING && (
         <View className="flex-row items-center gap-2 px-4 pt-2">
           <TouchableOpacity
             onPress={confirmInningChange}
             className="px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200"
           >
             <Text className="text-xs font-semibold text-gray-700">End Inning ▸</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={confirmEndGame}
+            className={`px-3 py-1.5 rounded-full border ${
+              gameEndDecision
+                ? 'bg-amber-100 border-amber-300'
+                : 'bg-gray-100 border-gray-200'
+            }`}
+          >
+            <Text className={`text-xs font-semibold ${gameEndDecision ? 'text-amber-800' : 'text-gray-700'}`}>
+              End Game
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -1146,13 +1208,38 @@ export default function ScoringScreen() {
           <Text className="text-sm text-gray-500 mb-5">
             {gameState.isTopOfInning ? 'Top' : 'Bottom'} {gameState.inning} is over.
           </Text>
-          <TouchableOpacity
-            onPress={() => { handleInningChange().catch(console.warn); }}
-            className="w-full bg-blue-600 rounded-2xl py-4 items-center"
-          >
-            <Text className="text-white text-lg font-bold">Start {nextHalfLabel} ▸</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => { handleUndo().catch(console.warn); }} className="mt-4 px-4 py-2">
+          {/* When the league rules say the game can end here (regulation
+              complete, mercy), ending the game leads; otherwise the next
+              half leads and End Game stays available as the secondary. */}
+          {gameEndDecision ? (
+            <>
+              <TouchableOpacity
+                onPress={confirmEndGame}
+                className="w-full bg-amber-600 rounded-2xl py-4 items-center"
+              >
+                <Text className="text-white text-lg font-bold">End Game — {lineScore ? `${lineScore.homeRuns}–${lineScore.awayRuns}` : 'Final'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => { handleInningChange().catch(console.warn); }}
+                className="w-full bg-blue-600 rounded-2xl py-3 items-center mt-3"
+              >
+                <Text className="text-white text-base font-bold">Start {nextHalfLabel} ▸</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity
+                onPress={() => { handleInningChange().catch(console.warn); }}
+                className="w-full bg-blue-600 rounded-2xl py-4 items-center"
+              >
+                <Text className="text-white text-lg font-bold">Start {nextHalfLabel} ▸</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmEndGame} className="mt-3 px-4 py-2">
+                <Text className="text-gray-600 text-sm font-semibold">End Game</Text>
+              </TouchableOpacity>
+            </>
+          )}
+          <TouchableOpacity onPress={() => { handleUndo().catch(console.warn); }} className="mt-2 px-4 py-2">
             <Text className="text-gray-500 text-sm">Undo last event</Text>
           </TouchableOpacity>
         </View>
