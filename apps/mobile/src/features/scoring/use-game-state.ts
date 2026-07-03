@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import { Q } from '@nozbe/watermelondb';
 import { database } from '../../db';
 import type { GameEvent } from '../../db/models/GameEvent';
-import { computeLineScore, deriveGameState, filterResetAndReverted } from '@baseball/shared';
+import {
+  computeLineScore,
+  deriveGameState,
+  filterResetAndReverted,
+  filterVoidedAndRevertedEvents,
+} from '@baseball/shared';
 import type { LineScoreData, LiveGameState } from '@baseball/shared';
 import type { GameEvent as SharedGameEvent } from '@baseball/shared';
 
@@ -13,11 +18,14 @@ import type { GameEvent as SharedGameEvent } from '@baseball/shared';
  *
  * Also returns the line score (inning-by-inning runs/hits/errors) so
  * league-rule advisories (mercy, run cap, regulation complete) can be
- * evaluated without an extra query.
+ * evaluated without an extra query, plus the void/revert-filtered shared
+ * events so callers (due-batter derivation) can reuse the mapped stream
+ * without a second query.
  */
 export function useGameState(gameRemoteId: string, homeTeamId: string) {
   const [gameState, setGameState] = useState<LiveGameState | null>(null);
   const [lineScore, setLineScore] = useState<LineScoreData | null>(null);
+  const [events, setEvents] = useState<SharedGameEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -41,8 +49,12 @@ export function useGameState(gameRemoteId: string, homeTeamId: string) {
           deviceId: e.deviceId,
         }));
 
-        const state = deriveGameState(gameRemoteId, sharedEvents, homeTeamId);
+        // deriveGameState filters corrections internally (idempotently);
+        // filter here too so the exposed events match what was replayed.
+        const activeEvents = filterVoidedAndRevertedEvents(sharedEvents);
+        const state = deriveGameState(gameRemoteId, activeEvents, homeTeamId);
         setGameState(state);
+        setEvents(activeEvents);
 
         // computeLineScore expects snake_case rows (it's a database-row adapter
         // shared with the web client). Re-map the WDB models, then strip out
@@ -65,5 +77,5 @@ export function useGameState(gameRemoteId: string, homeTeamId: string) {
     return () => subscription.unsubscribe();
   }, [gameRemoteId, homeTeamId]);
 
-  return { gameState, lineScore, loading };
+  return { gameState, lineScore, events, loading };
 }
