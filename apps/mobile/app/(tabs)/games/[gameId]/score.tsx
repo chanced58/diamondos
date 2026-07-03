@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, Modal, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, ScrollView, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useGameState } from '../../../../src/features/scoring/use-game-state';
 import { useRecordEvent } from '../../../../src/features/scoring/use-record-event';
@@ -11,7 +11,7 @@ import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerMo
 import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
@@ -563,6 +563,33 @@ export default function ScoringScreen() {
     setShowLineupModal(false);
   }
 
+  // ─── Inning advancement ─────────────────────────────────────────────────
+  // deriveGameState never auto-flips the half at 3 outs — the scorer
+  // confirms via the 3-outs prompt (or the End Inning control for early
+  // switches like a run cap or time limit). Empty payload matches web.
+  const nextHalfLabel = gameState
+    ? gameState.isTopOfInning
+      ? `Bottom ${gameState.inning}`
+      : `Top ${gameState.inning + 1}`
+    : '';
+
+  async function handleInningChange() {
+    if (!gameState) return;
+    await recordEvent(EventType.INNING_CHANGE, gameState.inning, gameState.isTopOfInning, {});
+  }
+
+  function confirmInningChange() {
+    if (!gameState) return;
+    Alert.alert(
+      'End half-inning?',
+      `Switch sides and start the ${nextHalfLabel} with ${gameState.outs} out${gameState.outs === 1 ? '' : 's'} recorded.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Switch sides', onPress: () => { handleInningChange().catch(console.warn); } },
+      ],
+    );
+  }
+
   async function handlePitchingChange(newPitcherId: string) {
     if (!gameState) return;
     const payload: PitchingChangePayload = {
@@ -896,11 +923,19 @@ export default function ScoringScreen() {
         </View>
       )}
       {runCapReached && (
-        <View className="mx-4 mt-2 p-3 bg-blue-50 border border-blue-300 rounded-lg">
-          <Text className="text-sm font-semibold text-blue-900">Run cap reached</Text>
-          <Text className="text-xs text-blue-800 mt-0.5">
-            Switch sides via the Inning Change control.
-          </Text>
+        <View className="mx-4 mt-2 p-3 bg-blue-50 border border-blue-300 rounded-lg flex-row items-center">
+          <View className="flex-1">
+            <Text className="text-sm font-semibold text-blue-900">Run cap reached</Text>
+            <Text className="text-xs text-blue-800 mt-0.5">
+              This half-inning ends at the league run cap.
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={confirmInningChange}
+            className="ml-2 px-3 py-1.5 rounded-full bg-blue-600"
+          >
+            <Text className="text-xs font-semibold text-white">Switch sides</Text>
+          </TouchableOpacity>
         </View>
       )}
       {ghostRunnerBase && (
@@ -938,6 +973,18 @@ export default function ScoringScreen() {
           <Text className="text-xs text-amber-600">{pendingEventsCount} unsynced</Text>
         ) : null}
       </View>
+
+      {/* Game controls — manual half-inning switch (run cap, time limit, corrections) */}
+      {gameStarted && gameState.outs < OUTS_PER_INNING && (
+        <View className="flex-row items-center gap-2 px-4 pt-2">
+          <TouchableOpacity
+            onPress={confirmInningChange}
+            className="px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200"
+          >
+            <Text className="text-xs font-semibold text-gray-700">End Inning ▸</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Pre-game lineup prompt — visible until a starting pitcher is known */}
       {gameState.currentPitcherId === null && (
@@ -1033,7 +1080,26 @@ export default function ScoringScreen() {
         onCancel={() => setShowBatterPicker(false)}
       />
 
-      {/* Bottom: pitch / outcome input */}
+      {/* Bottom: 3-outs prompt or pitch / outcome input. deriveGameState
+          holds the half open until an explicit INNING_CHANGE, so at 3 outs
+          the input surface is replaced by the switch-sides prompt. */}
+      {gameState.outs >= OUTS_PER_INNING ? (
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-2xl font-bold text-gray-900 mb-1">3 outs</Text>
+          <Text className="text-sm text-gray-500 mb-5">
+            {gameState.isTopOfInning ? 'Top' : 'Bottom'} {gameState.inning} is over.
+          </Text>
+          <TouchableOpacity
+            onPress={() => { handleInningChange().catch(console.warn); }}
+            className="w-full bg-blue-600 rounded-2xl py-4 items-center"
+          >
+            <Text className="text-white text-lg font-bold">Start {nextHalfLabel} ▸</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => { handleUndo().catch(console.warn); }} className="mt-4 px-4 py-2">
+            <Text className="text-gray-500 text-sm">Undo last event</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
       <PitchInput
         onRecordPitch={handlePitch}
         onRecordHit={handleHit}
@@ -1069,6 +1135,7 @@ export default function ScoringScreen() {
         d3kModalOpen={showD3KModal}
         setD3KModalOpen={setShowD3KModal}
       />
+      )}
     </View>
   );
 }
