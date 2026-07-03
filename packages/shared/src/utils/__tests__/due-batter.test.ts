@@ -151,6 +151,7 @@ describe('attributePlayersForHalf', () => {
       weAreHome,
       isTopOfInning,
       ourBatterId: 'us1',
+      ourPitcherId: 'our-pitcher',
       statePitcherId: weBat ? 'opp-p' : 'our-pitcher',
       stateBatterId: weBat ? 'us1' : 'opp-b',
       ourPlayerIds: OUR_IDS,
@@ -163,40 +164,59 @@ describe('attributePlayersForHalf', () => {
     }
   });
 
-  it('omits the pitcher on our offensive half when the state id is one of ours (stale)', () => {
+  it('uses ourPitcherId on our defensive half even when the state pitcher was reset (post inning change)', () => {
+    // INNING_CHANGE resets gameState.currentPitcherId to null; our pitcher
+    // must still be attributed from ourPitcherId (derived from the lineup /
+    // pitching changes), otherwise pitches record no pitcher.
+    const result = attributePlayersForHalf({
+      weAreHome: true,
+      isTopOfInning: true, // home fields in the top
+      ourBatterId: null,
+      ourPitcherId: 'our-pitcher',
+      statePitcherId: null, // reset by inning change
+      stateBatterId: 'opp-b',
+      ourPlayerIds: OUR_IDS,
+    });
+    expect(result).toEqual({ opponentBatterId: 'opp-b', pitcherId: 'our-pitcher' });
+  });
+
+  it('omits the pitcher on our offensive half (we are not pitching)', () => {
     const result = attributePlayersForHalf({
       weAreHome: true,
       isTopOfInning: false,
       ourBatterId: 'us1',
-      statePitcherId: 'our-pitcher', // stale — our player can't pitch to us
+      ourPitcherId: 'our-pitcher',
+      statePitcherId: null,
       stateBatterId: 'us1',
       ourPlayerIds: OUR_IDS,
     });
     expect(result).toEqual({ batterId: 'us1' });
   });
 
-  it('omits the batter on the opponent half when the state id is one of ours (stale)', () => {
+  it('omits the opponent batter when the state id is one of ours (stale leak across a half)', () => {
     const result = attributePlayersForHalf({
       weAreHome: true,
       isTopOfInning: true,
       ourBatterId: null,
+      ourPitcherId: 'our-pitcher',
       statePitcherId: 'our-pitcher',
-      stateBatterId: 'us2', // stale leak from our previous half
+      stateBatterId: 'us2', // stale leak from our previous offensive half
       ourPlayerIds: OUR_IDS,
     });
     expect(result).toEqual({ pitcherId: 'our-pitcher' });
   });
 
-  it('omits our pitcher on the opponent half when the state id is not recognized as ours', () => {
+  it('sets the opponent pitcher on our offensive half only when the state id is not ours', () => {
     const result = attributePlayersForHalf({
       weAreHome: false,
-      isTopOfInning: false,
-      ourBatterId: null,
-      statePitcherId: 'unknown-id',
-      stateBatterId: 'opp-b',
+      isTopOfInning: true, // away bats in the top
+      ourBatterId: 'us1',
+      ourPitcherId: 'our-pitcher',
+      statePitcherId: 'opp-p',
+      stateBatterId: 'us1',
       ourPlayerIds: OUR_IDS,
     });
-    expect(result).toEqual({ opponentBatterId: 'opp-b' });
+    expect(result).toEqual({ batterId: 'us1', opponentPitcherId: 'opp-p' });
   });
 
   it('returns an empty attribution when nothing is known', () => {
@@ -204,6 +224,7 @@ describe('attributePlayersForHalf', () => {
       weAreHome: true,
       isTopOfInning: false,
       ourBatterId: null,
+      ourPitcherId: null,
       statePitcherId: null,
       stateBatterId: null,
       ourPlayerIds: OUR_IDS,

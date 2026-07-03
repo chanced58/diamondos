@@ -177,6 +177,11 @@ export function deriveGameState(
       case EventType.HIT: {
         const p = event.payload as HitPayload;
         const bases = hitTypeToBases(p.hitType);
+        // Place the payload's batter on base, not state.currentBatterId:
+        // currentBatterId only updates on PITCH_THROWN, so a HIT recorded
+        // without a preceding pitch (quick entry) would otherwise strand the
+        // stale previous batter's id on the bag. Mirrors the WALK handler.
+        const hitBatterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId;
         // Guard runner advancement / run scoring when the inning is already
         // over (e.g. a fielder's choice whose preceding BASERUNNER_OUT was
         // the 3rd out). The batter still completes a PA + AB, so incrementPA
@@ -209,7 +214,7 @@ export function deriveGameState(
             if (r1 && 1 + bases >= 4 && !isRunnerOverridden(r1, overrides))  runs++;
             if (runs > 0) addRuns(state, runs, state.isTopOfInning);
             state.runnersOnBase = advanceRunnersWithOverrides(
-              state.runnersOnBase, state.currentBatterId, bases, overrides,
+              state.runnersOnBase, hitBatterId, bases, overrides,
             );
           }
         }
@@ -233,12 +238,14 @@ export function deriveGameState(
         // Batter reaches base on the error — force-advance any runners already
         // on base (same logic as a walk) and place batter on first.
         // If bases were loaded, the runner on third is forced home.
+        const p = event.payload as { batterId?: string; opponentBatterId?: string };
+        const errorBatterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId;
         const errorBasesLoaded = !!(
           state.runnersOnBase.first &&
           state.runnersOnBase.second &&
           state.runnersOnBase.third
         );
-        state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, state.currentBatterId);
+        state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, errorBatterId);
         if (errorBasesLoaded) addRuns(state, 1, state.isTopOfInning);
         state.balls = 0;
         state.strikes = 0;
@@ -261,12 +268,13 @@ export function deriveGameState(
           state.outs++;
         } else {
           // Batter reaches first — force-advance runners
+          const d3kBatterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId;
           const basesLoaded = !!(
             state.runnersOnBase.first &&
             state.runnersOnBase.second &&
             state.runnersOnBase.third
           );
-          state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, state.currentBatterId);
+          state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, d3kBatterId);
           if (basesLoaded) addRuns(state, 1, state.isTopOfInning);
         }
         state.balls = 0;

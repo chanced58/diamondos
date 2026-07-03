@@ -180,6 +180,25 @@ export default function ScoringScreen() {
   // due batter → engine state (GAME_START leadoff when no lineup is set).
   const ourBatterId = batterOverrideId ?? dueBatter?.playerId ?? gameState?.currentBatterId ?? null;
 
+  // Our current pitcher, derived from the event stream so it persists across
+  // innings — gameState.currentPitcherId is reset to null by INNING_CHANGE, so
+  // relying on it would drop pitcher attribution (and pitch counts) from the
+  // second defensive inning on. GAME_START seeds our starter; our own
+  // PITCHING_CHANGE events update it.
+  const ourPitcherId = useMemo(() => {
+    let pid: string | null = null;
+    for (const ev of events) {
+      if (ev.eventType === EventType.GAME_START) {
+        const p = ev.payload as { homeLineupPitcherId?: string; awayLineupPitcherId?: string };
+        pid = (isHome ? p.homeLineupPitcherId : p.awayLineupPitcherId) ?? pid;
+      } else if (ev.eventType === EventType.PITCHING_CHANGE) {
+        const p = ev.payload as { newPitcherId?: string; isOpponentChange?: boolean };
+        if (!p.isOpponentChange && p.newPitcherId) pid = p.newPitcherId;
+      }
+    }
+    return pid;
+  }, [events, isHome]);
+
   // Every platform player id we can safely attribute events to: our roster
   // plus everyone in the lineup (guests included). Ids outside this set are
   // opponent players (or stale leaks) and must go in opponent* fields.
@@ -198,6 +217,7 @@ export default function ScoringScreen() {
         weAreHome: isHome,
         isTopOfInning: gameState.isTopOfInning,
         ourBatterId,
+        ourPitcherId,
         statePitcherId: gameState.currentPitcherId,
         stateBatterId: gameState.currentBatterId,
         ourPlayerIds,
@@ -257,15 +277,22 @@ export default function ScoringScreen() {
   // Cumulative game total for the pitcher of record (the old label called
   // this "Pitches (this AB)" but currentPitcherPitchCount was always the
   // game total). Compliance thresholds come from the league's default rule.
+  //
+  // On defense the pitcher of record is ours (from ourPitcherId, which
+  // survives inning changes); on offense it's the opponent's. The compliance
+  // chip is shown only for our own pitcher — applying our league's rule to
+  // the opponent's pitcher would be meaningless.
   const gameDateIso = game ? new Date(game.scheduledAt).toISOString() : new Date().toISOString();
-  const currentPitchTotal = gameState
-    ? (currentPitcherId
-        ? gameState.pitcherPitchCounts[currentPitcherId] ?? 0
-        : gameState.currentPitcherPitchCount)
-    : 0;
+  const displayPitcherId = weBat
+    ? (gameState?.currentPitcherId ?? null)
+    : (ourPitcherId ?? gameState?.currentPitcherId ?? null);
+  const currentPitchTotal =
+    gameState && displayPitcherId
+      ? gameState.pitcherPitchCounts[displayPitcherId] ?? 0
+      : gameState?.currentPitcherPitchCount ?? 0;
   const pitchStatus =
-    pitchRule && currentPitcherId
-      ? getPitchComplianceStatus(currentPitcherId, currentPitchTotal, pitchRule, gameDateIso)
+    pitchRule && displayPitcherId && ourPlayerIds.has(displayPitcherId)
+      ? getPitchComplianceStatus(displayPitcherId, currentPitchTotal, pitchRule, gameDateIso)
       : null;
 
   // Per-roster-player pitch totals + compliance level for the pitching-change
@@ -585,6 +612,13 @@ export default function ScoringScreen() {
 
   async function handleStartGame(pitcherId: string, batterId: string) {
     if (!gameState) return;
+    // `isHome` is derived from the async-resolved Game row and defaults to
+    // true before it loads. Block starting until the row is present so a road
+    // game can't seed the home* lineup slots by mistake.
+    if (!game) {
+      console.warn(`handleStartGame: game row not loaded yet game=${gameId}`);
+      return;
+    }
     // Which team are we scoring? `isHome` comes from the resolved Game row's
     // locationType / neutralHomeTeam so road games seed the away* lineup
     // slots instead of misattributing to home*.

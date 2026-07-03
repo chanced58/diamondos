@@ -739,16 +739,28 @@ export function ScoringBoard({
     setFcOutRunnerId(null);
   }
 
-  // Apply PITCH_REVERTED markers: each reverts the event list to a given sequence
-  // number, preserving the append-only event log while supporting undo.
+  // Apply undo/correction markers, keeping the append-only log intact:
+  //   - PITCH_REVERTED reverts the list back to a sequence number (web undo).
+  //   - EVENT_VOIDED removes the referenced event (mobile undo). Handled here
+  //     too so this line-score path stays consistent with deriveGameState,
+  //     which void-filters internally — a game scored on mobile (which emits
+  //     event_voided) and viewed here would otherwise show voided plays in the
+  //     line score while the derived score/runners excluded them.
   const effectiveEventRows: EventRow[] = (() => {
     const result: EventRow[] = [];
     for (const row of eventRows) {
-      if ((row.event_type as string) === 'pitch_reverted') {
+      const etype = row.event_type as string;
+      if (etype === 'pitch_reverted') {
         const p = (row.payload ?? {}) as Record<string, unknown>;
         const keepUntilSeq = p.revertToSequenceNumber as number;
         result.splice(0, result.length, ...result.filter((r) => (r.sequence_number as number) <= keepUntilSeq));
         // The pitch_reverted marker itself is NOT added to the result
+      } else if (etype === 'event_voided') {
+        const p = (row.payload ?? {}) as Record<string, unknown>;
+        const voidedId = p.voidedEventId as string | undefined;
+        const idx = voidedId ? result.findIndex((r) => (r.id as string) === voidedId) : -1;
+        if (idx !== -1) result.splice(idx, 1);
+        // The event_voided marker itself is NOT added to the result
       } else {
         result.push(row);
       }

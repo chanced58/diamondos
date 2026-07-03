@@ -656,6 +656,45 @@ describe('deriveGameState — EVENT_VOIDED / PITCH_REVERTED filtering', () => {
   });
 });
 
+describe('deriveGameState — base placement uses the payload batter (no preceding pitch)', () => {
+  beforeEach(resetSeq);
+
+  const start = () => [
+    e(EventType.GAME_START, {
+      awayLineupPitcherId: 'home-p',
+      homeLineupPitcherId: 'away-p',
+      awayLeadoffBatterId: 'a1',
+      homeLeadoffBatterId: 'h1',
+    }),
+  ];
+
+  it('places the HIT payload batter on base even when currentBatterId is stale', () => {
+    // a1 singles (state.currentBatterId becomes a1). Then a2 singles with NO
+    // preceding pitch — the quick-entry path a mobile scorer can take. The
+    // batter placed on 1st must be a2 (payload), not the stale a1.
+    const events: GameEvent[] = [
+      ...start(),
+      ...batterHit('a1', HitType.SINGLE), // a1 → 1st, currentBatterId = a1
+      // a2 reaches on a single with no pitch event first.
+      e(EventType.HIT, { batterId: 'a2', hitType: HitType.SINGLE }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+
+    expect(state.runnersOnBase.first).toBe('a2');
+    expect(state.runnersOnBase.second).toBe('a1');
+  });
+
+  it('places the FIELD_ERROR payload batter on first when currentBatterId is stale', () => {
+    const events: GameEvent[] = [
+      ...start(),
+      ...batterOut('a1', 'groundout'), // currentBatterId = a1
+      e(EventType.FIELD_ERROR, { batterId: 'a2', errorBy: 6 }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    expect(state.runnersOnBase.first).toBe('a2');
+  });
+});
+
 describe('deriveGameState — GAME_END / isFinal', () => {
   beforeEach(resetSeq);
 

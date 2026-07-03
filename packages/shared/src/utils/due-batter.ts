@@ -94,29 +94,39 @@ export interface HalfAttribution {
 /**
  * Build the correct batter/pitcher payload fields for the active half.
  *
- * - Our offensive half: the due batter (from our lineup) goes in `batterId`;
- *   the state's pitcher — if not one of ours — is the opponent's pitcher.
- * - Opponent's offensive half: the state's batter — if not one of ours —
- *   goes in `opponentBatterId`; the state's pitcher — if ours — in
- *   `pitcherId`.
+ * Our side always uses OUR derived ids (the due batter from the lineup, our
+ * current pitcher from the lineup / pitching changes) — never the reducer's
+ * `currentBatterId`/`currentPitcherId`, which INNING_CHANGE resets to null and
+ * which can hold the opponent's or a stale id. The opponent side is filled
+ * from the reducer state, but only when that id is NOT one of ours (guards
+ * against a stale leak from our own half being mis-filed as the opponent).
  *
- * Ids of unknown provenance (e.g. stale leaks across an inning change) are
- * omitted rather than mis-attributed; stats modules skip events with no
- * batter/pitcher rather than credit a wrong player.
+ * - Our offensive half: `batterId` = our due batter; `opponentPitcherId` =
+ *   the state pitcher when it is not one of ours.
+ * - Our defensive half: `pitcherId` = our current pitcher; `opponentBatterId`
+ *   = the state batter when it is not one of ours.
+ *
+ * Ids of unknown provenance are omitted rather than mis-attributed; stats
+ * modules skip events with no batter/pitcher rather than credit a wrong
+ * player.
  */
 export function attributePlayersForHalf(args: {
   weAreHome: boolean;
   isTopOfInning: boolean;
   /** The batter we derived from our own lineup (due batter or override). */
   ourBatterId: string | null;
-  /** gameState.currentPitcherId */
+  /** Our current pitcher, derived from GAME_START + our PITCHING_CHANGEs
+   *  (persists across innings — unlike gameState.currentPitcherId, which
+   *  INNING_CHANGE resets to null). */
+  ourPitcherId: string | null;
+  /** gameState.currentPitcherId — used only to identify the opponent pitcher. */
   statePitcherId: string | null;
-  /** gameState.currentBatterId */
+  /** gameState.currentBatterId — used only to identify the opponent batter. */
   stateBatterId: string | null;
   /** Every platform player id we can attribute to: roster + lineup (incl. guests). */
   ourPlayerIds: ReadonlySet<string>;
 }): HalfAttribution {
-  const { weAreHome, isTopOfInning, ourBatterId, statePitcherId, stateBatterId, ourPlayerIds } = args;
+  const { weAreHome, isTopOfInning, ourBatterId, ourPitcherId, statePitcherId, stateBatterId, ourPlayerIds } = args;
   // Home bats in the bottom half; away bats in the top half.
   const weBat = weAreHome ? !isTopOfInning : isTopOfInning;
   const result: HalfAttribution = {};
@@ -127,11 +137,9 @@ export function attributePlayersForHalf(args: {
       result.opponentPitcherId = statePitcherId;
     }
   } else {
+    if (ourPitcherId) result.pitcherId = ourPitcherId;
     if (stateBatterId && !ourPlayerIds.has(stateBatterId)) {
       result.opponentBatterId = stateBatterId;
-    }
-    if (statePitcherId && ourPlayerIds.has(statePitcherId)) {
-      result.pitcherId = statePitcherId;
     }
   }
 
