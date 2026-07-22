@@ -5,6 +5,8 @@ import { getSupabaseClient } from '../../src/lib/supabase';
 
 export default function SignInScreen() {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [usePassword, setUsePassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -15,6 +17,19 @@ export default function SignInScreen() {
     if (!email.trim()) return;
     setLoading(true);
     setError(null);
+
+    if (usePassword) {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.toLowerCase().trim(),
+        password,
+      });
+      if (signInError) {
+        setError(signInError.message);
+      }
+      // On success the AuthProvider catches the session change and redirects.
+      setLoading(false);
+      return;
+    }
 
     const { error: signInError } = await supabase.auth.signInWithOtp({
       email: email.toLowerCase().trim(),
@@ -69,6 +84,22 @@ export default function SignInScreen() {
           />
         </View>
 
+        {usePassword && (
+          <View className="w-full mb-4">
+            <Text className="text-blue-200 text-sm font-medium mb-1">Password</Text>
+            <TextInput
+              className="bg-white/10 border border-white/20 rounded-xl px-4 py-3.5 text-white text-base"
+              placeholder="••••••••"
+              placeholderTextColor="rgba(147,197,253,0.5)"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+        )}
+
         {error && (
           <View className="w-full bg-red-500/20 border border-red-400/30 rounded-xl px-4 py-3 mb-4">
             <Text className="text-red-300 text-sm">{error}</Text>
@@ -77,19 +108,38 @@ export default function SignInScreen() {
 
         <TouchableOpacity
           className={`w-full bg-white rounded-xl py-3.5 items-center ${
-            loading || !email ? 'opacity-50' : ''
+            loading || !email || (usePassword && !password) ? 'opacity-50' : ''
           }`}
           onPress={handleSignIn}
-          disabled={loading || !email.trim()}
+          disabled={loading || !email.trim() || (usePassword && !password)}
         >
           <Text className="text-brand-700 font-bold text-base">
-            {loading ? 'Sending...' : 'Send magic link'}
+            {loading
+              ? 'Signing in…'
+              : usePassword
+                ? 'Sign in'
+                : 'Send magic link'}
           </Text>
         </TouchableOpacity>
 
-        <Text className="text-blue-400 text-xs text-center mt-6">
-          No password needed. We'll email you a one-click sign-in link.
-        </Text>
+        <TouchableOpacity
+          className="mt-4"
+          onPress={() => {
+            setUsePassword((v) => !v);
+            setPassword('');
+            setError(null);
+          }}
+        >
+          <Text className="text-blue-400 text-sm underline">
+            {usePassword ? 'Use magic link instead' : 'Sign in with password instead'}
+          </Text>
+        </TouchableOpacity>
+
+        {!usePassword && (
+          <Text className="text-blue-400 text-xs text-center mt-6">
+            No password needed. We'll email you a one-click sign-in link.
+          </Text>
+        )}
       </View>
     </KeyboardAvoidingView>
   );

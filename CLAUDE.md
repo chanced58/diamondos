@@ -22,7 +22,7 @@ This file provides guidance for AI assistants (Claude and others) working on thi
 |------|--------|
 | Initialized | Yes |
 | Source code | Phase 1 complete — monorepo scaffold, packages, Supabase schema, web + mobile apps |
-| Tests | Not yet configured (add tests alongside business logic in `packages/shared/src/utils/`) |
+| Tests | `packages/shared/src/utils/` has solid Jest coverage (event-sourcing reducer, pitch count, stats). `apps/mobile` has no test setup yet — UI/hooks/sync are untested. |
 | CI/CD | Not yet configured |
 | Documentation | CLAUDE.md + inline code comments |
 
@@ -84,9 +84,11 @@ pnpm dev
 # Web only (Next.js on http://localhost:3000)
 pnpm dev:web
 
-# Mobile only (Expo — opens in Expo Go or simulator)
+# Mobile only (Expo — starts Metro for the custom dev client, NOT Expo Go)
 pnpm dev:mobile
 ```
+
+> Mobile uses a custom **dev client**, not Expo Go — see [Mobile Development Workflow](#mobile-development-workflow) below before touching `apps/mobile`.
 
 ### Run Tests
 ```bash
@@ -135,6 +137,42 @@ supabase functions deploy maxpreps-export
 supabase functions deploy create-team
 supabase functions deploy invite-member
 ```
+
+---
+
+## Mobile Development Workflow
+
+`apps/mobile` depends on `@nozbe/watermelondb`, which requires native/JSI code. **Expo Go cannot run it.** The project uses a custom **Expo Dev Client** instead (`expo-dev-client` + `eas.json`). Do not suggest scanning the Expo Go QR code or `npx expo start` without `--dev-client` — that path silently breaks WatermelonDB and is the source of most "mystery" bugs that only show up during a live game test.
+
+### One-time setup (per device / per native dependency change)
+
+1. Install Android Studio (emulator) and, for iOS, Xcode (Mac only) or plan to build via EAS for a physical iPhone.
+2. Log into EAS: `eas login` (needs an Expo account with access to this project).
+3. Build the dev client:
+   ```bash
+   cd apps/mobile
+   pnpm build:dev:android   # eas build --profile development --platform android
+   pnpm build:dev:ios       # eas build --profile development --platform ios
+   ```
+4. Install the resulting build on the emulator/device (EAS gives a link/QR for the build artifact itself — this is a one-time app install, separate from the Metro QR code used during daily dev).
+
+**Only redo this build when a native dependency changes** (new/upgraded native package, `app.json` plugin change, native config change). Regular TS/JS/business-logic changes never require a rebuild.
+
+### Daily loop (fast — no rebuilds, no rescanning)
+
+```bash
+cd apps/mobile
+pnpm dev   # expo start --dev-client — leave this running all session
+```
+
+- Open the dev client app once and connect to this Metro instance.
+- Every code change hot-reloads on the emulator/device in ~1-2 seconds via Fast Refresh.
+- **Never restart the server or scan a new QR code per change** — that was the old (slow, bug-prone) workflow. Only restart Metro for a stale-cache issue (`pnpm dev -- -c` / `expo start --dev-client -c`).
+- Prefer the **Android emulator** for iteration: instant state resets (`adb shell pm clear com.baseballcoachesapp`), wired connection (no wifi flakiness), and full DevTools access. Reserve the physical Samsung/iPhone for final pre-demo checks.
+
+### Catching scoring bugs before they reach a device
+
+`deriveGameState` and the stats/pitch-count reducers in `packages/shared/src/utils/` are pure functions with solid Jest coverage already — run `pnpm --filter @baseball/shared test` (or `pnpm test`) after any scoring/event-sourcing change. Most of the bugs that used to surface only mid-live-game are reducer bugs that a unit test catches in seconds. Add a test case there before reaching for the emulator when fixing a scoring bug.
 
 ---
 
