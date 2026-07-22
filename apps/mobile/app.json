@@ -40,6 +40,15 @@
     "scheme": "baseballcoaches",
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "63389a23-3d8b-473f-a51b-9ea7c95c8db6"
+      }
+    },
+    "owner": "carter958"
   }
 }
