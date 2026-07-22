@@ -20,7 +20,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1e3a8a"
       },
-      "package": "com.baseballcoachesapp"
+      "package": "com.baseballcoachesapp",
+      "newArchEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png",
