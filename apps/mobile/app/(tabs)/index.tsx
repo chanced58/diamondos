@@ -23,7 +23,7 @@ export default function HomeScreen() {
       <View className="px-5 space-y-3">
         <TouchableOpacity
           className="bg-white rounded-xl border border-gray-200 p-5"
-          onPress={() => router.push('/(tabs)/games/index')}
+          onPress={() => router.push('/(tabs)/games')}
         >
           <Text className="text-lg font-semibold text-gray-900 mb-1">Today's Games</Text>
           <Text className="text-gray-500 text-sm">View schedule and score a game</Text>
@@ -31,7 +31,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           className="bg-white rounded-xl border border-gray-200 p-5"
-          onPress={() => router.push('/(tabs)/roster/index')}
+          onPress={() => router.push('/(tabs)/roster')}
         >
           <Text className="text-lg font-semibold text-gray-900 mb-1">Roster</Text>
           <Text className="text-gray-500 text-sm">Players and pitch counts</Text>
@@ -39,7 +39,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           className="bg-white rounded-xl border border-gray-200 p-5"
-          onPress={() => router.push('/(tabs)/messages/index')}
+          onPress={() => router.push('/(tabs)/messages')}
         >
           <Text className="text-lg font-semibold text-gray-900 mb-1">Messages</Text>
           <Text className="text-gray-500 text-sm">Team channels and announcements</Text>

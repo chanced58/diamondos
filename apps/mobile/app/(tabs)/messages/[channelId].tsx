@@ -3,7 +3,7 @@ import { useLocalSearchParams, Stack } from 'expo-router';
 import { useState, useRef } from 'react';
 import { map } from 'rxjs';
 import { Q } from '@nozbe/watermelondb';
-import { withObservables } from '@nozbe/with-observables';
+import withObservables from '@nozbe/with-observables';
 import { database } from '../../../src/db';
 import type { Message } from '../../../src/db/models/Message';
 import type { Channel } from '../../../src/db/models/Channel';
