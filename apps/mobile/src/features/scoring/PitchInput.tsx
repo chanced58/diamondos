@@ -1,8 +1,14 @@
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
 import { HitType, PitchOutcome, PitchType } from '@baseball/shared';
-import type { DefensiveLineup, DroppedThirdStrikeOutcome } from '@baseball/shared';
+import type { DefensiveLineup, DroppedThirdStrikeOutcome, ScoringConfig } from '@baseball/shared';
 import { DefensiveDiamond } from './DefensiveDiamond';
+import { StrikeZoneGrid } from './StrikeZoneGrid';
+import {
+  PILL_HIT_1B, PILL_HIT_2B, PILL_HIT_3B, PILL_HIT_HR,
+  PILL_NEUTRAL_OUT, PILL_SACRIFICE, PILL_BASERUNNING_OUT, PILL_MULTI_OUT_PLAY, PILL_ROSTER,
+  BUTTON_DISABLED,
+} from './scoring-colors';
 
 interface DroppedThirdStrikeDetails {
   outcome: DroppedThirdStrikeOutcome;
@@ -47,7 +53,10 @@ export type RunnerOutcome = {
 );
 
 interface PitchInputProps {
-  onRecordPitch: (outcome: PitchOutcome, pitchType?: PitchType) => void;
+  /** Per-game annotation settings (pitch type / pitch location / spray
+   *  chart), set at Start Game and read back from the GAME_START event. */
+  scoringConfig: ScoringConfig;
+  onRecordPitch: (outcome: PitchOutcome, pitchType?: PitchType, zoneLocation?: number) => void;
   onRecordHit: (hitType: HitType) => void;
   /**
    * Optional: when present and the scorer taps 2B / 3B with runners on base,
@@ -129,18 +138,19 @@ const FIELDER_POSITIONS: Array<{ label: string; position: number }> = [
   { label: 'RF', position: 9 },
 ];
 
-const HIT_TYPES: Array<{ label: string; emoji: string; hitType: HitType; color: string }> = [
-  { label: '1B', emoji: '⚾', hitType: HitType.SINGLE, color: 'bg-blue-600' },
-  { label: '2B', emoji: '⚾⚾', hitType: HitType.DOUBLE, color: 'bg-indigo-600' },
-  { label: '3B', emoji: '⚾⚾⚾', hitType: HitType.TRIPLE, color: 'bg-purple-600' },
-  { label: 'HR', emoji: '💥', hitType: HitType.HOME_RUN, color: 'bg-amber-600' },
+const HIT_TYPES: Array<{ label: string; hitType: HitType; color: string }> = [
+  { label: '1B', hitType: HitType.SINGLE, color: PILL_HIT_1B },
+  { label: '2B', hitType: HitType.DOUBLE, color: PILL_HIT_2B },
+  { label: '3B', hitType: HitType.TRIPLE, color: PILL_HIT_3B },
+  { label: 'HR', hitType: HitType.HOME_RUN, color: PILL_HIT_HR },
 ];
 
 const PITCH_OUTCOMES: Array<{ label: string; outcome: PitchOutcome; color: string }> = [
-  { label: 'Called ⚾', outcome: PitchOutcome.CALLED_STRIKE, color: 'bg-red-100 border-red-300 text-red-700' },
+  { label: 'Called K', outcome: PitchOutcome.CALLED_STRIKE, color: 'bg-red-100 border-red-300 text-red-700' },
   { label: 'Swing K', outcome: PitchOutcome.SWINGING_STRIKE, color: 'bg-red-100 border-red-300 text-red-700' },
   { label: 'Ball', outcome: PitchOutcome.BALL, color: 'bg-green-100 border-green-300 text-green-700' },
   { label: 'Foul', outcome: PitchOutcome.FOUL, color: 'bg-yellow-100 border-yellow-300 text-yellow-700' },
+  { label: 'Foul Tip', outcome: PitchOutcome.FOUL_TIP, color: 'bg-yellow-100 border-yellow-300 text-yellow-700' },
   { label: 'HBP', outcome: PitchOutcome.HIT_BY_PITCH, color: 'bg-orange-100 border-orange-300 text-orange-700' },
 ];
 
@@ -149,6 +159,7 @@ const PITCH_OUTCOMES: Array<{ label: string; outcome: PitchOutcome; color: strin
  * Records individual pitches (ball/strike/foul) and plate outcomes (hit/out/walk/K).
  */
 export function PitchInput({
+  scoringConfig,
   onRecordPitch,
   onRecordHit,
   onRecordHitWithRunnerOutcomes,
@@ -207,22 +218,33 @@ export function PitchInput({
   const [defSubInId, setDefSubInId] = useState<string>('');
   const [defSubPosition, setDefSubPosition] = useState<string>('');
   const [selectedPitchType, setSelectedPitchType] = useState<PitchType | null>(null);
+  const [zoneLocation, setZoneLocation] = useState<number | null>(null);
   const fcEligible = runnersOnBase.length > 0;
 
-  function handlePitchOutcome(outcome: PitchOutcome) {
-    onRecordPitch(outcome, selectedPitchType ?? undefined);
+  // Every plate-appearance result resets the per-pitch annotation state so
+  // the next pitch starts clean.
+  function resetAfterResult() {
     setSelectedPitchType(null);
+    setZoneLocation(null);
+  }
+
+  function handlePitchOutcome(outcome: PitchOutcome) {
+    onRecordPitch(outcome, selectedPitchType ?? undefined, zoneLocation ?? undefined);
+    setSelectedPitchType(null);
+    setZoneLocation(null);
   }
 
   function handleErrorPick(errorBy: number) {
     setShowErrorModal(false);
     onRecordError(errorBy);
+    resetAfterResult();
   }
 
   function handleDPTap() {
     if (runnersOnBase.length === 0) {
       // No runners to force out; fall through to ambiguous DP (legacy).
       onRecordDoublePlay(null);
+      resetAfterResult();
     } else {
       setShowDPModal(true);
     }
@@ -231,6 +253,7 @@ export function PitchInput({
   function handleDPPick(runnerId: string, base: Base) {
     setShowDPModal(false);
     onRecordDoublePlay({ runnerId, base });
+    resetAfterResult();
   }
 
   function handleSubPick(playerId: string) {
@@ -269,6 +292,7 @@ export function PitchInput({
   function handleFCPick(runnerId: string, fromBase: Base) {
     setShowFCModal(false);
     onRecordFieldersChoice(runnerId, fromBase);
+    resetAfterResult();
   }
 
   function handleRunnerOutPick(runnerId: string, fromBase: Base) {
@@ -284,6 +308,7 @@ export function PitchInput({
       (hitType === HitType.DOUBLE || hitType === HitType.TRIPLE);
     if (!needsPrompt) {
       onRecordHit(hitType);
+      resetAfterResult();
       return;
     }
     // Seed every runner with the default "auto" choice.
@@ -323,6 +348,7 @@ export function PitchInput({
     onRecordHitWithRunnerOutcomes(pendingHitWithRunners, outcomes);
     setPendingHitWithRunners(null);
     setRunnerOutcomeChoices({});
+    resetAfterResult();
   }
 
   function cancelHitWithRunners() {
@@ -343,6 +369,7 @@ export function PitchInput({
     const t = pendingOutType;
     closeOutModal();
     onRecordOut(t);
+    resetAfterResult();
   }
 
   // Step 2 (sac fly path): record SACRIFICE_FLY, carrying the trajectory
@@ -353,6 +380,7 @@ export function PitchInput({
     closeOutModal();
     if (onRecordSacFlyFromOut) onRecordSacFlyFromOut(t);
     else onRecordSacFly();
+    resetAfterResult();
   }
 
   // Step 2 (sac bunt path): record SACRIFICE_BUNT with trajectory context.
@@ -362,6 +390,7 @@ export function PitchInput({
     closeOutModal();
     if (onRecordSacBuntFromOut) onRecordSacBuntFromOut(t);
     else onRecordSacBunt();
+    resetAfterResult();
   }
 
   function closeOutModal() {
@@ -386,32 +415,47 @@ export function PitchInput({
         </TouchableOpacity>
       </View>
 
-      {/* Pitch type picker — optional; latches until the next recorded pitch */}
-      <View className="px-4 pt-3">
-        <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-          Pitch type (optional)
-        </Text>
-        <View className="flex-row flex-wrap gap-1.5">
-          {PITCH_TYPES.map(({ label, value }) => {
-            const selected = selectedPitchType === value;
-            return (
-              <TouchableOpacity
-                key={value}
-                className={`rounded-lg px-3 py-1.5 border ${
-                  selected ? 'bg-slate-800 border-slate-900' : 'bg-white border-gray-300'
-                }`}
-                onPress={() => setSelectedPitchType(selected ? null : value)}
-              >
-                <Text className={`text-xs font-semibold ${selected ? 'text-white' : 'text-gray-700'}`}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+      {/* Pitch type picker — optional per game setting; latches until the next recorded pitch */}
+      {scoringConfig.pitchTypeEnabled && (
+        <View className="px-4 pt-3">
+          <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Pitch type
+          </Text>
+          <View className="flex-row flex-wrap gap-1.5">
+            {PITCH_TYPES.map(({ label, value }) => {
+              const selected = selectedPitchType === value;
+              return (
+                <TouchableOpacity
+                  key={value}
+                  className={`rounded-lg px-3 py-1.5 border ${
+                    selected ? 'bg-brand-700 border-brand-800' : 'bg-white border-gray-300'
+                  }`}
+                  onPress={() => setSelectedPitchType(selected ? null : value)}
+                >
+                  <Text className={`text-xs font-semibold ${selected ? 'text-white' : 'text-gray-700'}`}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
-      </View>
+      )}
 
-      {/* Pitch-by-pitch section */}
+      {/* Pitch location — optional per game setting; once enabled, required
+          before the pitch-outcome buttons below become tappable. */}
+      {scoringConfig.pitchLocationEnabled && (
+        <View className="px-4 pt-4">
+          <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Pitch location
+          </Text>
+          <StrikeZoneGrid selected={zoneLocation} onSelect={setZoneLocation} />
+        </View>
+      )}
+
+      {/* Pitch-by-pitch section. Pitch type / location are informational
+          annotations only, even when the per-game toggle is on — they never
+          block recording a pitch. */}
       <View className="px-4 pt-4">
         <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
           Record pitch
@@ -447,11 +491,10 @@ export function PitchInput({
           Hit
         </Text>
         <View className="flex-row flex-wrap gap-2">
-          {HIT_TYPES.map(({ label, emoji, hitType, color }) => (
+          {HIT_TYPES.map(({ label, hitType, color }) => (
             <OutcomeButton
               key={hitType}
               label={label}
-              emoji={emoji}
               onPress={() => handleHitTap(hitType)}
               color={color}
             />
@@ -465,40 +508,42 @@ export function PitchInput({
           Other plate appearance result
         </Text>
         <View className="flex-row flex-wrap gap-2">
-          <OutcomeButton label="Out" emoji="✋" onPress={() => setShowOutModal(true)} color="bg-gray-600" />
-          <OutcomeButton label="Error" emoji="E" onPress={() => setShowErrorModal(true)} color="bg-orange-600" />
-          <OutcomeButton label="Catcher Int." emoji="CI" onPress={onRecordCatcherInterference} color="bg-rose-500" />
-          <OutcomeButton label="Sac Fly" emoji="SF" onPress={onRecordSacFly} color="bg-teal-600" />
-          <OutcomeButton label="Sac Bunt" emoji="SH" onPress={onRecordSacBunt} color="bg-teal-700" />
+          <OutcomeButton label="Out" onPress={() => setShowOutModal(true)} color={PILL_NEUTRAL_OUT} />
+          <OutcomeButton label="Error" onPress={() => setShowErrorModal(true)} color="bg-orange-600" />
+          <OutcomeButton label="Catcher Interference" onPress={onRecordCatcherInterference} color="bg-rose-500" />
+          <OutcomeButton label="Sac Fly" onPress={onRecordSacFly} color={PILL_SACRIFICE} />
+          <OutcomeButton label="Sac Bunt" onPress={onRecordSacBunt} color={PILL_SACRIFICE} />
           {fcEligible && (
             <OutcomeButton
               label="Fielder's Choice"
-              emoji="FC"
               onPress={() => setShowFCModal(true)}
-              color="bg-purple-700"
+              color={PILL_BASERUNNING_OUT}
             />
           )}
           {fcEligible && (
             <OutcomeButton
               label="Runner Out"
-              emoji="RO"
               onPress={() => setShowRunnerOutModal(true)}
-              color="bg-rose-700"
+              color={PILL_BASERUNNING_OUT}
             />
           )}
-          <OutcomeButton label="Balk" emoji="BK" onPress={onRecordBalk} color="bg-pink-600" />
-          <OutcomeButton label="Double Play" emoji="DP" onPress={handleDPTap} color="bg-zinc-700" />
-          <OutcomeButton label="Triple Play" emoji="TP" onPress={onRecordTriplePlay} color="bg-zinc-800" />
-          <OutcomeButton label="Pinch Hitter" emoji="PH" onPress={() => setSubModal('pinch_hitter')} color="bg-sky-700" />
-          <OutcomeButton label="Pitching Change" emoji="🔄" onPress={() => setSubModal('pitching_change')} color="bg-sky-800" />
+          <OutcomeButton label="Balk" onPress={onRecordBalk} color="bg-pink-600" />
+          <OutcomeButton label="Double Play" onPress={handleDPTap} color={PILL_MULTI_OUT_PLAY} />
+          <OutcomeButton
+            label="Triple Play"
+            onPress={() => { onRecordTriplePlay(); resetAfterResult(); }}
+            color={PILL_MULTI_OUT_PLAY}
+          />
+          <OutcomeButton label="Pinch Hitter" onPress={() => setSubModal('pinch_hitter')} color={PILL_ROSTER} />
+          <OutcomeButton label="Pitching Change" onPress={() => setSubModal('pitching_change')} color={PILL_ROSTER} />
           {onRecordDefensiveSub && (
-            <OutcomeButton label="Defensive Sub" emoji="DS" onPress={openDefensiveSubModal} color="bg-sky-900" />
+            <OutcomeButton label="Defensive Sub" onPress={openDefensiveSubModal} color={PILL_ROSTER} />
           )}
           {onRecordPositionChange && (
-            <OutcomeButton label="Position Change" emoji="↔" onPress={openPositionChangeModal} color="bg-indigo-700" />
+            <OutcomeButton label="Position Change" onPress={openPositionChangeModal} color={PILL_ROSTER} />
           )}
           {onRecordAddBatter && (
-            <OutcomeButton label="Add Batter" emoji="+" onPress={() => setSubModal('add_batter')} color="bg-emerald-700" />
+            <OutcomeButton label="Add Batter" onPress={() => setSubModal('add_batter')} color={PILL_ROSTER} />
           )}
         </View>
       </View>
@@ -714,8 +759,7 @@ export function PitchInput({
                     </Text>
                   );
                 }
-                const buttonColor =
-                  subModal === 'add_batter' ? 'bg-emerald-700' : 'bg-sky-700';
+                const buttonColor = 'bg-sky-700';
                 return (
                   <View className="gap-2">
                     {filteredRoster.map((p) => {
@@ -949,7 +993,7 @@ export function PitchInput({
               {runnersOnBase.map(({ base, runnerId }) => (
                 <TouchableOpacity
                   key={base}
-                  className="bg-purple-700 rounded-xl px-5 py-4"
+                  className="bg-rose-700 rounded-xl px-5 py-4"
                   onPress={() => handleFCPick(runnerId, base)}
                 >
                   <Text className="text-white font-semibold">
@@ -1046,7 +1090,7 @@ export function PitchInput({
                     </Text>
                     <View className="flex-row flex-wrap gap-2">
                       <TouchableOpacity
-                        className={`px-3 py-2 rounded-lg ${kind === 'auto' ? 'bg-blue-600' : 'bg-gray-200'}`}
+                        className={`px-3 py-2 rounded-lg ${kind === 'auto' ? 'bg-brand-600' : 'bg-gray-200'}`}
                         onPress={() => setRunnerChoice(runnerId, base, 'auto')}
                       >
                         <Text className={kind === 'auto' ? 'text-white font-semibold' : 'text-gray-700'}>
@@ -1078,7 +1122,7 @@ export function PitchInput({
             </ScrollView>
 
             <TouchableOpacity
-              className="bg-blue-600 rounded-xl px-5 py-4 mt-2"
+              className="bg-brand-600 rounded-xl px-5 py-4 mt-2"
               onPress={confirmHitWithRunners}
             >
               <Text className="text-white font-semibold text-center">
@@ -1118,21 +1162,21 @@ function outTypeLabel(outType: BattedOutType): string {
 
 function OutcomeButton({
   label,
-  emoji,
   onPress,
   color,
+  disabled,
 }: {
   label: string;
-  emoji: string;
   onPress: () => void;
   color: string;
+  disabled?: boolean;
 }) {
   return (
     <TouchableOpacity
-      className={`${color} rounded-xl px-5 py-3.5 flex-row items-center gap-2`}
+      className={`${color} rounded-xl px-5 py-3.5 ${disabled ? BUTTON_DISABLED : ''}`}
       onPress={onPress}
+      disabled={disabled}
     >
-      <Text className="text-white text-base">{emoji}</Text>
       <Text className="text-white font-semibold">{label}</Text>
     </TouchableOpacity>
   );

@@ -31,3 +31,5 @@ export * from './league-leaderboard';
 export * from './league-spotlight';
 export * from './lineup-sync';
 export * from './due-batter';
+export * from './scoring-config';
+export * from './strike-zone';

@@ -296,6 +296,19 @@ export interface EventVoidedPayload {
   voidedSequenceNumber: number;
 }
 
+/** Payload for GAME_START events. All fields optional for backward
+ *  compatibility with events recorded before the scoring-config toggles
+ *  shipped — both web and mobile treat a missing enabled flag as `true`
+ *  (see `deriveScoringConfig` in utils/scoring-config.ts). */
+export interface GameStartPayload {
+  homeLineupPitcherId?: string | null;
+  homeLeadoffBatterId?: string | null;
+  awayLineupPitcherId?: string | null;
+  awayLeadoffBatterId?: string | null;
+  pitchTypeEnabled?: boolean;
+  pitchLocationEnabled?: boolean;
+}
+
 export type GameEventPayload =
   | PitchThrownPayload
   | HitPayload
@@ -309,6 +322,7 @@ export type GameEventPayload =
   | RundownPayload
   | DroppedThirdStrikePayload
   | EventVoidedPayload
+  | GameStartPayload
   | Record<string, unknown>;
 
 export interface GameEvent {

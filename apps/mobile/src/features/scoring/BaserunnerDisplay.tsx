@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { AdvanceReason } from '@baseball/shared';
 import type { LiveGameState } from '@baseball/shared';
+import { BASE_OCCUPIED, BASE_EMPTY, BASE_HOME_PLATE } from './scoring-colors';
 
 type Base = 1 | 2 | 3;
 
@@ -38,6 +39,13 @@ export function BaserunnerDisplay({
   roster,
 }: BaserunnerDisplayProps) {
   const { first, second, third } = gameState.runnersOnBase;
+  const jerseyById = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of roster ?? []) {
+      if (p.jerseyNumber !== undefined) m.set(p.id, p.jerseyNumber);
+    }
+    return m;
+  }, [roster]);
   const [selected, setSelected] = useState<{ base: Base; runnerId: string } | null>(null);
   const [pinchRunnerPicker, setPinchRunnerPicker] = useState<{ base: Base; runnerId: string } | null>(null);
 
@@ -97,6 +105,7 @@ export function BaserunnerDisplay({
         <BaseTap
           base={2}
           runnerId={second}
+          label={second ? jerseyById.get(second) : undefined}
           style={{ top: 0, left: 30 }}
           onPress={handleBaseTap}
           interactive={interactive}
@@ -104,6 +113,7 @@ export function BaserunnerDisplay({
         <BaseTap
           base={3}
           runnerId={third}
+          label={third ? jerseyById.get(third) : undefined}
           style={{ top: 30, left: 0 }}
           onPress={handleBaseTap}
           interactive={interactive}
@@ -111,13 +121,14 @@ export function BaserunnerDisplay({
         <BaseTap
           base={1}
           runnerId={first}
+          label={first ? jerseyById.get(first) : undefined}
           style={{ top: 30, left: 60 }}
           onPress={handleBaseTap}
           interactive={interactive}
         />
         {/* Home plate — bottom center (indicator only) */}
         <View
-          className="absolute w-4 h-4 bg-gray-300 rotate-45"
+          className={`absolute w-4 h-4 rotate-45 ${BASE_HOME_PLATE}`}
           style={{ bottom: 0, left: 32 }}
         />
       </View>
@@ -250,36 +261,51 @@ function baseLabel(base: 1 | 2 | 3 | 4): string {
 function BaseTap({
   base,
   runnerId,
+  label,
   style,
   onPress,
   interactive,
 }: {
   base: Base;
   runnerId: string | null;
+  /** Jersey number to show on the marker, when resolvable. */
+  label?: number;
   style: object;
   onPress: (base: Base, runnerId: string | null) => void;
   interactive: boolean;
 }) {
   const occupied = !!runnerId;
-  const fill = occupied
-    ? 'bg-yellow-400 border-2 border-yellow-500'
-    : 'bg-gray-200 border-2 border-gray-300';
+  const fill = occupied ? BASE_OCCUPIED : BASE_EMPTY;
+
+  const marker = (
+    <View className={`absolute w-5 h-5 rotate-45 ${fill}`} style={style} />
+  );
+  // Jersey-number label sits on top of the (unrotated) marker so the digits
+  // stay upright — mirrors web's BaserunnerDiamond label.
+  const numberLabel = occupied && label !== undefined && (
+    <View className="absolute w-5 h-5 items-center justify-center" style={style} pointerEvents="none">
+      <Text className="text-[9px] font-bold text-white">{label}</Text>
+    </View>
+  );
 
   if (!interactive || !occupied) {
     return (
-      <View
-        className={`absolute w-5 h-5 rotate-45 ${fill}`}
-        style={style}
-      />
+      <>
+        {marker}
+        {numberLabel}
+      </>
     );
   }
 
   return (
-    <TouchableOpacity
-      className={`absolute w-5 h-5 rotate-45 ${fill}`}
-      style={style}
-      onPress={() => onPress(base, runnerId)}
-    />
+    <>
+      <TouchableOpacity
+        className={`absolute w-5 h-5 rotate-45 ${fill}`}
+        style={style}
+        onPress={() => onPress(base, runnerId)}
+      />
+      {numberLabel}
+    </>
   );
 }
 

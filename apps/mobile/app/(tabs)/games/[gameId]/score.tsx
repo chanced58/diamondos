@@ -11,8 +11,8 @@ import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerMo
 import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus } from '@baseball/shared';
-import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, deriveScoringConfig, DEFAULT_SCORING_CONFIG } from '@baseball/shared';
+import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution, ScoringConfig, GameStartPayload } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
 import { database } from '../../../../src/db';
@@ -204,6 +204,15 @@ export default function ScoringScreen() {
     return pid;
   }, [events, isHome]);
 
+  // Per-game pitch-type / pitch-location annotation settings — purely
+  // informational (shown/hidden, never required) — read from the game's own
+  // GAME_START event (set by whichever platform started the game, web or
+  // mobile) so both clients agree on what's on.
+  const scoringConfig: ScoringConfig = useMemo(() => {
+    const gs = events.find((e) => e.eventType === EventType.GAME_START);
+    return gs ? deriveScoringConfig(gs.payload as Record<string, unknown>) : DEFAULT_SCORING_CONFIG;
+  }, [events]);
+
   // Every platform player id we can safely attribute events to: our roster
   // plus everyone in the lineup (guests included). Ids outside this set are
   // opponent players (or stale leaks) and must go in opponent* fields.
@@ -272,6 +281,7 @@ export default function ScoringScreen() {
     return () => { cancelled = true; };
   }, [battingSlots, nameById]);
   const batterName = (id: string) => nameById.get(id) ?? extraNames[id] ?? 'Unknown batter';
+  const pitcherName = (id: string) => nameById.get(id) ?? extraNames[id] ?? 'Unknown pitcher';
 
   const gameStarted = useMemo(
     () => events.some((e) => e.eventType === EventType.GAME_START),
@@ -325,12 +335,13 @@ export default function ScoringScreen() {
   // gated on the league's guests.allowed flag.
   const [showGuestModal, setShowGuestModal] = useState(false);
 
-  async function handlePitch(outcome: PitchOutcome, pitchType?: PitchType) {
+  async function handlePitch(outcome: PitchOutcome, pitchType?: PitchType, zoneLocation?: number) {
     if (!gameState) return;
     const payload: PitchThrownPayload = {
       ...halfAttribution,
       outcome,
       ...(pitchType ? { pitchType } : {}),
+      ...(zoneLocation !== undefined ? { zoneLocation } : {}),
     };
     await recordEvent(
       EventType.PITCH_THROWN,
@@ -615,7 +626,7 @@ export default function ScoringScreen() {
     });
   }
 
-  async function handleStartGame(pitcherId: string, batterId: string) {
+  async function handleStartGame(pitcherId: string, batterId: string, config: ScoringConfig) {
     if (!gameState) return;
     // `isHome` is derived from the async-resolved Game row and defaults to
     // true before it loads. Block starting until the row is present so a road
@@ -628,9 +639,13 @@ export default function ScoringScreen() {
     // Which team are we scoring? `isHome` comes from the resolved Game row's
     // locationType / neutralHomeTeam so road games seed the away* lineup
     // slots instead of misattributing to home*.
-    const payload = isHome
-      ? { homeLineupPitcherId: pitcherId, homeLeadoffBatterId: batterId }
-      : { awayLineupPitcherId: pitcherId, awayLeadoffBatterId: batterId };
+    const payload: GameStartPayload = {
+      ...(isHome
+        ? { homeLineupPitcherId: pitcherId, homeLeadoffBatterId: batterId }
+        : { awayLineupPitcherId: pitcherId, awayLeadoffBatterId: batterId }),
+      pitchTypeEnabled: config.pitchTypeEnabled,
+      pitchLocationEnabled: config.pitchLocationEnabled,
+    };
     await recordEvent(EventType.GAME_START, gameState.inning, gameState.isTopOfInning, payload);
     // Reflect the transition locally right away (list badge); the server
     // flips via fn_start_game in the sync engine's lifecycle scan.
@@ -1160,7 +1175,9 @@ export default function ScoringScreen() {
       <CountDisplay gameState={gameState} />
       <View className="flex-row items-center justify-between px-5 py-3 border-b border-gray-100">
         <View>
-          <Text className="text-xs text-gray-500">Pitches (game)</Text>
+          <Text className="text-xs text-gray-500">
+            Pitches (game){displayPitcherId ? ` — ${pitcherName(displayPitcherId)}` : ''}
+          </Text>
           <View className="flex-row items-center gap-1.5">
             <Text className="text-lg font-bold text-gray-900">{currentPitchTotal}</Text>
             {pitchStatus && (pitchStatus.isOverLimit || pitchStatus.isAtLimit || pitchStatus.isAtWarning) && (
@@ -1233,8 +1250,13 @@ export default function ScoringScreen() {
         </View>
       )}
 
-      {/* Pre-game lineup prompt — visible until a starting pitcher is known */}
-      {gameState.currentPitcherId === null && (
+      {/* Pre-game lineup prompt — visible only before the game has been
+          started at all. currentPitcherId also goes null on every
+          INNING_CHANGE (expecting the next pitch/pitching-change to reset
+          it), so gating on that instead of gameStarted would resurface this
+          banner every half-inning and let a mistaken tap re-record a
+          duplicate GAME_START mid-game. */}
+      {!gameStarted && (
         <TouchableOpacity
           className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg flex-row items-center"
           onPress={() => setShowLineupModal(true)}
@@ -1355,7 +1377,7 @@ export default function ScoringScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => { handleInningChange().catch(console.warn); }}
-                className="w-full bg-blue-600 rounded-2xl py-3 items-center mt-3"
+                className="w-full bg-brand-600 rounded-2xl py-3 items-center mt-3"
               >
                 <Text className="text-white text-base font-bold">Start {nextHalfLabel} ▸</Text>
               </TouchableOpacity>
@@ -1364,7 +1386,7 @@ export default function ScoringScreen() {
             <>
               <TouchableOpacity
                 onPress={() => { handleInningChange().catch(console.warn); }}
-                className="w-full bg-blue-600 rounded-2xl py-4 items-center"
+                className="w-full bg-brand-600 rounded-2xl py-4 items-center"
               >
                 <Text className="text-white text-lg font-bold">Start {nextHalfLabel} ▸</Text>
               </TouchableOpacity>
@@ -1379,6 +1401,7 @@ export default function ScoringScreen() {
         </View>
       ) : (
       <PitchInput
+        scoringConfig={scoringConfig}
         onRecordPitch={handlePitch}
         onRecordHit={handleHit}
         onRecordHitWithRunnerOutcomes={handleHitWithRunnerOutcomes}
@@ -1506,15 +1529,17 @@ function LineupSetupModal({
   initialPitcherId?: string | null;
   initialBatterId?: string | null;
   onCancel: () => void;
-  onSubmit: (pitcherId: string, batterId: string) => void;
+  onSubmit: (pitcherId: string, batterId: string, config: ScoringConfig) => void;
 }) {
   const [pitcherId, setPitcherId] = useState<string | null>(null);
   const [batterId, setBatterId] = useState<string | null>(null);
+  const [config, setConfig] = useState<ScoringConfig>(DEFAULT_SCORING_CONFIG);
 
   useEffect(() => {
     if (visible) {
       setPitcherId(initialPitcherId);
       setBatterId(initialBatterId);
+      setConfig(DEFAULT_SCORING_CONFIG);
     }
   }, [visible, initialPitcherId, initialBatterId]);
 
@@ -1552,7 +1577,7 @@ function LineupSetupModal({
                     key={`pitcher-${p.id}`}
                     className={`rounded-xl px-4 py-3 border ${
                       pitcherId === p.id
-                        ? 'bg-blue-600 border-blue-700'
+                        ? 'bg-brand-600 border-brand-700'
                         : 'bg-white border-gray-300'
                     }`}
                     onPress={() => setPitcherId(p.id)}
@@ -1574,7 +1599,7 @@ function LineupSetupModal({
                     key={`batter-${p.id}`}
                     className={`rounded-xl px-4 py-3 border ${
                       batterId === p.id
-                        ? 'bg-green-600 border-green-700'
+                        ? 'bg-brand-700 border-brand-800'
                         : 'bg-white border-gray-300'
                     }`}
                     onPress={() => setBatterId(p.id)}
@@ -1585,6 +1610,22 @@ function LineupSetupModal({
                     </Text>
                   </TouchableOpacity>
                 ))}
+              </View>
+
+              <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 mt-4">
+                Scoring Detail (optional)
+              </Text>
+              <View className="gap-2">
+                <ConfigToggle
+                  label="Track pitch type"
+                  value={config.pitchTypeEnabled}
+                  onChange={(v) => setConfig((c) => ({ ...c, pitchTypeEnabled: v }))}
+                />
+                <ConfigToggle
+                  label="Track pitch location"
+                  value={config.pitchLocationEnabled}
+                  onChange={(v) => setConfig((c) => ({ ...c, pitchLocationEnabled: v }))}
+                />
               </View>
             </ScrollView>
           )}
@@ -1597,11 +1638,11 @@ function LineupSetupModal({
               <Text className="text-gray-700 font-semibold">Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              className={`flex-1 rounded-xl px-5 py-3 items-center ${submittable ? 'bg-emerald-600' : 'bg-emerald-300'}`}
+              className={`flex-1 rounded-xl px-5 py-3 items-center ${submittable ? 'bg-brand-600' : 'bg-brand-100'}`}
               disabled={!submittable}
               onPress={() => {
                 if (submittable && pitcherId && batterId) {
-                  onSubmit(pitcherId, batterId);
+                  onSubmit(pitcherId, batterId, config);
                 }
               }}
             >
@@ -1611,5 +1652,32 @@ function LineupSetupModal({
         </View>
       </View>
     </Modal>
+  );
+}
+
+function ConfigToggle({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <TouchableOpacity
+      className="flex-row items-center justify-between rounded-xl px-4 py-3 border border-gray-200 bg-white"
+      onPress={() => onChange(!value)}
+    >
+      <Text className="text-sm font-medium text-gray-900">{label}</Text>
+      <View
+        className={`w-11 h-6 rounded-full justify-center ${value ? 'bg-brand-600' : 'bg-gray-300'}`}
+      >
+        <View
+          className="w-5 h-5 rounded-full bg-white"
+          style={{ marginLeft: value ? 22 : 2 }}
+        />
+      </View>
+    </TouchableOpacity>
   );
 }
