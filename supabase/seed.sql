@@ -208,6 +208,29 @@ values
    'Ethan',  'Murphy',    6, 'shortstop',     'right', 'right', true)
 on conflict (id) do nothing;
 
+-- Team memberships — team_members_view_players (and other RLS policies) key
+-- off player_team_memberships, not players.team_id directly. Real roster
+-- assignment goes through fn_transfer_player, which keeps both in sync; seed
+-- data inserts players.team_id directly, so this block does the same work
+-- fn_transfer_player would have done, or the roster is invisible to coaches.
+insert into public.player_team_memberships (player_id, team_id, jersey_number, is_active)
+values
+  ('5eed0002-0000-0000-0000-000000000001', '5eed0000-0000-0000-0000-000000000001', 8,  true),
+  ('5eed0002-0000-0000-0000-000000000002', '5eed0000-0000-0000-0000-000000000001', 11, true),
+  ('5eed0002-0000-0000-0000-000000000003', '5eed0000-0000-0000-0000-000000000001', 24, true),
+  ('5eed0002-0000-0000-0000-000000000004', '5eed0000-0000-0000-0000-000000000001', 17, true),
+  ('5eed0002-0000-0000-0000-000000000005', '5eed0000-0000-0000-0000-000000000001', 15, true),
+  ('5eed0002-0000-0000-0000-000000000006', '5eed0000-0000-0000-0000-000000000001', 7,  true),
+  ('5eed0002-0000-0000-0000-000000000007', '5eed0000-0000-0000-0000-000000000001', 22, true),
+  ('5eed0002-0000-0000-0000-000000000008', '5eed0000-0000-0000-0000-000000000001', 3,  true),
+  ('5eed0002-0000-0000-0000-000000000009', '5eed0000-0000-0000-0000-000000000001', 4,  true),
+  ('5eed0002-0000-0000-0000-00000000000a', '5eed0000-0000-0000-0000-000000000001', 18, true),
+  ('5eed0002-0000-0000-0000-00000000000b', '5eed0000-0000-0000-0000-000000000001', 27, true),
+  ('5eed0002-0000-0000-0000-00000000000c', '5eed0000-0000-0000-0000-000000000001', 12, true),
+  ('5eed0002-0000-0000-0000-00000000000d', '5eed0000-0000-0000-0000-000000000001', 2,  true),
+  ('5eed0002-0000-0000-0000-00000000000e', '5eed0000-0000-0000-0000-000000000001', 6,  true)
+on conflict (player_id, team_id, joined_at) do nothing;
+
 -- Add all 14 players to the active season roster.
 insert into public.season_rosters (season_id, player_id)
 values
