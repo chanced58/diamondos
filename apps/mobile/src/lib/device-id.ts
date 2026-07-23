@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import { randomUUID } from 'expo-crypto';
+const randomUUID = () => crypto.randomUUID();
 
 const DEVICE_ID_KEY = 'baseball_device_id';
 

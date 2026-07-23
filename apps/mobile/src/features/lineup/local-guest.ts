@@ -1,4 +1,5 @@
-import { randomUUID } from 'expo-crypto';
+// crypto.randomUUID() is available globally in Hermes (React Native 0.73+)
+const randomUUID = () => crypto.randomUUID();
 import { Q, type Model } from '@nozbe/watermelondb';
 import { database, GameLineup, LeaguePlayer, Player } from '../../db';
 import { leaguePlayerRecordId } from '../../db/models/LeaguePlayer';

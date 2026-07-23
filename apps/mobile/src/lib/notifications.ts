@@ -38,22 +38,31 @@ export async function registerForPushNotifications(): Promise<void> {
     });
   }
 
-  const token = (await Notifications.getExpoPushTokenAsync()).data;
+  // Best-effort: getExpoPushTokenAsync() requires a configured push service
+  // (Firebase on Android) and reliably throws in local dev builds that don't
+  // have one wired up. That's expected outside of a real device/EAS build,
+  // so it's logged quietly rather than as a console.warn — which would
+  // otherwise fire a LogBox toast on every single app launch.
+  try {
+    const token = (await Notifications.getExpoPushTokenAsync()).data;
 
-  // Persist token to Supabase
-  const supabase = getSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+    // Persist token to Supabase
+    const supabase = getSupabaseClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
-  await supabase.from('push_tokens').upsert(
-    {
-      user_id: user.id,
-      token,
-      platform: Platform.OS as 'ios' | 'android',
-      last_used_at: new Date().toISOString(),
-    },
-    { onConflict: 'token' },
-  );
+    await supabase.from('push_tokens').upsert(
+      {
+        user_id: user.id,
+        token,
+        platform: Platform.OS as 'ios' | 'android',
+        last_used_at: new Date().toISOString(),
+      },
+      { onConflict: 'token' },
+    );
+  } catch (err) {
+    console.log('Push token registration skipped (no push service configured):', err);
+  }
 }
 
 let deepLinkSubscription: Notifications.Subscription | null = null;
