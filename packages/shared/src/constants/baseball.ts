@@ -4,6 +4,16 @@ export const OUTS_PER_INNING = 3;
 export const BALLS_FOR_WALK = 4;
 export const STRIKES_FOR_STRIKEOUT = 3;
 
+/**
+ * Placeholder runnersOnBase id used when a batter reaches base but no real
+ * identity is resolvable (typically the opponent's at-bat when their lineup
+ * was never entered on a single-team-scorekeeping device). Keeps the base
+ * marked occupied — distinct from `null` (empty) — without attributing the
+ * play to a specific player. A scorer can later replace it with a real id via
+ * the Pinch Runner flow (SUBSTITUTION event, matched by this id).
+ */
+export const UNKNOWN_RUNNER_ID = '__unknown_runner__';
+
 export const POSITION_ABBREVIATIONS: Record<string, string> = {
   pitcher: 'P',
   catcher: 'C',

@@ -1,6 +1,6 @@
 import { EventType, type GameEvent, type PitchThrownPayload, type HitPayload, type SubstitutionPayload, type PitchingChangePayload, type BaserunnerMovePayload, type PickoffPayload, type RundownPayload, type DroppedThirdStrikePayload } from '../types/game-event';
 import type { LiveGameState } from '../types/game';
-import { BALLS_FOR_WALK, STRIKES_FOR_STRIKEOUT, OUTS_PER_INNING } from '../constants/baseball';
+import { BALLS_FOR_WALK, STRIKES_FOR_STRIKEOUT, OUTS_PER_INNING, UNKNOWN_RUNNER_ID } from '../constants/baseball';
 
 /**
  * Per-runner outcome overrides for a single parent play (HIT, etc.). Built
@@ -162,7 +162,11 @@ export function deriveGameState(
         // straight to a walk/HBP/CI (or if events arrive out of order
         // via corrections).
         const p = event.payload as { batterId?: string; opponentBatterId?: string };
-        const batterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId;
+        // Falls back to a placeholder id (never null) so the batter is always
+        // marked as occupying first base, even when their identity is
+        // unresolvable (opponent at-bat with no lineup entered) — see
+        // UNKNOWN_RUNNER_ID.
+        const batterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId ?? UNKNOWN_RUNNER_ID;
         const walkBasesLoaded = !!(
           state.runnersOnBase.first &&
           state.runnersOnBase.second &&
@@ -183,7 +187,7 @@ export function deriveGameState(
         // currentBatterId only updates on PITCH_THROWN, so a HIT recorded
         // without a preceding pitch (quick entry) would otherwise strand the
         // stale previous batter's id on the bag. Mirrors the WALK handler.
-        const hitBatterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId;
+        const hitBatterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId ?? UNKNOWN_RUNNER_ID;
         // Guard runner advancement / run scoring when the inning is already
         // over (e.g. a fielder's choice whose preceding BASERUNNER_OUT was
         // the 3rd out). The batter still completes a PA + AB, so incrementPA
@@ -241,7 +245,7 @@ export function deriveGameState(
         // on base (same logic as a walk) and place batter on first.
         // If bases were loaded, the runner on third is forced home.
         const p = event.payload as { batterId?: string; opponentBatterId?: string };
-        const errorBatterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId;
+        const errorBatterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId ?? UNKNOWN_RUNNER_ID;
         const errorBasesLoaded = !!(
           state.runnersOnBase.first &&
           state.runnersOnBase.second &&
@@ -270,7 +274,7 @@ export function deriveGameState(
           state.outs++;
         } else {
           // Batter reaches first — force-advance runners
-          const d3kBatterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId;
+          const d3kBatterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId ?? UNKNOWN_RUNNER_ID;
           const basesLoaded = !!(
             state.runnersOnBase.first &&
             state.runnersOnBase.second &&
