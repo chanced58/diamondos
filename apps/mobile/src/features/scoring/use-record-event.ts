@@ -1,6 +1,8 @@
 import { useRef } from 'react';
-import { randomUUID } from 'expo-crypto';
+const randomUUID = () => crypto.randomUUID();
+import { Q } from '@nozbe/watermelondb';
 import { database } from '../../db';
+import type { GameEvent } from '../../db/models/GameEvent';
 import { getDeviceId } from '../../lib/device-id';
 import { getSupabaseClient } from '../../lib/supabase';
 import { useSyncContext } from '../../providers/SyncProvider';
@@ -27,19 +29,19 @@ export function useRecordEvent(gameRemoteId: string) {
     if (!user) throw new Error('Not authenticated');
 
     const deviceId = await getDeviceId();
-    const eventsCollection = database.get('game_events');
+    const eventsCollection = database.get<GameEvent>('game_events');
 
     // Derive next sequence number from the highest existing one
     // This is safe for single-device use; conflicts are handled server-side
     if (sequenceRef.current === null) {
       const existingEvents = await eventsCollection
         .query(
-          require('@nozbe/watermelondb').Q.where('game_remote_id', gameRemoteId),
-          require('@nozbe/watermelondb').Q.sortBy('sequence_number', require('@nozbe/watermelondb').Q.desc),
+          Q.where('game_remote_id', gameRemoteId),
+          Q.sortBy('sequence_number', Q.desc),
         )
         .fetch();
       sequenceRef.current = existingEvents.length > 0
-        ? (existingEvents[0] as { sequenceNumber: number }).sequenceNumber
+        ? existingEvents[0].sequenceNumber
         : 0;
     }
 
@@ -49,18 +51,24 @@ export function useRecordEvent(gameRemoteId: string) {
     const eventId = randomUUID();
 
     await database.write(async () => {
-      await eventsCollection.create((record: Record<string, unknown>) => {
-        record.remote_id = eventId;
-        record.game_remote_id = gameRemoteId;
-        record.sequence_number = sequenceNumber;
-        record.event_type = eventType;
+      await eventsCollection.create((record) => {
+        // The WDB internal id must equal the client-generated UUID that
+        // becomes the server PK (same convention as local-guest.ts). Without
+        // this, the post-push pull re-fetches this same event under its
+        // server id, doesn't recognize it as the record we already have, and
+        // inserts a second local copy — silently double-counting every pitch.
+        record._raw.id = eventId;
+        record.remoteId = eventId;
+        record.gameRemoteId = gameRemoteId;
+        record.sequenceNumber = sequenceNumber;
+        record.eventType = eventType;
         record.inning = inning;
-        record.is_top_of_inning = isTopOfInning;
-        record.payload = JSON.stringify(payload);
-        record.occurred_at = Date.now();
-        record.created_by = user.id;
-        record.device_id = deviceId;
-        record.synced_at = null;
+        record.isTopOfInning = isTopOfInning;
+        record.payloadRaw = JSON.stringify(payload);
+        record.occurredAt = Date.now();
+        record.createdBy = user.id;
+        record.deviceId = deviceId;
+        record.syncedAt = undefined;
       });
     });
 
