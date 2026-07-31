@@ -711,27 +711,36 @@ export type Database = {
       }
       game_rsvps: {
         Row: {
+          created_at: string
           game_id: string
           id: string
           note: string | null
+          player_id: string
           responded_at: string
           status: Database["public"]["Enums"]["rsvp_status"]
+          updated_at: string
           user_id: string
         }
         Insert: {
+          created_at?: string
           game_id: string
           id?: string
           note?: string | null
+          player_id: string
           responded_at?: string
           status: Database["public"]["Enums"]["rsvp_status"]
+          updated_at?: string
           user_id: string
         }
         Update: {
+          created_at?: string
           game_id?: string
           id?: string
           note?: string | null
+          player_id?: string
           responded_at?: string
           status?: Database["public"]["Enums"]["rsvp_status"]
+          updated_at?: string
           user_id?: string
         }
         Relationships: [
@@ -740,6 +749,13 @@ export type Database = {
             columns: ["game_id"]
             isOneToOne: false
             referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_rsvps_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]

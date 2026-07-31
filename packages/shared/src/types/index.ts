@@ -6,6 +6,7 @@ export * from './game';
 export * from './game-event';
 export * from './opponent';
 export * from './messaging';
+export * from './game-rsvp';
 export * from './compliance';
 export * from './pitching';
 export * from './batting';

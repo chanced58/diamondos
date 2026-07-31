@@ -30,4 +30,5 @@ export * from './player-display-name';
 export * from './league-leaderboard';
 export * from './league-spotlight';
 export * from './lineup-sync';
+export * from './game-rsvp-summary';
 export * from './due-batter';

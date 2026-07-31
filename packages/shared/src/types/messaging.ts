@@ -4,12 +4,6 @@ export enum ChannelType {
   DIRECT = 'direct',
 }
 
-export enum RsvpStatus {
-  ATTENDING = 'attending',
-  NOT_ATTENDING = 'not_attending',
-  MAYBE = 'maybe',
-}
-
 export interface Channel {
   id: string;
   teamId: string;
@@ -40,15 +34,6 @@ export interface Message {
   editedAt?: string;
   deletedAt?: string;
   createdAt: string;
-}
-
-export interface GameRsvp {
-  id: string;
-  gameId: string;
-  userId: string;
-  status: RsvpStatus;
-  note?: string;
-  respondedAt: string;
 }
 
 export interface PushToken {
