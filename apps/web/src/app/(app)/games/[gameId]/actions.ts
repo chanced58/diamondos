@@ -4,7 +4,17 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { formatDate, weAreHome, EventType, conflictKey, type ScoreConflict } from '@baseball/shared';
+import {
+  formatDate,
+  weAreHome,
+  EventType,
+  conflictKey,
+  upsertGameRsvpSchema,
+  type GameRsvpStatus,
+  type ScoreConflict,
+  type UpsertGameRsvpInput,
+} from '@baseball/shared';
+import { upsertGameRsvp } from '@baseball/database';
 import { postEventAlert } from '@/app/(app)/messages/notify';
 // Game finalization + coach authorization live in @/lib/games/finalize so the
 // mobile finalize API route shares the exact same logic as endGameAction.
@@ -659,6 +669,37 @@ export async function savePlayerGameNotesAction(
   if (error) return `Failed to save notes: ${error.message}`;
 
   return 'saved';
+}
+
+/**
+ * A player (or a linked parent, on behalf of their child) sets their game
+ * RSVP. Uses the cookie-scoped client rather than the service role so RLS —
+ * not this action — enforces the self/parent-link and same-team checks.
+ */
+export async function rsvpToGameAction(
+  input: UpsertGameRsvpInput,
+): Promise<{ error?: string }> {
+  const parsed = upsertGameRsvpSchema.safeParse(input);
+  if (!parsed.success) return { error: 'Invalid RSVP.' };
+
+  const authClient = createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return { error: 'Not authenticated.' };
+
+  try {
+    await upsertGameRsvp(authClient, {
+      gameId: parsed.data.gameId,
+      playerId: parsed.data.playerId,
+      status: parsed.data.status as GameRsvpStatus,
+      note: parsed.data.note ?? null,
+      respondedBy: user.id,
+    });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to save RSVP.' };
+  }
+
+  revalidatePath(`/games/${parsed.data.gameId}`);
+  return {};
 }
 
 export async function endGameAction(_prevState: string | null | undefined, formData: FormData) {

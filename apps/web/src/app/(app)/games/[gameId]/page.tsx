@@ -6,15 +6,17 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveLeague } from '@/lib/active-league';
 import { getUserAccess } from '@/lib/user-access';
-import { formatDate, formatTime, weAreHome } from '@baseball/shared';
+import { formatDate, formatTime, weAreHome, type GameRsvpStatus } from '@baseball/shared';
 import { CancelGameForm } from './CancelGameForm';
 import { StartGameForm } from './StartGameForm';
 import { LocationMap } from '@/components/maps/LocationMap';
 import { EditGameButton, ResetGameForm, RecalculateScoresForm } from './GameDetailClient';
 import { GameTakeaways } from './GameTakeaways';
 import { ReconciliationPanel } from './ReconciliationPanel';
+import { RsvpButtons } from './RsvpButtons';
+import { AttendancePanel } from './AttendancePanel';
 import { loadReconciliationForGame } from '@/lib/dual-scorekeeper/load';
-import { getGameWeaknesses } from '@baseball/database';
+import { getGameWeaknesses, listGameRsvpsForPlayers } from '@baseball/database';
 
 export const metadata: Metadata = { title: 'Game' };
 
@@ -59,6 +61,53 @@ export default async function GameDetailPage({
       .eq('user_id', user.id)
       .single();
     if (!membership) notFound();
+  }
+
+  // RSVP is only actionable while the game hasn't started.
+  const rsvpRelevant = game.status === 'scheduled' || game.status === 'postponed';
+
+  // For non-coach viewers, resolve which players they may RSVP for: their own
+  // player record on this team, plus any linked children (parent_player_links).
+  let rsvpPlayers: { playerId: string; playerName: string; status: GameRsvpStatus | null }[] = [];
+  if (!isCoach && rsvpRelevant) {
+    const [selfPlayerResult, linkedResult] = await Promise.all([
+      db
+        .from('players')
+        .select('id, first_name, last_name')
+        .eq('team_id', game.team_id)
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle(),
+      db
+        .from('parent_player_links')
+        .select('player_id, players(id, first_name, last_name, team_id, is_active)')
+        .eq('parent_user_id', user.id),
+    ]);
+
+    const candidatesById = new Map<string, { id: string; first_name: string; last_name: string }>();
+    if (selfPlayerResult.data) candidatesById.set(selfPlayerResult.data.id, selfPlayerResult.data);
+    for (const link of linkedResult.data ?? []) {
+      const raw = link.players as unknown;
+      const p = (Array.isArray(raw) ? raw[0] : raw) as
+        | { id: string; first_name: string; last_name: string; team_id: string; is_active: boolean }
+        | null;
+      if (p && p.team_id === game.team_id && p.is_active) candidatesById.set(p.id, p);
+    }
+
+    const candidates = Array.from(candidatesById.values());
+    if (candidates.length > 0) {
+      const existingRsvps = await listGameRsvpsForPlayers(
+        db as never,
+        [params.gameId],
+        candidates.map((c) => c.id),
+      );
+      const statusByPlayer = new Map(existingRsvps.map((r) => [r.playerId, r.status]));
+      rsvpPlayers = candidates.map((c) => ({
+        playerId: c.id,
+        playerName: `${c.first_name} ${c.last_name}`,
+        status: statusByPlayer.get(c.id) ?? null,
+      }));
+    }
   }
 
   const [{ count: lineupCount }, { count: opponentLineupCount }] = await Promise.all([
@@ -202,6 +251,11 @@ export default async function GameDetailPage({
         </div>
       </div>
 
+      {/* ── RSVP (players / parents, upcoming games) ────────────── */}
+      {rsvpPlayers.length > 0 && (
+        <RsvpButtons gameId={game.id} players={rsvpPlayers} />
+      )}
+
       {/* ── Takeaways (Tier 6 F2 — coaches, completed games) ────── */}
       {isCompleted && isCoach && weaknesses.length > 0 && (
         <>
@@ -334,6 +388,11 @@ export default async function GameDetailPage({
             placeId={game.place_id ?? undefined}
           />
         </div>
+      )}
+
+      {/* ── Attendance (coaches / team admins, upcoming games) ──── */}
+      {isCoach && rsvpRelevant && (
+        <AttendancePanel gameId={game.id} teamId={game.team_id} />
       )}
 
       {/* ── Scoring controls (scheduled — coaches only) ─────────── */}
