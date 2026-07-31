@@ -43,6 +43,7 @@ export default function AttendanceScreen() {
   const { gameId } = useLocalSearchParams<{ gameId: string }>();
   const { activeTeam, loading: roleLoading } = useRole();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [players, setPlayers] = useState<RosterRow[]>([]);
   const [byPlayer, setByPlayer] = useState<Map<string, GameRsvp>>(new Map());
 
@@ -54,6 +55,7 @@ export default function AttendanceScreen() {
     let cancelled = false;
     (async () => {
       setLoading(true);
+      setLoadError(false);
       const supabase = getSupabaseClient();
       try {
         const [{ data: rosterData, error: rosterErr }, records] = await Promise.all([
@@ -68,11 +70,13 @@ export default function AttendanceScreen() {
         if (cancelled) return;
         if (rosterErr) {
           console.warn('roster fetch failed', rosterErr);
+          setLoadError(true);
         }
         setPlayers(((rosterData ?? []) as unknown) as RosterRow[]);
         setByPlayer(new Map(records.map((r) => [r.playerId, r])));
       } catch (err) {
         console.warn('attendance load failed', err);
+        if (!cancelled) setLoadError(true);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -84,17 +88,23 @@ export default function AttendanceScreen() {
 
   if (roleLoading || loading) {
     return (
-      <View className="flex-1 items-center justify-center bg-gray-50">
-        <ActivityIndicator />
-      </View>
+      <>
+        <Stack.Screen options={{ title: 'RSVPs' }} />
+        <View className="flex-1 items-center justify-center bg-gray-50">
+          <ActivityIndicator />
+        </View>
+      </>
     );
   }
 
   if (!activeTeam?.isCoach) {
     return (
-      <View className="flex-1 items-center justify-center bg-gray-50 p-4">
-        <Text className="text-gray-600 text-center">Only coaches can view RSVPs.</Text>
-      </View>
+      <>
+        <Stack.Screen options={{ title: 'RSVPs' }} />
+        <View className="flex-1 items-center justify-center bg-gray-50 p-4">
+          <Text className="text-gray-600 text-center">Only coaches can view RSVPs.</Text>
+        </View>
+      </>
     );
   }
 
@@ -132,7 +142,9 @@ export default function AttendanceScreen() {
         }}
         ListEmptyComponent={
           <View className="items-center justify-center py-10">
-            <Text className="text-gray-500">No active players on this roster.</Text>
+            <Text className="text-gray-500">
+              {loadError ? 'Could not load RSVPs. Pull to refresh or try again later.' : 'No active players on this roster.'}
+            </Text>
           </View>
         }
       />

@@ -25,7 +25,7 @@ function GamesList({ games }: GamesListProps) {
     () => games.filter((g) => g.status === 'scheduled').map((g) => g.remoteId),
     [games],
   );
-  const { myPlayers, rsvpByKey, setRsvp } = useGameRsvps(scheduledGameIds);
+  const { myPlayers, rsvpByKey, setRsvp, error: rsvpError } = useGameRsvps(scheduledGameIds);
 
   if (games.length === 0) {
     return (
@@ -43,6 +43,13 @@ function GamesList({ games }: GamesListProps) {
       data={games}
       keyExtractor={(item) => item.id}
       contentContainerStyle={{ padding: 16 }}
+      ListHeaderComponent={
+        rsvpError ? (
+          <View className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+            <Text className="text-xs text-red-700">{rsvpError}</Text>
+          </View>
+        ) : null
+      }
       renderItem={({ item: game }) => (
         <TouchableOpacity
           className="bg-white rounded-xl border border-gray-200 p-4 mb-3"
@@ -129,6 +136,9 @@ function GamesList({ games }: GamesListProps) {
                       {RSVP_OPTIONS.map((opt) => (
                         <TouchableOpacity
                           key={opt.status}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: status === opt.status }}
+                          accessibilityLabel={`${player.playerName}: ${opt.label}`}
                           onPress={() => setRsvp(game.remoteId, player.playerId, opt.status)}
                           className={`px-2.5 py-1 rounded-full border ${
                             status === opt.status ? opt.activeClass : 'bg-white border-gray-200'

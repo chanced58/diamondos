@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listGameRsvpsForPlayers, upsertGameRsvp } from '@baseball/database';
 import type { GameRsvpStatus } from '@baseball/shared';
 import { getSupabaseClient } from '../../lib/supabase';
@@ -28,7 +28,10 @@ export function useGameRsvps(gameIds: string[]) {
   const { activeTeam } = useRole();
   const [myPlayers, setMyPlayers] = useState<RsvpPlayer[]>([]);
   const [rsvpByKey, setRsvpByKey] = useState<Map<string, GameRsvpStatus>>(new Map());
+  const rsvpByKeyRef = useRef(rsvpByKey);
+  rsvpByKeyRef.current = rsvpByKey;
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user || !activeTeam) {
@@ -41,20 +44,24 @@ export function useGameRsvps(gameIds: string[]) {
       const players: RsvpPlayer[] = [];
 
       if (activeTeam.playerId) {
-        const { data } = await supabase
+        const { data, error: selfErr } = await supabase
           .from('players')
           .select('id, first_name, last_name')
           .eq('id', activeTeam.playerId)
+          .eq('team_id', activeTeam.teamId)
+          .eq('is_active', true)
           .maybeSingle();
+        if (selfErr) console.warn('useGameRsvps: self player lookup failed', selfErr);
         if (data) {
           players.push({ playerId: data.id, playerName: `${data.first_name} ${data.last_name}` });
         }
       }
 
-      const { data: links } = await supabase
+      const { data: links, error: linksErr } = await supabase
         .from('parent_player_links')
         .select('player_id, players(id, first_name, last_name, team_id, is_active)')
         .eq('parent_user_id', user.id);
+      if (linksErr) console.warn('useGameRsvps: linked player lookup failed', linksErr);
 
       for (const link of links ?? []) {
         const raw = link.players as unknown;
@@ -110,8 +117,9 @@ export function useGameRsvps(gameIds: string[]) {
     async (gameId: string, playerId: string, status: GameRsvpStatus) => {
       if (!user) return;
       const key = `${gameId}:${playerId}`;
-      const previous = rsvpByKey;
+      const prior = rsvpByKeyRef.current.get(key);
       setRsvpByKey((m) => new Map(m).set(key, status));
+      setError(null);
       try {
         await upsertGameRsvp(getSupabaseClient(), {
           gameId,
@@ -121,11 +129,17 @@ export function useGameRsvps(gameIds: string[]) {
         });
       } catch (err) {
         console.warn('useGameRsvps: upsert failed', err);
-        setRsvpByKey(previous);
+        setRsvpByKey((m) => {
+          const next = new Map(m);
+          if (prior === undefined) next.delete(key);
+          else next.set(key, prior);
+          return next;
+        });
+        setError('Could not save RSVP. Please try again.');
       }
     },
-    [rsvpByKey, user],
+    [user],
   );
 
-  return { myPlayers, rsvpByKey, setRsvp, loading };
+  return { myPlayers, rsvpByKey, setRsvp, loading, error };
 }
