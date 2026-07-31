@@ -2,6 +2,7 @@ export * from './player';
 export * from './team';
 export * from './game';
 export * from './message';
+export * from './game-rsvp';
 export * from './league';
 export * from './practice-drill';
 export * from './practice-template';
