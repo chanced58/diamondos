@@ -28,18 +28,22 @@ function PlayerRow({
 }): JSX.Element {
   const [status, setStatus] = useState<GameRsvpStatus | null>(player.status);
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [saving, setSaving] = useState(false);
+  const [, startTransition] = useTransition();
 
   function choose(next: GameRsvpStatus) {
+    if (saving) return;
     const previous = status;
     setStatus(next);
     setError(null);
+    setSaving(true);
     startTransition(async () => {
       const result = await rsvpToGameAction({ gameId, playerId: player.playerId, status: next });
       if (result.error) {
         setStatus(previous);
         setError(result.error);
       }
+      setSaving(false);
     });
   }
 
@@ -51,7 +55,8 @@ function PlayerRow({
           <button
             key={opt.status}
             type="button"
-            disabled={isPending}
+            aria-pressed={status === opt.status}
+            disabled={saving}
             onClick={() => choose(opt.status)}
             className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors disabled:opacity-50 ${
               status === opt.status ? opt.activeClass : inactiveClass

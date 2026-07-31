@@ -1,7 +1,8 @@
+import 'server-only';
 import type { JSX } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { listGameRsvps } from '@baseball/database';
-import { summarizeRsvps, type GameRsvpStatus } from '@baseball/shared';
+import { summarizeRsvps, type GameRsvp, type GameRsvpStatus } from '@baseball/shared';
 
 const STATUS_LABEL: Record<GameRsvpStatus, string> = {
   attending: 'Attending',
@@ -27,7 +28,7 @@ export async function AttendancePanel({
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const [{ data: roster }, rsvps] = await Promise.all([
+  const [rosterResult, rsvpsResult] = await Promise.allSettled([
     db
       .from('players')
       .select('id, first_name, last_name, jersey_number')
@@ -37,7 +38,32 @@ export async function AttendancePanel({
     listGameRsvps(db as never, gameId),
   ]);
 
-  const players = roster ?? [];
+  if (rosterResult.status === 'fulfilled' && rosterResult.value.error) {
+    console.error('AttendancePanel: roster fetch failed', { gameId, teamId, err: rosterResult.value.error });
+  }
+  if (rosterResult.status === 'rejected') {
+    console.error('AttendancePanel: roster fetch threw', { gameId, teamId, err: rosterResult.reason });
+  }
+  if (rsvpsResult.status === 'rejected') {
+    console.error('AttendancePanel: RSVP fetch failed', { gameId, teamId, err: rsvpsResult.reason });
+  }
+
+  const rosterFailed = rosterResult.status === 'rejected' || Boolean(rosterResult.value.error);
+  const rsvpsFailed = rsvpsResult.status === 'rejected';
+
+  if (rosterFailed || rsvpsFailed) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 px-5 py-4 mb-6">
+        <h2 className="text-sm font-semibold text-gray-700 mb-1">Attendance</h2>
+        <p className="text-sm text-gray-400 italic">
+          Attendance is temporarily unavailable. Reload to try again.
+        </p>
+      </div>
+    );
+  }
+
+  const players = rosterResult.status === 'fulfilled' ? rosterResult.value.data ?? [] : [];
+  const rsvps: GameRsvp[] = rsvpsResult.status === 'fulfilled' ? rsvpsResult.value : [];
   const rsvpByPlayer = new Map(rsvps.map((r) => [r.playerId, r]));
   const summary = summarizeRsvps(
     players.map((p) => p.id),

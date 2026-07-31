@@ -84,6 +84,13 @@ export default async function GameDetailPage({
         .eq('parent_user_id', user.id),
     ]);
 
+    if (selfPlayerResult.error) {
+      console.error('[GameDetail] self player lookup failed', { gameId: params.gameId, err: selfPlayerResult.error });
+    }
+    if (linkedResult.error) {
+      console.error('[GameDetail] linked player lookup failed', { gameId: params.gameId, err: linkedResult.error });
+    }
+
     const candidatesById = new Map<string, { id: string; first_name: string; last_name: string }>();
     if (selfPlayerResult.data) candidatesById.set(selfPlayerResult.data.id, selfPlayerResult.data);
     for (const link of linkedResult.data ?? []) {
@@ -96,12 +103,19 @@ export default async function GameDetailPage({
 
     const candidates = Array.from(candidatesById.values());
     if (candidates.length > 0) {
-      const existingRsvps = await listGameRsvpsForPlayers(
-        db as never,
-        [params.gameId],
-        candidates.map((c) => c.id),
-      );
-      const statusByPlayer = new Map(existingRsvps.map((r) => [r.playerId, r.status]));
+      // RSVP status is secondary to the rest of the page — a transient fetch
+      // failure here should degrade to "no status shown", not 500 the page.
+      let statusByPlayer = new Map<string, GameRsvpStatus>();
+      try {
+        const existingRsvps = await listGameRsvpsForPlayers(
+          db as never,
+          [params.gameId],
+          candidates.map((c) => c.id),
+        );
+        statusByPlayer = new Map(existingRsvps.map((r) => [r.playerId, r.status]));
+      } catch (err) {
+        console.error('[GameDetail] RSVP lookup failed', { gameId: params.gameId, err });
+      }
       rsvpPlayers = candidates.map((c) => ({
         playerId: c.id,
         playerName: `${c.first_name} ${c.last_name}`,

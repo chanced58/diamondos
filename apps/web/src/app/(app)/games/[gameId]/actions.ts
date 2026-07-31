@@ -10,7 +10,6 @@ import {
   EventType,
   conflictKey,
   upsertGameRsvpSchema,
-  type GameRsvpStatus,
   type ScoreConflict,
   type UpsertGameRsvpInput,
 } from '@baseball/shared';
@@ -690,12 +689,21 @@ export async function rsvpToGameAction(
     await upsertGameRsvp(authClient, {
       gameId: parsed.data.gameId,
       playerId: parsed.data.playerId,
-      status: parsed.data.status as GameRsvpStatus,
+      status: parsed.data.status,
       note: parsed.data.note ?? null,
       respondedBy: user.id,
     });
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Failed to save RSVP.' };
+    // upsertGameRsvp re-throws the raw Postgrest error object on failure (not
+    // an Error instance), so it's logged here for debugging and never
+    // forwarded to the client — it may describe an RLS denial or constraint
+    // violation we don't want to leak details of.
+    console.error('rsvpToGameAction failed', {
+      gameId: parsed.data.gameId,
+      playerId: parsed.data.playerId,
+      err,
+    });
+    return { error: 'Failed to save RSVP. Please try again.' };
   }
 
   revalidatePath(`/games/${parsed.data.gameId}`);
