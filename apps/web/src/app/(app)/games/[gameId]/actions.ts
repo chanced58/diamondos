@@ -690,7 +690,10 @@ export async function rsvpToGameAction(
       gameId: parsed.data.gameId,
       playerId: parsed.data.playerId,
       status: parsed.data.status,
-      note: parsed.data.note ?? null,
+      // Pass through unchanged (including undefined) — upsertGameRsvp only
+      // touches the stored note when the caller explicitly provides one, so
+      // an omitted note on a status-only update must not clear it.
+      note: parsed.data.note,
       respondedBy: user.id,
     });
   } catch (err) {

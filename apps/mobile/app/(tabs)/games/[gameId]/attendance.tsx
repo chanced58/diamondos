@@ -143,7 +143,7 @@ export default function AttendanceScreen() {
         ListEmptyComponent={
           <View className="items-center justify-center py-10">
             <Text className="text-gray-500">
-              {loadError ? 'Could not load RSVPs. Pull to refresh or try again later.' : 'No active players on this roster.'}
+              {loadError ? 'Could not load RSVPs. Try again later.' : 'No active players on this roster.'}
             </Text>
           </View>
         }

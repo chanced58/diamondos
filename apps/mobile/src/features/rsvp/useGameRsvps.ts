@@ -28,10 +28,16 @@ export function useGameRsvps(gameIds: string[]) {
   const { activeTeam } = useRole();
   const [myPlayers, setMyPlayers] = useState<RsvpPlayer[]>([]);
   const [rsvpByKey, setRsvpByKey] = useState<Map<string, GameRsvpStatus>>(new Map());
-  const rsvpByKeyRef = useRef(rsvpByKey);
-  rsvpByKeyRef.current = rsvpByKey;
+  const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Last server-confirmed status per key — rollback target on a failed write.
+  // Not the same as rsvpByKey, which also holds unconfirmed optimistic values.
+  const confirmedRef = useRef(new Map<string, GameRsvpStatus>());
+  // Per-key promise chain so concurrent taps on the same player/game are sent
+  // to the database in tap order, one at a time, instead of racing.
+  const queueRef = useRef(new Map<string, Promise<unknown>>());
 
   useEffect(() => {
     if (!user || !activeTeam) {
@@ -101,7 +107,9 @@ export function useGameRsvps(gameIds: string[]) {
       try {
         const rows = await listGameRsvpsForPlayers(getSupabaseClient(), gameIds, playerIds);
         if (cancelled) return;
-        setRsvpByKey(new Map(rows.map((r) => [`${r.gameId}:${r.playerId}`, r.status])));
+        const loaded = new Map(rows.map((r) => [`${r.gameId}:${r.playerId}`, r.status]));
+        setRsvpByKey(loaded);
+        confirmedRef.current = new Map(loaded);
       } catch (err) {
         console.warn('useGameRsvps: load failed', err);
       } finally {
@@ -117,29 +125,57 @@ export function useGameRsvps(gameIds: string[]) {
     async (gameId: string, playerId: string, status: GameRsvpStatus) => {
       if (!user) return;
       const key = `${gameId}:${playerId}`;
-      const prior = rsvpByKeyRef.current.get(key);
       setRsvpByKey((m) => new Map(m).set(key, status));
+      setSavingKeys((s) => new Set(s).add(key));
       setError(null);
+
+      // Chain onto any write already in flight for this key so a rapid
+      // second tap is sent only after the first settles — otherwise the two
+      // requests could reach the database out of order and leave a stale
+      // status persisted. `.catch(() => {})` lets this mutation start even if
+      // the one ahead of it failed.
+      const queuedAhead = queueRef.current.get(key) ?? Promise.resolve();
+      const thisMutation = queuedAhead.catch(() => {}).then(() =>
+        upsertGameRsvp(getSupabaseClient(), { gameId, playerId, status, respondedBy: user.id }),
+      );
+      queueRef.current.set(key, thisMutation);
+
+      const isLatest = () => queueRef.current.get(key) === thisMutation;
+
       try {
-        await upsertGameRsvp(getSupabaseClient(), {
-          gameId,
-          playerId,
-          status,
-          respondedBy: user.id,
-        });
+        await thisMutation;
+        confirmedRef.current.set(key, status);
+        if (isLatest()) {
+          setSavingKeys((s) => {
+            const next = new Set(s);
+            next.delete(key);
+            return next;
+          });
+        }
       } catch (err) {
         console.warn('useGameRsvps: upsert failed', err);
-        setRsvpByKey((m) => {
-          const next = new Map(m);
-          if (prior === undefined) next.delete(key);
-          else next.set(key, prior);
-          return next;
-        });
-        setError('Could not save RSVP. Please try again.');
+        // Only the most recently queued mutation for this key may roll back
+        // or report an error — an earlier failure settling after a newer,
+        // still-in-flight (or already-succeeded) tap must not touch it.
+        if (isLatest()) {
+          const confirmed = confirmedRef.current.get(key);
+          setRsvpByKey((m) => {
+            const next = new Map(m);
+            if (confirmed === undefined) next.delete(key);
+            else next.set(key, confirmed);
+            return next;
+          });
+          setError('Could not save RSVP. Please try again.');
+          setSavingKeys((s) => {
+            const next = new Set(s);
+            next.delete(key);
+            return next;
+          });
+        }
       }
     },
     [user],
   );
 
-  return { myPlayers, rsvpByKey, setRsvp, loading, error };
+  return { myPlayers, rsvpByKey, savingKeys, setRsvp, loading, error };
 }

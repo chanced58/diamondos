@@ -25,7 +25,13 @@ function GamesList({ games }: GamesListProps) {
     () => games.filter((g) => g.status === 'scheduled').map((g) => g.remoteId),
     [games],
   );
-  const { myPlayers, rsvpByKey, setRsvp, error: rsvpError } = useGameRsvps(scheduledGameIds);
+  const {
+    myPlayers,
+    rsvpByKey,
+    savingKeys,
+    setRsvp,
+    error: rsvpError,
+  } = useGameRsvps(scheduledGameIds);
 
   if (games.length === 0) {
     return (
@@ -124,7 +130,9 @@ function GamesList({ games }: GamesListProps) {
           {game.status === 'scheduled' && !activeTeam?.isCoach && myPlayers.length > 0 && (
             <View className="mt-3 gap-1.5">
               {myPlayers.map((player) => {
-                const status = rsvpByKey.get(`${game.remoteId}:${player.playerId}`);
+                const key = `${game.remoteId}:${player.playerId}`;
+                const status = rsvpByKey.get(key);
+                const isSaving = savingKeys.has(key);
                 return (
                   <View key={player.playerId} className="flex-row items-center justify-between">
                     {myPlayers.length > 1 && (
@@ -137,12 +145,13 @@ function GamesList({ games }: GamesListProps) {
                         <TouchableOpacity
                           key={opt.status}
                           accessibilityRole="button"
-                          accessibilityState={{ selected: status === opt.status }}
+                          accessibilityState={{ selected: status === opt.status, busy: isSaving }}
                           accessibilityLabel={`${player.playerName}: ${opt.label}`}
+                          disabled={isSaving}
                           onPress={() => setRsvp(game.remoteId, player.playerId, opt.status)}
                           className={`px-2.5 py-1 rounded-full border ${
-                            status === opt.status ? opt.activeClass : 'bg-white border-gray-200'
-                          }`}
+                            isSaving ? 'opacity-50' : ''
+                          } ${status === opt.status ? opt.activeClass : 'bg-white border-gray-200'}`}
                         >
                           <Text
                             className={`text-xs font-semibold ${
