@@ -37,13 +37,18 @@ function PlayerRow({
     setStatus(next);
     setError(null);
     setSaving(true);
-    startTransition(async () => {
-      const result = await rsvpToGameAction({ gameId, playerId: player.playerId, status: next });
-      if (result.error) {
-        setStatus(previous);
-        setError(result.error);
-      }
-      setSaving(false);
+    // startTransition's callback must be synchronous (return void, not a
+    // Promise) — wrap the async work in a fire-and-forget IIFE instead of
+    // passing an async function directly.
+    startTransition(() => {
+      void (async () => {
+        const result = await rsvpToGameAction({ gameId, playerId: player.playerId, status: next });
+        if (result.error) {
+          setStatus(previous);
+          setError(result.error);
+        }
+        setSaving(false);
+      })();
     });
   }
 
