@@ -1,10 +1,6 @@
-export type GameRsvpStatus = 'attending' | 'not_attending' | 'maybe';
+export const GAME_RSVP_STATUSES = ['attending', 'not_attending', 'maybe'] as const;
 
-export const GAME_RSVP_STATUSES: readonly GameRsvpStatus[] = [
-  'attending',
-  'not_attending',
-  'maybe',
-] as const;
+export type GameRsvpStatus = (typeof GAME_RSVP_STATUSES)[number];
 
 export interface GameRsvp {
   id: string;

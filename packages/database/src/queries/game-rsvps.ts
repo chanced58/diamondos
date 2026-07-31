@@ -76,7 +76,10 @@ export async function upsertGameRsvp(
         game_id: args.gameId,
         player_id: args.playerId,
         status: args.status,
-        note: args.note ?? null,
+        // Only touch note when the caller explicitly passed one (including
+        // null to clear it) — omitting it on a status-only update must not
+        // clobber a previously saved note.
+        ...(args.note !== undefined ? { note: args.note } : {}),
         user_id: args.respondedBy,
         responded_at: new Date().toISOString(),
       } as never,
