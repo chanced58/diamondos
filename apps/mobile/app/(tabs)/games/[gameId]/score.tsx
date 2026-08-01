@@ -764,6 +764,17 @@ export default function ScoringScreen() {
     await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
   }
 
+  async function handleCourtesyRunner(fromBase: 1 | 2 | 3, outRunnerId: string, inRunnerId: string) {
+    if (!gameState) return;
+    const payload: SubstitutionPayload = {
+      inPlayerId: inRunnerId,
+      outPlayerId: outRunnerId,
+      substitutionType: SubstitutionType.COURTESY_RUNNER,
+      runnerBase: fromBase,
+    };
+    await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
+  }
+
   async function handlePickoffOut(fromBase: 1 | 2 | 3, runnerId: string) {
     if (!gameState) return;
     const payload: PickoffPayload = {
@@ -950,6 +961,11 @@ export default function ScoringScreen() {
           onRecordAdvance={handleRunnerAdvance}
           onRecordPickoffOut={handlePickoffOut}
           onRecordPinchRunner={handlePinchRunner}
+          onRecordCourtesyRunner={
+            leagueSettings.substitutions.courtesyRunnerForCatcherPitcher
+              ? handleCourtesyRunner
+              : undefined
+          }
           roster={roster}
         />
         {isSyncing ? (
