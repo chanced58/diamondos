@@ -1,6 +1,8 @@
 'use client';
 
-export function PrintProfileButton() {
+import type { JSX } from 'react';
+
+export function PrintProfileButton(): JSX.Element {
   return (
     <button
       type="button"
