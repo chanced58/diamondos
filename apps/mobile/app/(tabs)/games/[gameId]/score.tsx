@@ -11,7 +11,7 @@ import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerMo
 import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, terminalEventForPitchOutcome } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueSettings } from '../../../../src/lib/league-settings';
@@ -21,6 +21,7 @@ import type { Game } from '../../../../src/db/models/Game';
 import type { Player } from '../../../../src/db/models/Player';
 import type { BattedOutType, RosterPlayer, RunnerOutcome } from '../../../../src/features/scoring/PitchInput';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
+import { useRole } from '../../../../src/providers/RoleProvider';
 import { getSupabaseClient } from '../../../../src/lib/supabase';
 
 /**
@@ -29,13 +30,16 @@ import { getSupabaseClient } from '../../../../src/lib/supabase';
  * then synced to Supabase in the background.
  */
 export default function ScoringScreen() {
-  const { gameId, teamId = '', opponentName = 'Opponent', teamName = 'Home' } =
+  const { gameId, teamId: routeTeamId = '', opponentName = 'Opponent', teamName: routeTeamName = 'Home' } =
     useLocalSearchParams<{
       gameId: string;
       teamId: string;
       opponentName: string;
       teamName: string;
     }>();
+  const { activeTeam } = useRole();
+  const teamId = routeTeamId || activeTeam?.teamId || '';
+  const teamName = routeTeamName !== 'Home' ? routeTeamName : activeTeam?.teamName || 'Home';
 
   const { gameState, lineScore, loading } = useGameState(gameId, teamId);
   const { recordEvent } = useRecordEvent(gameId);
@@ -163,6 +167,20 @@ export default function ScoringScreen() {
       gameState.isTopOfInning,
       payload,
     );
+
+    const terminalEventType = terminalEventForPitchOutcome(outcome);
+    if (terminalEventType === EventType.HIT_BY_PITCH) {
+      await recordEvent(
+        terminalEventType,
+        gameState.inning,
+        gameState.isTopOfInning,
+        {
+          batterId: currentBatterId,
+          pitcherId: currentPitcherId,
+        },
+      );
+      return;
+    }
 
     // Auto-complete walks and strikeouts from pitch progression so the scorer
     // doesn't need to tap a separate button. gameState here is the pre-pitch
@@ -765,6 +783,26 @@ export default function ScoringScreen() {
     await recordEvent(EventType.DROPPED_THIRD_STRIKE, gameState.inning, gameState.isTopOfInning, payload);
   }
 
+  async function handleInningChange() {
+    if (!gameState) return;
+    await recordEvent(
+      EventType.INNING_CHANGE,
+      gameState.inning,
+      gameState.isTopOfInning,
+      {},
+    );
+  }
+
+  async function handleGameEnd() {
+    if (!gameState) return;
+    await recordEvent(
+      EventType.GAME_END,
+      gameState.inning,
+      gameState.isTopOfInning,
+      {},
+    );
+  }
+
   // Runners currently on base — passed to PitchInput for the FC picker.
   // Memoised on the three runner IDs so a new array identity only
   // propagates when the underlying state actually changes; otherwise
@@ -823,7 +861,7 @@ export default function ScoringScreen() {
       <CountDisplay gameState={gameState} />
       <View className="flex-row items-center justify-between px-5 py-3 border-b border-gray-100">
         <View>
-          <Text className="text-xs text-gray-500">Pitches (this AB)</Text>
+          <Text className="text-xs text-gray-500">Pitches (game)</Text>
           <Text className="text-lg font-bold text-gray-900">
             {gameState.currentPitcherPitchCount}
           </Text>
@@ -866,6 +904,25 @@ export default function ScoringScreen() {
         onCancel={() => setShowLineupModal(false)}
         onSubmit={handleStartGame}
       />
+
+      <View className="mx-4 mt-2 flex-row gap-2">
+        <TouchableOpacity
+          className="flex-1 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2"
+          onPress={handleInningChange}
+        >
+          <Text className="text-center text-sm font-semibold text-blue-800">
+            Inning Change
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          className="flex-1 rounded-lg border border-red-300 bg-red-50 px-3 py-2"
+          onPress={handleGameEnd}
+        >
+          <Text className="text-center text-sm font-semibold text-red-800">
+            End Game
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       <GuestPlayerModal
         visible={showGuestModal}
