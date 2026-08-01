@@ -1,9 +1,18 @@
 export type VideoProvider = 'youtube' | 'hudl' | 'vimeo' | 'other';
+export type PlayerProfileVisibility = 'public' | 'unlisted' | 'private';
+
+export interface PlayerProfileFieldVisibility {
+  academics: boolean;
+  measurables: boolean;
+  media: boolean;
+}
 
 export interface PlayerProfile {
   userId: string;
   handle: string;
   isPublic: boolean;
+  visibility?: PlayerProfileVisibility;
+  fieldVisibility?: PlayerProfileFieldVisibility;
   headline?: string | null;
   bio?: string | null;
   profilePhotoUrl?: string | null;

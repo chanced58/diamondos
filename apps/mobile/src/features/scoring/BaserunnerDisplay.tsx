@@ -18,6 +18,7 @@ interface BaserunnerDisplayProps {
   onRecordAdvance?: (fromBase: Base, runnerId: string, reason: AdvanceReason) => void;
   onRecordPickoffOut?: (fromBase: Base, runnerId: string) => void;
   onRecordPinchRunner?: (fromBase: Base, outRunnerId: string, inRunnerId: string) => void;
+  onRecordCourtesyRunner?: (fromBase: Base, outRunnerId: string, inRunnerId: string) => void;
   roster?: RosterPlayer[];
 }
 
@@ -35,13 +36,18 @@ export function BaserunnerDisplay({
   onRecordAdvance,
   onRecordPickoffOut,
   onRecordPinchRunner,
+  onRecordCourtesyRunner,
   roster,
 }: BaserunnerDisplayProps) {
   const { first, second, third } = gameState.runnersOnBase;
   const [selected, setSelected] = useState<{ base: Base; runnerId: string } | null>(null);
-  const [pinchRunnerPicker, setPinchRunnerPicker] = useState<{ base: Base; runnerId: string } | null>(null);
+  const [pinchRunnerPicker, setPinchRunnerPicker] = useState<{
+    base: Base;
+    runnerId: string;
+    courtesy: boolean;
+  } | null>(null);
 
-  const interactive = !!(onRecordStolenBase || onRecordCaughtStealing || onRecordAdvance || onRecordPickoffOut || onRecordPinchRunner);
+  const interactive = !!(onRecordStolenBase || onRecordCaughtStealing || onRecordAdvance || onRecordPickoffOut || onRecordPinchRunner || onRecordCourtesyRunner);
 
   function handleBaseTap(base: Base, runnerId: string | null) {
     if (!interactive || !runnerId) return;
@@ -78,13 +84,23 @@ export function BaserunnerDisplay({
 
   function handlePinchRunnerStart() {
     if (!selected) return;
-    setPinchRunnerPicker({ base: selected.base, runnerId: selected.runnerId });
+    setPinchRunnerPicker({ base: selected.base, runnerId: selected.runnerId, courtesy: false });
+    close();
+  }
+
+  function handleCourtesyRunnerStart() {
+    if (!selected) return;
+    setPinchRunnerPicker({ base: selected.base, runnerId: selected.runnerId, courtesy: true });
     close();
   }
 
   function handlePinchRunnerPick(inRunnerId: string) {
     if (!pinchRunnerPicker) return;
-    onRecordPinchRunner?.(pinchRunnerPicker.base, pinchRunnerPicker.runnerId, inRunnerId);
+    if (pinchRunnerPicker.courtesy) {
+      onRecordCourtesyRunner?.(pinchRunnerPicker.base, pinchRunnerPicker.runnerId, inRunnerId);
+    } else {
+      onRecordPinchRunner?.(pinchRunnerPicker.base, pinchRunnerPicker.runnerId, inRunnerId);
+    }
     setPinchRunnerPicker(null);
   }
 
@@ -186,6 +202,14 @@ export function BaserunnerDisplay({
                   onPress={handlePinchRunnerStart}
                 />
               )}
+              {onRecordCourtesyRunner && roster && roster.length > 0 && (
+                <RunnerActionButton
+                  label="Courtesy Runner"
+                  sub="Replace a catcher or pitcher without a regular sub"
+                  color="bg-emerald-700"
+                  onPress={handleCourtesyRunnerStart}
+                />
+              )}
             </View>
 
             <TouchableOpacity className="mt-4 py-3 items-center" onPress={close}>
@@ -204,7 +228,9 @@ export function BaserunnerDisplay({
       >
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '75%' }}>
-            <Text className="text-lg font-bold text-gray-900 mb-1">Pinch Runner</Text>
+            <Text className="text-lg font-bold text-gray-900 mb-1">
+              {pinchRunnerPicker?.courtesy ? 'Courtesy Runner' : 'Pinch Runner'}
+            </Text>
             <Text className="text-sm text-gray-500 mb-4">
               Select the new runner for {pinchRunnerPicker ? baseLabel(pinchRunnerPicker.base) : ''}.
             </Text>

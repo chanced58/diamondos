@@ -106,14 +106,15 @@ export async function getImportBatches(
  */
 export async function getImportedPlayerStats(
   supabase: AnyClient,
-  leagueId: string,
-  opts: { playerId?: string; seasonYear?: number } = {},
+  leagueId: string | null,
+  opts: { playerId?: string; playerIds?: string[]; seasonYear?: number } = {},
 ): Promise<ImportedPlayerSeasonStats[]> {
   let query = supabase
     .from('historical_player_game_stats')
-    .select('*')
-    .eq('league_id', leagueId);
+    .select('*');
+  if (leagueId) query = query.eq('league_id', leagueId);
   if (opts.playerId) query = query.eq('player_id', opts.playerId);
+  if (opts.playerIds?.length) query = query.in('player_id', opts.playerIds);
   if (opts.seasonYear != null) query = query.eq('season_year', opts.seasonYear);
 
   const { data, error } = await query;

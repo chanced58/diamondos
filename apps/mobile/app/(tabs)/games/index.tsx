@@ -68,6 +68,7 @@ function GamesList({ games }: GamesListProps) {
                 pathname: '/(tabs)/games/[gameId]/score',
                 params: {
                   gameId: game.remoteId,
+                  teamId: game.teamId,
                   opponentName: game.opponentName || 'TBD',
                 },
               });

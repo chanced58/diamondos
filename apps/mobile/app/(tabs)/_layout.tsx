@@ -27,6 +27,10 @@ export default function TabLayout() {
         options={{ title: 'Games', tabBarLabel: 'Games' }}
       />
       <Tabs.Screen
+        name="schedule"
+        options={{ title: 'Schedule', tabBarLabel: 'Schedule' }}
+      />
+      <Tabs.Screen
         name="practices/index"
         options={{ title: 'Practices', tabBarLabel: 'Practices' }}
       />

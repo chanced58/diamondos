@@ -67,12 +67,24 @@ export function setupNotificationDeepLinks(): void {
   deepLinkSubscription?.remove();
   deepLinkSubscription = Notifications.addNotificationResponseReceivedListener((resp) => {
     const data = resp.notification.request.content.data as
-      | { kind?: string; practiceId?: string }
+      | { kind?: string; practiceId?: string; channelId?: string; gameId?: string }
       | undefined;
     if (!data) return;
 
     if (data.kind === 'pre_practice' && data.practiceId) {
       router.push(`/(tabs)/practices/${data.practiceId}/card` as never);
+    }
+    if (data.kind === 'message' && data.channelId) {
+      router.push({
+        pathname: '/(tabs)/messages/[channelId]',
+        params: { channelId: data.channelId },
+      });
+    }
+    if (data.kind === 'game' && data.gameId) {
+      router.push({
+        pathname: '/(tabs)/games/[gameId]/score',
+        params: { gameId: data.gameId },
+      });
     }
   });
 }

@@ -16,6 +16,7 @@ const ACTIVE_TEAM_KEY = 'diamondos.activeTeamId';
 export type TeamRole =
   | 'head_coach'
   | 'assistant_coach'
+  | 'scorekeeper'
   | 'player'
   | 'parent'
   | 'athletic_director';

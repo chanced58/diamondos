@@ -134,6 +134,26 @@ Deno.test('buildIcs formats home and away game summaries differently', () => {
   assertStringIncludes(ics, 'SUMMARY:Lakeside Lions @ Titans\r\n');
 });
 
+Deno.test('buildIcs includes team events with deterministic UIDs', () => {
+  const ics = buildIcs({
+    teamId: 'team-1',
+    teamName: 'Test Team',
+    practices: [],
+    games: [],
+    teamEvents: [{
+      id: 'event-1',
+      startsAt: '2026-05-09T18:00:00.000Z',
+      endsAt: '2026-05-09T19:30:00.000Z',
+      title: 'Team meeting',
+      location: 'Clubhouse',
+    }],
+    now: FIXED_NOW,
+  });
+  assertStringIncludes(ics, 'UID:team-event-event-1@diamondos\r\n');
+  assertStringIncludes(ics, 'SUMMARY:Test Team — Team meeting\r\n');
+  assertStringIncludes(ics, 'LOCATION:Clubhouse\r\n');
+});
+
 Deno.test('buildIcs uses deterministic UIDs from row IDs', () => {
   const ics = buildIcs({
     teamId: 'team-1',

@@ -26,11 +26,20 @@ export interface IcsGame {
   locationType: 'home' | 'away' | 'neutral';
 }
 
+export interface IcsTeamEvent {
+  id: string;
+  startsAt: string;
+  endsAt: string | null;
+  title: string;
+  location: string | null;
+}
+
 export interface BuildIcsInput {
   teamId: string;
   teamName: string;
   practices: IcsPractice[];
   games: IcsGame[];
+  teamEvents?: IcsTeamEvent[];
   /** ISO timestamp to stamp DTSTAMP with. Defaults to now; parameterized for testing. */
   now?: string;
 }
@@ -144,6 +153,21 @@ export function buildIcs(input: BuildIcsInput): string {
         formatIcsUtc(endIso),
         `${input.teamName} ${suffix} ${g.opponentName}`,
         g.venueName,
+      ),
+    );
+  }
+
+  for (const event of input.teamEvents ?? []) {
+    const dtStart = formatIcsUtc(event.startsAt);
+    const endIso = event.endsAt ?? addMinutes(event.startsAt, 60);
+    lines.push(
+      ...buildVevent(
+        `team-event-${event.id}@diamondos`,
+        dtStamp,
+        dtStart,
+        formatIcsUtc(endIso),
+        `${input.teamName} — ${event.title}`,
+        event.location,
       ),
     );
   }
