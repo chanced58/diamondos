@@ -7,6 +7,7 @@ import type { PlayerProfile } from '@baseball/shared';
 import { VideoEmbed } from './VideoEmbed';
 import { CareerStats } from '../../(app)/players/me/CareerStats';
 import { PLAYER_MEDIA_BUCKET } from '@/lib/player-pro';
+import { PrintProfileButton } from './PrintProfileButton';
 
 interface Params {
   params: { handle: string };
@@ -32,7 +33,7 @@ async function loadPublicProfile(handle: string) {
   if (!bundle) return null;
 
   const { profile } = bundle;
-  if (!profile.isPublic) return null;
+  if (profile.visibility === 'private' || (!profile.visibility && !profile.isPublic)) return null;
 
   // Use the canonical Pro check so the definition lives in one place.
   const { data: isPro } = await db.rpc('is_player_pro', { uid: profile.userId });
@@ -106,8 +107,11 @@ export default async function PublicProfilePage({ params }: Params): Promise<JSX
               <p className="text-base text-gray-600 mt-1">{profile.headline}</p>
             )}
             <p className="text-xs text-gray-400 mt-2">
-              Verified recruiting profile · DiamondOS
+              DiamondOS recruiting profile
             </p>
+          </div>
+          <div className="ml-auto">
+            <PrintProfileButton />
           </div>
         </div>
       </header>
@@ -128,7 +132,7 @@ export default async function PublicProfilePage({ params }: Params): Promise<JSX
           <CareerStats userId={profile.userId} firstName={firstName || 'Player'} lastName={lastName} />
         </section>
 
-        {highlights.length > 0 && (
+        {profile.fieldVisibility?.media !== false && highlights.length > 0 && (
           <section>
             <h2 className="text-base font-semibold text-gray-900 mb-4">Highlights</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -139,7 +143,7 @@ export default async function PublicProfilePage({ params }: Params): Promise<JSX
           </section>
         )}
 
-        {galleryUrls.length > 0 && (
+        {profile.fieldVisibility?.media !== false && galleryUrls.length > 0 && (
           <section>
             <h2 className="text-base font-semibold text-gray-900 mb-4">Gallery</h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -197,24 +201,29 @@ export default async function PublicProfilePage({ params }: Params): Promise<JSX
 
 function MeasurablesCard({ profile }: { profile: PlayerProfile }): JSX.Element | null {
   const items: { label: string; value: string }[] = [];
+  const fieldVisibility = profile.fieldVisibility ?? {
+    academics: false,
+    measurables: true,
+    media: true,
+  };
 
-  if (profile.heightInches) {
+  if (fieldVisibility.measurables && profile.heightInches) {
     const ft = Math.floor(profile.heightInches / 12);
     const inch = profile.heightInches % 12;
     items.push({ label: 'Height', value: `${ft}'${inch}"` });
   }
-  if (profile.weightLbs) items.push({ label: 'Weight', value: `${profile.weightLbs} lbs` });
-  if (profile.sixtyYardDashSeconds)
+  if (fieldVisibility.measurables && profile.weightLbs) items.push({ label: 'Weight', value: `${profile.weightLbs} lbs` });
+  if (fieldVisibility.measurables && profile.sixtyYardDashSeconds)
     items.push({ label: '60-yd', value: `${profile.sixtyYardDashSeconds.toFixed(2)}s` });
-  if (profile.exitVelocityMph)
+  if (fieldVisibility.measurables && profile.exitVelocityMph)
     items.push({ label: 'Exit velo', value: `${profile.exitVelocityMph} mph` });
-  if (profile.pitchVelocityMph)
+  if (fieldVisibility.measurables && profile.pitchVelocityMph)
     items.push({ label: 'Pitch velo', value: `${profile.pitchVelocityMph} mph` });
-  if (profile.popTimeSeconds)
+  if (fieldVisibility.measurables && profile.popTimeSeconds)
     items.push({ label: 'Pop time', value: `${profile.popTimeSeconds.toFixed(2)}s` });
-  if (profile.gpa) items.push({ label: 'GPA', value: profile.gpa.toFixed(2) });
-  if (profile.satScore) items.push({ label: 'SAT', value: profile.satScore.toString() });
-  if (profile.actScore) items.push({ label: 'ACT', value: profile.actScore.toString() });
+  if (fieldVisibility.academics && profile.gpa) items.push({ label: 'GPA', value: profile.gpa.toFixed(2) });
+  if (fieldVisibility.academics && profile.satScore) items.push({ label: 'SAT', value: profile.satScore.toString() });
+  if (fieldVisibility.academics && profile.actScore) items.push({ label: 'ACT', value: profile.actScore.toString() });
 
   if (items.length === 0) return null;
 
@@ -229,7 +238,7 @@ function MeasurablesCard({ profile }: { profile: PlayerProfile }): JSX.Element |
           </div>
         ))}
       </div>
-      {profile.targetMajors.length > 0 && (
+      {fieldVisibility.academics && profile.targetMajors.length > 0 && (
         <div className="mt-5 pt-5 border-t border-gray-100">
           <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-2">
             Target majors

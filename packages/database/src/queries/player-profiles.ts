@@ -4,13 +4,15 @@ import type {
   PlayerHighlightVideo,
   PlayerProfilePhoto,
   VideoProvider,
+  PlayerProfileVisibility,
+  PlayerProfileFieldVisibility,
 } from '@baseball/shared';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = SupabaseClient<any>;
 
 const PROFILE_COLUMNS = `
-  user_id, handle, is_public, headline, bio, profile_photo_url,
+  user_id, handle, is_public, visibility, field_visibility, headline, bio, profile_photo_url,
   height_inches, weight_lbs, gpa, sat_score, act_score, target_majors,
   sixty_yard_dash_seconds, exit_velocity_mph, pitch_velocity_mph, pop_time_seconds,
   achievements, created_at, updated_at
@@ -25,6 +27,8 @@ type ProfileRow = {
   user_id: string;
   handle: string;
   is_public: boolean;
+  visibility?: PlayerProfileVisibility;
+  field_visibility?: PlayerProfileFieldVisibility;
   headline: string | null;
   bio: string | null;
   profile_photo_url: string | null;
@@ -48,6 +52,12 @@ function mapProfile(row: ProfileRow): PlayerProfile {
     userId: row.user_id,
     handle: row.handle,
     isPublic: row.is_public,
+    visibility: row.visibility ?? (row.is_public ? 'public' : 'private'),
+    fieldVisibility: row.field_visibility ?? {
+      academics: false,
+      measurables: true,
+      media: true,
+    },
     headline: row.headline,
     bio: row.bio,
     profilePhotoUrl: row.profile_photo_url,
@@ -155,6 +165,8 @@ export async function getProfileByHandle(
 export type PlayerProfileUpdate = Partial<{
   handle: string;
   isPublic: boolean;
+  visibility: PlayerProfileVisibility;
+  fieldVisibility: PlayerProfileFieldVisibility;
   headline: string | null;
   bio: string | null;
   profilePhotoUrl: string | null;
@@ -175,6 +187,11 @@ function toRow(update: PlayerProfileUpdate): Record<string, unknown> {
   const row: Record<string, unknown> = {};
   if (update.handle !== undefined) row.handle = update.handle;
   if (update.isPublic !== undefined) row.is_public = update.isPublic;
+  if (update.visibility !== undefined) {
+    row.visibility = update.visibility;
+    row.is_public = update.visibility === 'public';
+  }
+  if (update.fieldVisibility !== undefined) row.field_visibility = update.fieldVisibility;
   if (update.headline !== undefined) row.headline = update.headline;
   if (update.bio !== undefined) row.bio = update.bio;
   if (update.profilePhotoUrl !== undefined) row.profile_photo_url = update.profilePhotoUrl;
