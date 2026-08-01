@@ -8,7 +8,12 @@ import {
   formatBattingPct,
 } from '@baseball/shared';
 import type { PitchingStats, BattingStats } from '@baseball/shared';
-import { getCareerEventsForUser, getPlayerIdsForUser } from '@baseball/database';
+import {
+  getCareerEventsForUser,
+  getPlayerIdsForUser,
+  getImportedPlayerStats,
+  type ImportedPlayerSeasonStats,
+} from '@baseball/database';
 
 interface Props {
   userId: string;
@@ -51,6 +56,7 @@ export async function CareerStats({ userId, firstName, lastName }: Props): Promi
   }
 
   const playerIdSet = new Set(playerIds);
+  const importedStats = await getImportedPlayerStats(db, null, { playerIds });
 
   const { career, seasons } = computeStats(rows, playerIdSet, firstName, lastName);
 
@@ -88,6 +94,8 @@ export async function CareerStats({ userId, firstName, lastName }: Props): Promi
           </div>
         </section>
       )}
+
+      {importedStats.length > 0 && <ImportedStatsSection stats={importedStats} />}
     </div>
   );
 }
@@ -247,5 +255,33 @@ function PitchingGrid({ stats }: { stats: PitchingStats }): JSX.Element {
         </div>
       ))}
     </div>
+  );
+}
+
+function ImportedStatsSection({ stats }: { stats: ImportedPlayerSeasonStats[] }): JSX.Element {
+  return (
+    <section>
+      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-700">
+        Imported scorebook stats
+      </h3>
+      <p className="mb-3 text-xs text-gray-500">
+        Historical stats imported from a league scorebook. These are shown separately
+        from live event-derived totals.
+      </p>
+      <div className="space-y-4">
+        {stats.map((row) => (
+          <div key={row.key} className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+            <div className="mb-3 flex items-baseline justify-between">
+              <p className="text-sm font-semibold text-gray-900">{row.playerName}</p>
+              <p className="text-xs text-blue-700">
+                {row.seasonLabel ?? row.seasonYear} · Imported
+              </p>
+            </div>
+            {row.batting && <BattingGrid stats={row.batting} />}
+            {row.pitching && <div className="mt-3"><PitchingGrid stats={row.pitching} /></div>}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
