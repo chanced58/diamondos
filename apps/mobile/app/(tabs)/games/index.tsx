@@ -1,16 +1,55 @@
 import { View, Text, FlatList, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Q } from '@nozbe/watermelondb';
 import { withObservables } from '@nozbe/with-observables';
 import { database } from '../../../src/db';
 import type { Game } from '../../../src/db/models/Game';
 import { formatDate, formatTime } from '@baseball/shared';
+import { useAuth } from '../../../src/providers/AuthProvider';
+import { getSupabaseClient } from '../../../src/lib/supabase';
 
 interface GamesListProps {
   games: Game[];
 }
 
 function GamesList({ games }: GamesListProps) {
+  const { user } = useAuth();
+  const [rsvps, setRsvps] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!user || games.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await getSupabaseClient()
+        .from('game_rsvps')
+        .select('game_id, status')
+        .eq('user_id', user.id)
+        .in('game_id', games.map((game) => game.remoteId));
+      if (error || cancelled) return;
+      setRsvps(
+        Object.fromEntries((data ?? []).map((row) => [row.game_id, row.status])),
+      );
+    })().catch((error) => console.warn('Failed to load game RSVPs', error));
+    return () => {
+      cancelled = true;
+    };
+  }, [games, user]);
+
+  async function saveRsvp(gameId: string, status: 'attending' | 'maybe' | 'not_attending') {
+    if (!user) return;
+    const previous = rsvps[gameId];
+    setRsvps((current) => ({ ...current, [gameId]: status }));
+    const { error } = await getSupabaseClient().from('game_rsvps').upsert(
+      { game_id: gameId, user_id: user.id, status },
+      { onConflict: 'game_id,user_id' },
+    );
+    if (error) {
+      setRsvps((current) => ({ ...current, [gameId]: previous ?? '' }));
+      console.warn('Failed to save game RSVP', error);
+    }
+  }
+
   if (games.length === 0) {
     return (
       <View className="flex-1 items-center justify-center px-6">
@@ -59,6 +98,33 @@ function GamesList({ games }: GamesListProps) {
               <Text className="text-red-600 text-sm font-medium">
                 {game.homeScore}–{game.awayScore} • Inning {game.currentInning}
               </Text>
+            </View>
+          )}
+          {user && game.status === 'scheduled' && (
+            <View className="mt-3 flex-row gap-2">
+              {([
+                ['attending', 'Going'],
+                ['maybe', 'Maybe'],
+                ['not_attending', 'Can’t go'],
+              ] as const).map(([status, label]) => (
+                <TouchableOpacity
+                  key={status}
+                  className={`rounded-lg border px-2.5 py-1.5 ${
+                    rsvps[game.remoteId] === status
+                      ? 'border-brand-700 bg-brand-700'
+                      : 'border-gray-300 bg-gray-50'
+                  }`}
+                  onPress={() => saveRsvp(game.remoteId, status)}
+                >
+                  <Text
+                    className={`text-xs font-semibold ${
+                      rsvps[game.remoteId] === status ? 'text-white' : 'text-gray-700'
+                    }`}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           )}
         </TouchableOpacity>

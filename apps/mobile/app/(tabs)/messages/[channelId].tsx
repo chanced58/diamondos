@@ -1,6 +1,7 @@
 import { View, Text, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
 import { useState, useRef } from 'react';
+import { randomUUID } from 'expo-crypto';
 import { map } from 'rxjs';
 import { Q } from '@nozbe/watermelondb';
 import { withObservables } from '@nozbe/with-observables';
@@ -9,6 +10,7 @@ import type { Message } from '../../../src/db/models/Message';
 import type { Channel } from '../../../src/db/models/Channel';
 import { useAuth } from '../../../src/providers/AuthProvider';
 import { getSupabaseClient } from '../../../src/lib/supabase';
+import { database } from '../../../src/db';
 import { formatTime } from '@baseball/shared';
 
 interface MessageThreadProps {
@@ -40,8 +42,23 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
       if (error) throw error;
       setText('');
     } catch (err) {
-      console.warn('Failed to send message', err);
-      Alert.alert('Send failed', 'Your message could not be sent. Please try again.');
+      console.warn('Message send failed; queueing offline message', err);
+      await database.write(async () => {
+        await database.get('messages').create((record: Record<string, unknown>) => {
+          record.remote_id = randomUUID();
+          record.channel_id = '';
+          record.channel_remote_id = channel.remoteId;
+          record.sender_id = user.id;
+          record.sender_name = user.email ?? 'You';
+          record.body = body;
+          record.parent_id = null;
+          record.is_pinned = false;
+          record.created_at = Date.now();
+          record.synced_at = null;
+        });
+      });
+      setText('');
+      Alert.alert('Queued for sync', 'Your message will send when you reconnect.');
     } finally {
       sendingRef.current = false;
       setSending(false);

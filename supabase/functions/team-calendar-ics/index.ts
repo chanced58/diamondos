@@ -11,7 +11,7 @@
  * Response: text/calendar; charset=utf-8
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { buildIcs, IcsGame, IcsPractice } from '../_shared/ics.ts';
+import { buildIcs, IcsGame, IcsPractice, IcsTeamEvent } from '../_shared/ics.ts';
 import { verifyIcsToken } from '../_shared/hmac.ts';
 
 const ICS_HEADERS = {
@@ -73,7 +73,7 @@ Deno.serve(async (req: Request) => {
   const startIso = new Date(nowMs - 90 * 24 * 3600 * 1000).toISOString();
   const endIso = new Date(nowMs + 365 * 24 * 3600 * 1000).toISOString();
 
-  const [teamResult, practicesResult, gamesResult] = await Promise.all([
+  const [teamResult, practicesResult, gamesResult, teamEventsResult] = await Promise.all([
     supabase.from('teams').select('name').eq('id', teamId).maybeSingle(),
     supabase
       .from('practices')
@@ -91,13 +91,20 @@ Deno.serve(async (req: Request) => {
       .not('opponent_name', 'is', null)
       .gte('scheduled_at', startIso)
       .lte('scheduled_at', endIso),
+    supabase
+      .from('team_events')
+      .select('id, starts_at, ends_at, title, location')
+      .eq('team_id', teamId)
+      .gte('starts_at', startIso)
+      .lte('starts_at', endIso),
   ]);
 
-  if (teamResult.error || practicesResult.error || gamesResult.error) {
+  if (teamResult.error || practicesResult.error || gamesResult.error || teamEventsResult.error) {
     console.error('team-calendar-ics: fetch failed', {
       team: teamResult.error,
       practices: practicesResult.error,
       games: gamesResult.error,
+      teamEvents: teamEventsResult.error,
     });
     return textResponse(500, 'fetch failed');
   }
@@ -122,7 +129,15 @@ Deno.serve(async (req: Request) => {
       locationType: g.location_type as 'home' | 'away' | 'neutral',
     }));
 
-  const body = buildIcs({ teamId, teamName, practices, games });
+  const teamEvents: IcsTeamEvent[] = (teamEventsResult.data ?? []).map((event) => ({
+    id: event.id as string,
+    startsAt: event.starts_at as string,
+    endsAt: (event.ends_at as string | null) ?? null,
+    title: event.title as string,
+    location: (event.location as string | null) ?? null,
+  }));
+
+  const body = buildIcs({ teamId, teamName, practices, games, teamEvents });
 
   return new Response(body, { status: 200, headers: ICS_HEADERS });
 });

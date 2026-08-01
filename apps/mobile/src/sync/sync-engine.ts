@@ -239,6 +239,7 @@ export async function syncWithSupabase(): Promise<void> {
         const { data: { user } } = await supabase.auth.getUser();
         const { error } = await supabase.from('messages').insert(
           createdMessages.map((m) => ({
+            id: m.remote_id as string,
             channel_id: m.channel_remote_id as string,
             sender_id: user?.id ?? '',
             body: m.body as string,
