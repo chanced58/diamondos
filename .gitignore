@@ -45,6 +45,7 @@ web-build/
 
 # Claude Code worktrees
 claude/
+.worktrees/
 
 # Superpowers brainstorming session artifacts (mockups, transient state)
 .superpowers/
