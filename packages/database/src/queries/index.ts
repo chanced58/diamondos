@@ -3,6 +3,7 @@ export * from './roster';
 export * from './games';
 export * from './game-events';
 export * from './messages';
+export * from './game-rsvps';
 export * from './leagues';
 export * from './subscriptions';
 export * from './player-profiles';

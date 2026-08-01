@@ -4,30 +4,11 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { getMaxBattingOrder, weAreHome } from '@baseball/shared';
+import { DB_TO_POSITION, getMaxBattingOrder, isCoachRole, weAreHome } from '@baseball/shared';
 import { getLeagueSettingsForTeam } from '@/lib/league-settings';
 import { LineupBuilder } from './LineupBuilder';
 
 export const metadata: Metadata = { title: 'Set Lineup' };
-
-const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
-
-/** Map database enum values back to UI abbreviations. */
-const DB_TO_POSITION: Record<string, string> = {
-  pitcher: 'P',
-  catcher: 'C',
-  first_base: '1B',
-  second_base: '2B',
-  third_base: '3B',
-  shortstop: 'SS',
-  left_field: 'LF',
-  center_field: 'CF',
-  right_field: 'RF',
-  designated_hitter: 'DH',
-  infield: 'IF',
-  outfield: 'OF',
-  utility: 'UTIL',
-};
 
 export default async function LineupPage({ params }: { params: { gameId: string } }): Promise<JSX.Element | null> {
   const auth = createServerClient();
@@ -54,7 +35,7 @@ export default async function LineupPage({ params }: { params: { gameId: string 
     .eq('user_id', user.id)
     .single();
 
-  if (!membership || !COACH_ROLES.includes(membership.role)) {
+  if (!membership || !isCoachRole(membership.role)) {
     redirect(`/games/${params.gameId}`);
   }
 

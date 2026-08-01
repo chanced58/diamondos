@@ -511,6 +511,7 @@ export type Database = {
           starting_position:
             | Database["public"]["Enums"]["player_position"]
             | null
+          updated_at: string
         }
         Insert: {
           batting_order?: number | null
@@ -525,6 +526,7 @@ export type Database = {
           starting_position?:
             | Database["public"]["Enums"]["player_position"]
             | null
+          updated_at?: string
         }
         Update: {
           batting_order?: number | null
@@ -539,6 +541,7 @@ export type Database = {
           starting_position?:
             | Database["public"]["Enums"]["player_position"]
             | null
+          updated_at?: string
         }
         Relationships: [
           {
@@ -655,29 +658,89 @@ export type Database = {
           },
         ]
       }
+      game_reconciliations: {
+        Row: {
+          away_game_id: string
+          computed_at: string
+          computed_by: string | null
+          conflicts: Json
+          home_game_id: string
+          id: string
+          resolved_at: string | null
+          resolved_by: string | null
+          resolved_overrides: Json
+        }
+        Insert: {
+          away_game_id: string
+          computed_at?: string
+          computed_by?: string | null
+          conflicts?: Json
+          home_game_id: string
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          resolved_overrides?: Json
+        }
+        Update: {
+          away_game_id?: string
+          computed_at?: string
+          computed_by?: string | null
+          conflicts?: Json
+          home_game_id?: string
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          resolved_overrides?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_reconciliations_away_game_id_fkey"
+            columns: ["away_game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_reconciliations_home_game_id_fkey"
+            columns: ["home_game_id"]
+            isOneToOne: true
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       game_rsvps: {
         Row: {
+          created_at: string
           game_id: string
           id: string
           note: string | null
+          player_id: string
           responded_at: string
           status: Database["public"]["Enums"]["rsvp_status"]
+          updated_at: string
           user_id: string
         }
         Insert: {
+          created_at?: string
           game_id: string
           id?: string
           note?: string | null
+          player_id: string
           responded_at?: string
           status: Database["public"]["Enums"]["rsvp_status"]
+          updated_at?: string
           user_id: string
         }
         Update: {
+          created_at?: string
           game_id?: string
           id?: string
           note?: string | null
+          player_id?: string
           responded_at?: string
           status?: Database["public"]["Enums"]["rsvp_status"]
+          updated_at?: string
           user_id?: string
         }
         Relationships: [
@@ -686,6 +749,13 @@ export type Database = {
             columns: ["game_id"]
             isOneToOne: false
             referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_rsvps_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]
@@ -709,8 +779,10 @@ export type Database = {
           opponent_name: string | null
           opponent_team_id: string | null
           outs: number
+          paired_game_id: string | null
           place_id: string | null
           scheduled_at: string
+          scorer_side: string | null
           season_id: string | null
           started_at: string | null
           status: Database["public"]["Enums"]["game_status"]
@@ -736,8 +808,10 @@ export type Database = {
           opponent_name?: string | null
           opponent_team_id?: string | null
           outs?: number
+          paired_game_id?: string | null
           place_id?: string | null
           scheduled_at: string
+          scorer_side?: string | null
           season_id?: string | null
           started_at?: string | null
           status?: Database["public"]["Enums"]["game_status"]
@@ -763,8 +837,10 @@ export type Database = {
           opponent_name?: string | null
           opponent_team_id?: string | null
           outs?: number
+          paired_game_id?: string | null
           place_id?: string | null
           scheduled_at?: string
+          scorer_side?: string | null
           season_id?: string | null
           started_at?: string | null
           status?: Database["public"]["Enums"]["game_status"]
@@ -773,6 +849,13 @@ export type Database = {
           venue_name?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "games_paired_game_id_fkey"
+            columns: ["paired_game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "games_opponent_team_id_fkey"
             columns: ["opponent_team_id"]
@@ -4837,8 +4920,16 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      fn_replace_game_lineup: {
+        Args: { p_game_id: string; p_rows: Json }
+        Returns: undefined
+      }
       fn_rollback_import_batch: {
         Args: { p_actor: string; p_batch_id: string }
+        Returns: undefined
+      }
+      fn_start_game: {
+        Args: { p_game_id: string }
         Returns: undefined
       }
       fn_transfer_player: {
@@ -4886,8 +4977,16 @@ export type Database = {
         Args: { p_channel_id: string; p_user_id: string }
         Returns: boolean
       }
+      is_any_league_coach: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
       is_coach: {
         Args: { p_team_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      is_guest_only_player: {
+        Args: { p_player_id: string }
         Returns: boolean
       }
       is_head_coach_or_ad: {
@@ -4902,6 +5001,14 @@ export type Database = {
         Args: { p_team_id: string; p_user_id: string }
         Returns: boolean
       }
+      is_league_coach: {
+        Args: { p_league_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      is_league_coach_for_player: {
+        Args: { p_player_id: string; p_user_id: string }
+        Returns: boolean
+      }
       is_league_member: {
         Args: { p_league_id: string; p_user_id: string }
         Returns: boolean
@@ -4914,6 +5021,24 @@ export type Database = {
       is_player_owner: {
         Args: { p_player_id: string; p_user_id: string }
         Returns: boolean
+      }
+      league_player_identities: {
+        Args: { p_since?: string }
+        Returns: {
+          id: string
+          team_id: string | null
+          first_name: string
+          last_name: string
+          jersey_number: number | null
+          primary_position:
+            | Database["public"]["Enums"]["player_position"]
+            | null
+          bats: Database["public"]["Enums"]["bats_throws"] | null
+          throws: Database["public"]["Enums"]["bats_throws"] | null
+          is_active: boolean
+          is_guest_only: boolean
+          updated_at: string
+        }[]
       }
       match_player_by_external_id: {
         Args: { p_external_id: string; p_service: string }
@@ -4934,6 +5059,16 @@ export type Database = {
       resolve_compliance_rule_for_player: {
         Args: { p_game_date?: string; p_player_id: string }
         Returns: string
+      }
+      server_time: { Args: never; Returns: string }
+      set_reconciliation_override: {
+        Args: {
+          p_key: string
+          p_reconciliation_id: string
+          p_resolved_by: string
+          p_use_away: boolean
+        }
+        Returns: undefined
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }

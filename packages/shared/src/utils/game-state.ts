@@ -15,16 +15,55 @@ interface RunnerOverrides {
 }
 
 /**
+ * Replay-order filter for correction events, in the camelCase GameEvent
+ * domain (counterpart of applyPitchReverted in event-filters.ts, which
+ * operates on snake_case DB rows). PITCH_REVERTED trims the accumulated
+ * stream back to a sequence number; EVENT_VOIDED removes its target event
+ * (matched by id, falling back to voidedSequenceNumber). The correction
+ * markers themselves never reach the replay loop.
+ */
+export function filterVoidedAndRevertedEvents(events: GameEvent[]): GameEvent[] {
+  const result: GameEvent[] = [];
+  for (const event of events) {
+    if (event.eventType === EventType.PITCH_REVERTED) {
+      const p = event.payload as { revertToSequenceNumber?: number };
+      if (typeof p.revertToSequenceNumber === 'number') {
+        const keepUntilSeq = p.revertToSequenceNumber;
+        // Filter the accumulated result (not the original array) so that
+        // earlier corrections are respected — mirrors applyPitchReverted.
+        result.splice(0, result.length, ...result.filter((r) => r.sequenceNumber <= keepUntilSeq));
+      }
+    } else if (event.eventType === EventType.EVENT_VOIDED) {
+      const p = event.payload as { voidedEventId?: string; voidedSequenceNumber?: number };
+      let idx = p.voidedEventId ? result.findIndex((r) => r.id === p.voidedEventId) : -1;
+      if (idx === -1 && typeof p.voidedSequenceNumber === 'number') {
+        idx = result.findIndex((r) => r.sequenceNumber === p.voidedSequenceNumber);
+      }
+      if (idx !== -1) result.splice(idx, 1);
+    } else {
+      result.push(event);
+    }
+  }
+  return result;
+}
+
+/**
  * Derives the current live game state by replaying a sorted array of GameEvents.
  * This is a pure function — same inputs always produce the same output.
  * Events must be sorted by sequenceNumber ascending before calling.
+ * EVENT_VOIDED / PITCH_REVERTED corrections are applied internally, so
+ * callers may pass the raw event stream (pre-filtered input is also fine —
+ * the filter is idempotent).
  */
 export function deriveGameState(
   gameId: string,
   events: GameEvent[],
-  homeTeamId: string,
+  // Home/away is derived from isTopOfInning, not the team id — kept for a
+  // stable call signature across web/mobile callers.
+  _homeTeamId: string,
 ): LiveGameState {
-  const runnerOverridesByParentId = buildRunnerOverrideMap(events);
+  const activeEvents = filterVoidedAndRevertedEvents(events);
+  const runnerOverridesByParentId = buildRunnerOverrideMap(activeEvents);
   const state: LiveGameState = {
     gameId,
     inning: 1,
@@ -42,11 +81,15 @@ export function deriveGameState(
     completedBottomHalfPAs: 0,
     homeLeadoffBatterId: null,
     awayLeadoffBatterId: null,
+    isFinal: false,
+    pitcherPitchCounts: {},
   };
 
-  const pitcherCounts: Record<string, number> = {};
+  // Alias — mutated by PITCH_THROWN below; exposed on the returned state so
+  // consumers (pitch-count compliance UI) can read every pitcher's total.
+  const pitcherCounts = state.pitcherPitchCounts;
 
-  for (const event of events) {
+  for (const event of activeEvents) {
     switch (event.eventType) {
       case EventType.GAME_START: {
         const p = event.payload as {
@@ -136,6 +179,11 @@ export function deriveGameState(
       case EventType.HIT: {
         const p = event.payload as HitPayload;
         const bases = hitTypeToBases(p.hitType);
+        // Place the payload's batter on base, not state.currentBatterId:
+        // currentBatterId only updates on PITCH_THROWN, so a HIT recorded
+        // without a preceding pitch (quick entry) would otherwise strand the
+        // stale previous batter's id on the bag. Mirrors the WALK handler.
+        const hitBatterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId;
         // Guard runner advancement / run scoring when the inning is already
         // over (e.g. a fielder's choice whose preceding BASERUNNER_OUT was
         // the 3rd out). The batter still completes a PA + AB, so incrementPA
@@ -168,7 +216,7 @@ export function deriveGameState(
             if (r1 && 1 + bases >= 4 && !isRunnerOverridden(r1, overrides))  runs++;
             if (runs > 0) addRuns(state, runs, state.isTopOfInning);
             state.runnersOnBase = advanceRunnersWithOverrides(
-              state.runnersOnBase, state.currentBatterId, bases, overrides,
+              state.runnersOnBase, hitBatterId, bases, overrides,
             );
           }
         }
@@ -192,12 +240,14 @@ export function deriveGameState(
         // Batter reaches base on the error — force-advance any runners already
         // on base (same logic as a walk) and place batter on first.
         // If bases were loaded, the runner on third is forced home.
+        const p = event.payload as { batterId?: string; opponentBatterId?: string };
+        const errorBatterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId;
         const errorBasesLoaded = !!(
           state.runnersOnBase.first &&
           state.runnersOnBase.second &&
           state.runnersOnBase.third
         );
-        state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, state.currentBatterId);
+        state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, errorBatterId);
         if (errorBasesLoaded) addRuns(state, 1, state.isTopOfInning);
         state.balls = 0;
         state.strikes = 0;
@@ -220,12 +270,13 @@ export function deriveGameState(
           state.outs++;
         } else {
           // Batter reaches first — force-advance runners
+          const d3kBatterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId;
           const basesLoaded = !!(
             state.runnersOnBase.first &&
             state.runnersOnBase.second &&
             state.runnersOnBase.third
           );
-          state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, state.currentBatterId);
+          state.runnersOnBase = forceAdvanceRunners(state.runnersOnBase, d3kBatterId);
           if (basesLoaded) addRuns(state, 1, state.isTopOfInning);
         }
         state.balls = 0;
@@ -440,6 +491,14 @@ export function deriveGameState(
         runners.second = runners.first;
         runners.first  = null;
         state.runnersOnBase = runners;
+        break;
+      }
+
+      case EventType.GAME_END: {
+        // Marks the game final. Scores/runners are left untouched — the
+        // event's payload scores are advisory (the server re-derives finals
+        // from the full log when completing the game).
+        state.isFinal = true;
         break;
       }
     }

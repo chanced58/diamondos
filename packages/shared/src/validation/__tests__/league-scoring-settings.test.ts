@@ -72,6 +72,16 @@ describe('mergeWithDefaults', () => {
     expect(merged.lineup.maxBatters).toBe(30);
   });
 
+  it('backfills scorekeeping.dualScorekeeper=false for legacy empty blobs', () => {
+    const merged = mergeWithDefaults({});
+    expect(merged.scorekeeping.dualScorekeeper).toBe(false);
+  });
+
+  it('preserves an explicit dualScorekeeper=true', () => {
+    const merged = mergeWithDefaults({ scorekeeping: { dualScorekeeper: true } });
+    expect(merged.scorekeeping.dualScorekeeper).toBe(true);
+  });
+
   it('falls back to the default for a non-uuid pitch rule id', () => {
     const merged = mergeWithDefaults({
       compliance: { defaultPitchRuleId: 'not-a-uuid' },

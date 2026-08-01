@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { formatDate, formatTime } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
+import { provisionMirrorGame } from '@/lib/dual-scorekeeper/provision';
 
 export async function createGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
@@ -133,6 +134,11 @@ export async function createGameAction(_prevState: string | null | undefined, fo
     .single();
 
   if (error) return `Failed to create game: ${error.message}`;
+
+  // If the league runs dual scorekeeper and the opponent is a linked team,
+  // auto-provision the opponent's parallel game so both sides can score.
+  // Best-effort: never blocks game creation.
+  await provisionMirrorGame(supabase, game, user.id);
 
   // Skip the announcement for TBD opponents — "New game scheduled: vs. TBD"
   // adds noise without information; coaches should announce once the bracket fills in.

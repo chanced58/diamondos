@@ -1,54 +1,37 @@
+import { useMemo } from 'react';
 import { View, Text, FlatList, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
 import { Q } from '@nozbe/watermelondb';
 import { withObservables } from '@nozbe/with-observables';
 import { database } from '../../../src/db';
 import type { Game } from '../../../src/db/models/Game';
-import { formatDate, formatTime } from '@baseball/shared';
-import { useAuth } from '../../../src/providers/AuthProvider';
-import { getSupabaseClient } from '../../../src/lib/supabase';
+import { formatDate, formatTime, type GameRsvpStatus } from '@baseball/shared';
+import { useRole } from '../../../src/providers/RoleProvider';
+import { useGameRsvps } from '../../../src/features/rsvp/useGameRsvps';
 
 interface GamesListProps {
   games: Game[];
 }
 
+const RSVP_OPTIONS: { status: GameRsvpStatus; label: string; activeClass: string }[] = [
+  { status: 'attending', label: 'Going', activeClass: 'bg-green-600 border-green-600' },
+  { status: 'maybe', label: 'Maybe', activeClass: 'bg-amber-500 border-amber-500' },
+  { status: 'not_attending', label: 'Out', activeClass: 'bg-gray-700 border-gray-700' },
+];
+
 function GamesList({ games }: GamesListProps) {
-  const { user } = useAuth();
-  const [rsvps, setRsvps] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    if (!user || games.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await getSupabaseClient()
-        .from('game_rsvps')
-        .select('game_id, status')
-        .eq('user_id', user.id)
-        .in('game_id', games.map((game) => game.remoteId));
-      if (error || cancelled) return;
-      setRsvps(
-        Object.fromEntries((data ?? []).map((row) => [row.game_id, row.status])),
-      );
-    })().catch((error) => console.warn('Failed to load game RSVPs', error));
-    return () => {
-      cancelled = true;
-    };
-  }, [games, user]);
-
-  async function saveRsvp(gameId: string, status: 'attending' | 'maybe' | 'not_attending') {
-    if (!user) return;
-    const previous = rsvps[gameId];
-    setRsvps((current) => ({ ...current, [gameId]: status }));
-    const { error } = await getSupabaseClient().from('game_rsvps').upsert(
-      { game_id: gameId, user_id: user.id, status },
-      { onConflict: 'game_id,user_id' },
-    );
-    if (error) {
-      setRsvps((current) => ({ ...current, [gameId]: previous ?? '' }));
-      console.warn('Failed to save game RSVP', error);
-    }
-  }
+  const { activeTeam } = useRole();
+  const scheduledGameIds = useMemo(
+    () => games.filter((g) => g.status === 'scheduled').map((g) => g.remoteId),
+    [games],
+  );
+  const {
+    myPlayers,
+    rsvpByKey,
+    savingKeys,
+    setRsvp,
+    error: rsvpError,
+  } = useGameRsvps(scheduledGameIds);
 
   if (games.length === 0) {
     return (
@@ -66,11 +49,21 @@ function GamesList({ games }: GamesListProps) {
       data={games}
       keyExtractor={(item) => item.id}
       contentContainerStyle={{ padding: 16 }}
+      ListHeaderComponent={
+        rsvpError ? (
+          <View className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+            <Text className="text-xs text-red-700">{rsvpError}</Text>
+          </View>
+        ) : null
+      }
       renderItem={({ item: game }) => (
         <TouchableOpacity
           className="bg-white rounded-xl border border-gray-200 p-4 mb-3"
           onPress={() => {
-            if (game.status === 'in_progress') {
+            // Scheduled games open in the pre-game state (start the game at
+            // the field), live games in the scoring surface, and completed
+            // games in the read-only Final view.
+            if (['scheduled', 'in_progress', 'completed'].includes(game.status)) {
               router.push({
                 pathname: '/(tabs)/games/[gameId]/score',
                 params: {
@@ -100,31 +93,80 @@ function GamesList({ games }: GamesListProps) {
               </Text>
             </View>
           )}
-          {user && game.status === 'scheduled' && (
-            <View className="mt-3 flex-row gap-2">
-              {([
-                ['attending', 'Going'],
-                ['maybe', 'Maybe'],
-                ['not_attending', 'Can’t go'],
-              ] as const).map(([status, label]) => (
-                <TouchableOpacity
-                  key={status}
-                  className={`rounded-lg border px-2.5 py-1.5 ${
-                    rsvps[game.remoteId] === status
-                      ? 'border-brand-700 bg-brand-700'
-                      : 'border-gray-300 bg-gray-50'
-                  }`}
-                  onPress={() => saveRsvp(game.remoteId, status)}
-                >
-                  <Text
-                    className={`text-xs font-semibold ${
-                      rsvps[game.remoteId] === status ? 'text-white' : 'text-gray-700'
-                    }`}
-                  >
-                    {label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+          {game.status === 'completed' && (
+            <View className="mt-2 flex-row items-center gap-2">
+              <Text className="text-gray-700 text-sm font-medium">
+                {game.homeScore}–{game.awayScore} • Final
+              </Text>
+            </View>
+          )}
+          {game.status !== 'cancelled' && (
+            <TouchableOpacity
+              onPress={() =>
+                router.push({
+                  pathname: '/(tabs)/games/[gameId]/lineup',
+                  params: { gameId: game.remoteId },
+                })
+              }
+              className="mt-3 self-start px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200"
+            >
+              <Text className="text-xs font-semibold text-gray-700">Lineup</Text>
+            </TouchableOpacity>
+          )}
+
+          {game.status === 'scheduled' && activeTeam?.isCoach && (
+            <TouchableOpacity
+              onPress={() =>
+                router.push({
+                  pathname: '/(tabs)/games/[gameId]/attendance',
+                  params: { gameId: game.remoteId },
+                })
+              }
+              className="mt-2 self-start px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200"
+            >
+              <Text className="text-xs font-semibold text-blue-700">RSVPs →</Text>
+            </TouchableOpacity>
+          )}
+
+          {game.status === 'scheduled' && !activeTeam?.isCoach && myPlayers.length > 0 && (
+            <View className="mt-3 gap-1.5">
+              {myPlayers.map((player) => {
+                const key = `${game.remoteId}:${player.playerId}`;
+                const status = rsvpByKey.get(key);
+                const isSaving = savingKeys.has(key);
+                return (
+                  <View key={player.playerId} className="flex-row items-center justify-between">
+                    {myPlayers.length > 1 && (
+                      <Text className="text-xs text-gray-500 mr-2" numberOfLines={1}>
+                        {player.playerName.split(' ')[0]}
+                      </Text>
+                    )}
+                    <View className="flex-row gap-1.5">
+                      {RSVP_OPTIONS.map((opt) => (
+                        <TouchableOpacity
+                          key={opt.status}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: status === opt.status, busy: isSaving }}
+                          accessibilityLabel={`${player.playerName}: ${opt.label}`}
+                          disabled={isSaving}
+                          onPress={() => setRsvp(game.remoteId, player.playerId, opt.status)}
+                          className={`px-2.5 py-1 rounded-full border ${
+                            isSaving ? 'opacity-50' : ''
+                          } ${status === opt.status ? opt.activeClass : 'bg-white border-gray-200'}`}
+                        >
+                          <Text
+                            className={`text-xs font-semibold ${
+                              status === opt.status ? 'text-white' : 'text-gray-600'
+                            }`}
+                          >
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           )}
         </TouchableOpacity>

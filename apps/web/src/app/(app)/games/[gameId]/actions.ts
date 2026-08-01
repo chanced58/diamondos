@@ -2,45 +2,27 @@
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { formatDate, weAreHome, computeLineScore, applyPitchReverted, EventType } from '@baseball/shared';
+import {
+  formatDate,
+  weAreHome,
+  EventType,
+  conflictKey,
+  upsertGameRsvpSchema,
+  type ScoreConflict,
+  type UpsertGameRsvpInput,
+} from '@baseball/shared';
+import { upsertGameRsvp } from '@baseball/database';
 import { postEventAlert } from '@/app/(app)/messages/notify';
-import { recomputeLeagueSnapshot } from '@/lib/league-snapshot/recompute';
-
-const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
-
-async function getAuthorizedCoach(supabase: SupabaseClient, userId: string, gameId: string) {
-  const { data: game } = await supabase
-    .from('games')
-    .select('team_id, opponent_name, opponent_team_id, scheduled_at, status, location_type, neutral_home_team')
-    .eq('id', gameId)
-    .single();
-  if (!game) return { error: 'Game not found.' };
-
-  // Check platform admin first (they have full access to every team)
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('is_platform_admin')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (profile?.is_platform_admin) return { game };
-
-  const { data: membership } = await supabase
-    .from('team_members')
-    .select('role')
-    .eq('team_id', game.team_id)
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .single();
-
-  if (!membership || !COACH_ROLES.includes(membership.role)) {
-    return { error: 'Only coaches can perform this action.' };
-  }
-
-  return { game };
-}
+// Game finalization + coach authorization live in @/lib/games/finalize so the
+// mobile finalize API route shares the exact same logic as endGameAction.
+import {
+  COACH_ROLES,
+  getAuthorizedCoach,
+  deriveScoresFromEvents,
+  finalizeGame,
+} from '@/lib/games/finalize';
 
 export async function cancelGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
@@ -689,27 +671,46 @@ export async function savePlayerGameNotesAction(
 }
 
 /**
- * Fetch game events and derive scores by replaying the event stream.
- * This is the single source of truth for final scores — ensures consistency
- * between the box score, game summary, and dashboard.
+ * A player (or a linked parent, on behalf of their child) sets their game
+ * RSVP. Uses the cookie-scoped client rather than the service role so RLS —
+ * not this action — enforces the self/parent-link and same-team checks.
  */
-async function deriveScoresFromEvents(
-  supabase: SupabaseClient,
-  gameId: string,
-): Promise<{ homeScore: number; awayScore: number }> {
-  const { data: allEvents } = await supabase
-    .from('game_events')
-    .select('*')
-    .eq('game_id', gameId)
-    .order('sequence_number');
+export async function rsvpToGameAction(
+  input: UpsertGameRsvpInput,
+): Promise<{ error?: string }> {
+  const parsed = upsertGameRsvpSchema.safeParse(input);
+  if (!parsed.success) return { error: 'Invalid RSVP.' };
 
-  const rows = (allEvents ?? []) as Record<string, unknown>[];
-  const lastResetIdx = rows.map((e) => e.event_type).lastIndexOf('game_reset');
-  const activeEvents = lastResetIdx === -1 ? rows : rows.slice(lastResetIdx + 1);
-  const effectiveEvents = applyPitchReverted(activeEvents);
-  const lineScore = computeLineScore(effectiveEvents);
+  const authClient = createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return { error: 'Not authenticated.' };
 
-  return { homeScore: lineScore.homeRuns, awayScore: lineScore.awayRuns };
+  try {
+    await upsertGameRsvp(authClient, {
+      gameId: parsed.data.gameId,
+      playerId: parsed.data.playerId,
+      status: parsed.data.status,
+      // Pass through unchanged (including undefined) — upsertGameRsvp only
+      // touches the stored note when the caller explicitly provides one, so
+      // an omitted note on a status-only update must not clear it.
+      note: parsed.data.note,
+      respondedBy: user.id,
+    });
+  } catch (err) {
+    // upsertGameRsvp re-throws the raw Postgrest error object on failure (not
+    // an Error instance), so it's logged here for debugging and never
+    // forwarded to the client — it may describe an RLS denial or constraint
+    // violation we don't want to leak details of.
+    console.error('rsvpToGameAction failed', {
+      gameId: parsed.data.gameId,
+      playerId: parsed.data.playerId,
+      err,
+    });
+    return { error: 'Failed to save RSVP. Please try again.' };
+  }
+
+  revalidatePath(`/games/${parsed.data.gameId}`);
+  return {};
 }
 
 export async function endGameAction(_prevState: string | null | undefined, formData: FormData) {
@@ -728,82 +729,18 @@ export async function endGameAction(_prevState: string | null | undefined, formD
   const result = await getAuthorizedCoach(supabase, user.id, gameId);
   if ('error' in result) return result.error ?? null;
 
-  // Get current max sequence number
-  const { data: lastEvent } = await supabase
-    .from('game_events')
-    .select('sequence_number')
-    .eq('game_id', gameId)
-    .order('sequence_number', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const nextSeq = (lastEvent?.sequence_number ?? 0) + 1;
-  const now = new Date().toISOString();
-
-  // Use client-sent scores for the game_end event payload (preserves what the
-  // coach saw at the moment they ended the game)
-  const clientHomeScore = parseInt(formData.get('homeScore') as string, 10) || 0;
-  const clientAwayScore = parseInt(formData.get('awayScore') as string, 10) || 0;
-
-  await supabase.from('game_events').insert({
-    id: crypto.randomUUID(),
-    game_id: gameId,
-    sequence_number: nextSeq,
-    event_type: 'game_end',
+  const finalized = await finalizeGame(supabase, {
+    gameId,
+    userId: user.id,
+    // Client-sent scores are preserved on the game_end event payload (what
+    // the coach saw when ending); the games row uses event-derived finals.
+    clientHomeScore: parseInt(formData.get('homeScore') as string, 10) || 0,
+    clientAwayScore: parseInt(formData.get('awayScore') as string, 10) || 0,
     inning: parseInt(formData.get('inning') as string, 10) || 1,
-    is_top_of_inning: formData.get('isTopOfInning') === 'true',
-    payload: { homeScore: clientHomeScore, awayScore: clientAwayScore },
-    occurred_at: now,
-    created_by: user.id,
-    device_id: 'web',
+    isTopOfInning: formData.get('isTopOfInning') === 'true',
+    deviceId: 'web',
   });
-
-  // Re-derive scores server-side from the event stream to ensure consistency
-  // with the box score (computeLineScore is the single source of truth)
-  const { homeScore, awayScore } = await deriveScoresFromEvents(supabase, gameId);
-
-  await supabase
-    .from('games')
-    .update({
-      status: 'completed',
-      completed_at: now,
-      updated_at: now,
-      home_score: homeScore,
-      away_score: awayScore,
-    })
-    .eq('id', gameId);
-
-  // Refresh league home-page snapshots for the finalized game's league + season.
-  // Non-fatal: the scheduled rebuild (cron) self-heals if this is skipped/errors.
-  try {
-    const { data: g } = await supabase
-      .from('games')
-      .select('team_id, season_id')
-      .eq('id', gameId)
-      .maybeSingle();
-    if (g?.team_id && g.season_id) {
-      const { data: s } = await supabase
-        .from('seasons')
-        .select('name')
-        .eq('id', g.season_id)
-        .maybeSingle();
-      // A team may belong to more than one league; refresh each.
-      const { data: memberships } = await supabase
-        .from('league_members')
-        .select('league_id')
-        .eq('team_id', g.team_id)
-        .eq('is_active', true);
-      if (s?.name) {
-        for (const m of memberships ?? []) {
-          if (m.league_id) await recomputeLeagueSnapshot(supabase, m.league_id, s.name);
-        }
-      }
-    }
-  } catch (err) {
-    console.error(
-      `[endGame] snapshot recompute failed game=${gameId}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
+  if ('error' in finalized) return finalized.error;
 
   revalidatePath(`/dashboard`);
   redirect(`/games/${gameId}`);
@@ -1280,5 +1217,64 @@ export async function replayAtBatAction(
   }
 
   revalidatePath(`/games/${gameId}/history`);
+  return null;
+}
+
+/**
+ * Dual scorekeeper: the home team's coach overrides one reconciliation
+ * conflict to accept the away log's value (or reverts to the canonical home
+ * value). Overrides are recorded on the reconciliation row — they annotate the
+ * record and the displayed final line; they do not mutate the immutable
+ * game_events log. Returns null on success or an error string.
+ */
+export async function resolveReconciliationConflictAction(
+  _prevState: string | null | undefined,
+  formData: FormData,
+): Promise<string | null> {
+  const authClient = createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return 'Not authenticated.';
+
+  const reconciliationId = formData.get('reconciliationId') as string;
+  const conflictKeyValue = (formData.get('conflictKey') as string)?.trim();
+  const useAwayValue = formData.get('useAwayValue') === 'true';
+  if (!reconciliationId || !conflictKeyValue) return 'Missing override fields.';
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const { data: recon } = await supabase
+    .from('game_reconciliations')
+    .select('id, home_game_id, conflicts')
+    .eq('id', reconciliationId)
+    .maybeSingle();
+  if (!recon) return 'Reconciliation not found.';
+
+  // Only the home (canonical) team's coach may override.
+  const auth = await getAuthorizedCoach(supabase, user.id, recon.home_game_id);
+  if ('error' in auth) return auth.error ?? 'Only the home team coach can resolve conflicts.';
+
+  // Reject a key that does not correspond to a current conflict (stale form or
+  // tampered input) so resolved_overrides never accumulates dangling entries.
+  const conflicts = Array.isArray(recon.conflicts) ? (recon.conflicts as ScoreConflict[]) : [];
+  if (!conflicts.some((c) => conflictKey(c) === conflictKeyValue)) {
+    return 'That conflict no longer exists — reload the game.';
+  }
+
+  // Set (or clear) the override atomically in the DB, keyed by stable conflict
+  // identity. A single UPDATE that filters-then-appends avoids the
+  // read-modify-write race where two near-simultaneous submissions could drop
+  // each other's edit.
+  const { error } = await supabase.rpc('set_reconciliation_override', {
+    p_reconciliation_id: reconciliationId,
+    p_key: conflictKeyValue,
+    p_use_away: useAwayValue,
+    p_resolved_by: user.id,
+  });
+  if (error) return `Failed to save override: ${error.message}`;
+
+  revalidatePath(`/games/${recon.home_game_id}`);
   return null;
 }

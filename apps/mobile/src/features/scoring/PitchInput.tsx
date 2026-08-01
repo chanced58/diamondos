@@ -94,6 +94,9 @@ interface PitchInputProps {
   /** Current defensive alignment, shown above the defensive-sub / position-change pickers. */
   defensiveLineup?: DefensiveLineup | null;
   roster: RosterPlayer[];
+  /** Per-player game pitch totals + compliance level, shown as badges in the
+   *  pitching-change picker so the coach sees who is near/over their limit. */
+  pitcherBadges?: Record<string, { count: number; level: 'ok' | 'warning' | 'danger' | 'over' }>;
   onUndoLastEvent: () => void;
   runnersOnBase: { base: Base; runnerId: string }[];
   onRecordDroppedThirdStrike?: (details: DroppedThirdStrikeDetails) => void;
@@ -172,6 +175,7 @@ export function PitchInput({
   activeBattingOrderPlayerIds,
   defensiveLineup,
   roster,
+  pitcherBadges,
   onUndoLastEvent,
   runnersOnBase,
   onRecordDroppedThirdStrike,
@@ -714,18 +718,48 @@ export function PitchInput({
                   subModal === 'add_batter' ? 'bg-emerald-700' : 'bg-sky-700';
                 return (
                   <View className="gap-2">
-                    {filteredRoster.map((p) => (
-                      <TouchableOpacity
-                        key={p.id}
-                        className={`${buttonColor} rounded-xl px-4 py-3 flex-row items-center`}
-                        onPress={() => handleSubPick(p.id)}
-                      >
-                        <Text className="text-white font-semibold text-base">
-                          {p.jerseyNumber !== undefined ? `#${p.jerseyNumber} ` : ''}
-                          {p.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                    {filteredRoster.map((p) => {
+                      // Pitch-count badge (pitching change only): total thrown
+                      // this game, colored by the league compliance rule.
+                      const badge =
+                        subModal === 'pitching_change' ? pitcherBadges?.[p.id] : undefined;
+                      const showBadge = badge && (badge.count > 0 || badge.level !== 'ok');
+                      return (
+                        <TouchableOpacity
+                          key={p.id}
+                          className={`${buttonColor} rounded-xl px-4 py-3 flex-row items-center`}
+                          onPress={() => handleSubPick(p.id)}
+                        >
+                          <Text className="flex-1 text-white font-semibold text-base">
+                            {p.jerseyNumber !== undefined ? `#${p.jerseyNumber} ` : ''}
+                            {p.name}
+                          </Text>
+                          {showBadge && (
+                            <View
+                              className={`px-2 py-0.5 rounded-full ${
+                                badge.level === 'over' || badge.level === 'danger'
+                                  ? 'bg-red-200'
+                                  : badge.level === 'warning'
+                                    ? 'bg-amber-200'
+                                    : 'bg-white/20'
+                              }`}
+                            >
+                              <Text
+                                className={`text-xs font-semibold ${
+                                  badge.level === 'over' || badge.level === 'danger'
+                                    ? 'text-red-900'
+                                    : badge.level === 'warning'
+                                      ? 'text-amber-900'
+                                      : 'text-white'
+                                }`}
+                              >
+                                {badge.count}p{badge.level === 'over' ? ' • over limit' : badge.level === 'danger' ? ' • at limit' : ''}
+                              </Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 );
               })()}
