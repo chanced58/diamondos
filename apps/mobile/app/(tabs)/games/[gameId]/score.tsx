@@ -11,8 +11,8 @@ import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerMo
 import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, terminalEventForPitchOutcome } from '@baseball/shared';
-import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, terminalEventForPitchOutcome, getPitchComplianceStatus } from '@baseball/shared';
+import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, PitchComplianceRule } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueSettings } from '../../../../src/lib/league-settings';
 import { database } from '../../../../src/db';
@@ -47,6 +47,50 @@ export default function ScoringScreen() {
   const leagueSettings = useLeagueSettings(teamId);
   const maxBatters = getMaxBattingOrder(leagueSettings);
   const midGameExtensionAllowed = isMidGameExtensionAllowed(leagueSettings);
+  const [pitchComplianceRule, setPitchComplianceRule] = useState<PitchComplianceRule | null>(null);
+
+  useEffect(() => {
+    if (!gameId) return;
+    let cancelled = false;
+    (async () => {
+      const supabase = getSupabaseClient();
+      const { data: game } = await supabase
+        .from('games')
+        .select('season_id')
+        .eq('id', gameId)
+        .maybeSingle();
+      if (!game?.season_id) return;
+
+      const { data: mapping } = await supabase
+        .from('season_compliance_rules')
+        .select('compliance_rule_id')
+        .eq('season_id', game.season_id)
+        .maybeSingle();
+      if (!mapping?.compliance_rule_id) return;
+
+      const { data: rule } = await supabase
+        .from('pitch_compliance_rules')
+        .select('rule_name, max_pitches_per_day, rest_day_thresholds')
+        .eq('id', mapping.compliance_rule_id)
+        .maybeSingle();
+      if (!cancelled && rule) {
+        setPitchComplianceRule({
+          id: mapping.compliance_rule_id,
+          ruleName: rule.rule_name,
+          maxPitchesPerDay: rule.max_pitches_per_day,
+          restDayThresholds: rule.rest_day_thresholds as Record<string, number>,
+          isActive: true,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    })().catch((error) => {
+      console.warn('Unable to load pitch compliance rule', error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId]);
 
   // League-rule advisories — mercy / run cap / regulation complete. These
   // surface banners; the coach still confirms via the existing End Game /
@@ -74,6 +118,15 @@ export default function ScoringScreen() {
         gameState.inning,
         gameState.outs,
         gameState.runnersOnBase,
+      )
+    : null;
+  const currentPitcherId = gameState?.currentPitcherId ?? undefined;
+  const pitchCompliance = gameState && currentPitcherId && pitchComplianceRule
+    ? getPitchComplianceStatus(
+        currentPitcherId,
+        gameState.currentPitcherPitchCount,
+        pitchComplianceRule,
+        new Date().toISOString().slice(0, 10),
       )
     : null;
 
@@ -107,7 +160,6 @@ export default function ScoringScreen() {
   // those fields (the payload types are optional) and stats modules skip
   // the event rather than attribute to a fake player. Scorer establishes
   // the starting values via the "Set Lineup" modal below.
-  const currentPitcherId = gameState?.currentPitcherId ?? undefined;
   const currentBatterId = gameState?.currentBatterId ?? undefined;
   const defensiveLineup = useDefensiveLineup(gameId, roster);
   const [showLineupModal, setShowLineupModal] = useState(false);
@@ -155,6 +207,7 @@ export default function ScoringScreen() {
 
   async function handlePitch(outcome: PitchOutcome, pitchType?: PitchType) {
     if (!gameState) return;
+    if (pitchCompliance?.isOverLimit) return;
     const payload: PitchThrownPayload = {
       pitcherId: currentPitcherId,
       batterId: currentBatterId,
@@ -853,6 +906,30 @@ export default function ScoringScreen() {
           <Text className="text-sm font-semibold text-purple-900">Ghost runner</Text>
           <Text className="text-xs text-purple-800 mt-0.5">
             Place a runner on {ghostRunnerBase === 1 ? '1st' : ghostRunnerBase === 2 ? '2nd' : '3rd'} via Substitution → Pinch Runner.
+          </Text>
+        </View>
+      )}
+      {pitchCompliance?.isOverLimit && (
+        <View className="mx-4 mt-2 rounded-lg border border-red-400 bg-red-100 p-3">
+          <Text className="text-sm font-bold text-red-900">Pitch limit exceeded</Text>
+          <Text className="text-xs text-red-800 mt-0.5">
+            Replace the pitcher before recording another pitch.
+          </Text>
+        </View>
+      )}
+      {pitchCompliance?.isAtLimit && !pitchCompliance.isOverLimit && (
+        <View className="mx-4 mt-2 rounded-lg border border-orange-300 bg-orange-50 p-3">
+          <Text className="text-sm font-semibold text-orange-900">Pitch limit warning</Text>
+          <Text className="text-xs text-orange-800 mt-0.5">
+            {pitchCompliance.currentCount} of {pitchCompliance.maxAllowed} pitches used.
+          </Text>
+        </View>
+      )}
+      {pitchCompliance?.isAtWarning && (
+        <View className="mx-4 mt-2 rounded-lg border border-yellow-300 bg-yellow-50 p-3">
+          <Text className="text-sm font-semibold text-yellow-900">Approaching pitch limit</Text>
+          <Text className="text-xs text-yellow-800 mt-0.5">
+            {pitchCompliance.currentCount} of {pitchCompliance.maxAllowed} pitches used.
           </Text>
         </View>
       )}
