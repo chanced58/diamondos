@@ -18,6 +18,7 @@
     "@baseball/database": "workspace:*",
     "@baseball/shared": "workspace:*",
     "@baseball/ui": "workspace:*",
+    "@expo/vector-icons": "^14.1.0",
     "@nozbe/watermelondb": "^0.27.1",
     "@nozbe/with-observables": "^1.6.0",
     "@react-native-community/netinfo": "^11.3.0",
