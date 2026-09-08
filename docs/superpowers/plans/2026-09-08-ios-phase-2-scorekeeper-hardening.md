@@ -535,13 +535,9 @@ Expected: the existing 62 tests pass.
 
 Then manually: at 0 outs with a runner on 3rd, web behaves exactly as before. At 2 outs, Sacrifice bunt is now hidden (this is the intended change) and the prompt is skipped.
 
-- [ ] **Step 5: Delete the superseded branch**
+- [ ] **Step 5: Leave `feat/sac-fly-scoring` in place**
 
-The logic from `eb8cfdb` now lives in shared, so `feat/sac-fly-scoring` is obsolete:
-
-```bash
-git branch -D feat/sac-fly-scoring
-```
+Its logic now lives in shared, so the branch is superseded — but **do not delete it**. Branch deletion is the repository owner's decision and is handled outside this plan. Note in your report that the branch is now obsolete so it can be cleaned up separately.
 
 - [ ] **Step 6: Commit**
 
@@ -724,101 +720,198 @@ git commit -m "feat(shared): declare which terminal events require a pitch event
 ## Task 7: Emit PITCH_THROWN for every ball put in play
 
 **Files:**
-- Modify: `apps/mobile/app/(tabs)/games/[gameId]/score.tsx:575-630` (add choke point), `:1880-1920` (wrap handlers at the prop boundary)
-- Create: `apps/mobile/src/features/scoring/__tests__/in-play-events.test.ts`
+- Create: `apps/mobile/src/features/scoring/in-play-pitch.ts` — the choke point, extracted so it is directly testable
+- Create: `apps/mobile/src/features/scoring/__tests__/in-play-pitch.test.ts`
+- Modify: `apps/mobile/app/(tabs)/games/[gameId]/score.tsx:1880-1920` (wrap handlers at the prop boundary)
 
 **Interfaces:**
 - Consumes: `requiresPitchEvent` from `@baseball/shared` (Task 6); `recordEvent` from `useRecordEvent`
-- Produces: `withInPlayPitch<A extends unknown[]>(fn: (...a: A) => Promise<void>): (...a: A) => Promise<void>` — local to `score.tsx`
+- Produces:
+  ```ts
+  export interface InPlayPitchContext {
+    inning: number;
+    isTopOfInning: boolean;
+    attribution: HalfAttribution;
+  }
+  export type RecordEventFn = (
+    eventType: EventType, inning: number, isTopOfInning: boolean, payload: GameEventPayload,
+  ) => Promise<string>;
+
+  export function makeInPlayPitchWrapper(
+    recordEvent: RecordEventFn,
+    getContext: () => InPlayPitchContext | null,
+  ): <A extends unknown[]>(terminal: EventType, fn: (...a: A) => Promise<void>) => (...a: A) => Promise<void>
+  ```
+  The wrapper is a standalone module rather than a closure inside `score.tsx` **so the test imports and exercises the real function.** A test that re-declares a local copy of the logic verifies nothing.
 
 **Why a choke point:** web funnels all in-play results through four functions and emits the pitch in each. Mobile has twelve separate handlers, which is exactly why the pitch event was missed. Wrapping once at the prop boundary makes the covered set a single auditable list.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing test against the real module**
 
-Create `apps/mobile/src/features/scoring/__tests__/in-play-events.test.ts`. This tests the ordering contract directly rather than through the component tree:
+Create `apps/mobile/src/features/scoring/__tests__/in-play-pitch.test.ts`. It imports the module under test — do **not** re-declare the wrapper locally:
 
 ```ts
-import { EventType, PitchOutcome, requiresPitchEvent } from '@baseball/shared';
+import { EventType, PitchOutcome } from '@baseball/shared';
+import { makeInPlayPitchWrapper, type InPlayPitchContext } from '../in-play-pitch';
 
-/** Mirrors withInPlayPitch in score.tsx. */
-function makeWrapper(record: (t: EventType, p: Record<string, unknown>) => Promise<void>) {
-  return (terminal: EventType, fn: () => Promise<void>) => async () => {
-    if (requiresPitchEvent(terminal)) {
-      await record(EventType.PITCH_THROWN, { outcome: PitchOutcome.IN_PLAY });
-    }
-    await fn();
-  };
+const ctx: InPlayPitchContext = {
+  inning: 3,
+  isTopOfInning: false,
+  attribution: { batterId: 'b1', pitcherId: 'p1' },
+};
+
+function harness(context: InPlayPitchContext | null = ctx) {
+  const calls: { type: EventType; payload: Record<string, unknown> }[] = [];
+  const recordEvent = async (
+    type: EventType, _i: number, _t: boolean, payload: Record<string, unknown>,
+  ) => { calls.push({ type, payload }); return 'evt-1'; };
+  return { calls, wrap: makeInPlayPitchWrapper(recordEvent as never, () => context) };
 }
 
-describe('in-play pitch emission', () => {
+describe('makeInPlayPitchWrapper', () => {
   it('records the pitch before the terminal event', async () => {
-    const calls: EventType[] = [];
-    const record = async (t: EventType) => { calls.push(t); };
-    const wrap = makeWrapper(record);
-    await wrap(EventType.HIT, async () => { calls.push(EventType.HIT); })();
-    expect(calls).toEqual([EventType.PITCH_THROWN, EventType.HIT]);
+    const { calls, wrap } = harness();
+    await wrap(EventType.HIT, async () => {
+      calls.push({ type: EventType.HIT, payload: {} });
+    })();
+    expect(calls.map((c) => c.type)).toEqual([EventType.PITCH_THROWN, EventType.HIT]);
   });
 
-  it('tags the pitch outcome as in_play', async () => {
-    const payloads: Record<string, unknown>[] = [];
-    const record = async (_t: EventType, p: Record<string, unknown>) => { payloads.push(p); };
-    const wrap = makeWrapper(record);
+  it('tags the pitch outcome in_play and carries the half attribution', async () => {
+    const { calls, wrap } = harness();
     await wrap(EventType.OUT, async () => {})();
-    expect(payloads[0]).toMatchObject({ outcome: PitchOutcome.IN_PLAY });
+    expect(calls[0].payload).toMatchObject({
+      outcome: PitchOutcome.IN_PLAY,
+      batterId: 'b1',
+      pitcherId: 'p1',
+    });
   });
 
-  it('does not add a pitch for a walk', async () => {
-    const calls: EventType[] = [];
-    const record = async (t: EventType) => { calls.push(t); };
-    const wrap = makeWrapper(record);
-    await wrap(EventType.WALK, async () => { calls.push(EventType.WALK); })();
-    expect(calls).toEqual([EventType.WALK]);
+  it('records the pitch at the current inning and half', async () => {
+    const calls: { inning: number; isTop: boolean }[] = [];
+    const recordEvent = async (_e: EventType, inning: number, isTop: boolean) => {
+      calls.push({ inning, isTop }); return 'evt-1';
+    };
+    const wrap = makeInPlayPitchWrapper(recordEvent as never, () => ctx);
+    await wrap(EventType.HIT, async () => {})();
+    expect(calls[0]).toEqual({ inning: 3, isTop: false });
+  });
+
+  it('adds no pitch for a walk or a strikeout', async () => {
+    for (const t of [EventType.WALK, EventType.STRIKEOUT]) {
+      const { calls, wrap } = harness();
+      await wrap(t, async () => { calls.push({ type: t, payload: {} }); })();
+      expect(calls.map((c) => c.type)).toEqual([t]);
+    }
+  });
+
+  it('still runs the terminal handler when there is no game context', async () => {
+    const { calls, wrap } = harness(null);
+    await wrap(EventType.HIT, async () => {
+      calls.push({ type: EventType.HIT, payload: {} });
+    })();
+    expect(calls.map((c) => c.type)).toEqual([EventType.HIT]);
+  });
+
+  it('forwards arguments to the wrapped handler', async () => {
+    const { wrap } = harness();
+    const seen: unknown[] = [];
+    await wrap(EventType.FIELD_ERROR, async (by: number) => { seen.push(by); })(6);
+    expect(seen).toEqual([6]);
   });
 });
 ```
 
 - [ ] **Step 2: Run it to confirm it fails**
 
-Run: `pnpm --filter mobile test -- in-play-events`
-Expected: FAIL — `requiresPitchEvent` is not exported (it is, after Task 6 — if Task 6 is done this test passes immediately, which is acceptable; it locks the contract the implementation must honour).
+Run: `pnpm --filter mobile test -- in-play-pitch`
+Expected: FAIL — cannot find module `../in-play-pitch`.
 
-- [ ] **Step 3: Add the choke point to score.tsx**
+- [ ] **Step 3: Implement the choke point module**
 
-Immediately after `handlePitch` (around `score.tsx:630`), add:
+Create `apps/mobile/src/features/scoring/in-play-pitch.ts`:
 
-```tsx
+```ts
+import {
+  EventType,
+  PitchOutcome,
+  requiresPitchEvent,
+  type GameEventPayload,
+  type PitchThrownPayload,
+} from '@baseball/shared';
+import type { HalfAttribution } from '@baseball/shared';
+
+export interface InPlayPitchContext {
+  inning: number;
+  isTopOfInning: boolean;
+  attribution: HalfAttribution;
+}
+
+export type RecordEventFn = (
+  eventType: EventType,
+  inning: number,
+  isTopOfInning: boolean,
+  payload: GameEventPayload,
+) => Promise<string>;
+
 /**
- * Records the PITCH_THROWN that every batted ball implies, then the terminal
- * event itself. Pitch counting reads PITCH_THROWN only, so without this an
- * in-play result silently undercounts the pitcher — and pitch-count
- * compliance is enforced against that number.
+ * Wraps an in-play terminal handler so the PITCH_THROWN that every batted
+ * ball implies is recorded first.
  *
- * Mirrors the web scorer, which records `pitch_thrown` with outcome
- * `in_play` before each in-play result.
+ * Pitch counting reads PITCH_THROWN only (packages/shared/src/utils/
+ * pitch-count.ts), so an in-play terminal without its pitch silently
+ * undercounts the pitcher — and NFHS / Little League compliance is enforced
+ * against that number.
+ *
+ * This exists as one choke point because the web scorer funnels every
+ * in-play result through four functions while mobile has twelve separate
+ * handlers; wrapping at the single prop boundary is what keeps the twelve
+ * from drifting again.
  */
-function withInPlayPitch<A extends unknown[]>(
-  terminal: EventType,
-  fn: (...args: A) => Promise<void>,
-): (...args: A) => Promise<void> {
-  return async (...args: A) => {
-    if (gameState && requiresPitchEvent(terminal)) {
-      const pitchPayload: PitchThrownPayload = {
-        ...halfAttribution,
-        outcome: PitchOutcome.IN_PLAY,
-      };
-      await recordEvent(
-        EventType.PITCH_THROWN,
-        gameState.inning,
-        gameState.isTopOfInning,
-        pitchPayload,
-      );
-    }
-    await fn(...args);
+export function makeInPlayPitchWrapper(
+  recordEvent: RecordEventFn,
+  getContext: () => InPlayPitchContext | null,
+) {
+  return function withInPlayPitch<A extends unknown[]>(
+    terminal: EventType,
+    fn: (...args: A) => Promise<void>,
+  ): (...args: A) => Promise<void> {
+    return async (...args: A) => {
+      const ctx = getContext();
+      if (ctx && requiresPitchEvent(terminal)) {
+        const pitchPayload: PitchThrownPayload = {
+          ...ctx.attribution,
+          outcome: PitchOutcome.IN_PLAY,
+        };
+        await recordEvent(
+          EventType.PITCH_THROWN,
+          ctx.inning,
+          ctx.isTopOfInning,
+          pitchPayload,
+        );
+      }
+      await fn(...args);
+    };
   };
 }
 ```
 
-Add `requiresPitchEvent` to the `@baseball/shared` import at `score.tsx:23`.
+If `HalfAttribution` is not exported from `@baseball/shared`, find its declaration (it is used as `halfAttribution` in `score.tsx`) and import it from wherever it lives, or inline its shape — do not use `any`.
+
+- [ ] **Step 3b: Wire it into score.tsx**
+
+Near the other derived values in `score.tsx`, construct the wrapper once:
+
+```tsx
+const withInPlayPitch = useMemo(
+  () => makeInPlayPitchWrapper(recordEvent, () =>
+    gameState
+      ? { inning: gameState.inning, isTopOfInning: gameState.isTopOfInning, attribution: halfAttribution }
+      : null,
+  ),
+  [recordEvent, gameState, halfAttribution],
+);
+```
 
 - [ ] **Step 4: Wrap every in-play handler at the prop boundary**
 
@@ -1178,27 +1271,13 @@ Expected: `pitch_thrown` ≥ the number of plate appearances plus taken pitches;
 
 Compare the app's displayed pitch total against a hand count of the plays you scored. They must match exactly.
 
-- [ ] **Step 5: Open the PR**
+- [ ] **Step 5: Stop before pushing**
 
-```bash
-git push -u origin claude/ios-app-phase-2-cbd758
-gh pr create --title "feat(mobile): phase 2 — scorekeeper hardening" --body "$(cat <<'EOF'
-Implements docs/superpowers/specs/2026-09-08-ios-phase-2-scorekeeper-hardening-design.md.
+**Do not `git push` and do not open a PR.** Both are outward-facing actions reserved for the repository owner and are handled outside this plan. Leave the branch local and report that it is ready to push.
 
-Adds a pure rules seam in @baseball/shared and moves both clients onto it,
-then fixes through it: pitch counting, sacrifice eligibility, finalize,
-play-by-play with corrections, the lineup wizard, and the strike-zone grid.
+- [ ] **Step 6: Report readiness**
 
-No historical backfill — existing games keep their undercounted pitch totals.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-EOF
-)"
-```
-
-- [ ] **Step 6: Run the review**
-
-Per CLAUDE.md, run `coderabbit review` after the feature is implemented.
+Summarise in your report: the full check output from Step 1, the event counts from Step 3, and the hand-count comparison from Step 4. The `coderabbit review` required by CLAUDE.md runs after the owner opens the PR.
 
 ---
 
