@@ -72,8 +72,14 @@ export default function PracticesIndex() {
         keyExtractor={(r) => r.id}
         renderItem={({ item }) => {
           const dest = activeTeam.isCoach
-            ? `/(tabs)/practices/${item.id}/attendance`
-            : `/(tabs)/practices/${item.id}/card`;
+            ? ({
+                pathname: '/(tabs)/practices/[practiceId]/attendance',
+                params: { practiceId: item.id },
+              } as const)
+            : ({
+                pathname: '/(tabs)/practices/[practiceId]/card',
+                params: { practiceId: item.id },
+              } as const);
           return (
             <Link href={dest} asChild>
               <View className="bg-white rounded-xl border border-gray-200 px-4 py-3 mb-2">
