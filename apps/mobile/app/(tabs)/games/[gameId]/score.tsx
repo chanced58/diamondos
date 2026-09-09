@@ -18,6 +18,7 @@ import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDi
 import { PitchInput, trajectoryForOutType } from '../../../../src/features/scoring/PitchInput';
 import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerModal';
 import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
+import { makeInPlayPitchWrapper } from '../../../../src/features/scoring/in-play-pitch';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
 import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility } from '@baseball/shared';
@@ -422,6 +423,20 @@ export default function ScoringScreen() {
       ? { opponentPitcherId: halfAttribution.opponentPitcherId }
       : {}),
   };
+
+  // Wraps the in-play terminal handlers (Hit / Out / error / sac / double
+  // play / triple play) so each records its implied PITCH_THROWN first —
+  // see in-play-pitch.ts. This is the single choke point all eleven of
+  // those handlers flow through at the PitchInput prop boundary below.
+  const withInPlayPitch = useMemo(
+    () =>
+      makeInPlayPitchWrapper(recordEvent, () =>
+        gameState
+          ? { inning: gameState.inning, isTopOfInning: gameState.isTopOfInning, attribution: halfAttribution }
+          : null,
+      ),
+    [recordEvent, gameState, halfAttribution],
+  );
 
   // Display names for the "Now batting" strip + batter picker: roster names
   // win; ad-hoc guests fall back to their lineup display name.
@@ -1884,14 +1899,14 @@ export default function ScoringScreen() {
         onRecordPitch={handlePitch}
         trackPitchType={scoringConfig.pitchType}
         trackPitchLocation={scoringConfig.pitchLocation}
-        onRecordHit={handleHit}
-        onRecordHitWithRunnerOutcomes={handleHitWithRunnerOutcomes}
-        onRecordOut={handleOut}
+        onRecordHit={withInPlayPitch(EventType.HIT, handleHit)}
+        onRecordHitWithRunnerOutcomes={withInPlayPitch(EventType.HIT, handleHitWithRunnerOutcomes)}
+        onRecordOut={withInPlayPitch(EventType.OUT, handleOut)}
         onRecordStrikeout={handleStrikeout}
-        onRecordError={handleError}
+        onRecordError={withInPlayPitch(EventType.FIELD_ERROR, handleError)}
         onRecordCatcherInterference={handleCatcherInterference}
-        onRecordSacFly={handleSacrificeFly}
-        onRecordSacBunt={handleSacrificeBunt}
+        onRecordSacFly={withInPlayPitch(EventType.SACRIFICE_FLY, handleSacrificeFly)}
+        onRecordSacBunt={withInPlayPitch(EventType.SACRIFICE_BUNT, handleSacrificeBunt)}
         sacFlyEligible={sacEligibility.sacFly}
         sacBuntEligible={sacEligibility.sacBunt}
         sacEligibilityForTrajectory={(trajectory) =>
@@ -1902,15 +1917,15 @@ export default function ScoringScreen() {
               )
             : { sacFly: false, sacBunt: false }
         }
-        onRecordSacFlyFromOut={handleSacrificeFlyFromOut}
-        onRecordSacBuntFromOut={handleSacrificeBuntFromOut}
-        onRecordFieldersChoice={handleFieldersChoice}
+        onRecordSacFlyFromOut={withInPlayPitch(EventType.SACRIFICE_FLY, handleSacrificeFlyFromOut)}
+        onRecordSacBuntFromOut={withInPlayPitch(EventType.SACRIFICE_BUNT, handleSacrificeBuntFromOut)}
+        onRecordFieldersChoice={withInPlayPitch(EventType.OUT, handleFieldersChoice)}
         onRecordRunnerOut={handleRunnerOut}
         onRecordWildPitch={handleWildPitch}
         onRecordPassedBall={handlePassedBall}
         onRecordBalk={handleBalk}
-        onRecordDoublePlay={handleDoublePlay}
-        onRecordTriplePlay={handleTriplePlay}
+        onRecordDoublePlay={withInPlayPitch(EventType.DOUBLE_PLAY, handleDoublePlay)}
+        onRecordTriplePlay={withInPlayPitch(EventType.TRIPLE_PLAY, handleTriplePlay)}
         onRecordPitchingChange={handlePitchingChange}
         onRecordPinchHitter={handlePinchHitter}
         onRecordDefensiveSub={handleDefensiveSub}
