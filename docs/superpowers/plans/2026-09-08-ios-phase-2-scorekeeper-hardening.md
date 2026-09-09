@@ -596,7 +596,6 @@ describe('requiresPitchEvent', () => {
     EventType.SACRIFICE_FLY,
     EventType.SACRIFICE_BUNT,
     EventType.FIELD_ERROR,
-    EventType.CATCHER_INTERFERENCE,
     EventType.DOUBLE_PLAY,
     EventType.TRIPLE_PLAY,
   ])('requires a pitch for %s', (t) => {
@@ -608,6 +607,7 @@ describe('requiresPitchEvent', () => {
     EventType.STRIKEOUT,
     EventType.DROPPED_THIRD_STRIKE,
     EventType.HIT_BY_PITCH,
+    EventType.CATCHER_INTERFERENCE,
     EventType.STOLEN_BASE,
     EventType.CAUGHT_STEALING,
     EventType.BALK,
@@ -618,10 +618,9 @@ describe('requiresPitchEvent', () => {
     expect(requiresPitchEvent(t)).toBe(false);
   });
 
-  it('lists exactly the eight in-play terminals', () => {
+  it('lists exactly the seven in-play terminals', () => {
     expect([...IN_PLAY_TERMINAL_EVENTS].sort()).toEqual(
       [
-        EventType.CATCHER_INTERFERENCE,
         EventType.DOUBLE_PLAY,
         EventType.FIELD_ERROR,
         EventType.HIT,
@@ -654,6 +653,10 @@ import { EventType } from '../types/game-event';
  * Excluded deliberately:
  *  - WALK / STRIKEOUT / DROPPED_THIRD_STRIKE / HIT_BY_PITCH — the pitch that
  *    produced them was already recorded by the pitch-outcome path.
+ *  - CATCHER_INTERFERENCE — not a ball put in play, and deriveGameState
+ *    groups it with WALK / HIT_BY_PITCH as an event a scorer may jump
+ *    straight to with no preceding pitch. The web scorer records no pitch
+ *    for it either, so including it would make the two clients disagree.
  *  - STOLEN_BASE / CAUGHT_STEALING / BALK and other runner plays — mirrors
  *    the web scorer, which records no in_play pitch for these.
  *
@@ -666,7 +669,6 @@ export const IN_PLAY_TERMINAL_EVENTS: readonly EventType[] = [
   EventType.SACRIFICE_FLY,
   EventType.SACRIFICE_BUNT,
   EventType.FIELD_ERROR,
-  EventType.CATCHER_INTERFERENCE,
   EventType.DOUBLE_PLAY,
   EventType.TRIPLE_PLAY,
 ] as const;
@@ -896,14 +898,13 @@ const withInPlayPitch = useMemo(
 
 - [ ] **Step 4: Wrap every in-play handler at the prop boundary**
 
-Where the handlers are passed to `PitchInput`, wrap each one. This is the complete list — all twelve:
+Where the handlers are passed to `PitchInput`, wrap each one. This is the complete list — all eleven. `onRecordCatcherInterference` is deliberately NOT wrapped: catcher's interference is not a ball put in play, the web scorer records no pitch for it, and `deriveGameState` groups it with WALK / HIT_BY_PITCH as an event reachable with no preceding pitch.
 
 ```tsx
 onRecordHit={withInPlayPitch(EventType.HIT, handleHit)}
 onRecordHitWithRunnerOutcomes={withInPlayPitch(EventType.HIT, handleHitWithRunnerOutcomes)}
 onRecordOut={withInPlayPitch(EventType.OUT, handleOut)}
 onRecordError={withInPlayPitch(EventType.FIELD_ERROR, handleError)}
-onRecordCatcherInterference={withInPlayPitch(EventType.CATCHER_INTERFERENCE, handleCatcherInterference)}
 onRecordSacFly={withInPlayPitch(EventType.SACRIFICE_FLY, handleSacrificeFly)}
 onRecordSacBunt={withInPlayPitch(EventType.SACRIFICE_BUNT, handleSacrificeBunt)}
 onRecordSacFlyFromOut={withInPlayPitch(EventType.SACRIFICE_FLY, handleSacrificeFlyFromOut)}
