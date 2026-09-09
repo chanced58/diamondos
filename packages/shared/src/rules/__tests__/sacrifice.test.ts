@@ -24,8 +24,18 @@ describe('sacrificeEligibility', () => {
     expect(r.sacBunt).toBe(true);
   });
 
-  it('denies a sac fly with the bases empty', () => {
-    expect(sacrificeEligibility({ outs: 0, runnersOnBase: bases() }).sacFly).toBe(false);
+  it('denies both with the bases empty — nobody to advance (OBR 9.08(a))', () => {
+    expect(sacrificeEligibility({ outs: 0, runnersOnBase: bases() }))
+      .toEqual({ sacFly: false, sacBunt: false });
+  });
+
+  it('allows a sac bunt with a runner on first only', () => {
+    expect(sacrificeEligibility({ outs: 0, runnersOnBase: bases({ first: 'r1' }) }).sacBunt).toBe(true);
+  });
+
+  it('allows both at exactly one out — the boundary below two', () => {
+    expect(sacrificeEligibility({ outs: 1, runnersOnBase: bases({ third: 'r1' }) }))
+      .toEqual({ sacFly: true, sacBunt: true });
   });
 
   it('allows a sac fly on a runner from second', () => {
