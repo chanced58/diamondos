@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
-import { HitType, PitchOutcome, PitchType } from '@baseball/shared';
-import type { DefensiveLineup, DroppedThirdStrikeOutcome } from '@baseball/shared';
+import { HitType, PitchOutcome, PitchType, HitTrajectory } from '@baseball/shared';
+import type { DefensiveLineup, DroppedThirdStrikeOutcome, SacrificeEligibility } from '@baseball/shared';
 import { DefensiveDiamond } from './DefensiveDiamond';
 
 interface DroppedThirdStrikeDetails {
@@ -14,6 +14,29 @@ interface DroppedThirdStrikeDetails {
 type Base = 1 | 2 | 3;
 
 export type BattedOutType = 'groundout' | 'flyout' | 'lineout' | 'popout' | 'other';
+
+/**
+ * Maps the scorer's chosen batted-ball out type to the `HitTrajectory` the
+ * shared sacrifice rule (`sacrificeEligibility` in `@baseball/shared`)
+ * expects. 'other' has no trajectory equivalent and deliberately maps to
+ * `undefined` (the rule treats an unknown trajectory as non-disqualifying).
+ * Single source of truth — also used by `score.tsx`'s `handleOut` so the
+ * OUT event payload's trajectory matches what gated this exact prompt.
+ */
+export function trajectoryForOutType(outType: BattedOutType): HitTrajectory | undefined {
+  switch (outType) {
+    case 'groundout':
+      return HitTrajectory.GROUND_BALL;
+    case 'flyout':
+      return HitTrajectory.FLY_BALL;
+    case 'lineout':
+      return HitTrajectory.LINE_DRIVE;
+    case 'popout':
+      return HitTrajectory.FLY_BALL;
+    default:
+      return undefined;
+  }
+}
 
 export type RosterPlayer = {
   id: string;
@@ -75,6 +98,28 @@ interface PitchInputProps {
   onRecordCatcherInterference: () => void;
   onRecordSacFly: () => void;
   onRecordSacBunt: () => void;
+  /** Sac fly may be credited — OBR 9.08(d). Hidden when false. Computed by
+   *  the caller via `sacrificeEligibility` before the batted-ball trajectory
+   *  is known, so this gates the in-play sheet's button only. Required —
+   *  and deliberately has no permissive default — because this and its two
+   *  sibling sac props exist to prevent an ineligible sacrifice from ever
+   *  being offered; a caller that forgets one must fail to compile rather
+   *  than silently fall back to "always eligible". */
+  sacFlyEligible: boolean;
+  /** Sac bunt may be credited — OBR 9.08(a). Hidden when false. */
+  sacBuntEligible: boolean;
+  /**
+   * Re-derives sacrifice eligibility once the out's trajectory is known
+   * (the post-out "was this a sacrifice?" prompt). Delegates back to the
+   * caller — which owns `gameState` and calls `sacrificeEligibility` from
+   * `@baseball/shared` — so the OBR 9.08 rule stays defined in exactly one
+   * place instead of being re-derived here. Required, with no fallback to
+   * the trajectory-agnostic `sacFlyEligible`/`sacBuntEligible` above: those
+   * flags are computed with no trajectory, which the shared rule treats as
+   * non-disqualifying, so falling back to them here would silently re-offer
+   * a sac fly on a groundout — the exact bug this gating exists to prevent.
+   */
+  sacEligibilityForTrajectory: (trajectory: HitTrajectory | undefined) => SacrificeEligibility;
   /** Sacrifice fly chosen via the in-Out follow-up — carries the trajectory
    *  the scorer initially picked (groundout/flyout/lineout/popout/other) so
    *  the recorded payload preserves that context. */
@@ -161,6 +206,9 @@ export function PitchInput({
   onRecordCatcherInterference,
   onRecordSacFly,
   onRecordSacBunt,
+  sacFlyEligible,
+  sacBuntEligible,
+  sacEligibilityForTrajectory,
   onRecordSacFlyFromOut,
   onRecordSacBuntFromOut,
   onRecordFieldersChoice,
@@ -217,6 +265,16 @@ export function PitchInput({
   const [showRunnersSheet, setShowRunnersSheet] = useState(false);
   const [showSubsSheet, setShowSubsSheet] = useState(false);
   const fcEligible = runnersOnBase.length > 0;
+
+  // Sacrifice eligibility once the out's trajectory is known (post-out
+  // prompt). Always delegates to the caller-supplied `sacEligibilityForTrajectory`
+  // — required, no fallback — so this never re-derives OBR 9.08 itself and
+  // never falls back to the trajectory-agnostic flags (which would silently
+  // re-permit e.g. a sac fly on a groundout).
+  function sacEligibilityForOutType(outType: BattedOutType): SacrificeEligibility {
+    const trajectory = trajectoryForOutType(outType);
+    return sacEligibilityForTrajectory(trajectory);
+  }
 
   /**
    * Close the branch sheet, then run the action. Several actions open a
@@ -355,10 +413,19 @@ export function PitchInput({
     setRunnerOutcomeChoices({});
   }
 
-  // Step 1: scorer picks the trajectory of the out. We stash it and advance
-  // to step 2 where the scorer confirms it was a regular out or upgrades it
-  // to a sacrifice fly/bunt.
+  // Step 1: scorer picks the trajectory of the out. When neither sacrifice
+  // is possible (e.g. 2 outs already, or a groundout with nobody in scoring
+  // position), step 2 would render with only a "Regular out" button — skip
+  // it and record the out directly instead. Otherwise stash the trajectory
+  // and advance to step 2 where the scorer confirms it was a regular out or
+  // upgrades it to a sacrifice fly/bunt.
   function handleOutPick(outType: BattedOutType) {
+    const eligibility = sacEligibilityForOutType(outType);
+    if (!eligibility.sacFly && !eligibility.sacBunt) {
+      setShowOutModal(false);
+      onRecordOut(outType);
+      return;
+    }
     setPendingOutType(outType);
   }
 
@@ -520,8 +587,12 @@ export function PitchInput({
         <SheetGroup label="Out">
           <View className="flex-row flex-wrap gap-2">
             <OutcomeButton label="Out" emoji="✋" onPress={() => runFromSheet(setShowInPlaySheet, () => setShowOutModal(true))} color="bg-gray-600" />
-            <OutcomeButton label="Sac Fly" emoji="SF" onPress={() => runFromSheet(setShowInPlaySheet, onRecordSacFly)} color="bg-teal-600" />
-            <OutcomeButton label="Sac Bunt" emoji="SH" onPress={() => runFromSheet(setShowInPlaySheet, onRecordSacBunt)} color="bg-teal-700" />
+            {sacFlyEligible && (
+              <OutcomeButton label="Sac Fly" emoji="SF" onPress={() => runFromSheet(setShowInPlaySheet, onRecordSacFly)} color="bg-teal-600" />
+            )}
+            {sacBuntEligible && (
+              <OutcomeButton label="Sac Bunt" emoji="SH" onPress={() => runFromSheet(setShowInPlaySheet, onRecordSacBunt)} color="bg-teal-700" />
+            )}
             <OutcomeButton label="Double Play" emoji="DP" onPress={() => runFromSheet(setShowInPlaySheet, handleDPTap)} color="bg-zinc-700" />
             <OutcomeButton label="Triple Play" emoji="TP" onPress={() => runFromSheet(setShowInPlaySheet, onRecordTriplePlay)} color="bg-zinc-800" />
           </View>
@@ -928,7 +999,11 @@ export function PitchInput({
       >
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
-            {pendingOutType === null ? (
+            {(() => {
+              const pendingSac: SacrificeEligibility = pendingOutType
+                ? sacEligibilityForOutType(pendingOutType)
+                : { sacFly: false, sacBunt: false };
+              return pendingOutType === null ? (
               <>
                 <Text className="text-lg font-bold text-gray-900 mb-1">Out</Text>
                 <Text className="text-sm text-gray-500 mb-4">
@@ -978,25 +1053,29 @@ export function PitchInput({
                     </Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    className="bg-white border border-slate-300 rounded-xl px-5 py-4"
-                    onPress={confirmSacFlyFromOut}
-                  >
-                    <Text className="text-slate-800 font-semibold">Sacrifice fly</Text>
-                    <Text className="text-slate-500 text-xs mt-0.5">
-                      Runner scored from 3rd on the catch — PA but not an AB
-                    </Text>
-                  </TouchableOpacity>
+                  {pendingSac.sacFly && (
+                    <TouchableOpacity
+                      className="bg-white border border-slate-300 rounded-xl px-5 py-4"
+                      onPress={confirmSacFlyFromOut}
+                    >
+                      <Text className="text-slate-800 font-semibold">Sacrifice fly</Text>
+                      <Text className="text-slate-500 text-xs mt-0.5">
+                        Runner scored from 3rd on the catch — PA but not an AB
+                      </Text>
+                    </TouchableOpacity>
+                  )}
 
-                  <TouchableOpacity
-                    className="bg-white border border-slate-300 rounded-xl px-5 py-4"
-                    onPress={confirmSacBuntFromOut}
-                  >
-                    <Text className="text-slate-800 font-semibold">Sacrifice bunt</Text>
-                    <Text className="text-slate-500 text-xs mt-0.5">
-                      Bunt out that intentionally advanced a runner — PA but not an AB
-                    </Text>
-                  </TouchableOpacity>
+                  {pendingSac.sacBunt && (
+                    <TouchableOpacity
+                      className="bg-white border border-slate-300 rounded-xl px-5 py-4"
+                      onPress={confirmSacBuntFromOut}
+                    >
+                      <Text className="text-slate-800 font-semibold">Sacrifice bunt</Text>
+                      <Text className="text-slate-500 text-xs mt-0.5">
+                        Bunt out that intentionally advanced a runner — PA but not an AB
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
 
                 <View className="flex-row justify-between items-center mt-4">
@@ -1008,7 +1087,8 @@ export function PitchInput({
                   </TouchableOpacity>
                 </View>
               </>
-            )}
+              );
+            })()}
           </View>
         </View>
       </Modal>

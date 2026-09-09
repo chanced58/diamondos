@@ -15,12 +15,12 @@ import { useRecordEvent } from '../../../../src/features/scoring/use-record-even
 import { ScoreBoard } from '../../../../src/features/scoring/ScoreBoard';
 import { CountDisplay } from '../../../../src/features/scoring/CountDisplay';
 import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDisplay';
-import { PitchInput } from '../../../../src/features/scoring/PitchInput';
+import { PitchInput, trajectoryForOutType } from '../../../../src/features/scoring/PitchInput';
 import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerModal';
 import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
@@ -124,6 +124,13 @@ export default function ScoringScreen() {
         gameState.runnersOnBase,
       )
     : null;
+  // Sac fly / sac bunt eligibility per OBR 9.08 — gates the in-play sheet's
+  // buttons. Computed without a trajectory (not yet known pre-outcome); the
+  // post-out prompt in PitchInput re-derives this with a trajectory via
+  // sacEligibilityForTrajectory below.
+  const sacEligibility = gameState
+    ? sacrificeEligibility({ outs: gameState.outs, runnersOnBase: gameState.runnersOnBase })
+    : { sacFly: false, sacBunt: false };
 
   // Roster for substitution + pitching-change pickers.
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
@@ -679,12 +686,7 @@ export default function ScoringScreen() {
 
   async function handleOut(outType: BattedOutType) {
     if (!gameState) return;
-    const trajectory: HitTrajectory | undefined =
-      outType === 'groundout' ? HitTrajectory.GROUND_BALL
-      : outType === 'flyout' ? HitTrajectory.FLY_BALL
-      : outType === 'lineout' ? HitTrajectory.LINE_DRIVE
-      : outType === 'popout' ? HitTrajectory.FLY_BALL
-      : undefined;
+    const trajectory = trajectoryForOutType(outType);
     const payload: OutPayload = {
       ...halfAttribution,
       outType,
@@ -741,15 +743,9 @@ export default function ScoringScreen() {
   // Sacrifice path that came from the Out modal — the scorer first picked
   // a trajectory, then upgraded it to a sacrifice. We carry the trajectory
   // on the payload so the play preserves the context the scorer already
-  // identified (e.g. flyout → sac fly retains FLY_BALL).
-  function trajectoryForOutType(outType: BattedOutType): HitTrajectory | undefined {
-    return outType === 'groundout' ? HitTrajectory.GROUND_BALL
-      : outType === 'flyout' ? HitTrajectory.FLY_BALL
-      : outType === 'lineout' ? HitTrajectory.LINE_DRIVE
-      : outType === 'popout' ? HitTrajectory.FLY_BALL
-      : undefined;
-  }
-
+  // identified (e.g. flyout → sac fly retains FLY_BALL). trajectoryForOutType
+  // is imported from PitchInput.tsx — the single source of truth for this
+  // mapping, also used by handleOut above and PitchInput's post-out prompt.
   async function handleSacrificeFlyFromOut(outType: BattedOutType) {
     if (!gameState) return;
     const trajectory = trajectoryForOutType(outType);
@@ -1896,6 +1892,16 @@ export default function ScoringScreen() {
         onRecordCatcherInterference={handleCatcherInterference}
         onRecordSacFly={handleSacrificeFly}
         onRecordSacBunt={handleSacrificeBunt}
+        sacFlyEligible={sacEligibility.sacFly}
+        sacBuntEligible={sacEligibility.sacBunt}
+        sacEligibilityForTrajectory={(trajectory) =>
+          gameState
+            ? sacrificeEligibility(
+                { outs: gameState.outs, runnersOnBase: gameState.runnersOnBase },
+                trajectory,
+              )
+            : { sacFly: false, sacBunt: false }
+        }
         onRecordSacFlyFromOut={handleSacrificeFlyFromOut}
         onRecordSacBuntFromOut={handleSacrificeBuntFromOut}
         onRecordFieldersChoice={handleFieldersChoice}
