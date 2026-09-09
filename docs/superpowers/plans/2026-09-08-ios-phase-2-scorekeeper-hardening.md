@@ -17,6 +17,7 @@
 - **Web behaviour must not change** except where provably wrong (the sac-bunt gate). Every other web edit is a refactor to consume the shared rule with identical output.
 - **Do not bump `apps/mobile/src/db/schema.ts` `version`** without a matching step in `apps/mobile/src/db/migrations.ts`. No task here requires a schema bump.
 - **Conventional Commits** for every commit: `<type>(<scope>): <summary>`.
+- **`diamondos-prod` is the ONLY Supabase environment this project uses.** There is no usable dev environment and none is to be stood up: `diamondos-dev` is empty and paused, and branching is Pro-only. Never target any project other than `ktxjbjfwrmquohipimjn`.
 - **Manual verification runs against `diamondos-prod`, under a strict protocol.** This reverses the original constraint. `diamondos-dev` turned out to be an empty project (zero tables, no migration history) and Supabase branching requires the Pro plan, which this org is not on; the repo owner decided on 2026-09-08 to accept prod with discipline rather than spend the phase standing up an environment. The protocol is not optional:
   1. Every manual test uses a **new game whose `opponent_name` begins with `SHAKEDOWN`**. Never a real fixture, never an existing game — including the three currently sitting in `in_progress`.
   2. Record the game's `id` before scoring anything.
@@ -925,10 +926,10 @@ Expected: all pass.
 
 - [ ] **Step 6: Verify against the database**
 
-On the simulator against dev, score one half-inning: a called strike, a ball, a double, and three groundouts. Then:
+On the simulator against **prod, under the shakedown protocol in Global Constraints** (new SHAKEDOWN-prefixed game, id recorded, deleted afterwards), score one half-inning: a called strike, a ball, a double, and three groundouts. Then:
 
 ```sql
-select event_type, count(*) from game_events where game_id = '<dev game id>' group by event_type;
+select event_type, count(*) from game_events where game_id = '<shakedown game id>' group by event_type;
 ```
 
 Expected: `pitch_thrown` = 6 (2 taken + 4 in play), `hit` = 1, `out` = 3. Before this task the same sequence produced `pitch_thrown` = 2.
@@ -1026,10 +1027,10 @@ Confirm `EXPO_PUBLIC_API_BASE_URL` is in `.env.example` (added in Task 0) and th
 
 - [ ] **Step 6: Verify end to end**
 
-With `EXPO_PUBLIC_API_BASE_URL=http://localhost:3000` and `pnpm dev:web` running against dev, end a game on the simulator. Then:
+With `EXPO_PUBLIC_API_BASE_URL=http://localhost:3000` and `pnpm dev:web` running against **prod** (the only Supabase environment this project uses), end a **SHAKEDOWN-prefixed** game on the simulator under the protocol in Global Constraints. Then:
 
 ```sql
-select status, completed_at from games where id = '<dev game id>';
+select status, completed_at from games where id = '<shakedown game id>';
 ```
 
 Expected: `completed`, with a non-null `completed_at`. Then unset the variable, rebuild, end another game, and confirm the banner appears and the alert copy changes.
@@ -1169,7 +1170,7 @@ Continue setting `homeLeadoffBatterId` / `awayLeadoffBatterId` in the `GAME_STAR
 Start a game on the simulator with a 9-deep order, then check:
 
 ```sql
-select batting_order, player_id from game_lineups where game_id = '<dev game id>' order by batting_order;
+select batting_order, player_id from game_lineups where game_id = '<shakedown game id>' order by batting_order;
 ```
 
 Expected: 9 rows. On screen, the order rail shows all nine, "No batting order set" is gone, and "Up next" advances correctly through a full turn without any "+ Batter" tap.
@@ -1206,7 +1207,7 @@ iPad landscape: all nine zones visible without scrolling, pitch-type row still v
 
 ```sql
 select payload->>'zoneLocation' from game_events
-where game_id = '<dev game id>' and event_type = 'pitch_thrown'
+where game_id = '<shakedown game id>' and event_type = 'pitch_thrown'
 order by sequence_number desc limit 1;
 ```
 
@@ -1236,15 +1237,15 @@ pnpm lint && pnpm type-check && pnpm test
 
 Expected: green. Shared should report 476 + ~20 new; mobile should report its new tests.
 
-- [ ] **Step 2: Score a complete game on the simulator against dev**
+- [ ] **Step 2: Score a complete game on the simulator against prod, under the shakedown protocol**
 
 Full flow: create the game on web, set the lineup in the wizard, score at least three innings including a double with runners on, a sacrifice attempt at 0 and at 2 outs, a fielder's choice, a pitching change, and an undo of a play from an earlier inning. Then End Game.
 
 - [ ] **Step 3: Verify the log**
 
 ```sql
-select event_type, count(*) from game_events where game_id = '<dev game id>' group by event_type order by 2 desc;
-select status, completed_at, home_score, away_score from games where id = '<dev game id>';
+select event_type, count(*) from game_events where game_id = '<shakedown game id>' group by event_type order by 2 desc;
+select status, completed_at, home_score, away_score from games where id = '<shakedown game id>';
 ```
 
 Expected: `pitch_thrown` ≥ the number of plate appearances plus taken pitches; `games.status = 'completed'` with `completed_at` set; the score matching what the app displayed.
