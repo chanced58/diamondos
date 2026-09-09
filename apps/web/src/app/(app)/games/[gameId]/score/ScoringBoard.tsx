@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome, computeLineScore, evaluateGameEnd, shouldEndHalfForRunCap, isDroppedThirdStrikeAllowed, ghostRunnerBaseForHalf, defaultLeagueScoringSettings, type LeagueScoringSettings } from '@baseball/shared';
+import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome, computeLineScore, evaluateGameEnd, shouldEndHalfForRunCap, isDroppedThirdStrikeAllowed, ghostRunnerBaseForHalf, defaultLeagueScoringSettings, sacrificeEligibility, type LeagueScoringSettings } from '@baseball/shared';
 import type { GameEvent } from '@baseball/shared';
 import { endGameAction } from '../actions';
 import { DefensiveDiamond } from './DefensiveDiamond';
@@ -802,13 +802,15 @@ export function ScoringBoard({
     gameState.runnersOnBase,
   );
 
-  // Sac fly requires a runner who can score on the catch (must be on 2nd or
-  // 3rd) AND fewer than 2 outs (with 2 outs the catch is the third out and
-  // no run can score on tag-up). Sac bunt stays unconditional — it can
-  // advance a runner from 1st per OBR 9.08.
-  const sacFlyEligible =
-    gameState.outs < 2 &&
-    (!!gameState.runnersOnBase.second || !!gameState.runnersOnBase.third);
+  // OBR 9.08 — see sacrificeEligibility in @baseball/shared. Kept in shared so
+  // the mobile scorer enforces exactly the same rule.
+  const sacEligibility = sacrificeEligibility({
+    outs: gameState.outs,
+    runnersOnBase: gameState.runnersOnBase,
+  });
+  const sacFlyEligible = sacEligibility.sacFly;
+  const sacBuntEligible = sacEligibility.sacBunt;
+  const anySacEligible = sacFlyEligible || sacBuntEligible;
 
   // Sorted starters for batting order cycling. Upper bound matches the DB
   // check constraint (1–30) — "everyone bats" lineups go beyond 9.
@@ -2290,18 +2292,20 @@ export function ScoringBoard({
                           Sacrifice fly
                         </button>
                       )}
-                      <button
-                        onClick={() =>
-                          handleInPlaySacrifice(
-                            'sacrifice_bunt',
-                            pendingTrajectory ?? 'ground_ball',
-                            stashedSacFieldingSequence,
-                          )
-                        }
-                        className="py-2 text-sm font-semibold rounded-lg border border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100 transition-colors"
-                      >
-                        Sacrifice bunt
-                      </button>
+                      {sacBuntEligible && (
+                        <button
+                          onClick={() =>
+                            handleInPlaySacrifice(
+                              'sacrifice_bunt',
+                              pendingTrajectory ?? 'ground_ball',
+                              stashedSacFieldingSequence,
+                            )
+                          }
+                          className="py-2 text-sm font-semibold rounded-lg border border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100 transition-colors"
+                        >
+                          Sacrifice bunt
+                        </button>
+                      )}
                     </div>
                     <button
                       onClick={() => {
@@ -2364,7 +2368,7 @@ export function ScoringBoard({
                             setFcOutRunnerId(null);
                             setFcRunnerOutPending(true);
                             setFieldingSequencePending(false);
-                          } else if (stashedOutResult === 'out') {
+                          } else if (stashedOutResult === 'out' && anySacEligible) {
                             // Stash the sequence and ask whether this was a sacrifice
                             // before recording. handleInPlay / handleInPlaySacrifice
                             // will own the actual event emission.
@@ -2396,7 +2400,7 @@ export function ScoringBoard({
                             setFcOutRunnerId(null);
                             setFcRunnerOutPending(true);
                             setFieldingSequencePending(false);
-                          } else if (stashedOutResult === 'out') {
+                          } else if (stashedOutResult === 'out' && anySacEligible) {
                             // No fielding sequence captured — still ask the sac question.
                             setStashedSacFieldingSequence([]);
                             setFieldingSequencePending(false);
