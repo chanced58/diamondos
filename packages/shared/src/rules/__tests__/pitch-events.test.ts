@@ -8,7 +8,6 @@ describe('requiresPitchEvent', () => {
     EventType.SACRIFICE_FLY,
     EventType.SACRIFICE_BUNT,
     EventType.FIELD_ERROR,
-    EventType.CATCHER_INTERFERENCE,
     EventType.DOUBLE_PLAY,
     EventType.TRIPLE_PLAY,
   ])('requires a pitch for %s', (t) => {
@@ -20,6 +19,7 @@ describe('requiresPitchEvent', () => {
     EventType.STRIKEOUT,
     EventType.DROPPED_THIRD_STRIKE,
     EventType.HIT_BY_PITCH,
+    EventType.CATCHER_INTERFERENCE,
     EventType.STOLEN_BASE,
     EventType.CAUGHT_STEALING,
     EventType.BALK,
@@ -30,10 +30,10 @@ describe('requiresPitchEvent', () => {
     expect(requiresPitchEvent(t)).toBe(false);
   });
 
-  it('lists exactly the eight in-play terminals', () => {
+  // This assertion pins every EventType not named explicitly above (9 total).
+  it('lists exactly the seven in-play terminals', () => {
     expect([...IN_PLAY_TERMINAL_EVENTS].sort()).toEqual(
       [
-        EventType.CATCHER_INTERFERENCE,
         EventType.DOUBLE_PLAY,
         EventType.FIELD_ERROR,
         EventType.HIT,
