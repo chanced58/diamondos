@@ -717,6 +717,25 @@ export async function syncWithSupabase(): Promise<void> {
 // only: a restart re-confirms with one query (idempotent).
 const lifecycleReconciledGames = new Set<string>();
 
+// Set once the missing-EXPO_PUBLIC_API_BASE_URL warning has fired, so a
+// misconfigured build logs it once instead of once per sync cycle forever.
+let warnedMissingApiBase = false;
+
+/**
+ * True when the app can reach the finalize endpoint at all.
+ *
+ * `apiBaseUrl` is normally omitted — real callers rely on the default, which
+ * reads `EXPO_PUBLIC_API_BASE_URL`. Expo's babel preset inlines
+ * `EXPO_PUBLIC_*` vars into a literal at build time, so a test process cannot
+ * change `process.env.EXPO_PUBLIC_API_BASE_URL` and observe a different
+ * result; the parameter exists so tests can exercise both branches directly.
+ */
+export function isFinalizeConfigured(
+  apiBaseUrl: string | undefined = process.env.EXPO_PUBLIC_API_BASE_URL,
+): boolean {
+  return !!apiBaseUrl;
+}
+
 /**
  * Server-side game lifecycle reconciliation, run after each sync cycle.
  *
@@ -796,10 +815,12 @@ async function reconcileGameLifecycle(
     if (!endEvent) continue;
 
     if (!apiBaseUrl) {
-      console.warn(
-        'sync: EXPO_PUBLIC_API_BASE_URL is not set — cannot finalize game',
-        g.id,
-      );
+      if (!warnedMissingApiBase) {
+        warnedMissingApiBase = true;
+        console.warn(
+          'sync: EXPO_PUBLIC_API_BASE_URL is not set — completed games cannot finalize',
+        );
+      }
       continue;
     }
     if (accessToken === null) {

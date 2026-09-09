@@ -31,6 +31,7 @@ import type { Game } from '../../../../src/db/models/Game';
 import type { Player } from '../../../../src/db/models/Player';
 import type { BattedOutType, RosterPlayer, RunnerOutcome } from '../../../../src/features/scoring/PitchInput';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
+import { isFinalizeConfigured } from '../../../../src/sync/sync-engine';
 import { addLineupRow, createLocalGuest } from '../../../../src/features/lineup/local-guest';
 import { useGameLineups } from '../../../../src/features/lineup/use-game-lineups';
 import { useOpponentLineup, type OpponentBatter } from '../../../../src/features/lineup/use-opponent-lineup';
@@ -1041,7 +1042,9 @@ export default function ScoringScreen() {
     if (!gameState || !lineScore) return;
     Alert.alert(
       'End game?',
-      `Final score ${lineScore.homeRuns}–${lineScore.awayRuns}. The result finalizes automatically when the device is back online.`,
+      isFinalizeConfigured()
+        ? `Final score ${lineScore.homeRuns}–${lineScore.awayRuns}. The result finalizes automatically when the device is back online.`
+        : `Final score ${lineScore.homeRuns}–${lineScore.awayRuns}. The game will be marked complete on this device, but this build cannot finalize the result — it has no server address configured.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'End Game', style: 'destructive', onPress: () => { handleEndGame().catch(console.warn); } },
@@ -1516,12 +1519,17 @@ export default function ScoringScreen() {
           <View className="px-3 py-1 rounded-full bg-gray-900">
             <Text className="text-white text-xs font-bold uppercase tracking-wide">Final</Text>
           </View>
-          {pendingEventsCount > 0 && (
-            <Text className="text-amber-600 text-xs mt-2">
-              Result finalizes automatically when the device is back online.
-            </Text>
-          )}
         </View>
+        {gameState.isFinal && game?.status !== 'completed' && (
+          <View className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+            <Text className="text-sm font-semibold text-amber-900">Not finalized yet</Text>
+            <Text className="text-xs text-amber-800 mt-0.5">
+              {isFinalizeConfigured()
+                ? 'The result will finalize once this device syncs.'
+                : 'This build has no server address configured, so the result cannot finalize.'}
+            </Text>
+          </View>
+        )}
         {lineScore && (
           <View className="mx-4 mt-3 border border-gray-200 rounded-xl overflow-hidden">
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
