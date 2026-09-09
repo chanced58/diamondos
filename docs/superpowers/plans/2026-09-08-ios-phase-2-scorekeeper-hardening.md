@@ -17,7 +17,12 @@
 - **Web behaviour must not change** except where provably wrong (the sac-bunt gate). Every other web edit is a refactor to consume the shared rule with identical output.
 - **Do not bump `apps/mobile/src/db/schema.ts` `version`** without a matching step in `apps/mobile/src/db/migrations.ts`. No task here requires a schema bump.
 - **Conventional Commits** for every commit: `<type>(<scope>): <summary>`.
-- **Never verify against `diamondos-prod`.** Manual verification uses a restored `diamondos-dev` (Task 0) or the simulator against dev.
+- **Manual verification runs against `diamondos-prod`, under a strict protocol.** This reverses the original constraint. `diamondos-dev` turned out to be an empty project (zero tables, no migration history) and Supabase branching requires the Pro plan, which this org is not on; the repo owner decided on 2026-09-08 to accept prod with discipline rather than spend the phase standing up an environment. The protocol is not optional:
+  1. Every manual test uses a **new game whose `opponent_name` begins with `SHAKEDOWN`**. Never a real fixture, never an existing game — including the three currently sitting in `in_progress`.
+  2. Record the game's `id` before scoring anything.
+  3. When the check is done, **delete that game and its events, scoped by that id only.** This is the sanctioned exception to the append-only rule and applies to shakedown games alone.
+  4. Never modify, finalize, or score any row you did not create.
+  If a verification step cannot be done under this protocol, skip it and say so in your report rather than improvising.
 - Mobile events must match web's event shape exactly so both clients write identical logs.
 - Enum values are fixed: `HitTrajectory` is `GROUND_BALL | LINE_DRIVE | FLY_BALL` — there is no `POP_UP`. `BattedOutType` is `'groundout' | 'flyout' | 'lineout' | 'popout'`.
 
@@ -32,7 +37,8 @@
 - `packages/shared/src/rules/__tests__/sacrifice.test.ts`
 - `packages/shared/src/rules/__tests__/pitch-events.test.ts`
 - `apps/mobile/jest.config.js`, `apps/mobile/jest.setup.js`
-- `apps/mobile/src/features/scoring/__tests__/in-play-events.test.ts`
+- `apps/mobile/src/features/scoring/in-play-pitch.ts` — in-play pitch choke point
+- `apps/mobile/src/features/scoring/__tests__/in-play-pitch.test.ts`
 - `apps/mobile/src/features/scoring/PlayFeed.tsx` — play-by-play list
 - `apps/mobile/src/features/scoring/use-play-feed.ts` — derives feed rows from events
 
@@ -42,6 +48,8 @@
 - `apps/web/src/app/(app)/games/[gameId]/score/ScoringBoard.tsx:805-812, 2126-2145` — consume shared rule
 - `apps/mobile/src/sync/sync-engine.ts:773-840` — honest finalize failure
 - `apps/mobile/app/(tabs)/practices/index.tsx:78` — typecheck fix
+- `apps/mobile/tsconfig.json` — enable `experimentalDecorators` (WatermelonDB)
+- `packages/ui/tsconfig.json` + new `packages/ui/nativewind-env.d.ts` — NativeWind `className` typing
 - `docs/baseball-rules.md` §9.08(a), Appendix A.5
 - `.env.example`, `CLAUDE.md`
 - `packages/shared/src/index.ts` — export `./rules`
@@ -52,66 +60,19 @@
 
 ## Sequencing
 
-Task 0 unblocks all manual verification. Task 1 unblocks all mobile tests. Tasks 2→4 are the sacrifice chain; 6→7 the pitch-count chain; both depend on Task 1 only for their mobile halves. Tasks 8–12 are independent of each other.
+Task 0 is cancelled (see below). Task 1 unblocks all mobile tests. Tasks 2→4 are the sacrifice chain; 6→7 the pitch-count chain; both depend on Task 1 only for their mobile halves. Tasks 8–12 are independent of each other.
 
 `score.tsx` (3,017 lines) is split **incrementally** — each task extracts only what it touches. There is no big-bang refactor task.
 
 ---
 
-## Task 0: Restore a non-production verification target
+## Task 0: (superseded — no action)
 
-**Files:**
-- Modify: `apps/mobile/.env.local` (local only, not committed)
-- Modify: `.env.example`
+**Status: cancelled on 2026-09-08.** This task was to restore `diamondos-dev` and seed it. On execution `diamondos-dev` proved to be an entirely empty project — zero public tables and no `supabase_migrations` schema — so it would have meant replaying all 127 migrations (493 KB of SQL) from scratch. Supabase branching, the clean alternative, returned `PaymentRequiredException`: it needs the Pro plan and this org is not on it.
 
-**Interfaces:**
-- Consumes: nothing
-- Produces: a working `diamondos-dev` Supabase project with current schema and a seeded team, roster, and scheduled game; mobile pointed at it
+The repo owner chose to verify against `diamondos-prod` under the shakedown protocol now recorded in Global Constraints. **Do not perform this task.** `diamondos-dev` has been returned to its paused state.
 
-- [ ] **Step 1: Restore the paused dev project**
-
-`diamondos-dev` (ref `yfmqolayttdojdsghiio`) is INACTIVE. Restore it via the Supabase MCP `restore_project` tool or the dashboard. Confirm with `list_projects` that status is `ACTIVE_HEALTHY`.
-
-- [ ] **Step 2: Compare migration state against the repo**
-
-Run `list_migrations` for `yfmqolayttdojdsghiio` and compare the versions against `ls supabase/migrations/`. Record which repo migrations are missing on dev.
-
-- [ ] **Step 3: Apply missing migrations in filename order**
-
-For each missing file, apply it with `apply_migration`, using the repo filename's timestamp as the version. Then reconcile `schema_migrations.version` to the repo filename timestamps.
-
-- [ ] **Step 4: Seed a team, roster and scheduled game**
-
-Run `supabase/seed.sql` against dev, or insert one team with a 12+ player roster and one `scheduled` game. Verify with:
-
-```sql
-select (select count(*) from teams) teams,
-       (select count(*) from players) players,
-       (select count(*) from games where status='scheduled') scheduled;
-```
-
-- [ ] **Step 5: Point mobile at dev and document the variables**
-
-Set in `apps/mobile/.env.local`:
-
-```
-EXPO_PUBLIC_SUPABASE_URL=https://yfmqolayttdojdsghiio.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=<dev anon key>
-EXPO_PUBLIC_API_BASE_URL=http://localhost:3000
-```
-
-Add all three to `.env.example` with comments. `EXPO_PUBLIC_API_BASE_URL` is already documented in CLAUDE.md but missing from `.env.example` — that omission is why it was never set.
-
-- [ ] **Step 6: Verify the app loads dev data**
-
-Rebuild and launch. Confirm the seeded team's roster and scheduled game appear, and that no `diamondos-prod` data is visible.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add .env.example
-git commit -m "chore(mobile): document EXPO_PUBLIC_API_BASE_URL in .env.example"
-```
+Every later task's manual-verification step runs against prod under that protocol. Read it before you run one.
 
 ---
 
@@ -125,6 +86,8 @@ git commit -m "chore(mobile): document EXPO_PUBLIC_API_BASE_URL in .env.example"
 **Interfaces:**
 - Consumes: nothing
 - Produces: `pnpm --filter mobile test` runs Jest; `pnpm type-check` is green repo-wide
+
+**Amended 2026-09-08.** The brief originally said one pre-existing typecheck error existed, trusting PR #206. That was incomplete — there are **101**: 90 × `TS1240` in `apps/mobile/src/db/models/*.ts` (WatermelonDB legacy decorators; `experimentalDecorators` is set nowhere in the chain) and 11 × `TS2769` in `packages/ui` (NativeWind `className` not type-augmented). Both are in scope for this task. Set `experimentalDecorators` in `apps/mobile/tsconfig.json` only — never in `tsconfig.base.json`, which would change semantics for web and shared. For ui, add a `nativewind-env.d.ts` holding `/// <reference types="nativewind/types" />` and list it in that package's tsconfig `include`.
 
 - [ ] **Step 1: Install dev dependencies**
 
