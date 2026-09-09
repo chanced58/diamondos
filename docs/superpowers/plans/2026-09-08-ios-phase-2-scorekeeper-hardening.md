@@ -231,8 +231,18 @@ describe('sacrificeEligibility', () => {
     expect(r.sacBunt).toBe(true);
   });
 
-  it('denies a sac fly with the bases empty', () => {
-    expect(sacrificeEligibility({ outs: 0, runnersOnBase: bases() }).sacFly).toBe(false);
+  it('denies both with the bases empty — nobody to advance (OBR 9.08(a))', () => {
+    expect(sacrificeEligibility({ outs: 0, runnersOnBase: bases() }))
+      .toEqual({ sacFly: false, sacBunt: false });
+  });
+
+  it('allows a sac bunt with a runner on first only', () => {
+    expect(sacrificeEligibility({ outs: 0, runnersOnBase: bases({ first: 'r1' }) }).sacBunt).toBe(true);
+  });
+
+  it('allows both at exactly one out — the boundary below two', () => {
+    expect(sacrificeEligibility({ outs: 1, runnersOnBase: bases({ third: 'r1' }) }))
+      .toEqual({ sacFly: true, sacBunt: true });
   });
 
   it('allows a sac fly on a runner from second', () => {
@@ -286,8 +296,9 @@ export interface SacrificeEligibility {
  * the batter's out ends the inning and nothing productive can follow.
  *
  * 9.08(a) sacrifice bunt: "when, before two are out, the batter advances one
- * or more runners with a bunt". Only the out constraint is enforced here —
- * whether a runner actually advanced is the scorer's judgment.
+ * or more runners with a bunt" — so it needs fewer than two outs AND at least
+ * one runner on base to advance. Whether the runner actually advanced on the
+ * play is the scorer's judgment and is not decided here.
  *
  * 9.08(d) sacrifice fly: additionally requires a fly ball or line drive, and
  * a runner able to score on the catch (second or third).
@@ -309,9 +320,16 @@ export function sacrificeEligibility(
     trajectory === HitTrajectory.FLY_BALL ||
     trajectory === HitTrajectory.LINE_DRIVE;
 
+  // A bunt can only be a sacrifice if there is somebody to advance. With the
+  // bases empty a bunt out is an ordinary out, never an SH.
+  const anyRunnerOn =
+    !!state.runnersOnBase.first ||
+    !!state.runnersOnBase.second ||
+    !!state.runnersOnBase.third;
+
   return {
     sacFly: runnerCanScore && trajectoryAllowsFly,
-    sacBunt: true,
+    sacBunt: anyRunnerOn,
   };
 }
 ```
