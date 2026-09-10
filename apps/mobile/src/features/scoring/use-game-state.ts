@@ -21,11 +21,17 @@ import type { GameEvent as SharedGameEvent } from '@baseball/shared';
  * evaluated without an extra query, plus the void/revert-filtered shared
  * events so callers (due-batter derivation) can reuse the mapped stream
  * without a second query.
+ *
+ * `rawEvents` exposes the same mapped stream BEFORE filterVoidedAndReverted-
+ * Events runs — needed by the play-by-play feed, which must show voided
+ * plays struck through instead of erased. Reuses this subscription rather
+ * than opening a second one.
  */
 export function useGameState(gameRemoteId: string, homeTeamId: string) {
   const [gameState, setGameState] = useState<LiveGameState | null>(null);
   const [lineScore, setLineScore] = useState<LineScoreData | null>(null);
   const [events, setEvents] = useState<SharedGameEvent[]>([]);
+  const [rawEvents, setRawEvents] = useState<SharedGameEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -55,6 +61,7 @@ export function useGameState(gameRemoteId: string, homeTeamId: string) {
         const state = deriveGameState(gameRemoteId, activeEvents, homeTeamId);
         setGameState(state);
         setEvents(activeEvents);
+        setRawEvents(sharedEvents);
 
         // computeLineScore expects snake_case rows (it's a database-row adapter
         // shared with the web client). Re-map the WDB models, then strip out
@@ -80,5 +87,5 @@ export function useGameState(gameRemoteId: string, homeTeamId: string) {
     return () => subscription.unsubscribe();
   }, [gameRemoteId, homeTeamId]);
 
-  return { gameState, lineScore, events, loading };
+  return { gameState, lineScore, events, rawEvents, loading };
 }

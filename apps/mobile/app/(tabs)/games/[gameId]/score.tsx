@@ -12,6 +12,8 @@ import {
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useGameState } from '../../../../src/features/scoring/use-game-state';
 import { useRecordEvent } from '../../../../src/features/scoring/use-record-event';
+import { usePlayFeed } from '../../../../src/features/scoring/use-play-feed';
+import { PlayFeed } from '../../../../src/features/scoring/PlayFeed';
 import { ScoreBoard } from '../../../../src/features/scoring/ScoreBoard';
 import { CountDisplay } from '../../../../src/features/scoring/CountDisplay';
 import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDisplay';
@@ -92,7 +94,7 @@ export default function ScoringScreen() {
   const { width: windowWidth } = useWindowDimensions();
   const isWide = windowWidth >= 768;
 
-  const { gameState, lineScore, events, loading } = useGameState(gameId, teamId);
+  const { gameState, lineScore, events, rawEvents, loading } = useGameState(gameId, teamId);
   const { recordEvent } = useRecordEvent(gameId);
   const { isSyncing, lastSyncError, isOffline, pendingEventsCount, triggerSync } = useSyncContext();
   // Recomputed on every render, which — via `isSyncing` above, which flips
@@ -507,6 +509,18 @@ export default function ScoringScreen() {
     return () => { cancelled = true; };
   }, [battingSlots, nameById]);
   const batterName = (id: string) => nameById.get(id) ?? extraNames[id] ?? 'Unknown batter';
+
+  // Both sides' names, flattened to id -> display name for the play feed.
+  // nameById wins over extraNames (same precedence as batterName above);
+  // opponentTeamId ids are a disjoint id space so ordering between the two
+  // teams doesn't matter.
+  const playFeedPlayerNames = useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = { ...extraNames };
+    for (const [id, name] of nameById) map[id] = name;
+    for (const [id, name] of opponentNameById) map[id] = name;
+    return map;
+  }, [nameById, extraNames, opponentNameById]);
+  const playFeedRows = usePlayFeed(rawEvents, playFeedPlayerNames);
 
   /**
    * The batting team's order, whichever side that is — the card the scorer
@@ -1802,6 +1816,10 @@ export default function ScoringScreen() {
           </Text>
         </View>
       )}
+
+      {/* Play-by-play — below the batting order, scrolling independently
+          of the rest of the read pane. */}
+      {gameStarted && <PlayFeed rows={playFeedRows} />}
 
       <BatterPickerModal
         visible={showBatterPicker}
