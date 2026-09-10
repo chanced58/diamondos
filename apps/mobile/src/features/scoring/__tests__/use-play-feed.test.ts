@@ -95,6 +95,17 @@ describe('usePlayFeed', () => {
     expect(result.current[1].description).toBe('Bob — single');
   });
 
+  it('keeps every PITCH_THROWN row visible while the plate appearance stays open, with no mid-PA drop', () => {
+    // IMPORTANT 1: a second pitch landing in a still-open PA must not erase
+    // the first pitch's row — only closing the PA with a terminal event
+    // should replace the pitch rows with the play's own summary row.
+    const strike = mkEvent(EventType.PITCH_THROWN, { batterId: 'alice', outcome: PitchOutcome.CALLED_STRIKE });
+    const ball = mkEvent(EventType.PITCH_THROWN, { batterId: 'alice', outcome: PitchOutcome.BALL });
+    const { result } = renderHook(() => usePlayFeed([strike, ball], names));
+    expect(result.current).toHaveLength(2);
+    expect(result.current.map((r) => r.description)).toEqual(['Ball', 'Called strike']);
+  });
+
   it('collapses a linked runner-outcome event into a parenthetical on its parent play', () => {
     const hit = mkEvent(EventType.HIT, { batterId: 'alice', hitType: HitType.DOUBLE });
     const outcome = mkEvent(EventType.BASERUNNER_OUT, {
@@ -108,13 +119,78 @@ describe('usePlayFeed', () => {
     expect(result.current[0].description).toBe('Alice — double (Bob thrown out advancing)');
   });
 
-  it('drops events truncated by a PITCH_REVERTED rather than showing them', () => {
+  it('CRITICAL 1: reflects a voided linked runner-outcome in the parent row instead of showing stale text', () => {
+    const hit = mkEvent(EventType.HIT, { batterId: 'alice', hitType: HitType.DOUBLE });
+    const outcome = mkEvent(EventType.BASERUNNER_OUT, {
+      runnerId: 'bob',
+      fromBase: 1,
+      relatedEventId: hit.id,
+      reason: AdvanceReason.ON_PLAY,
+    });
+    const voidPayload: EventVoidedPayload = {
+      voidedEventId: outcome.id,
+      voidedSequenceNumber: outcome.sequenceNumber,
+    };
+    const events: GameEvent[] = [
+      hit,
+      outcome,
+      mkEvent(EventType.EVENT_VOIDED, voidPayload as unknown as Record<string, unknown>),
+    ];
+    const { result } = renderHook(() => usePlayFeed(events, names));
+    // The linked child never gets its own row (still folded into the
+    // parent), but the parent's text must change to show the correction —
+    // never the original, now-untrue, claim.
+    expect(result.current).toHaveLength(1);
+    expect(result.current[0]).toMatchObject({ eventId: hit.id, isVoided: false });
+    expect(result.current[0].description).toBe("Alice — double (Bob's call reversed)");
+    expect(result.current[0].description).not.toContain('thrown out advancing');
+  });
+
+  it('CRITICAL 2: renders an orphaned linked child as its own row when the parent formats to null', () => {
+    // Mirrors handlePickoff's error-advance path: PICKOFF_ATTEMPT.outcome
+    // is coerced to 'safe' (formats to null on its own), but the linked
+    // BASERUNNER_ADVANCE it produces is a real defensive-error play.
+    const pickoff = mkEvent(EventType.PICKOFF_ATTEMPT, {
+      runnerId: 'bob',
+      base: 1,
+      outcome: 'safe',
+    });
+    const advance = mkEvent(EventType.BASERUNNER_ADVANCE, {
+      runnerId: 'bob',
+      fromBase: 1,
+      toBase: 2,
+      reason: AdvanceReason.ERROR,
+      relatedEventId: pickoff.id,
+    });
+    const { result } = renderHook(() => usePlayFeed([pickoff, advance], names));
+    // Must leave a trace: one standalone row for the otherwise-orphaned play.
+    expect(result.current).toHaveLength(1);
+    expect(result.current[0]).toMatchObject({ eventId: pickoff.id, isVoided: false });
+    expect(result.current[0].description).toBe('Bob held at 2B');
+  });
+
+  it('drops events truncated by a PITCH_REVERTED, but leaves a collapsed trace row behind', () => {
     const ball = mkEvent(EventType.PITCH_THROWN, { batterId: 'alice', outcome: PitchOutcome.BALL });
     const strike = mkEvent(EventType.PITCH_THROWN, { batterId: 'alice', outcome: PitchOutcome.CALLED_STRIKE });
     const revert = mkEvent(EventType.PITCH_REVERTED, { revertToSequenceNumber: ball.sequenceNumber });
     const { result } = renderHook(() => usePlayFeed([ball, strike, revert], names));
-    // Only the ball survives the revert; the reverted-away strike and the
-    // revert marker itself never become rows.
+    // The reverted-away strike never becomes a row, and the revert marker
+    // itself isn't a play — but IMPORTANT 2 requires some visible trace
+    // that a revert happened, rather than silent disappearance.
+    expect(result.current).toHaveLength(2);
+    expect(result.current[0]).toMatchObject({
+      eventId: revert.id,
+      isCorrectionMarker: true,
+      isVoided: false,
+    });
+    expect(result.current[0].description).toMatch(/reverted/i);
+    expect(result.current[1]).toMatchObject({ eventId: ball.id, description: 'Ball' });
+  });
+
+  it('does not leave a trace row for a PITCH_REVERTED that removed nothing', () => {
+    const ball = mkEvent(EventType.PITCH_THROWN, { batterId: 'alice', outcome: PitchOutcome.BALL });
+    const revert = mkEvent(EventType.PITCH_REVERTED, { revertToSequenceNumber: ball.sequenceNumber });
+    const { result } = renderHook(() => usePlayFeed([ball, revert], names));
     expect(result.current).toHaveLength(1);
     expect(result.current[0]).toMatchObject({ eventId: ball.id, description: 'Ball' });
   });

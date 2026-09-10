@@ -35,7 +35,10 @@ function toFeedItems(rows: PlayFeedRow[]): FeedItem[] {
  * Play-by-play feed for the read pane, below the batting order. Newest play
  * first, grouped under half-inning headers. Voided plays render struck
  * through and dimmed rather than removed — the coach needs to see that a
- * correction happened, not just its result.
+ * correction happened, not just its result. A reverted span (from Undo)
+ * instead renders as a dimmed, italic, centered marker row — it means "this
+ * never happened" rather than "this happened and was corrected," so it
+ * never gets the strikethrough treatment.
  *
  * Rendered inside BookPane's outer ScrollView, so this FlatList gets a
  * bounded height of its own (rather than flex-filling) to scroll
@@ -73,9 +76,11 @@ export function PlayFeed({ rows }: { rows: PlayFeedRow[] }) {
             <View className="flex-row items-center py-0.5">
               <Text
                 className={`flex-1 text-[13px] ${
-                  item.row.isVoided
-                    ? 'text-gray-400 line-through'
-                    : 'text-gray-800'
+                  item.row.isCorrectionMarker
+                    ? 'text-gray-400 italic text-center'
+                    : item.row.isVoided
+                      ? 'text-gray-400 line-through'
+                      : 'text-gray-800'
                 }`}
                 numberOfLines={1}
               >
