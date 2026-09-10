@@ -1238,10 +1238,18 @@ git commit -m "fix(mobile): stop clipping the bottom row of the strike-zone grid
 - [ ] **Step 1: Run every check**
 
 ```bash
-pnpm lint && pnpm type-check && pnpm test
+pnpm type-check && pnpm test
 ```
 
-Expected: green. Shared should report 476 + ~20 new; mobile should report its new tests.
+Expected: green.
+
+Then, separately:
+
+```bash
+pnpm lint
+```
+
+**Expected: FAILS with 28 problems (15 errors, 13 warnings) — all pre-existing.** Verified on 2026-09-10 that `main` (3cb5a5c) fails identically. Every error is in `packages/shared/src/utils/` (`batting-stats.ts`, `game-history.ts`, `game-state.ts`, `opponent-batting-stats.ts`, `pitching-stats.ts`) — `no-inner-declarations` and two unused constants. This branch touches none of those files, and its own additions lint clean. Do NOT fix them here: five untouched stats files is scope creep and adds review surface for no benefit to this phase. Confirm the count is still 15/13 and unchanged, then move on. Shared should report 476 + ~20 new; mobile should report its new tests.
 
 - [ ] **Step 2: Score a complete game on the simulator against prod, under the shakedown protocol**
 
