@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
 import { HitType, PitchOutcome, PitchType, HitTrajectory } from '@baseball/shared';
 import type { DefensiveLineup, DroppedThirdStrikeOutcome, SacrificeEligibility } from '@baseball/shared';
@@ -160,6 +160,18 @@ interface PitchInputProps {
   setD3KModalOpen?: (open: boolean) => void;
 }
 
+// Static height budget for the modifiers pane (Task 12). A sibling squeeze
+// (the pitch-count strip inserting itself once the game starts, shrinking
+// the flexShrink:1 modifiers ScrollView) used to crop the strike-zone
+// grid's bottom row silently — the clipped state read as a *complete*
+// two-column grid, with no indication zones 7-9 existed. minHeight gives
+// the pane a floor so a squeeze can't drop below the space both sections
+// actually need: 3 rows of 48pt cells + borders (~150pt) for the grid, and
+// ~2 wrapped rows of chips (~80pt) for the pitch-type row.
+const GRID_MIN_HEIGHT = 190; // grid (~150) + "Location" label + spacing
+const PITCH_TYPE_MIN_HEIGHT = 120; // chip rows (~80) + "Pitch type" label + spacing
+const MODIFIERS_TOP_PADDING = 12; // px-4 pt-3
+
 const PITCH_TYPES: Array<{ label: string; value: PitchType }> = [
   { label: 'FB', value: PitchType.FASTBALL },
   { label: 'CB', value: PitchType.CURVEBALL },
@@ -235,6 +247,29 @@ export function PitchInput({
 }: PitchInputProps) {
   const showD3KModal = d3kModalOpen;
   const setShowD3KModal = setD3KModalOpen ?? (() => {});
+  // Height floor for the modifiers pane (see the constants above) — only
+  // as large as what's actually enabled, so tracking just one of pitch
+  // type / location doesn't reserve space for the other.
+  const modifiersMinHeight =
+    MODIFIERS_TOP_PADDING +
+    (trackPitchType ? PITCH_TYPE_MIN_HEIGHT : 0) +
+    (trackPitchLocation ? GRID_MIN_HEIGHT : 0);
+  // Overflow tracking for the modifiers pane's explicit scroll affordance.
+  // Only shown once we've actually measured that content exceeds the
+  // rendered height (not merely "might" per the static budget above) and
+  // hidden again once the scorer has scrolled to see the rest — so it
+  // never appears on a layout that already fits everything, but never
+  // lets a genuinely clipped state look complete either.
+  const modifiersContainerHeight = useRef(0);
+  const modifiersContentHeight = useRef(0);
+  const [modifiersOverflowing, setModifiersOverflowing] = useState(false);
+  const [modifiersAtBottom, setModifiersAtBottom] = useState(false);
+  function updateModifiersOverflow() {
+    setModifiersOverflowing(
+      modifiersContainerHeight.current > 0 &&
+        modifiersContentHeight.current > modifiersContainerHeight.current + 1,
+    );
+  }
   const [showFCModal, setShowFCModal] = useState(false);
   const [showRunnerOutModal, setShowRunnerOutModal] = useState(false);
   // Pending HIT awaiting per-runner outcome confirmation (2B/3B with
@@ -470,48 +505,99 @@ export function PitchInput({
     <View className="flex-1 bg-slate-50">
       {/* Modifiers — only rendered when the scorer opted in at game start.
           Placed directly above the outcome buttons so the thumb travels
-          modifier → outcome in the order a pitch is actually observed. */}
+          modifier → outcome in the order a pitch is actually observed.
+
+          `minHeight` (see modifiersMinHeight above) gives this pane a floor
+          so a sibling squeeze — the pitch-count strip inserting itself once
+          the game starts — can't shrink the flexShrink:1 ScrollView below
+          what the grid + pitch-type row actually need. That used to crop
+          the grid's bottom row with zero indication zones 7-9 existed; the
+          clipped state read as a *complete* two-column grid. If the pane
+          is still too short at the current size (e.g. phone portrait with
+          both trackers on), it can shrink further than the floor, but the
+          measured-overflow hint below keeps that state visibly partial
+          instead of visibly complete. */}
       {(trackPitchType || trackPitchLocation) && (
-        <ScrollView className="px-4 pt-3" style={{ flexShrink: 1 }}>
-          {trackPitchType && (
-            <View className="mb-3">
-              <Text className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
-                Pitch type
-              </Text>
-              <View className="flex-row flex-wrap gap-1.5">
-                {PITCH_TYPES.map(({ label, value }) => {
-                  const selected = selectedPitchType === value;
-                  return (
-                    <TouchableOpacity
-                      key={value}
-                      className={`rounded-lg px-3 py-2 border ${
-                        selected ? 'bg-slate-800 border-slate-900' : 'bg-white border-slate-300'
-                      }`}
-                      onPress={() => setSelectedPitchType(selected ? null : value)}
-                    >
-                      <Text
-                        className={`text-xs font-bold tracking-wide ${
-                          selected ? 'text-white' : 'text-slate-600'
+        <View style={{ flexShrink: 1, minHeight: modifiersMinHeight }}>
+          <ScrollView
+            className="px-4 pt-3"
+            style={{ flex: 1 }}
+            onLayout={(e) => {
+              modifiersContainerHeight.current = e.nativeEvent.layout.height;
+              updateModifiersOverflow();
+            }}
+            onContentSizeChange={(_width, height) => {
+              modifiersContentHeight.current = height;
+              updateModifiersOverflow();
+            }}
+            onScroll={(e) => {
+              const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+              const distanceFromBottom =
+                contentSize.height - (contentOffset.y + layoutMeasurement.height);
+              setModifiersAtBottom(distanceFromBottom < 8);
+            }}
+            scrollEventThrottle={32}
+            indicatorStyle="black"
+          >
+            {trackPitchType && (
+              <View className="mb-3">
+                <Text className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
+                  Pitch type
+                </Text>
+                <View className="flex-row flex-wrap gap-1.5">
+                  {PITCH_TYPES.map(({ label, value }) => {
+                    const selected = selectedPitchType === value;
+                    return (
+                      <TouchableOpacity
+                        key={value}
+                        className={`rounded-lg px-3 py-2 border ${
+                          selected ? 'bg-slate-800 border-slate-900' : 'bg-white border-slate-300'
                         }`}
+                        onPress={() => setSelectedPitchType(selected ? null : value)}
                       >
-                        {label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                        <Text
+                          className={`text-xs font-bold tracking-wide ${
+                            selected ? 'text-white' : 'text-slate-600'
+                          }`}
+                        >
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {trackPitchLocation && (
+              <View className="mb-2">
+                <Text className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
+                  Location
+                </Text>
+                <StrikeZoneGrid selected={selectedZone} onSelect={setSelectedZone} />
+              </View>
+            )}
+          </ScrollView>
+
+          {/* Explicit scroll affordance — only rendered once onLayout /
+              onContentSizeChange have actually measured that content
+              exceeds the pane, and hidden again once the scorer scrolls
+              to the bottom. Never appears on a layout that already fits
+              everything; never lets a clipped one pass as finished. */}
+          {modifiersOverflowing && !modifiersAtBottom && (
+            <View
+              pointerEvents="none"
+              className="absolute left-0 right-0 bottom-0 items-center pb-1"
+              testID="modifiers-scroll-hint"
+            >
+              <View className="bg-slate-800/90 rounded-full px-3 py-1">
+                <Text className="text-white text-[11px] font-semibold">
+                  ▾ Scroll for more
+                </Text>
               </View>
             </View>
           )}
-
-          {trackPitchLocation && (
-            <View className="mb-2">
-              <Text className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
-                Location
-              </Text>
-              <StrikeZoneGrid selected={selectedZone} onSelect={setSelectedZone} />
-            </View>
-          )}
-        </ScrollView>
+        </View>
       )}
 
       {/* Primary outcomes — pinned to the bottom of the screen, never
