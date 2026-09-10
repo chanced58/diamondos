@@ -160,17 +160,43 @@ interface PitchInputProps {
   setD3KModalOpen?: (open: boolean) => void;
 }
 
-// Static height budget for the modifiers pane (Task 12). A sibling squeeze
-// (the pitch-count strip inserting itself once the game starts, shrinking
-// the flexShrink:1 modifiers ScrollView) used to crop the strike-zone
-// grid's bottom row silently — the clipped state read as a *complete*
-// two-column grid, with no indication zones 7-9 existed. minHeight gives
-// the pane a floor so a squeeze can't drop below the space both sections
-// actually need: 3 rows of 48pt cells + borders (~150pt) for the grid, and
-// ~2 wrapped rows of chips (~80pt) for the pitch-type row.
-const GRID_MIN_HEIGHT = 190; // grid (~150) + "Location" label + spacing
-const PITCH_TYPE_MIN_HEIGHT = 120; // chip rows (~80) + "Pitch type" label + spacing
-const MODIFIERS_TOP_PADDING = 12; // px-4 pt-3
+// Task 12 fix round 2 (review: task-12-review.md Critical finding).
+//
+// Round 1 gave the modifiers pane a `minHeight` floor. That closed the
+// original bug (the pane shrinking past its own content with no visual
+// cue) but opened a worse one: the wrapping View had no `flexGrow`, and a
+// `flex:1` ScrollView reports ~0 intrinsic size to Yoga's measurement
+// pass, so the wrapper rendered at *exactly* `minHeight` — never more,
+// never less. None of its siblings in the column (`RunnersPanel`,
+// `PitchCountStrip`, the outcome buttons below) set `flexShrink`, and RN's
+// Yoga defaults `flexShrink` to 0 (unlike web CSS's default of 1), so none
+// of them could give up space either. On phone portrait, `BookPane`/
+// `ActionPane` are pass-throughs with no ScrollView anywhere in the
+// column, so a floor that refuses to shrink further has nowhere to push
+// its overflow except off the bottom of the screen — worst case, past the
+// Ball/Strike/Foul/In-Play buttons that are tapped on every pitch.
+//
+// The fix removes the floor entirely and goes back to a plain
+// `flexShrink: 1, flexBasis: auto` item (no `flex: 1`, no `minHeight`) —
+// this is what the pane had *before* Task 12 round 1, and it is the only
+// item in this column with any `flexShrink` at all, so it is guaranteed
+// to absorb 100% of any deficit before an unshrinkable sibling ever
+// moves: `flexBasis: auto` sizes the pane to its actual content (both
+// sections fully visible with no floor needed, e.g. iPad landscape) when
+// there's room, and standard flexbox shrink distributes 100% of any
+// negative free space onto it alone, down to 0 if the screen genuinely
+// can't fit it, precisely because it's the sole `flexShrink` participant.
+// The primary outcome buttons (`flexShrink: 0` via RN's default, `mt-auto`)
+// can therefore never be displaced — there is nothing left in this column
+// that could push them, once the modifiers pane has nothing left to give.
+//
+// What replaces the floor as the "don't let a clip look complete" guard
+// is the measured overflow affordance below (`modifiersOverflowing`),
+// which now reflects the pane's *real* rendered height in every case
+// (it no longer gets pinned at a constant regardless of actual space) —
+// so a squeeze that used to be invisible now reliably shows "Scroll for
+// more" instead, whether the squeeze is small (a few pixels) or total
+// (the pane rendered at ~0).
 
 const PITCH_TYPES: Array<{ label: string; value: PitchType }> = [
   { label: 'FB', value: PitchType.FASTBALL },
@@ -247,19 +273,14 @@ export function PitchInput({
 }: PitchInputProps) {
   const showD3KModal = d3kModalOpen;
   const setShowD3KModal = setD3KModalOpen ?? (() => {});
-  // Height floor for the modifiers pane (see the constants above) — only
-  // as large as what's actually enabled, so tracking just one of pitch
-  // type / location doesn't reserve space for the other.
-  const modifiersMinHeight =
-    MODIFIERS_TOP_PADDING +
-    (trackPitchType ? PITCH_TYPE_MIN_HEIGHT : 0) +
-    (trackPitchLocation ? GRID_MIN_HEIGHT : 0);
   // Overflow tracking for the modifiers pane's explicit scroll affordance.
   // Only shown once we've actually measured that content exceeds the
-  // rendered height (not merely "might" per the static budget above) and
-  // hidden again once the scorer has scrolled to see the rest — so it
-  // never appears on a layout that already fits everything, but never
-  // lets a genuinely clipped state look complete either.
+  // rendered height, and hidden again once the scorer has scrolled to see
+  // the rest — so it never appears on a layout that already fits
+  // everything, but never lets a genuinely clipped state look complete
+  // either. This is now the *only* guard against a silent clip (see the
+  // comment above the render for why there is no minHeight floor
+  // alongside it).
   const modifiersContainerHeight = useRef(0);
   const modifiersContentHeight = useRef(0);
   const [modifiersOverflowing, setModifiersOverflowing] = useState(false);
@@ -507,21 +528,27 @@ export function PitchInput({
           Placed directly above the outcome buttons so the thumb travels
           modifier → outcome in the order a pitch is actually observed.
 
-          `minHeight` (see modifiersMinHeight above) gives this pane a floor
-          so a sibling squeeze — the pitch-count strip inserting itself once
-          the game starts — can't shrink the flexShrink:1 ScrollView below
-          what the grid + pitch-type row actually need. That used to crop
-          the grid's bottom row with zero indication zones 7-9 existed; the
-          clipped state read as a *complete* two-column grid. If the pane
-          is still too short at the current size (e.g. phone portrait with
-          both trackers on), it can shrink further than the floor, but the
-          measured-overflow hint below keeps that state visibly partial
-          instead of visibly complete. */}
+          Deliberately no `minHeight` here — see the comment above this
+          component for why a floor is the wrong tool: it pinned this pane
+          to a constant height regardless of available room and had no
+          reciprocal protection against the *screen* running out of space,
+          which could push the primary outcome buttons off-screen with no
+          scroll path on phone portrait. `flexShrink: 1` with
+          `flexBasis: auto` (the default — no `flex: 1` on the ScrollView)
+          sizes this pane to its full content when there's room (e.g. iPad
+          landscape, both sections fully visible) and lets it give up
+          space first — down to 0 if it must — before any unshrinkable
+          sibling (`RunnersPanel`, `PitchCountStrip`, the outcome buttons
+          below, all `flexShrink: 0` by RN's default) is touched. The
+          measured overflow hint below is what keeps a squeezed pane from
+          looking complete now — it fires off this pane's *actual*
+          rendered height in every case, not a static budget. */}
       {(trackPitchType || trackPitchLocation) && (
-        <View style={{ flexShrink: 1, minHeight: modifiersMinHeight }}>
+        <View style={{ flexShrink: 1 }}>
           <ScrollView
+            testID="modifiers-scroll-view"
             className="px-4 pt-3"
-            style={{ flex: 1 }}
+            style={{ flexShrink: 1 }}
             onLayout={(e) => {
               modifiersContainerHeight.current = e.nativeEvent.layout.height;
               updateModifiersOverflow();
