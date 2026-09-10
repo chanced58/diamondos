@@ -77,17 +77,27 @@ export function buildGameStartPayload(input: BuildGameStartPayloadInput): Record
  * so pitch-count tracking survives without a batting slot. Mirrors the
  * dedicated lineup screen's save behavior (app/(tabs)/games/[gameId]/
  * lineup.tsx), which keeps a benched pitcher for the same reason.
+ *
+ * `priorPositions` carries forward a real fielding position (first_base,
+ * shortstop, ...) a player already had in `game_lineups` — e.g. set on the
+ * dedicated Lineup screen before the coach ran this wizard. Without it every
+ * non-pitcher row is nulled out on submit, silently destroying defensive
+ * assignments the web stats pipeline (load-game-stats.ts, derive.ts) reads
+ * for fielding-stat attribution. A player with no prior row (or no prior
+ * position) still gets `null` — that's a legitimate "not set yet" state.
  */
 export function buildBattingOrderLineupRows(
   gameRemoteId: string,
   battingOrder: readonly string[],
   pitcherId: string,
+  priorPositions: ReadonlyMap<string, string> = new Map(),
 ): LineupRowInput[] {
   const rows: LineupRowInput[] = battingOrder.map((playerRemoteId, index) => ({
     gameRemoteId,
     playerRemoteId,
     battingOrder: index + 1,
-    startingPosition: playerRemoteId === pitcherId ? 'pitcher' : null,
+    startingPosition:
+      playerRemoteId === pitcherId ? 'pitcher' : priorPositions.get(playerRemoteId) ?? null,
     isStarter: true,
     isGuest: false,
     countTowardStats: true,
@@ -104,4 +114,81 @@ export function buildBattingOrderLineupRows(
     });
   }
   return rows;
+}
+
+/** A `game_lineups` row as read off the device before the wizard writes. */
+export interface ExistingLineupRow {
+  playerRemoteId: string;
+  battingOrder: number | null;
+  startingPosition: string | null;
+  isGuest: boolean;
+}
+
+export interface LineupReplacementPlan {
+  /**
+   * 1-based batting-order slots the wizard's order would occupy that a guest
+   * already holds. Non-empty means `rowsToDelete`/`rowsToCreate` are both
+   * empty — nothing should be written until the coach resolves the
+   * collision. Without this guard, the wizard's own soft-delete only clears
+   * non-guest rows (correctly preserving the guest), but then hands the sync
+   * engine's `resolveBattingOrderCollisions` a duplicate `batting_order` to
+   * fix — which it does by silently bumping every colliding starter's slot,
+   * and at the league cap can drop one to the bench entirely.
+   */
+  guestSlotCollisions: number[];
+  /** Existing non-guest rows this plan replaces. Empty when blocked by a collision. */
+  rowsToDelete: ExistingLineupRow[];
+  /**
+   * Rows ready for `prepareLineupRow`. Empty when blocked by a collision.
+   * Preserves each returning player's prior `starting_position` — see
+   * `buildBattingOrderLineupRows`.
+   */
+  rowsToCreate: LineupRowInput[];
+}
+
+/**
+ * The pure decision behind `handleStartGame`'s destructive lineup rewrite:
+ * given what's already in `game_lineups` and the order the wizard just
+ * built, decide whether it's safe to replace the existing rows and, if so,
+ * what the replacement should look like. Kept out of score.tsx so both
+ * failure modes above are exercised by a test instead of only readable in a
+ * 3,000-line screen component.
+ */
+export function planLineupReplacement(
+  existingRows: readonly ExistingLineupRow[],
+  gameRemoteId: string,
+  battingOrder: readonly string[],
+  pitcherId: string,
+): LineupReplacementPlan {
+  const guestSlots = new Set(
+    existingRows
+      .filter((row) => row.isGuest && row.battingOrder != null)
+      .map((row) => row.battingOrder as number),
+  );
+  const guestSlotCollisions = battingOrder
+    .map((_playerId, index) => index + 1)
+    .filter((slot) => guestSlots.has(slot));
+  if (guestSlotCollisions.length > 0) {
+    return { guestSlotCollisions, rowsToDelete: [], rowsToCreate: [] };
+  }
+
+  const nonGuestRows = existingRows.filter((row) => !row.isGuest);
+  // Exclude a stale 'pitcher' tag from whoever held it before — the wizard's
+  // `pitcherId` is this run's explicit, authoritative pitcher, and carrying
+  // an old 'pitcher' position forward onto a now-non-pitching player would
+  // produce two rows both marked 'pitcher'.
+  const priorPositions = new Map(
+    nonGuestRows
+      .filter(
+        (row): row is ExistingLineupRow & { startingPosition: string } =>
+          !!row.startingPosition && row.startingPosition !== 'pitcher',
+      )
+      .map((row) => [row.playerRemoteId, row.startingPosition]),
+  );
+
+  return {
+    guestSlotCollisions: [],
+    rowsToDelete: nonGuestRows,
+    rowsToCreate: buildBattingOrderLineupRows(gameRemoteId, battingOrder, pitcherId, priorPositions),
+  };
 }

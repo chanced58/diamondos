@@ -3,7 +3,9 @@ import {
   buildBattingOrderLineupRows,
   buildGameStartPayload,
   deriveLeadoffFromOrder,
+  planLineupReplacement,
   toggleBattingOrderSlot,
+  type ExistingLineupRow,
 } from '../lineup-wizard';
 
 /**
@@ -211,5 +213,139 @@ describe('buildBattingOrderLineupRows', () => {
     const rows = buildBattingOrderLineupRows('game-1', nineDeep, 'p1');
     expect(rows).toHaveLength(9);
     expect(rows.map((r) => r.battingOrder)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  describe('priorPositions (Important #2 — clobbered defensive positions)', () => {
+    it('carries forward a returning player\'s existing starting_position instead of nulling it', () => {
+      const rows = buildBattingOrderLineupRows(
+        'game-1',
+        ['pitcher-1', 'p2', 'p3'],
+        'pitcher-1',
+        new Map([
+          ['p2', 'shortstop'],
+          ['p3', 'center_field'],
+        ]),
+      );
+      expect(rows.find((r) => r.playerRemoteId === 'p2')?.startingPosition).toBe('shortstop');
+      expect(rows.find((r) => r.playerRemoteId === 'p3')?.startingPosition).toBe('center_field');
+    });
+
+    it('still nulls a player with no prior row — a newly-added starter legitimately has no position yet', () => {
+      const rows = buildBattingOrderLineupRows(
+        'game-1',
+        ['pitcher-1', 'brand-new-player'],
+        'pitcher-1',
+        new Map([['p2', 'shortstop']]),
+      );
+      expect(rows.find((r) => r.playerRemoteId === 'brand-new-player')?.startingPosition).toBeNull();
+    });
+
+    it("this run's selected pitcher always gets 'pitcher', even if their prior row said otherwise", () => {
+      const rows = buildBattingOrderLineupRows(
+        'game-1',
+        ['new-pitcher', 'p2'],
+        'new-pitcher',
+        new Map([['new-pitcher', 'first_base']]),
+      );
+      expect(rows.find((r) => r.playerRemoteId === 'new-pitcher')?.startingPosition).toBe('pitcher');
+    });
+  });
+});
+
+describe('planLineupReplacement', () => {
+  const mkRow = (overrides: Partial<ExistingLineupRow>): ExistingLineupRow => ({
+    playerRemoteId: 'unset',
+    battingOrder: null,
+    startingPosition: null,
+    isGuest: false,
+    ...overrides,
+  });
+
+  describe('Important #1 — guest-slot collision', () => {
+    it('flags a collision when the wizard order would reclaim a guest\'s slot', () => {
+      const existing = [mkRow({ playerRemoteId: 'guest-1', battingOrder: 1, isGuest: true })];
+      const plan = planLineupReplacement(existing, 'game-1', ['starter-1', 'starter-2'], 'starter-1');
+      expect(plan.guestSlotCollisions).toEqual([1]);
+      expect(plan.rowsToDelete).toEqual([]);
+      expect(plan.rowsToCreate).toEqual([]);
+    });
+
+    it('flags every colliding slot, not just the first', () => {
+      const existing = [
+        mkRow({ playerRemoteId: 'guest-1', battingOrder: 1, isGuest: true }),
+        mkRow({ playerRemoteId: 'guest-2', battingOrder: 3, isGuest: true }),
+      ];
+      const plan = planLineupReplacement(
+        existing,
+        'game-1',
+        ['s1', 's2', 's3'],
+        's1',
+      );
+      expect(plan.guestSlotCollisions).toEqual([1, 3]);
+    });
+
+    it('no collision when the guest occupies a slot outside the wizard\'s order length', () => {
+      const existing = [mkRow({ playerRemoteId: 'guest-1', battingOrder: 5, isGuest: true })];
+      const plan = planLineupReplacement(existing, 'game-1', ['s1', 's2'], 's1');
+      expect(plan.guestSlotCollisions).toEqual([]);
+      expect(plan.rowsToCreate).toHaveLength(2);
+    });
+
+    it('no collision when there are no guests at all', () => {
+      const plan = planLineupReplacement([], 'game-1', ['s1', 's2'], 's1');
+      expect(plan.guestSlotCollisions).toEqual([]);
+    });
+
+    it('a benched guest (battingOrder null) never collides', () => {
+      const existing = [mkRow({ playerRemoteId: 'guest-1', battingOrder: null, isGuest: true })];
+      const plan = planLineupReplacement(existing, 'game-1', ['s1'], 's1');
+      expect(plan.guestSlotCollisions).toEqual([]);
+    });
+  });
+
+  describe('Important #2 — preserving defensive positions through the plan', () => {
+    it('rowsToCreate preserves a returning starter\'s prior position', () => {
+      const existing = [
+        mkRow({ playerRemoteId: 'p1', battingOrder: 1, startingPosition: 'pitcher' }),
+        mkRow({ playerRemoteId: 'p2', battingOrder: 2, startingPosition: 'shortstop' }),
+      ];
+      const plan = planLineupReplacement(existing, 'game-1', ['p1', 'p2'], 'p1');
+      expect(plan.rowsToCreate.find((r) => r.playerRemoteId === 'p2')?.startingPosition).toBe(
+        'shortstop',
+      );
+    });
+
+    it('does not carry a stale pitcher tag onto a player who is no longer this run\'s pitcher', () => {
+      const existing = [
+        mkRow({ playerRemoteId: 'old-pitcher', battingOrder: 1, startingPosition: 'pitcher' }),
+        mkRow({ playerRemoteId: 'new-pitcher', battingOrder: 2, startingPosition: 'first_base' }),
+      ];
+      const plan = planLineupReplacement(
+        existing,
+        'game-1',
+        ['old-pitcher', 'new-pitcher'],
+        'new-pitcher',
+      );
+      expect(plan.rowsToCreate.find((r) => r.playerRemoteId === 'old-pitcher')?.startingPosition).toBeNull();
+      expect(plan.rowsToCreate.find((r) => r.playerRemoteId === 'new-pitcher')?.startingPosition).toBe(
+        'pitcher',
+      );
+    });
+
+    it('guest rows are excluded from rowsToDelete — the wizard must not touch them', () => {
+      const existing = [
+        mkRow({ playerRemoteId: 'guest-1', battingOrder: 9, isGuest: true }),
+        mkRow({ playerRemoteId: 'p1', battingOrder: 1, startingPosition: 'pitcher' }),
+      ];
+      const plan = planLineupReplacement(existing, 'game-1', ['p1'], 'p1');
+      expect(plan.rowsToDelete).toEqual([existing[1]]);
+    });
+
+    it('a brand-new lineup (no existing rows) plans cleanly with no positions to preserve', () => {
+      const plan = planLineupReplacement([], 'game-1', ['p1', 'p2'], 'p1');
+      expect(plan.guestSlotCollisions).toEqual([]);
+      expect(plan.rowsToDelete).toEqual([]);
+      expect(plan.rowsToCreate.map((r) => r.startingPosition)).toEqual(['pitcher', null]);
+    });
   });
 });

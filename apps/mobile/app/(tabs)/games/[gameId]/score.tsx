@@ -25,7 +25,7 @@ import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensi
 import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../src/features/scoring/in-play-pitch';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
@@ -46,9 +46,10 @@ import {
   opponentDisplayName,
 } from '../../../../src/features/lineup/opponent-lineup';
 import {
-  buildBattingOrderLineupRows,
   buildGameStartPayload,
+  planLineupReplacement,
   toggleBattingOrderSlot,
+  type ExistingLineupRow,
 } from '../../../../src/features/lineup/lineup-wizard';
 import type { GameLineup } from '../../../../src/db/models/GameLineup';
 
@@ -201,6 +202,13 @@ export default function ScoringScreen() {
       })),
     [observedLineupRows],
   );
+
+  // Same roster-size bound the dedicated Lineup screen applies
+  // (lineup.tsx:138) — `maxBatters` alone is the league's raw cap and is
+  // reused elsewhere (guest slots, the Add Batter flow) where that's
+  // correct; the wizard's own selection cap should match the other lineup
+  // editor's instead of drifting from it.
+  const wizardMaxBatters = getLineupSlotCap(roster.length, maxBatters);
 
   // Prefill for the pre-game LineupSetupModal: the saved order, slot 1 first
   // (pre-game there are no SUBSTITUTION events to fold in, so this reads the
@@ -991,6 +999,55 @@ export default function ScoringScreen() {
     // truth; the leadoff written into GAME_START is derived from slot 1 —
     // same keys the web scorer writes (and deriveGameState reads), so either
     // client can read the other's games.
+
+    // Plan the game_lineups rewrite *before* touching GAME_START — the "+
+    // Guest" toolbar button isn't gated on game status, so a guest can
+    // already occupy one of the slots this order is about to claim. Read the
+    // current rows fresh (not the reactive `observedLineupRows`, which can
+    // lag a beat behind a guest just added) and hand them to the same
+    // pure decision the dedicated Lineup screen's guestCollision guard
+    // makes, so the coach is told and gets to choose instead of the sync
+    // engine silently renumbering — or dropping — a starter later.
+    let lineupPlan: ReturnType<typeof planLineupReplacement>;
+    try {
+      const existingLineupModels = await database
+        .get<GameLineup>('game_lineups')
+        .query(Q.where('game_remote_id', gameId))
+        .fetch();
+      const existingRows: ExistingLineupRow[] = existingLineupModels.map((row) => ({
+        playerRemoteId: row.playerRemoteId,
+        battingOrder: row.battingOrder ?? null,
+        startingPosition: row.startingPosition ?? null,
+        isGuest: row.isGuest,
+      }));
+      lineupPlan = planLineupReplacement(existingRows, gameId, battingOrder, pitcherId);
+    } catch (err) {
+      console.warn(`handleStartGame: reading existing lineup rows failed game=${gameId}:`, err);
+      Alert.alert(
+        "Couldn't start the game",
+        'Could not read the current lineup on this device. Try again.',
+      );
+      return;
+    }
+    if (lineupPlan.guestSlotCollisions.length > 0) {
+      const slots = lineupPlan.guestSlotCollisions;
+      const plural = slots.length > 1;
+      Alert.alert(
+        `Slot${plural ? 's' : ''} ${slots.join(', ')} already taken by a guest`,
+        `A guest player already holds batting order slot${plural ? 's' : ''} ${slots.join(', ')}. ` +
+          'Remove the guest, or set the lineup from the Lineup screen instead, before starting the game.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Open Lineup',
+            onPress: () =>
+              router.push({ pathname: '/(tabs)/games/[gameId]/lineup', params: { gameId } }),
+          },
+        ],
+      );
+      return;
+    }
+
     const payload = buildGameStartPayload({ isHome, pitcherId, battingOrder, tracking });
     try {
       await recordEvent(EventType.GAME_START, gameState.inning, gameState.isTopOfInning, payload);
@@ -1012,6 +1069,9 @@ export default function ScoringScreen() {
     // slot-1 leadoff. Existing non-guest rows are replaced (soft-deleted,
     // like the dedicated lineup screen's save) so re-running the wizard
     // (e.g. a retry after this fails) can't leave duplicate/stale slots.
+    // `lineupPlan.rowsToCreate` already preserves any starting_position a
+    // returning player had (e.g. set on the Lineup screen) instead of
+    // nulling it out — see planLineupReplacement/buildBattingOrderLineupRows.
     try {
       await database.write(async () => {
         const collection = database.get<GameLineup>('game_lineups');
@@ -1025,9 +1085,7 @@ export default function ScoringScreen() {
           });
           await row.markAsDeleted();
         }
-        await database.batch(
-          ...buildBattingOrderLineupRows(gameId, battingOrder, pitcherId).map(prepareLineupRow),
-        );
+        await database.batch(...lineupPlan.rowsToCreate.map(prepareLineupRow));
       });
       triggerSync().catch((err) =>
         console.warn(`handleStartGame: lineup sync trigger failed game=${gameId}:`, err),
@@ -1785,7 +1843,7 @@ export default function ScoringScreen() {
       <LineupSetupModal
         visible={showLineupModal}
         roster={roster}
-        maxBatters={maxBatters}
+        maxBatters={wizardMaxBatters}
         // Prefill from the saved lineup: the player whose starting position
         // is pitcher takes the mound; the saved order (slot 1 first) seeds
         // the batting-order step.
