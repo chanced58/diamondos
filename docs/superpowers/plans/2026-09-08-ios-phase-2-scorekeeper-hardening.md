@@ -1052,7 +1052,13 @@ git commit -m "fix(mobile): finalize games and surface the failure when unconfig
 - Create: `packages/shared/src/utils/__tests__/format-event.test.ts` if the formatter moves
 
 **Interfaces:**
-- Consumes: `events` from `useGameState(gameId, teamId)` (already available at `score.tsx:92`)
+- Consumes: **`rawEvents`** from `useGameState(gameId, teamId)` — a NEW field this task adds.
+
+  **Do not use the existing `events` field.** `useGameState` runs `filterVoidedAndRevertedEvents` (`packages/shared/src/utils/game-state.ts:25`) before storing, and that helper never pushes `EVENT_VOIDED` markers into its result *and* splices the voided target out of it. So `events` has already lost both halves of every correction, making "render voided plays struck through" unsatisfiable from it.
+
+  Add one line to `apps/mobile/src/features/scoring/use-game-state.ts` exposing the already-computed, unfiltered `sharedEvents` as `rawEvents`, and return it alongside `events`. This reuses the existing WatermelonDB subscription rather than opening a second one. `handleUndo` in `score.tsx` sets the precedent for needing raw events, but does it with its own query — do not copy that; the subscription is cheaper.
+
+  Because `rawEvents` is unfiltered, the feed must handle `PITCH_REVERTED` as well as `EVENT_VOIDED`: a revert truncates everything after its `revertToSequenceNumber`. Decide and state how the feed represents reverted pitches — dropping them is acceptable if you say so.
 - Produces:
   ```ts
   export interface PlayFeedRow {
