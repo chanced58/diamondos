@@ -31,7 +31,8 @@ import type { Game } from '../../../../src/db/models/Game';
 import type { Player } from '../../../../src/db/models/Player';
 import type { BattedOutType, RosterPlayer, RunnerOutcome } from '../../../../src/features/scoring/PitchInput';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
-import { isFinalizeConfigured } from '../../../../src/sync/sync-engine';
+import { isFinalizeConfigured, getFinalizeFailureCount } from '../../../../src/sync/sync-engine';
+import { describeFinalizeStatus } from '../../../../src/sync/finalize-status';
 import { addLineupRow, createLocalGuest } from '../../../../src/features/lineup/local-guest';
 import { useGameLineups } from '../../../../src/features/lineup/use-game-lineups';
 import { useOpponentLineup, type OpponentBatter } from '../../../../src/features/lineup/use-opponent-lineup';
@@ -94,6 +95,14 @@ export default function ScoringScreen() {
   const { gameState, lineScore, events, loading } = useGameState(gameId, teamId);
   const { recordEvent } = useRecordEvent(gameId);
   const { isSyncing, lastSyncError, isOffline, pendingEventsCount, triggerSync } = useSyncContext();
+  // Recomputed on every render, which — via `isSyncing` above, which flips
+  // true→false on every ~30s sync cycle — includes right after each cycle
+  // that may have changed the finalize failure count read below. Cheap pure
+  // function calls; no memoization needed.
+  const finalizeStatus = describeFinalizeStatus({
+    configured: isFinalizeConfigured(),
+    consecutiveFailures: gameId ? getFinalizeFailureCount(gameId) : 0,
+  });
   const { settings: leagueSettings, leagueId, pitchRule } = useLeagueContext(teamId);
   const maxBatters = getMaxBattingOrder(leagueSettings);
   const midGameExtensionAllowed = isMidGameExtensionAllowed(leagueSettings);
@@ -1040,11 +1049,10 @@ export default function ScoringScreen() {
 
   function confirmEndGame() {
     if (!gameState || !lineScore) return;
+    const scoreLine = `Final score ${lineScore.homeRuns}–${lineScore.awayRuns}.`;
     Alert.alert(
       'End game?',
-      isFinalizeConfigured()
-        ? `Final score ${lineScore.homeRuns}–${lineScore.awayRuns}. The result finalizes automatically when the device is back online.`
-        : `Final score ${lineScore.homeRuns}–${lineScore.awayRuns}. The game will be marked complete on this device, but this build cannot finalize the result — it has no server address configured.`,
+      finalizeStatus.alertBody(scoreLine),
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'End Game', style: 'destructive', onPress: () => { handleEndGame().catch(console.warn); } },
@@ -1520,14 +1528,22 @@ export default function ScoringScreen() {
             <Text className="text-white text-xs font-bold uppercase tracking-wide">Final</Text>
           </View>
         </View>
+        {/*
+          NOTE (Minor, task-8-review.md #2): `game?.status` briefly reads
+          'completed' here even when finalize is failing or unconfigured,
+          for roughly one sync interval right after End Game — handleEndGame
+          writes the local `games` row's status optimistically, before any
+          sync/finalize attempt runs. It self-corrects on the next pull that
+          finds the row no longer locally-dirty. Not fixed here: doing so
+          would mean holding back the optimistic write (complicating the
+          fully-offline End Game flow) for a window that is bounded and
+          self-healing, and that never produces a false *positive* — only a
+          brief false silence in the failure case.
+        */}
         {gameState.isFinal && game?.status !== 'completed' && (
           <View className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg">
-            <Text className="text-sm font-semibold text-amber-900">Not finalized yet</Text>
-            <Text className="text-xs text-amber-800 mt-0.5">
-              {isFinalizeConfigured()
-                ? 'The result will finalize once this device syncs.'
-                : 'This build has no server address configured, so the result cannot finalize.'}
-            </Text>
+            <Text className="text-sm font-semibold text-amber-900">{finalizeStatus.bannerTitle}</Text>
+            <Text className="text-xs text-amber-800 mt-0.5">{finalizeStatus.bannerDetail}</Text>
           </View>
         )}
         {lineScore && (

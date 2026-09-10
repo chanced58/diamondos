@@ -8,7 +8,7 @@ jest.mock('../../lib/supabase', () => ({
   getSupabaseClient: jest.fn(),
 }));
 
-import { isFinalizeConfigured } from '../sync-engine';
+import { isFinalizeConfigured, getFinalizeFailureCount } from '../sync-engine';
 
 describe('isFinalizeConfigured', () => {
   it('is true when given a non-empty API base URL', () => {
@@ -27,5 +27,16 @@ describe('isFinalizeConfigured', () => {
     // Expo's babel preset inlines EXPO_PUBLIC_* vars at build time, so this
     // exercises the real default wiring rather than a runtime env mutation.
     expect(isFinalizeConfigured()).toBe(false);
+  });
+});
+
+describe('getFinalizeFailureCount', () => {
+  it('is 0 for a game with no recorded finalize failures', () => {
+    // reconcileGameLifecycle (which increments this) is not exported and
+    // needs a full WatermelonDB/Supabase/fetch mock to exercise end to end —
+    // out of proportion here (see report). This pins the getter's contract
+    // for a game it has never seen, which is what score.tsx relies on to
+    // render the "pending" (not "persistently-failing") state by default.
+    expect(getFinalizeFailureCount('game-never-attempted')).toBe(0);
   });
 });
