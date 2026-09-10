@@ -15,6 +15,7 @@ import { useRecordEvent } from '../../../../src/features/scoring/use-record-even
 import { usePlayFeed } from '../../../../src/features/scoring/use-play-feed';
 import { PlayFeed } from '../../../../src/features/scoring/PlayFeed';
 import { voidEvent as voidEventCascade } from '../../../../src/features/scoring/void-event';
+import { fetchGameEventsForGame } from '../../../../src/features/scoring/fetch-game-events';
 import { ScoreBoard } from '../../../../src/features/scoring/ScoreBoard';
 import { CountDisplay } from '../../../../src/features/scoring/CountDisplay';
 import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDisplay';
@@ -25,7 +26,7 @@ import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../src/feat
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
 import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility } from '@baseball/shared';
-import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution, GameEvent as SharedGameEvent } from '@baseball/shared';
+import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
 import { database } from '../../../../src/db';
@@ -1292,30 +1293,20 @@ export default function ScoringScreen() {
    * `voidEventCascade`), and voiding an already-voided event is a no-op.
    *
    * Queries the full event history (no trailing window) rather than reusing
-   * `rawEvents` state: the target — and the linked children it may cascade
-   * to — can sit many innings back, arbitrarily far from the tail of the
-   * log, and a fresh query guarantees we see anything just written this
-   * tick. Used both as the Undo button's implementation (see `handleUndo`
-   * below) and as the play feed's per-row Void action.
+   * `rawEvents` state, via `fetchGameEventsForGame` (fetch-game-events.ts) —
+   * the target, and any linked children it may cascade to, can sit many
+   * innings back, arbitrarily far from the tail of the log, and a fresh
+   * query guarantees we see anything just written this tick. The query and
+   * the WDB→shared field mapping live in that module (not inlined here) so
+   * they're directly testable against a fake collection — see
+   * fetch-game-events.test.ts. Used both as the Undo button's
+   * implementation (see `handleUndo` below) and as the play feed's per-row
+   * Void action.
    */
   async function voidEvent(eventId: string): Promise<void> {
     if (!gameState) return;
     const eventsCollection = database.get<WdbGameEvent>('game_events');
-    const all = await eventsCollection
-      .query(Q.where('game_remote_id', gameId), Q.sortBy('sequence_number', Q.asc))
-      .fetch();
-    const sharedEvents: SharedGameEvent[] = all.map((e) => ({
-      id: e.remoteId || e.id,
-      gameId: e.gameRemoteId,
-      sequenceNumber: e.sequenceNumber,
-      eventType: e.eventType as SharedGameEvent['eventType'],
-      inning: e.inning,
-      isTopOfInning: e.isTopOfInning,
-      payload: e.payload,
-      occurredAt: new Date(e.occurredAt).toISOString(),
-      createdBy: e.createdBy,
-      deviceId: e.deviceId,
-    }));
+    const sharedEvents = await fetchGameEventsForGame(eventsCollection, gameId);
     await voidEventCascade(eventId, sharedEvents, {
       recordVoid: (payload: EventVoidedPayload) =>
         recordEvent(EventType.EVENT_VOIDED, gameState.inning, gameState.isTopOfInning, payload),
