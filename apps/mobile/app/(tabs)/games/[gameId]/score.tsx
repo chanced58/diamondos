@@ -14,6 +14,7 @@ import { useGameState } from '../../../../src/features/scoring/use-game-state';
 import { useRecordEvent } from '../../../../src/features/scoring/use-record-event';
 import { usePlayFeed } from '../../../../src/features/scoring/use-play-feed';
 import { PlayFeed } from '../../../../src/features/scoring/PlayFeed';
+import { voidEvent as voidEventCascade } from '../../../../src/features/scoring/void-event';
 import { ScoreBoard } from '../../../../src/features/scoring/ScoreBoard';
 import { CountDisplay } from '../../../../src/features/scoring/CountDisplay';
 import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDisplay';
@@ -24,7 +25,7 @@ import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../src/feat
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
 import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility } from '@baseball/shared';
-import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
+import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution, GameEvent as SharedGameEvent } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
 import { database } from '../../../../src/db';
@@ -1231,6 +1232,45 @@ export default function ScoringScreen() {
     return null;
   }
 
+  /**
+   * Voids ANY event from the game's full history — not just the most recent
+   * one — by appending EVENT_VOIDED event(s) that target it. `game_events`
+   * is append-only: this never updates or deletes the original row. Voiding
+   * a parent play cascades to its linked BASERUNNER_OUT / BASERUNNER_ADVANCE
+   * events (same cascade `handleUndo` has always used, now shared via
+   * `voidEventCascade`), and voiding an already-voided event is a no-op.
+   *
+   * Queries the full event history (no trailing window) rather than reusing
+   * `rawEvents` state: the target — and the linked children it may cascade
+   * to — can sit many innings back, arbitrarily far from the tail of the
+   * log, and a fresh query guarantees we see anything just written this
+   * tick. Used both as the Undo button's implementation (see `handleUndo`
+   * below) and as the play feed's per-row Void action.
+   */
+  async function voidEvent(eventId: string): Promise<void> {
+    if (!gameState) return;
+    const eventsCollection = database.get<WdbGameEvent>('game_events');
+    const all = await eventsCollection
+      .query(Q.where('game_remote_id', gameId), Q.sortBy('sequence_number', Q.asc))
+      .fetch();
+    const sharedEvents: SharedGameEvent[] = all.map((e) => ({
+      id: e.remoteId || e.id,
+      gameId: e.gameRemoteId,
+      sequenceNumber: e.sequenceNumber,
+      eventType: e.eventType as SharedGameEvent['eventType'],
+      inning: e.inning,
+      isTopOfInning: e.isTopOfInning,
+      payload: e.payload,
+      occurredAt: new Date(e.occurredAt).toISOString(),
+      createdBy: e.createdBy,
+      deviceId: e.deviceId,
+    }));
+    await voidEventCascade(eventId, sharedEvents, {
+      recordVoid: (payload: EventVoidedPayload) =>
+        recordEvent(EventType.EVENT_VOIDED, gameState.inning, gameState.isTopOfInning, payload),
+    });
+  }
+
   // Only scan this far back when searching for an event to void. Typical
   // scorer Undo use lives within the last few events; a 64-event trailing
   // window covers well over an inning of activity while keeping the query
@@ -1265,37 +1305,15 @@ export default function ScoringScreen() {
     }
 
     // Already sorted descending, so iterate forward to find the most
-    // recent non-correction, non-voided event.
+    // recent non-correction, non-voided event, then hand off to voidEvent —
+    // which performs the actual cascade-void (parent + any linked
+    // BASERUNNER_OUT / BASERUNNER_ADVANCE) — so Undo and the play feed's
+    // per-row Void action share one implementation.
     for (const e of recent) {
       if (e.eventType === EventType.EVENT_VOIDED) continue;
       if (e.eventType === EventType.PITCH_REVERTED) continue;
       if (voidedIds.has(e.remoteId)) continue;
-      // Cascade-undo: when voiding a parent play, also void any linked
-      // outcome events (BASERUNNER_OUT / BASERUNNER_ADVANCE with
-      // relatedEventId === parent.id) so a single Undo tap retires the
-      // full multi-event play (e.g. "Double + R1 thrown out at 3B").
-      const linked = recent.filter((other) => {
-        if (other.remoteId === e.remoteId) return false;
-        if (voidedIds.has(other.remoteId)) return false;
-        if (
-          other.eventType !== EventType.BASERUNNER_OUT &&
-          other.eventType !== EventType.BASERUNNER_ADVANCE
-        ) return false;
-        const p = other.payload as { relatedEventId?: string };
-        return p.relatedEventId === e.remoteId;
-      });
-      for (const child of linked) {
-        const childPayload: EventVoidedPayload = {
-          voidedEventId: child.remoteId,
-          voidedSequenceNumber: child.sequenceNumber,
-        };
-        await recordEvent(EventType.EVENT_VOIDED, gameState.inning, gameState.isTopOfInning, childPayload);
-      }
-      const payload: EventVoidedPayload = {
-        voidedEventId: e.remoteId,
-        voidedSequenceNumber: e.sequenceNumber,
-      };
-      await recordEvent(EventType.EVENT_VOIDED, gameState.inning, gameState.isTopOfInning, payload);
+      await voidEvent(e.remoteId);
       return;
     }
   }
@@ -1819,7 +1837,7 @@ export default function ScoringScreen() {
 
       {/* Play-by-play — below the batting order, scrolling independently
           of the rest of the read pane. */}
-      {gameStarted && <PlayFeed rows={playFeedRows} />}
+      {gameStarted && <PlayFeed rows={playFeedRows} onVoid={voidEvent} />}
 
       <BatterPickerModal
         visible={showBatterPicker}

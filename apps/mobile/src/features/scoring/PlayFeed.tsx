@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { View, Text, FlatList } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, Alert } from 'react-native';
 import type { PlayFeedRow } from './use-play-feed';
 
 type FeedItem =
@@ -40,12 +40,36 @@ function toFeedItems(rows: PlayFeedRow[]): FeedItem[] {
  * never happened" rather than "this happened and was corrected," so it
  * never gets the strikethrough treatment.
  *
+ * Long-pressing any actionable row confirms, then calls `onVoid(row.eventId)`
+ * — the coach can correct a play from anywhere in the game, not only the
+ * most recent one. Already-voided rows and correction-marker rows (reverted
+ * spans have no single play to target) are not actionable: no long-press
+ * handler, so there is no way to void something twice.
+ *
  * Rendered inside BookPane's outer ScrollView, so this FlatList gets a
  * bounded height of its own (rather than flex-filling) to scroll
  * independently instead of fighting the outer scroll view for gestures.
  */
-export function PlayFeed({ rows }: { rows: PlayFeedRow[] }) {
+export function PlayFeed({
+  rows,
+  onVoid,
+}: {
+  rows: PlayFeedRow[];
+  onVoid?: (eventId: string) => void;
+}) {
   const items = useMemo(() => toFeedItems(rows), [rows]);
+
+  function confirmVoid(row: PlayFeedRow) {
+    if (!onVoid || row.isVoided || row.isCorrectionMarker) return;
+    Alert.alert(
+      'Void this play?',
+      `"${row.description}" will be struck from the book. This can't be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Void', style: 'destructive', onPress: () => onVoid(row.eventId) },
+      ],
+    );
+  }
 
   if (rows.length === 0) {
     return (
@@ -73,7 +97,12 @@ export function PlayFeed({ rows }: { rows: PlayFeedRow[] }) {
               {item.label}
             </Text>
           ) : (
-            <View className="flex-row items-center py-0.5">
+            <TouchableOpacity
+              className="flex-row items-center py-0.5"
+              activeOpacity={item.row.isVoided || item.row.isCorrectionMarker ? 1 : 0.5}
+              disabled={!onVoid || item.row.isVoided || item.row.isCorrectionMarker}
+              onLongPress={() => confirmVoid(item.row)}
+            >
               <Text
                 className={`flex-1 text-[13px] ${
                   item.row.isCorrectionMarker
@@ -86,7 +115,7 @@ export function PlayFeed({ rows }: { rows: PlayFeedRow[] }) {
               >
                 {item.row.description}
               </Text>
-            </View>
+            </TouchableOpacity>
           )
         }
       />
