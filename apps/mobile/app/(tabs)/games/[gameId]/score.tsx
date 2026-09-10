@@ -36,7 +36,7 @@ import type { BattedOutType, RosterPlayer, RunnerOutcome } from '../../../../src
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
 import { isFinalizeConfigured, getFinalizeFailureCount } from '../../../../src/sync/sync-engine';
 import { describeFinalizeStatus } from '../../../../src/sync/finalize-status';
-import { addLineupRow, createLocalGuest } from '../../../../src/features/lineup/local-guest';
+import { addLineupRow, createLocalGuest, prepareLineupRow } from '../../../../src/features/lineup/local-guest';
 import { useGameLineups } from '../../../../src/features/lineup/use-game-lineups';
 import { useOpponentLineup, type OpponentBatter } from '../../../../src/features/lineup/use-opponent-lineup';
 import {
@@ -44,6 +44,12 @@ import {
   addOpponentBatterFromRoster,
   opponentDisplayName,
 } from '../../../../src/features/lineup/opponent-lineup';
+import {
+  buildBattingOrderLineupRows,
+  buildGameStartPayload,
+  toggleBattingOrderSlot,
+} from '../../../../src/features/lineup/lineup-wizard';
+import type { GameLineup } from '../../../../src/db/models/GameLineup';
 
 /**
  * Live game scoring screen — the core feature of the mobile app.
@@ -192,6 +198,18 @@ export default function ScoringScreen() {
         player_id: row.playerRemoteId,
         batting_order: row.battingOrder ?? null,
       })),
+    [observedLineupRows],
+  );
+
+  // Prefill for the pre-game LineupSetupModal: the saved order, slot 1 first
+  // (pre-game there are no SUBSTITUTION events to fold in, so this reads the
+  // raw rows rather than going through applyLineupSubstitutions/battingSlots).
+  const initialBattingOrder = useMemo(
+    () =>
+      observedLineupRows
+        .filter((row) => !row.isGuest && row.battingOrder != null)
+        .sort((a, b) => (a.battingOrder ?? 0) - (b.battingOrder ?? 0))
+        .map((row) => row.playerRemoteId),
     [observedLineupRows],
   );
 
@@ -954,7 +972,7 @@ export default function ScoringScreen() {
 
   async function handleStartGame(
     pitcherId: string,
-    batterId: string,
+    battingOrder: string[],
     tracking: { pitchType: boolean; pitchLocation: boolean },
   ) {
     if (!gameState) return;
@@ -968,16 +986,11 @@ export default function ScoringScreen() {
     }
     // Which team are we scoring? `isHome` comes from the resolved Game row's
     // locationType / neutralHomeTeam so road games seed the away* lineup
-    // slots instead of misattributing to home*.
-    const payload = {
-      ...(isHome
-        ? { homeLineupPitcherId: pitcherId, homeLeadoffBatterId: batterId }
-        : { awayLineupPitcherId: pitcherId, awayLeadoffBatterId: batterId }),
-      // Same keys the web scorer writes, so either client can read the other's
-      // games. Read back via scoringConfig above.
-      pitchTypeEnabled: tracking.pitchType,
-      pitchLocationEnabled: tracking.pitchLocation,
-    };
+    // slots instead of misattributing to home*. The order is the source of
+    // truth; the leadoff written into GAME_START is derived from slot 1 —
+    // same keys the web scorer writes (and deriveGameState reads), so either
+    // client can read the other's games.
+    const payload = buildGameStartPayload({ isHome, pitcherId, battingOrder, tracking });
     try {
       await recordEvent(EventType.GAME_START, gameState.inning, gameState.isTopOfInning, payload);
     } catch (err) {
@@ -989,6 +1002,44 @@ export default function ScoringScreen() {
         'The starting lineup was not saved. Check your connection and try again.',
       );
       return;
+    }
+
+    // Write the batting order into game_lineups through the existing
+    // offline-first path (prepareLineupRow), so the rows sync two-way via
+    // lineup-sync.ts and the order rail / due-batter rotation have a lineup
+    // to read — the whole point of this wizard, not just GAME_START's
+    // slot-1 leadoff. Existing non-guest rows are replaced (soft-deleted,
+    // like the dedicated lineup screen's save) so re-running the wizard
+    // (e.g. a retry after this fails) can't leave duplicate/stale slots.
+    try {
+      await database.write(async () => {
+        const collection = database.get<GameLineup>('game_lineups');
+        const existing = await collection
+          .query(Q.where('game_remote_id', gameId), Q.where('is_guest', false))
+          .fetch();
+        const now = Date.now();
+        for (const row of existing) {
+          await row.update((r) => {
+            r.updatedAt = now;
+          });
+          await row.markAsDeleted();
+        }
+        await database.batch(
+          ...buildBattingOrderLineupRows(gameId, battingOrder, pitcherId).map(prepareLineupRow),
+        );
+      });
+      triggerSync().catch((err) =>
+        console.warn(`handleStartGame: lineup sync trigger failed game=${gameId}:`, err),
+      );
+    } catch (err) {
+      // Non-fatal: GAME_START already recorded, so the game still starts and
+      // the leadoff still attributes correctly. Without a lineup, though,
+      // the order rail reads empty from batter two on — surface it.
+      console.warn(`handleStartGame: writing game_lineups failed game=${gameId}:`, err);
+      Alert.alert(
+        'Lineup not saved',
+        "The game started, but the batting order couldn't be saved on this device. Set it from the Lineup screen.",
+      );
     }
     // Reflect the transition locally right away (list badge); the server
     // flips via fn_start_game in the sync engine's lifecycle scan.
@@ -1734,7 +1785,7 @@ export default function ScoringScreen() {
         >
           <Text className="flex-1 text-sm text-amber-900">
             <Text className="font-semibold">Set starting lineup</Text>
-            <Text> — tap to pick your starting pitcher and leadoff batter.</Text>
+            <Text> — tap to pick your starting pitcher and batting order.</Text>
           </Text>
           <Text className="text-amber-900 font-semibold">Set</Text>
         </TouchableOpacity>
@@ -1743,9 +1794,11 @@ export default function ScoringScreen() {
       <LineupSetupModal
         visible={showLineupModal}
         roster={roster}
-        // Prefill from the saved lineup: slot 1 leads off; the player whose
-        // starting position is pitcher takes the mound.
-        initialBatterId={deriveDueBatter(battingSlots, 0)?.playerId ?? null}
+        maxBatters={maxBatters}
+        // Prefill from the saved lineup: the player whose starting position
+        // is pitcher takes the mound; the saved order (slot 1 first) seeds
+        // the batting-order step.
+        initialBattingOrder={initialBattingOrder}
         initialPitcherId={
           observedLineupRows.find((row) => row.startingPosition === 'pitcher')?.playerRemoteId ?? null
         }
@@ -2929,25 +2982,32 @@ function TrackingToggle({
 function LineupSetupModal({
   visible,
   roster,
+  maxBatters,
   initialPitcherId = null,
-  initialBatterId = null,
+  initialBattingOrder = [],
   onCancel,
   onSubmit,
 }: {
   visible: boolean;
   roster: RosterPlayer[];
-  /** Prefill from the saved lineup (position = pitcher / batting slot 1). */
+  /** League cap on batting-order slots (getMaxBattingOrder) — expanded
+   *  lineups can exceed nine. */
+  maxBatters: number;
+  /** Prefill from the saved lineup (position = pitcher / saved order). */
   initialPitcherId?: string | null;
-  initialBatterId?: string | null;
+  initialBattingOrder?: string[];
   onCancel: () => void;
   onSubmit: (
     pitcherId: string,
-    batterId: string,
+    battingOrder: string[],
     tracking: { pitchType: boolean; pitchLocation: boolean },
   ) => void;
 }) {
   const [pitcherId, setPitcherId] = useState<string | null>(null);
-  const [batterId, setBatterId] = useState<string | null>(null);
+  // Order is the source of truth: tapping a player appends them and shows
+  // their slot number; tapping a selected player removes them. Slot 1 is
+  // the leadoff batter — see buildGameStartPayload / deriveLeadoffFromOrder.
+  const [battingOrder, setBattingOrder] = useState<string[]>([]);
   const [step, setStep] = useState<'pitcher' | 'batter' | 'tracking'>('pitcher');
   const [trackPitchType, setTrackPitchType] = useState(true);
   const [trackPitchLocation, setTrackPitchLocation] = useState(false);
@@ -2955,19 +3015,25 @@ function LineupSetupModal({
   useEffect(() => {
     if (visible) {
       setPitcherId(initialPitcherId);
-      setBatterId(initialBatterId);
+      setBattingOrder(initialBattingOrder);
       setStep('pitcher');
       setTrackPitchType(true);
       setTrackPitchLocation(false);
     }
-  }, [visible, initialPitcherId, initialBatterId]);
+    // initialBattingOrder comes from score.tsx's useMemo keyed on
+    // observedLineupRows, so its identity is stable across unrelated
+    // re-renders and only changes when the underlying lineup does.
+  }, [visible, initialPitcherId, initialBattingOrder]);
 
   const onPitcherStep = step === 'pitcher';
   const onBatterStep = step === 'batter';
   const onTrackingStep = step === 'tracking';
-  const selectedId = onPitcherStep ? pitcherId : batterId;
   // The tracking step is always satisfiable — tracking nothing is a valid choice.
-  const canAdvance = onTrackingStep || selectedId !== null;
+  const canAdvance = onTrackingStep
+    ? true
+    : onPitcherStep
+      ? pitcherId !== null
+      : battingOrder.length > 0;
   const stepNumber = onPitcherStep ? 1 : onBatterStep ? 2 : 3;
   const label = (p: RosterPlayer) =>
     `${p.jerseyNumber !== undefined ? `#${p.jerseyNumber} ` : ''}${p.name}`;
@@ -2991,9 +3057,15 @@ function LineupSetupModal({
               {onPitcherStep
                 ? "Who's pitching?"
                 : onBatterStep
-                  ? "Who's batting first?"
+                  ? 'Set your batting order'
                   : 'What do you want to track?'}
             </Text>
+            {onBatterStep ? (
+              <Text className="text-sm text-gray-500 mt-1">
+                Tap a name to add them to the order, tap again to remove. Up
+                to {maxBatters}; slot 1 leads off.
+              </Text>
+            ) : null}
             {!onPitcherStep && pitcher ? (
               <Text className="text-sm text-gray-500 mt-1">
                 Pitcher: {label(pitcher)}
@@ -3033,31 +3105,68 @@ function LineupSetupModal({
             <ScrollView className="px-5" style={{ flexShrink: 1 }}>
               <View className="gap-2 pb-2">
                 {roster.map((p) => {
-                  const isSelected = selectedId === p.id;
-                  const selectedClass = onPitcherStep
-                    ? 'bg-blue-600 border-blue-700'
-                    : 'bg-green-600 border-green-700';
+                  if (onPitcherStep) {
+                    const isSelected = pitcherId === p.id;
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        className={`flex-row items-center justify-between rounded-xl px-4 py-3 border ${
+                          isSelected ? 'bg-blue-600 border-blue-700' : 'bg-white border-gray-300'
+                        }`}
+                        onPress={() => setPitcherId(p.id)}
+                      >
+                        <Text
+                          className={
+                            isSelected ? 'text-white font-semibold' : 'text-gray-900 font-semibold'
+                          }
+                        >
+                          {label(p)}
+                        </Text>
+                        {isSelected ? (
+                          <Text className="text-white font-bold">✓</Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  }
+
+                  // Batter step: multi-select and ordered. The badge shows
+                  // the player's slot number (their index + 1) instead of a
+                  // checkmark, so the order forms visibly as the coach taps.
+                  // Unselected players are disabled once the order hits the
+                  // league cap — matches toggleBattingOrderSlot's no-op.
+                  const slotIndex = battingOrder.indexOf(p.id);
+                  const isSelected = slotIndex !== -1;
+                  const atCap = !isSelected && battingOrder.length >= maxBatters;
                   return (
                     <TouchableOpacity
                       key={p.id}
+                      disabled={atCap}
                       className={`flex-row items-center justify-between rounded-xl px-4 py-3 border ${
-                        isSelected ? selectedClass : 'bg-white border-gray-300'
+                        isSelected
+                          ? 'bg-green-600 border-green-700'
+                          : atCap
+                            ? 'bg-gray-50 border-gray-200'
+                            : 'bg-white border-gray-300'
                       }`}
                       onPress={() =>
-                        onPitcherStep ? setPitcherId(p.id) : setBatterId(p.id)
+                        setBattingOrder((prev) => toggleBattingOrderSlot(prev, p.id, maxBatters))
                       }
                     >
                       <Text
                         className={
                           isSelected
                             ? 'text-white font-semibold'
-                            : 'text-gray-900 font-semibold'
+                            : atCap
+                              ? 'text-gray-400 font-semibold'
+                              : 'text-gray-900 font-semibold'
                         }
                       >
                         {label(p)}
                       </Text>
                       {isSelected ? (
-                        <Text className="text-white font-bold">✓</Text>
+                        <View className="w-6 h-6 rounded-full bg-white items-center justify-center">
+                          <Text className="text-green-700 font-bold text-xs">{slotIndex + 1}</Text>
+                        </View>
                       ) : null}
                     </TouchableOpacity>
                   );
@@ -3091,8 +3200,8 @@ function LineupSetupModal({
                   setStep('batter');
                 } else if (onBatterStep) {
                   setStep('tracking');
-                } else if (pitcherId && batterId) {
-                  onSubmit(pitcherId, batterId, {
+                } else if (pitcherId && battingOrder.length > 0) {
+                  onSubmit(pitcherId, battingOrder, {
                     pitchType: trackPitchType,
                     pitchLocation: trackPitchLocation,
                   });
