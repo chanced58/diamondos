@@ -67,6 +67,8 @@ function baseProps(state: Pick<LiveGameState, 'outs' | 'runnersOnBase'>) {
     runnersOnBase: [] as { base: 1 | 2 | 3; runnerId: string }[],
     sacFlyEligible: eligibility.sacFly,
     sacBuntEligible: eligibility.sacBunt,
+    doublePlayEligible: false,
+    triplePlayEligible: false,
     sacEligibilityForTrajectory: sacEligibilityForTrajectoryFrom(state),
   };
 }

@@ -48,6 +48,8 @@ function baseProps() {
     runnersOnBase: [] as { base: 1 | 2 | 3; runnerId: string }[],
     sacFlyEligible: false,
     sacBuntEligible: false,
+    doublePlayEligible: false,
+    triplePlayEligible: false,
     sacEligibilityForTrajectory: () => ({ sacFly: false, sacBunt: false }),
   };
 }

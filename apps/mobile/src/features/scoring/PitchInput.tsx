@@ -135,6 +135,14 @@ interface PitchInputProps {
   onRecordBalk: () => void;
   onRecordDoublePlay: (runnerOut: { runnerId: string; base: Base } | null) => void;
   onRecordTriplePlay: () => void;
+  /**
+   * Whether a multiple-out play is possible from the current situation.
+   * Computed by multipleOutEligibility in @baseball/shared — a double play
+   * needs a runner to retire and two outs left in the half, a triple play
+   * needs two runners and a clean inning.
+   */
+  doublePlayEligible: boolean;
+  triplePlayEligible: boolean;
   onRecordPitchingChange: (newPitcherId: string) => void;
   onRecordPinchHitter: (newBatterId: string) => void;
   /** Defensive substitution: replace one fielder with another, optionally taking a new position. */
@@ -256,6 +264,8 @@ export function PitchInput({
   onRecordBalk,
   onRecordDoublePlay,
   onRecordTriplePlay,
+  doublePlayEligible,
+  triplePlayEligible,
   onRecordPitchingChange,
   onRecordPinchHitter,
   onRecordDefensiveSub,
@@ -706,8 +716,12 @@ export function PitchInput({
             {sacBuntEligible && (
               <OutcomeButton label="Sac Bunt" emoji="SH" onPress={() => runFromSheet(setShowInPlaySheet, onRecordSacBunt)} color="bg-teal-700" />
             )}
-            <OutcomeButton label="Double Play" emoji="DP" onPress={() => runFromSheet(setShowInPlaySheet, handleDPTap)} color="bg-zinc-700" />
-            <OutcomeButton label="Triple Play" emoji="TP" onPress={() => runFromSheet(setShowInPlaySheet, onRecordTriplePlay)} color="bg-zinc-800" />
+            {doublePlayEligible && (
+              <OutcomeButton label="Double Play" emoji="DP" onPress={() => runFromSheet(setShowInPlaySheet, handleDPTap)} color="bg-zinc-700" />
+            )}
+            {triplePlayEligible && (
+              <OutcomeButton label="Triple Play" emoji="TP" onPress={() => runFromSheet(setShowInPlaySheet, onRecordTriplePlay)} color="bg-zinc-800" />
+            )}
           </View>
         </SheetGroup>
 
