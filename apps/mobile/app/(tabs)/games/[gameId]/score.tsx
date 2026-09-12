@@ -25,7 +25,7 @@ import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensi
 import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../src/features/scoring/in-play-pitch';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
@@ -153,6 +153,13 @@ export default function ScoringScreen() {
   const sacEligibility = gameState
     ? sacrificeEligibility({ outs: gameState.outs, runnersOnBase: gameState.runnersOnBase })
     : { sacFly: false, sacBunt: false };
+
+  // Double / triple play offers. Same seam as the sacrifice gates: the batter
+  // supplies one out, so every further out needs a runner already on base,
+  // and the half ends the moment the third out lands.
+  const multipleOut = gameState
+    ? multipleOutEligibility({ outs: gameState.outs, runnersOnBase: gameState.runnersOnBase })
+    : { doublePlay: false, triplePlay: false };
 
   // Roster for substitution + pitching-change pickers.
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
@@ -2035,10 +2042,34 @@ export default function ScoringScreen() {
         />
       )}
 
-      {/* Bottom: 3-outs prompt or pitch / outcome input. deriveGameState
-          holds the half open until an explicit INNING_CHANGE, so at 3 outs
-          the input surface is replaced by the switch-sides prompt. */}
-      {gameState.outs >= OUTS_PER_INNING ? (
+      {/* Bottom: lineup gate, 3-outs prompt, or pitch / outcome input.
+          deriveGameState holds the half open until an explicit
+          INNING_CHANGE, so at 3 outs the input surface is replaced by the
+          switch-sides prompt.
+
+          The lineup gate comes first and is a hard block, not a nag. Pitcher
+          attribution is derived from GAME_START / PITCHING_CHANGE, so a pitch
+          recorded before GAME_START belongs to no pitcher at all — it lands in
+          game_events, counts toward nothing, and silently corrupts the pitch
+          count that compliance depends on. GAME_START is written only by
+          handleStartGame, which the wizard reaches only with a starting
+          pitcher and a non-empty batting order, so gating on it enforces both
+          without duplicating the wizard's rules here. */}
+      {!gameStarted ? (
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-2xl font-bold text-gray-900 mb-1">Lineup required</Text>
+          <Text className="text-sm text-gray-500 text-center mb-5">
+            Set your batting order and starting pitcher before scoring. Pitches
+            recorded without a lineup can&apos;t be credited to a pitcher.
+          </Text>
+          <TouchableOpacity
+            onPress={() => setShowLineupModal(true)}
+            className="w-full bg-blue-600 rounded-2xl py-4 items-center"
+          >
+            <Text className="text-white text-lg font-bold">Set starting lineup</Text>
+          </TouchableOpacity>
+        </View>
+      ) : gameState.outs >= OUTS_PER_INNING ? (
         <View className="flex-1 items-center justify-center px-6">
           <Text className="text-2xl font-bold text-gray-900 mb-1">3 outs</Text>
           <Text className="text-sm text-gray-500 mb-5">
@@ -2089,6 +2120,8 @@ export default function ScoringScreen() {
         onRecordCatcherInterference={handleCatcherInterference}
         sacFlyEligible={sacEligibility.sacFly}
         sacBuntEligible={sacEligibility.sacBunt}
+        doublePlayEligible={multipleOut.doublePlay}
+        triplePlayEligible={multipleOut.triplePlay}
         sacEligibilityForTrajectory={(trajectory) =>
           gameState
             ? sacrificeEligibility(
