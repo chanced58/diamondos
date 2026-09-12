@@ -1727,7 +1727,12 @@ export default function ScoringScreen() {
       />
 
       <PaneRow isWide={isWide}>
-      <BookPane isWide={isWide}>
+      <BookPane
+        isWide={isWide}
+        // Outside the pane's ScrollView: a FlatList nested in a same-orientation
+        // ScrollView is invalid, and RN logs it on every render.
+        footer={gameStarted ? <PlayFeed rows={playFeedRows} onVoid={voidEvent} /> : null}
+      >
 
       {/* Book toolbar. These were floating over the pane on absolute
           positioning, which put them on top of the count once this column
@@ -1946,8 +1951,6 @@ export default function ScoringScreen() {
 
       {/* Play-by-play — below the batting order, scrolling independently
           of the rest of the read pane. */}
-      {gameStarted && <PlayFeed rows={playFeedRows} onVoid={voidEvent} />}
-
       <BatterPickerModal
         visible={showBatterPicker}
         slots={battingSlots}
@@ -2207,11 +2210,20 @@ function PaneRow({ isWide, children }: { isWide: boolean; children: ReactNode })
  * set directly on a ScrollView is not honoured — it collapses towards its
  * content — which is why earlier splits only ever worked at 1:1.
  */
-function BookPane({ isWide, children }: { isWide: boolean; children: ReactNode }) {
-  if (!isWide) return <>{children}</>;
+function BookPane({
+  isWide,
+  children,
+  footer,
+}: {
+  isWide: boolean;
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
+  if (!isWide) return <>{children}{footer}</>;
   return (
     <View className="border-r border-gray-200 bg-white" style={{ flex: 5 }}>
       <ScrollView style={{ flex: 1 }}>{children}</ScrollView>
+      {footer}
     </View>
   );
 }

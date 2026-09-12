@@ -46,9 +46,12 @@ function toFeedItems(rows: PlayFeedRow[]): FeedItem[] {
  * spans have no single play to target) are not actionable: no long-press
  * handler, so there is no way to void something twice.
  *
- * Rendered inside BookPane's outer ScrollView, so this FlatList gets a
- * bounded height of its own (rather than flex-filling) to scroll
- * independently instead of fighting the outer scroll view for gestures.
+ * Rendered in BookPane's `footer` slot — a sibling of that pane's
+ * ScrollView, not a child of it. A VirtualizedList nested inside a
+ * same-orientation ScrollView is invalid: windowing breaks, the two fight
+ * over gestures, and React Native logs an error on every render. The
+ * bounded height below keeps the feed a fixed band at the bottom of the
+ * book rather than flex-filling it.
  */
 export function PlayFeed({
   rows,
@@ -88,9 +91,6 @@ export function PlayFeed({
         keyExtractor={(item) => item.key}
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}
-        // The outer BookPane is itself a ScrollView; without this Android
-        // routes the drag to the parent instead of this list.
-        nestedScrollEnabled
         renderItem={({ item }) =>
           item.kind === 'header' ? (
             <Text className="text-[10px] font-bold text-gray-400 mt-2 mb-0.5">
