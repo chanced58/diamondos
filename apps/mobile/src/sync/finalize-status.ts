@@ -67,9 +67,9 @@ export function describeFinalizeStatus(input: FinalizeStatusInput): FinalizeStat
     return {
       kind: 'persistently-failing',
       alertBody: (scoreLine) =>
-        `${scoreLine} The result has failed to finalize on the server ${input.consecutiveFailures} times in a row. It will keep retrying automatically, but this likely needs a coach or admin to check the server.`,
+        `${scoreLine} The result has failed to finalize ${input.consecutiveFailures} times in a row. It will keep retrying automatically, but this likely needs a coach or admin to check the server.`,
       bannerTitle: 'Not finalized — needs attention',
-      bannerDetail: `The server has rejected finalize ${input.consecutiveFailures} times in a row. This will keep retrying automatically, but may need a coach or admin to check the server.`,
+      bannerDetail: `Finalizing has failed ${input.consecutiveFailures} times in a row. This will keep retrying automatically, but may need a coach or admin to check the server.`,
     };
   }
 

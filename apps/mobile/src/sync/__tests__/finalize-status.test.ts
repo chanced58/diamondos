@@ -77,14 +77,14 @@ describe('describeFinalizeStatus', () => {
 
     it('pins the End Game alert copy — no longer promises "just needs time"', () => {
       expect(status.alertBody('Final score 4–2.')).toBe(
-        `Final score 4–2. The result has failed to finalize on the server ${PERSISTENT_FAILURE_THRESHOLD} times in a row. It will keep retrying automatically, but this likely needs a coach or admin to check the server.`,
+        `Final score 4–2. The result has failed to finalize ${PERSISTENT_FAILURE_THRESHOLD} times in a row. It will keep retrying automatically, but this likely needs a coach or admin to check the server.`,
       );
     });
 
     it('pins the banner copy — distinct title and detail from the pending state', () => {
       expect(status.bannerTitle).toBe('Not finalized — needs attention');
       expect(status.bannerDetail).toBe(
-        `The server has rejected finalize ${PERSISTENT_FAILURE_THRESHOLD} times in a row. This will keep retrying automatically, but may need a coach or admin to check the server.`,
+        `Finalizing has failed ${PERSISTENT_FAILURE_THRESHOLD} times in a row. This will keep retrying automatically, but may need a coach or admin to check the server.`,
       );
     });
 
