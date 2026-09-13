@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import { randomUUID } from 'expo-crypto';
 import { database } from '../../db';
 import type { GameEvent } from '../../db/models/GameEvent';
@@ -6,15 +5,16 @@ import { getDeviceId } from '../../lib/device-id';
 import { getSupabaseClient } from '../../lib/supabase';
 import { useSyncContext } from '../../providers/SyncProvider';
 import type { EventType, GameEventPayload } from '@baseball/shared';
+import { readNextSequenceNumber } from './sequence-number';
 
 /**
  * Returns a recordEvent function that:
  *   1. Writes the event to WatermelonDB immediately (offline-safe)
- *   2. Assigns the next sequence number atomically
+ *   2. Assigns the next sequence number inside the same write, so it cannot
+ *      race another event being recorded at the same moment
  *   3. Triggers a background sync to Supabase
  */
 export function useRecordEvent(gameRemoteId: string) {
-  const sequenceRef = useRef<number | null>(null);
   const { triggerSync } = useSyncContext();
   const supabase = getSupabaseClient();
 
@@ -36,27 +36,14 @@ export function useRecordEvent(gameRemoteId: string) {
 
     const deviceId = await getDeviceId();
     const eventsCollection = database.get<GameEvent>('game_events');
-
-    // Derive next sequence number from the highest existing one
-    // This is safe for single-device use; conflicts are handled server-side
-    if (sequenceRef.current === null) {
-      const existingEvents = await eventsCollection
-        .query(
-          require('@nozbe/watermelondb').Q.where('game_remote_id', gameRemoteId),
-          require('@nozbe/watermelondb').Q.sortBy('sequence_number', require('@nozbe/watermelondb').Q.desc),
-        )
-        .fetch();
-      sequenceRef.current = existingEvents.length > 0
-        ? (existingEvents[0] as { sequenceNumber: number }).sequenceNumber
-        : 0;
-    }
-
-    sequenceRef.current += 1;
-    const sequenceNumber = sequenceRef.current;
-
     const eventId = randomUUID();
 
     await database.write(async () => {
+      // Inside the write: WatermelonDB serialises writers, so two events
+      // recorded back to back (the in-play wrapper's PITCH_THROWN and its
+      // terminal event, say) each see the row the other just created.
+      const sequenceNumber = await readNextSequenceNumber(eventsCollection, gameRemoteId);
+
       // Assign the DECORATED (camelCase) properties, not raw column names.
       // WatermelonDB's create() hands back a Model, whose @field decorators
       // are what write through to _raw. Setting snake_case column names here
