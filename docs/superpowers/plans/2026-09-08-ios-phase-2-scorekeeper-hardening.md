@@ -443,7 +443,7 @@ Hide each option when its flag is false. **When both are false, skip the prompt 
 - [ ] **Step 5: Verify on the simulator**
 
 Against dev (Task 0), start a game and check:
-- 0 outs, bases empty → Sac Fly hidden, Sac Bunt shown
+- 0 outs, bases empty → Sac Fly hidden, Sac Bunt hidden
 - 0 outs, runner on 2nd → both shown
 - 2 outs → both hidden in the in-play sheet
 - choose Out → Groundout with a runner on 3rd and 0 outs → Sacrifice fly **not** offered; Sacrifice bunt offered

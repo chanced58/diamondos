@@ -188,13 +188,13 @@ Fix the typecheck error at [practices/index.tsx:78](<../../../apps/mobile/app/(t
 - **Rules** — pure unit tests in `@baseball/shared`, one per rule, covering the boundaries (0/1/2 outs; each base state; each trajectory).
 - **Event emission** — mobile unit tests asserting the exact event sequence and payloads for each in-play path.
 - **Cross-client equivalence** — for each ported rule, a test asserting web and mobile derive the same decision from the same `GameState`. This is the test that keeps the seam closed.
-- **Manual** — one full shakedown game per workstream on the iPad simulator, against a **non-production** target. Phase 2 should not be verified against `diamondos-prod` the way phase 1 and this audit were.
+- **Manual** — one full shakedown game per workstream, against `diamondos-prod` under the shakedown protocol (see assumption 1): a new game whose `opponent_name` begins with `SHAKEDOWN`, its id recorded before scoring, deleted with its events when the pass completes, and no row touched that the pass did not create.
 
 ---
 
 ## Assumptions and open questions
 
-1. **Non-prod target.** This audit ran against `diamondos-prod` because `diamondos-dev` is paused. Phase 2 should restore dev and point mobile at it. Cost of doing so is unknown — dev may be behind on migrations and seed data. *Assumption: worth doing; sized in the plan.*
+1. **Verification target — decided: production, under protocol.** This audit ran against `diamondos-prod` because `diamondos-dev` is paused. The original assumption was to restore dev for phase 2. Sizing it showed `diamondos-dev` is empty rather than stale (no public tables, no migration history), so restoring it means replaying every migration, and Supabase branching requires a paid plan. The owner decided to verify against production with discipline instead: manual verification uses the shakedown protocol described under Testing strategy. `diamondos-prod` is the only Supabase environment this project uses.
 2. **Finalize transport** (workstream 2) — keep the HTTP call or move to an RPC. Recommendation is RPC; needs a decision.
 3. **No pitch-count backfill** for existing games. Stated, not negotiated.
 4. **`eb8cfdb` disposition** — cherry-pick into the shared rule rather than merging `feat/sac-fly-scoring`, since the logic is moving modules anyway. The branch can then be deleted.
