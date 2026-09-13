@@ -46,7 +46,7 @@ export interface BuildGameStartPayloadInput {
   isHome: boolean;
   pitcherId: string;
   battingOrder: readonly string[];
-  tracking: { pitchType: boolean; pitchLocation: boolean };
+  tracking: { pitchType: boolean; pitchLocation: boolean; hitLocation: boolean };
 }
 
 /**
@@ -65,6 +65,7 @@ export function buildGameStartPayload(input: BuildGameStartPayloadInput): Record
       : { awayLineupPitcherId: input.pitcherId, awayLeadoffBatterId: leadoffBatterId }),
     pitchTypeEnabled: input.tracking.pitchType,
     pitchLocationEnabled: input.tracking.pitchLocation,
+    hitLocationEnabled: input.tracking.hitLocation,
   };
 }
 

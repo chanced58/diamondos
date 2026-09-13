@@ -87,16 +87,27 @@ describe('buildGameStartPayload', () => {
       isHome: true,
       pitcherId: 'pitcher-1',
       battingOrder: ['leadoff-player', 'p2', 'p3'],
-      tracking: { pitchType: true, pitchLocation: false },
+      tracking: { pitchType: true, pitchLocation: false, hitLocation: false },
     });
     expect(payload).toMatchObject({
       homeLineupPitcherId: 'pitcher-1',
       homeLeadoffBatterId: 'leadoff-player',
       pitchTypeEnabled: true,
       pitchLocationEnabled: false,
+      hitLocationEnabled: false,
     });
     expect(payload).not.toHaveProperty('awayLineupPitcherId');
     expect(payload).not.toHaveProperty('awayLeadoffBatterId');
+  });
+
+  it('writes hitLocationEnabled from the tracking choice', () => {
+    const payload = buildGameStartPayload({
+      isHome: false,
+      pitcherId: 'pitcher-1',
+      battingOrder: ['leadoff-player'],
+      tracking: { pitchType: false, pitchLocation: false, hitLocation: true },
+    });
+    expect(payload).toMatchObject({ hitLocationEnabled: true });
   });
 
   it('derives awayLeadoffBatterId from slot 1 when scoring the away team', () => {
@@ -104,7 +115,7 @@ describe('buildGameStartPayload', () => {
       isHome: false,
       pitcherId: 'pitcher-1',
       battingOrder: ['leadoff-player', 'p2', 'p3'],
-      tracking: { pitchType: false, pitchLocation: false },
+      tracking: { pitchType: false, pitchLocation: false, hitLocation: false },
     });
     expect(payload).toMatchObject({
       awayLineupPitcherId: 'pitcher-1',
@@ -126,7 +137,7 @@ describe('buildGameStartPayload', () => {
         isHome: true,
         pitcherId: 'pitcher-1',
         battingOrder: ['home-leadoff', 'p2', 'p3'],
-        tracking: { pitchType: true, pitchLocation: true },
+        tracking: { pitchType: true, pitchLocation: true, hitLocation: false },
       });
       const state = deriveGameState('g1', [mkEvent(EventType.GAME_START, payload)], 'team-home');
       // Home pitches in the top of the 1st (away bats first).
@@ -144,7 +155,7 @@ describe('buildGameStartPayload', () => {
         isHome: true,
         pitcherId: 'pitcher-1',
         battingOrder: ['home-leadoff', 'p2', 'p3'],
-        tracking: { pitchType: true, pitchLocation: false },
+        tracking: { pitchType: true, pitchLocation: false, hitLocation: false },
       });
       const events = [
         mkEvent(EventType.GAME_START, payload),

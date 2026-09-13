@@ -607,6 +607,7 @@ export default function ScoringScreen() {
     return {
       pitchType: gsp.pitchTypeEnabled !== false,
       pitchLocation: gsp.pitchLocationEnabled !== false,
+      hitLocation: gsp.hitLocationEnabled !== false,
     };
   }, [events]);
 
@@ -1019,7 +1020,7 @@ export default function ScoringScreen() {
   async function handleStartGame(
     pitcherId: string,
     battingOrder: string[],
-    tracking: { pitchType: boolean; pitchLocation: boolean },
+    tracking: { pitchType: boolean; pitchLocation: boolean; hitLocation: boolean },
   ) {
     if (!gameState) return;
     if (startingGameRef.current) return;
@@ -1034,7 +1035,7 @@ export default function ScoringScreen() {
   async function startGameOnce(
     pitcherId: string,
     battingOrder: string[],
-    tracking: { pitchType: boolean; pitchLocation: boolean },
+    tracking: { pitchType: boolean; pitchLocation: boolean; hitLocation: boolean },
   ) {
     if (!gameState) return;
     // A game starts once. A second GAME_START is not a lineup edit — it
@@ -3167,7 +3168,7 @@ function LineupSetupModal({
   onSubmit: (
     pitcherId: string,
     battingOrder: string[],
-    tracking: { pitchType: boolean; pitchLocation: boolean },
+    tracking: { pitchType: boolean; pitchLocation: boolean; hitLocation: boolean },
   ) => void;
 }) {
   const [pitcherId, setPitcherId] = useState<string | null>(null);
@@ -3178,6 +3179,9 @@ function LineupSetupModal({
   const [step, setStep] = useState<'pitcher' | 'batter' | 'tracking'>('pitcher');
   const [trackPitchType, setTrackPitchType] = useState(true);
   const [trackPitchLocation, setTrackPitchLocation] = useState(false);
+  // On by default: the coach asked for hit location, and Skip keeps a play
+  // the scorer didn't see from costing more than one tap.
+  const [trackHitLocation, setTrackHitLocation] = useState(true);
 
   useEffect(() => {
     if (visible) {
@@ -3261,6 +3265,12 @@ function LineupSetupModal({
                   hint="Where it crossed the zone, on a 3×3 grid"
                   value={trackPitchLocation}
                   onToggle={() => setTrackPitchLocation((v) => !v)}
+                />
+                <TrackingToggle
+                  label="Hit location"
+                  hint="Where each ball in play went, and who fielded it"
+                  value={trackHitLocation}
+                  onToggle={() => setTrackHitLocation((v) => !v)}
                 />
               </View>
             </ScrollView>
@@ -3371,6 +3381,7 @@ function LineupSetupModal({
                   onSubmit(pitcherId, battingOrder, {
                     pitchType: trackPitchType,
                     pitchLocation: trackPitchLocation,
+                    hitLocation: trackHitLocation,
                   });
                 }
               }}
