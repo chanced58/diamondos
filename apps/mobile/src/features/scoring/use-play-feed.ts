@@ -2,8 +2,10 @@ import { useMemo } from 'react';
 import {
   EventType,
   formatEventDescription,
+  hitRunnerOptions,
   type GameEvent,
   type BaserunnerMovePayload,
+  type HitPayload,
 } from '@baseball/shared';
 
 export interface PlayFeedRow {
@@ -72,6 +74,7 @@ function capitalize(text: string): string {
  */
 function describeLinkedOutcome(
   event: GameEvent,
+  parent: GameEvent,
   resolveName: (id: string | null | undefined) => string,
   isVoided: boolean,
 ): string {
@@ -85,6 +88,16 @@ function describeLinkedOutcome(
     return `${name} thrown out advancing`;
   }
   const base = p.toBase != null ? (BASE_LABELS[p.toBase] ?? `base ${p.toBase}`) : 'base';
+  // On a hit, a linked advance is either a hold (short of the standard
+  // advance) or an extra base (beyond it) — "held at home" would be nonsense
+  // for a runner who scored from second on a single.
+  if (parent.eventType === EventType.HIT && p.fromBase != null && p.toBase != null) {
+    const hitType = (parent.payload as Partial<HitPayload>).hitType;
+    const options = hitType ? hitRunnerOptions(p.fromBase as 1 | 2 | 3, hitType) : null;
+    if (options && p.toBase > options.standardBase) {
+      return p.toBase === 4 ? `${name} scored` : `${name} took ${base}`;
+    }
+  }
   return `${name} held at ${base}`;
 }
 
@@ -213,7 +226,7 @@ export function buildPlayFeedRows(
       if (baseDescription === null && outcomes.length === 0) continue;
 
       const clauseParts = outcomes.map((o) =>
-        describeLinkedOutcome(o, resolveName, voidedIds.has(o.id)),
+        describeLinkedOutcome(o, event, resolveName, voidedIds.has(o.id)),
       );
 
       let description: string;

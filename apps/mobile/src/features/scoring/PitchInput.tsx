@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
-import { HitType, PitchOutcome, PitchType, HitTrajectory, extraBaseHitRunnerOptions } from '@baseball/shared';
+import { HitType, PitchOutcome, PitchType, HitTrajectory, hitRunnerOptions, evaluateHitRunnerOutcomes } from '@baseball/shared';
 import type { DefensiveLineup, DroppedThirdStrikeOutcome, SacrificeEligibility } from '@baseball/shared';
 import { DefensiveDiamond } from './DefensiveDiamond';
 
@@ -52,11 +52,17 @@ export type RosterPlayer = {
 /**
  * Per-runner outcome on a play whose batter-result stands but whose
  * existing runners diverge from the default auto-advance. Used by the
- * post-hit modal for 2B/3B hits with runners on base.
+ * post-hit modal for singles, doubles and triples with runners on base.
+ * Which bases each kind may name comes from hitRunnerOptions in
+ * @baseball/shared; whether a set of choices can all be true together, from
+ * evaluateHitRunnerOutcomes.
  *
  * - `auto`     — runner advances by the default amount (no event emitted).
  * - `held`     — runner stops at `toBase`, short of the default. Recorded
  *                as a BASERUNNER_ADVANCE event linked via relatedEventId.
+ * - `advanced` — runner takes more than the default, to `toBase` (4 = scored).
+ *                Recorded as a linked BASERUNNER_ADVANCE, plus a SCORE when
+ *                they reach home — the advance never credits the run itself.
  * - `thrown_out` — runner is thrown out advancing. Recorded as a
  *                BASERUNNER_OUT event linked via relatedEventId.
  */
@@ -66,6 +72,7 @@ export type RunnerOutcome = {
 } & (
   | { kind: 'auto' }
   | { kind: 'held'; toBase: 2 | 3 }
+  | { kind: 'advanced'; toBase: 3 | 4 }
   | { kind: 'thrown_out' }
 );
 
@@ -430,7 +437,7 @@ export function PitchInput({
     const needsPrompt =
       supportsOutcomes &&
       runnersOnBase.length > 0 &&
-      (hitType === HitType.DOUBLE || hitType === HitType.TRIPLE);
+      (hitType === HitType.SINGLE || hitType === HitType.DOUBLE || hitType === HitType.TRIPLE);
     if (!needsPrompt) {
       onRecordHit(hitType);
       return;
@@ -444,30 +451,30 @@ export function PitchInput({
     setPendingHitWithRunners(hitType);
   }
 
-  function setRunnerChoice(runnerId: string, fromBase: Base, kind: 'auto' | 'held' | 'thrown_out') {
-    setRunnerOutcomeChoices((prev) => {
-      const next = { ...prev };
-      if (kind === 'auto') {
-        next[runnerId] = { runnerId, fromBase, kind: 'auto' };
-      } else if (kind === 'thrown_out') {
-        next[runnerId] = { runnerId, fromBase, kind: 'thrown_out' };
-      } else {
-        // "Held" — the base the shared rule says this runner can stop at. The
-        // batter takes a base too, so this is not simply fromBase + 1: a
-        // runner from first cannot be held at second on a double. The button
-        // is only rendered when a hold exists, so a null here means a stale
-        // tap on a prompt whose hit type changed — ignore it.
-        const heldBase = pendingHitWithRunners
-          ? extraBaseHitRunnerOptions(fromBase, pendingHitWithRunners)?.heldBase ?? null
-          : null;
-        if (heldBase === null) return prev;
-        next[runnerId] = { runnerId, fromBase, kind: 'held', toBase: heldBase };
-      }
-      return next;
-    });
+  function setRunnerChoice(
+    runnerId: string,
+    fromBase: Base,
+    choice: { kind: 'auto' } | { kind: 'held'; toBase: 3 } | { kind: 'advanced'; toBase: 3 | 4 } | { kind: 'thrown_out' },
+  ) {
+    setRunnerOutcomeChoices((prev) => ({ ...prev, [runnerId]: { runnerId, fromBase, ...choice } }));
   }
 
+  // Whether the choices on screen can all be true on one play. Recomputed
+  // each render: a choice for one runner can make another's impossible (a
+  // runner from second held at third on a double leaves the runner from
+  // first nowhere to finish), which no per-runner option list can show.
+  const runnerEvaluation = pendingHitWithRunners
+    ? evaluateHitRunnerOutcomes(
+        pendingHitWithRunners,
+        runnersOnBase.map(({ base, runnerId }) => ({
+          fromBase: base,
+          choice: runnerOutcomeChoices[runnerId] ?? { kind: 'auto' as const },
+        })),
+      )
+    : null;
+
   function confirmHitWithRunners() {
+    if (runnerEvaluation?.error) return;
     if (!pendingHitWithRunners || !onRecordHitWithRunnerOutcomes) {
       setPendingHitWithRunners(null);
       return;
@@ -1306,7 +1313,7 @@ export function PitchInput({
         </View>
       </Modal>
 
-      {/* Per-runner outcomes prompt for 2B/3B with runners on base.
+      {/* Per-runner outcomes prompt for a single, double or triple with runners on base.
        *  Records the HIT plus any linked BASERUNNER_OUT / BASERUNNER_ADVANCE
        *  events (via relatedEventId) so the platform shows e.g.
        *  "Double (Runner from 2nd held at 3B)" in the play feed. */}
@@ -1319,7 +1326,7 @@ export function PitchInput({
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
             <Text className="text-lg font-bold text-gray-900 mb-1">
-              {pendingHitWithRunners === HitType.TRIPLE ? 'Triple' : 'Double'} — Runner Outcomes
+              {hitName(pendingHitWithRunners)} — Runner Outcomes
             </Text>
             <Text className="text-sm text-gray-500 mb-4">
               For each runner on base, choose what happened. Default is the
@@ -1330,16 +1337,14 @@ export function PitchInput({
               {runnersOnBase.map(({ base, runnerId }) => {
                 const choice = runnerOutcomeChoices[runnerId];
                 const kind = choice?.kind ?? 'auto';
-                // A hold exists only when there is a free base between the
-                // batter's and the standard advance — see
-                // extraBaseHitRunnerOptions. On a double that is a runner from
-                // second held at third, and nothing else; on a triple, never.
+                // Standard, the one hold (if any), and each base beyond the
+                // standard advance — all from hitRunnerOptions. The batter
+                // takes a base too, so none of this is simply fromBase + n.
                 const options = pendingHitWithRunners
-                  ? extraBaseHitRunnerOptions(base, pendingHitWithRunners)
+                  ? hitRunnerOptions(base, pendingHitWithRunners)
                   : null;
                 const heldBase = options?.heldBase ?? null;
-                const standardLabel =
-                  options?.standardBase === 3 ? 'Advanced to 3B' : 'Scored';
+                const advancedToBase = choice?.kind === 'advanced' ? choice.toBase : null;
                 return (
                   <View key={runnerId} className="mb-4 border border-gray-200 rounded-xl p-3">
                     <Text className="text-sm font-semibold text-gray-700 mb-2">
@@ -1348,25 +1353,36 @@ export function PitchInput({
                     <View className="flex-row flex-wrap gap-2">
                       <TouchableOpacity
                         className={`px-3 py-2 rounded-lg ${kind === 'auto' ? 'bg-slate-700' : 'bg-slate-100'}`}
-                        onPress={() => setRunnerChoice(runnerId, base, 'auto')}
+                        onPress={() => setRunnerChoice(runnerId, base, { kind: 'auto' })}
                       >
                         <Text className={kind === 'auto' ? 'text-white font-semibold' : 'text-gray-700'}>
-                          {standardLabel}
+                          Standard: {options ? (options.standardBase === 4 ? 'scores' : finishLabel(options.standardBase)) : '—'}
                         </Text>
                       </TouchableOpacity>
                       {heldBase !== null && (
                         <TouchableOpacity
                           className={`px-3 py-2 rounded-lg ${kind === 'held' ? 'bg-amber-600' : 'bg-slate-100'}`}
-                          onPress={() => setRunnerChoice(runnerId, base, 'held')}
+                          onPress={() => setRunnerChoice(runnerId, base, { kind: 'held', toBase: heldBase })}
                         >
                           <Text className={kind === 'held' ? 'text-white font-semibold' : 'text-gray-700'}>
                             Held at {heldBase}B
                           </Text>
                         </TouchableOpacity>
                       )}
+                      {options?.advancedBases.map((toBase) => (
+                        <TouchableOpacity
+                          key={toBase}
+                          className={`px-3 py-2 rounded-lg ${advancedToBase === toBase ? 'bg-emerald-700' : 'bg-slate-100'}`}
+                          onPress={() => setRunnerChoice(runnerId, base, { kind: 'advanced', toBase })}
+                        >
+                          <Text className={advancedToBase === toBase ? 'text-white font-semibold' : 'text-gray-700'}>
+                            Advance {finishLabel(toBase)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
                       <TouchableOpacity
                         className={`px-3 py-2 rounded-lg ${kind === 'thrown_out' ? 'bg-rose-700' : 'bg-slate-100'}`}
-                        onPress={() => setRunnerChoice(runnerId, base, 'thrown_out')}
+                        onPress={() => setRunnerChoice(runnerId, base, { kind: 'thrown_out' })}
                       >
                         <Text className={kind === 'thrown_out' ? 'text-white font-semibold' : 'text-gray-700'}>
                           Thrown out
@@ -1378,12 +1394,16 @@ export function PitchInput({
               })}
             </ScrollView>
 
+            {runnerEvaluation?.error ? (
+              <Text className="text-sm text-rose-700 mt-2">{runnerEvaluation.error}</Text>
+            ) : null}
             <TouchableOpacity
-              className="bg-slate-800 rounded-xl px-5 py-4 mt-2"
+              className={`rounded-xl px-5 py-4 mt-2 ${runnerEvaluation?.error ? 'bg-slate-300' : 'bg-slate-800'}`}
+              disabled={!!runnerEvaluation?.error}
               onPress={confirmHitWithRunners}
             >
               <Text className="text-white font-semibold text-center">
-                Confirm {pendingHitWithRunners === HitType.TRIPLE ? 'Triple' : 'Double'}
+                Confirm {hitName(pendingHitWithRunners)}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1575,6 +1595,17 @@ function StrikeZoneGrid({
       </TouchableOpacity>
     </View>
   );
+}
+
+/** "to 3B" / "home" — where a runner finishes, for the outcome buttons. */
+function finishLabel(base: 2 | 3 | 4): string {
+  return base === 4 ? 'home' : `to ${base}B`;
+}
+
+function hitName(hitType: HitType | null): string {
+  if (hitType === HitType.SINGLE) return 'Single';
+  if (hitType === HitType.TRIPLE) return 'Triple';
+  return 'Double';
 }
 
 function baseLabel(base: Base): string {

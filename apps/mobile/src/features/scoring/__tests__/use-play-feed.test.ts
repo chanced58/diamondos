@@ -195,3 +195,33 @@ describe('usePlayFeed', () => {
     expect(result.current[0]).toMatchObject({ eventId: ball.id, description: 'Ball' });
   });
 });
+
+describe('usePlayFeed linked advances on a hit', () => {
+
+  it('should say a runner scored, not "held at home", when they advance home on a single', () => {
+    const hit = mkEvent(EventType.HIT, { batterId: 'alice', hitType: HitType.SINGLE });
+    const advance = mkEvent(EventType.BASERUNNER_ADVANCE, {
+      runnerId: 'bob', fromBase: 2, toBase: 4, reason: AdvanceReason.ON_PLAY, relatedEventId: hit.id,
+    });
+    const { result } = renderHook(() => usePlayFeed([hit, advance], names));
+    expect(result.current[0].description).toBe('Alice — single (Bob scored)');
+  });
+
+  it('should say a runner took a base beyond the standard advance', () => {
+    const hit = mkEvent(EventType.HIT, { batterId: 'alice', hitType: HitType.SINGLE });
+    const advance = mkEvent(EventType.BASERUNNER_ADVANCE, {
+      runnerId: 'bob', fromBase: 1, toBase: 3, reason: AdvanceReason.ON_PLAY, relatedEventId: hit.id,
+    });
+    const { result } = renderHook(() => usePlayFeed([hit, advance], names));
+    expect(result.current[0].description).toBe('Alice — single (Bob took 3B)');
+  });
+
+  it('should still say held for a runner stopped short of the standard advance', () => {
+    const hit = mkEvent(EventType.HIT, { batterId: 'alice', hitType: HitType.DOUBLE });
+    const advance = mkEvent(EventType.BASERUNNER_ADVANCE, {
+      runnerId: 'bob', fromBase: 2, toBase: 3, reason: AdvanceReason.ON_PLAY, relatedEventId: hit.id,
+    });
+    const { result } = renderHook(() => usePlayFeed([hit, advance], names));
+    expect(result.current[0].description).toBe('Alice — double (Bob held at 3B)');
+  });
+});

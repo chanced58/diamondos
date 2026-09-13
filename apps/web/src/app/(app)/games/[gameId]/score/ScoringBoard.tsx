@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome, computeLineScore, evaluateGameEnd, shouldEndHalfForRunCap, isDroppedThirdStrikeAllowed, ghostRunnerBaseForHalf, defaultLeagueScoringSettings, sacrificeEligibility, extraBaseHitRunnerOptions, HitType, type LeagueScoringSettings } from '@baseball/shared';
+import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome, computeLineScore, evaluateGameEnd, shouldEndHalfForRunCap, isDroppedThirdStrikeAllowed, ghostRunnerBaseForHalf, defaultLeagueScoringSettings, sacrificeEligibility, hitRunnerOptions, evaluateHitRunnerOutcomes, HitType, type LeagueScoringSettings } from '@baseball/shared';
 import type { GameEvent } from '@baseball/shared';
 import { endGameAction } from '../actions';
 import { DefensiveDiamond } from './DefensiveDiamond';
@@ -498,9 +498,25 @@ function ConfigToggle({
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 
+/** One runner's choice in the runner-outcomes panel; bases come from hitRunnerOptions. */
+type WebRunnerChoice =
+  | { kind: 'auto' }
+  | { kind: 'held'; toBase: 2 | 3 }
+  | { kind: 'advanced'; toBase: 3 | 4 }
+  | { kind: 'thrown_out' };
+
+const HIT_TITLE = { single: 'Single', double: 'Double', triple: 'Triple' } as const;
+
 /** The runner-outcomes panel stores its hit as a string literal; the shared rules take the enum. */
-function hitTypeOf(hitType: 'double' | 'triple'): HitType {
-  return hitType === 'double' ? HitType.DOUBLE : HitType.TRIPLE;
+function hitTypeOf(hitType: 'single' | 'double' | 'triple'): HitType {
+  return hitType === 'single' ? HitType.SINGLE : hitType === 'double' ? HitType.DOUBLE : HitType.TRIPLE;
+}
+
+function runnerChoicesFor(
+  runners: Array<{ runnerId: string; fromBase: 1 | 2 | 3 }>,
+  choices: Record<string, WebRunnerChoice>,
+) {
+  return runners.map((r) => ({ fromBase: r.fromBase, choice: choices[r.runnerId] ?? { kind: 'auto' as const } }));
 }
 
 export function ScoringBoard({
@@ -585,16 +601,24 @@ export function ScoringBoard({
   // this state is set, so no pitch metadata is captured here.
   const [pendingHitRunnerOutcomes, setPendingHitRunnerOutcomes] = useState<
     | {
-        hitType: 'double' | 'triple';
+        hitType: 'single' | 'double' | 'triple';
         trajectory: string;
         sprayExtra: Record<string, unknown>;
         batterId: string | undefined;
         pitcherId: string | undefined;
         runners: Array<{ runnerId: string; fromBase: 1 | 2 | 3 }>;
-        choices: Record<string, { kind: 'auto' | 'held' | 'thrown_out'; toBase?: 2 | 3 }>;
+        choices: Record<string, WebRunnerChoice>;
       }
     | null
   >(null);
+  // Whether the panel's choices can all be true on one play — a choice for one
+  // runner can make another's impossible, which no per-runner option list shows.
+  const runnerOutcomesError = pendingHitRunnerOutcomes
+    ? evaluateHitRunnerOutcomes(
+        hitTypeOf(pendingHitRunnerOutcomes.hitType),
+        runnerChoicesFor(pendingHitRunnerOutcomes.runners, pendingHitRunnerOutcomes.choices),
+      ).error
+    : null;
   // Track pitching change UI
   const [showPitchingChange, setShowPitchingChange] = useState(false);
   // Pending baserunner advance — waiting for reason selection
@@ -1261,16 +1285,16 @@ export function ScoringBoard({
     } else if (result === 'triple_play') {
       await recordEvent('triple_play', { batterId, pitcherId, trajectory, ...sprayExtra, ...seqExtra, ...assignExtra, ...runnerOutExtra });
     } else {
-      // 2B/3B with runners on base: open the per-runner outcomes panel so
-      // the scorer can mark any runner as held short or thrown out
-      // advancing. The HIT and any linked BASERUNNER_* events are emitted
+      // 1B/2B/3B with runners on base: open the per-runner outcomes panel so
+      // the scorer can mark any runner as held short, advancing beyond the
+      // standard base, or thrown out advancing. The HIT and any linked BASERUNNER_* events are emitted
       // together by confirmHitWithRunnerOutcomes.
       const runners: Array<{ runnerId: string; fromBase: 1 | 2 | 3 }> = [];
       if (gameState.runnersOnBase.first)  runners.push({ runnerId: gameState.runnersOnBase.first,  fromBase: 1 });
       if (gameState.runnersOnBase.second) runners.push({ runnerId: gameState.runnersOnBase.second, fromBase: 2 });
       if (gameState.runnersOnBase.third)  runners.push({ runnerId: gameState.runnersOnBase.third,  fromBase: 3 });
-      if ((result === 'double' || result === 'triple') && runners.length > 0) {
-        const choices: Record<string, { kind: 'auto' | 'held' | 'thrown_out'; toBase?: 2 | 3 }> = {};
+      if ((result === 'single' || result === 'double' || result === 'triple') && runners.length > 0) {
+        const choices: Record<string, WebRunnerChoice> = {};
         for (const r of runners) choices[r.runnerId] = { kind: 'auto' };
         setPendingHitRunnerOutcomes({
           hitType: result,
@@ -1295,8 +1319,19 @@ export function ScoringBoard({
     if (!ctx) return;
     setPendingHitRunnerOutcomes(null);
     const { hitType, trajectory, sprayExtra, batterId, pitcherId, runners, choices } = ctx;
+    const evaluation = evaluateHitRunnerOutcomes(hitTypeOf(hitType), runnerChoicesFor(runners, choices));
+    if (evaluation.error) return;
+    // RBI on a hit is derived from runners the HIT itself scores, and runners
+    // with a linked outcome are excluded — so a runner who scores by advancing
+    // beyond the standard base would drive in nothing. Make the count explicit
+    // only then; otherwise keep rbis omitted so derivation stays untouched.
+    const anyAdvancedHome = runners.some((r) => {
+      const c = choices[r.runnerId];
+      return c?.kind === 'advanced' && c.toBase === 4;
+    });
     const hitId = await recordEvent('hit', {
       batterId, pitcherId, hitType, trajectory, ...sprayExtra,
+      ...(anyAdvancedHome ? { rbis: evaluation.rbis } : {}),
     });
     for (const r of runners) {
       const choice = choices[r.runnerId];
@@ -1309,7 +1344,9 @@ export function ScoringBoard({
           relatedEventId: hitId,
           reason: 'on_play',
         });
-      } else if (choice.kind === 'held' && choice.toBase) {
+      } else {
+        // Held (short of the standard advance) or advanced (beyond it): a
+        // linked BASERUNNER_ADVANCE to the runner's real base either way.
         await recordEvent('baserunner_advance', {
           runnerId: r.runnerId,
           fromBase: r.fromBase,
@@ -1317,6 +1354,11 @@ export function ScoringBoard({
           reason: 'on_play',
           relatedEventId: hitId,
         });
+        // An advance to home never credits the run — the SCORE does, as for a
+        // steal of home. The RBI already rode on the HIT.
+        if (choice.kind === 'advanced' && choice.toBase === 4) {
+          await recordEvent('score', { scoringPlayerId: r.runnerId, rbis: 0 });
+        }
       }
     }
   }
@@ -1325,22 +1367,10 @@ export function ScoringBoard({
     setPendingHitRunnerOutcomes(null);
   }
 
-  function setRunnerOutcomeChoice(runnerId: string, fromBase: 1 | 2 | 3, kind: 'auto' | 'held' | 'thrown_out') {
-    setPendingHitRunnerOutcomes((prev) => {
-      if (!prev) return prev;
-      const next = { ...prev.choices };
-      if (kind === 'held') {
-        // The base the shared rule allows — not fromBase + 1, since the
-        // batter takes a base too. No hold exists → the button isn't shown,
-        // so a null here is a stale click; leave the choice unchanged.
-        const heldBase = extraBaseHitRunnerOptions(fromBase, hitTypeOf(prev.hitType))?.heldBase ?? null;
-        if (heldBase === null) return prev;
-        next[runnerId] = { kind, toBase: heldBase };
-      } else {
-        next[runnerId] = { kind };
-      }
-      return { ...prev, choices: next };
-    });
+  function setRunnerOutcomeChoice(runnerId: string, choice: WebRunnerChoice) {
+    setPendingHitRunnerOutcomes((prev) =>
+      prev ? { ...prev, choices: { ...prev.choices, [runnerId]: choice } } : prev,
+    );
   }
 
   // Sacrifice fly / sacrifice bunt path that funnels through the in-play Out
@@ -3488,7 +3518,7 @@ export function ScoringBoard({
           <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden">
             <div className="px-5 pt-5 pb-3 border-b border-gray-100">
               <h2 className="text-lg font-bold text-gray-900">
-                {pendingHitRunnerOutcomes.hitType === 'triple' ? 'Triple' : 'Double'} — Runner Outcomes
+                {HIT_TITLE[pendingHitRunnerOutcomes.hitType]} — Runner Outcomes
               </h2>
               <p className="text-sm text-gray-500 mt-1">
                 For each runner on base, choose what happened. Default is the standard advance.
@@ -3498,12 +3528,13 @@ export function ScoringBoard({
               {pendingHitRunnerOutcomes.runners.map(({ runnerId, fromBase }) => {
                 const choice = pendingHitRunnerOutcomes.choices[runnerId];
                 const kind = choice?.kind ?? 'auto';
-                // See extraBaseHitRunnerOptions: a hold needs a free base
-                // between the batter's and the standard advance — on a double
-                // only a runner from second (held at third); on a triple never.
-                const options = extraBaseHitRunnerOptions(fromBase, hitTypeOf(pendingHitRunnerOutcomes.hitType));
+                // Standard, the one hold (if any) and each base beyond the
+                // standard advance — all from hitRunnerOptions, since the
+                // batter takes a base too.
+                const options = hitRunnerOptions(fromBase, hitTypeOf(pendingHitRunnerOutcomes.hitType));
                 const heldBase = options?.heldBase ?? null;
-                const standardLabel = options?.standardBase === 3 ? 'Advanced to 3B' : 'Scored';
+                const standardLabel = options?.standardBase === 4 ? 'Standard: scores' : `Standard: to ${options?.standardBase}B`;
+                const advancedToBase = choice?.kind === 'advanced' ? choice.toBase : null;
                 return (
                   <div key={runnerId} className="mb-3 border border-gray-200 rounded-lg p-3">
                     <div className="text-sm font-semibold text-gray-700 mb-2">
@@ -3512,7 +3543,7 @@ export function ScoringBoard({
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => setRunnerOutcomeChoice(runnerId, fromBase, 'auto')}
+                        onClick={() => setRunnerOutcomeChoice(runnerId, { kind: 'auto' })}
                         className={`px-3 py-2 text-xs font-semibold rounded-md ${kind === 'auto' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                       >
                         {standardLabel}
@@ -3520,15 +3551,25 @@ export function ScoringBoard({
                       {heldBase !== null && (
                         <button
                           type="button"
-                          onClick={() => setRunnerOutcomeChoice(runnerId, fromBase, 'held')}
+                          onClick={() => setRunnerOutcomeChoice(runnerId, { kind: 'held', toBase: heldBase })}
                           className={`px-3 py-2 text-xs font-semibold rounded-md ${kind === 'held' ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                         >
                           Held at {heldBase}B
                         </button>
                       )}
+                      {options?.advancedBases.map((toBase) => (
+                        <button
+                          key={toBase}
+                          type="button"
+                          onClick={() => setRunnerOutcomeChoice(runnerId, { kind: 'advanced', toBase })}
+                          className={`px-3 py-2 text-xs font-semibold rounded-md ${advancedToBase === toBase ? 'bg-emerald-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                        >
+                          {toBase === 4 ? 'Advance home' : `Advance to ${toBase}B`}
+                        </button>
+                      ))}
                       <button
                         type="button"
-                        onClick={() => setRunnerOutcomeChoice(runnerId, fromBase, 'thrown_out')}
+                        onClick={() => setRunnerOutcomeChoice(runnerId, { kind: 'thrown_out' })}
                         className={`px-3 py-2 text-xs font-semibold rounded-md ${kind === 'thrown_out' ? 'bg-rose-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                       >
                         Thrown out advancing
@@ -3538,6 +3579,9 @@ export function ScoringBoard({
                 );
               })}
             </div>
+            {runnerOutcomesError && (
+              <p className="px-5 pt-1 text-sm text-rose-700">{runnerOutcomesError}</p>
+            )}
             <div className="px-5 pb-5 pt-2 flex gap-2">
               <button
                 type="button"
@@ -3549,9 +3593,10 @@ export function ScoringBoard({
               <button
                 type="button"
                 onClick={confirmHitWithRunnerOutcomes}
-                className="flex-1 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+                disabled={!!runnerOutcomesError}
+                className="flex-1 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed rounded-md"
               >
-                Confirm {pendingHitRunnerOutcomes.hitType === 'triple' ? 'Triple' : 'Double'}
+                Confirm {HIT_TITLE[pendingHitRunnerOutcomes.hitType]}
               </button>
             </div>
           </div>

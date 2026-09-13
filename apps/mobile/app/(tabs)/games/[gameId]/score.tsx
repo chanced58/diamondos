@@ -25,7 +25,7 @@ import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensi
 import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../src/features/scoring/in-play-pitch';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
@@ -748,9 +748,26 @@ export default function ScoringScreen() {
   // shows e.g. "Double (Runner thrown out at 3B)".
   async function handleHitWithRunnerOutcomes(hitType: HitType, outcomes: RunnerOutcome[]) {
     if (!gameState) return;
+    // The prompt refuses to confirm an impossible combination, so this is a
+    // second line of defence rather than the gate.
+    const evaluation = evaluateHitRunnerOutcomes(
+      hitType,
+      outcomes.map(({ fromBase, runnerId: _runnerId, ...choice }) => ({ fromBase, choice })),
+    );
+    if (evaluation.error) {
+      console.warn(`handleHitWithRunnerOutcomes: refused game=${gameId}: ${evaluation.error}`);
+      return;
+    }
+    // RBI on a hit is derived from runners the HIT itself scores, and a runner
+    // with a linked outcome is deliberately excluded from that — so a runner
+    // who scores by advancing beyond the standard base would drive in nothing.
+    // Only when that happens is the count made explicit; otherwise rbis stays
+    // omitted and derivation (batting-stats, maxpreps-export) is untouched.
+    const anyAdvancedHome = outcomes.some((o) => o.kind === 'advanced' && o.toBase === 4);
     const payload: HitPayload = {
       ...halfAttribution,
       hitType,
+      ...(anyAdvancedHome ? { rbis: evaluation.rbis } : {}),
     };
     const hitId = await recordEvent(
       EventType.HIT,
@@ -769,7 +786,8 @@ export default function ScoringScreen() {
           reason: AdvanceReason.ON_PLAY,
         });
       } else {
-        // 'held' — runner stops short of the default advance.
+        // 'held' stops short of the default advance; 'advanced' goes beyond
+        // it. Both are a linked BASERUNNER_ADVANCE to the runner's real base.
         await recordEvent(EventType.BASERUNNER_ADVANCE, gameState.inning, gameState.isTopOfInning, {
           runnerId: outcome.runnerId,
           fromBase: outcome.fromBase,
@@ -777,6 +795,13 @@ export default function ScoringScreen() {
           reason: AdvanceReason.ON_PLAY,
           relatedEventId: hitId,
         });
+        // An advance to home clears the base but never credits the run — the
+        // SCORE does, same as a stolen base of home. RBI already rode on the
+        // HIT above, so this carries none.
+        if (outcome.kind === 'advanced' && outcome.toBase === 4) {
+          const scorePayload: ScorePayload = { scoringPlayerId: outcome.runnerId, rbis: 0 };
+          await recordEvent(EventType.SCORE, gameState.inning, gameState.isTopOfInning, scorePayload);
+        }
       }
     }
   }
