@@ -156,7 +156,7 @@ export interface HitPayload {
   opponentPitcherId?: string;
   hitType: HitType;
   trajectory?: HitTrajectory;
-  // Spray chart coordinates: 0-1 normalized, 0,0 = home plate
+  // Spray chart coordinates: 0-1 normalized; home plate is (0.5, 0), the deep centre wall is sprayY 1
   sprayX?: number;
   sprayY?: number;
   /**
@@ -185,12 +185,14 @@ export interface OutPayload {
   opponentPitcherId?: string;
   outType: 'groundout' | 'flyout' | 'lineout' | 'popout' | 'strikeout' | 'other';
   trajectory?: HitTrajectory;
-  // Spray chart coordinates: 0-1 normalized, 0,0 = home plate
+  // Spray chart coordinates: 0-1 normalized; home plate is (0.5, 0), the deep centre wall is sprayY 1
   sprayX?: number;
   sprayY?: number;
   fieldedBy?: string; // position abbreviation
   /** Defensive play sequence as position numbers, e.g. [6, 3] for SS-to-1B. Max 5 steps. */
   fieldingSequence?: number[];
+  /** Position number of the fielder charged with the error (1-9). Set on FIELD_ERROR events only. */
+  errorBy?: number;
 }
 
 /** Payload for SACRIFICE_FLY and SACRIFICE_BUNT events. All fields optional;
