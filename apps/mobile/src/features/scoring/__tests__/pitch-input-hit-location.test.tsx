@@ -1,4 +1,4 @@
-import { render, fireEvent, screen } from '@testing-library/react-native';
+import { render, fireEvent, screen, act } from '@testing-library/react-native';
 import { HitType } from '@baseball/shared';
 import { PitchInput } from '../PitchInput';
 
@@ -8,6 +8,35 @@ jest.mock('react-native-svg', () => {
   const Stub = (props: { children?: unknown }) => React.createElement(View, null, props.children);
   return { __esModule: true, default: Stub, Rect: Stub, Path: Stub, Circle: Stub, Polygon: Stub, Line: Stub };
 });
+
+/**
+ * Real RN `TouchableOpacity` and `Modal` start `Animated.timing` fades on
+ * mount/visibility/disabled changes — exactly what the throw-step and
+ * runner-picker modals do here. Those animations run on real timers via the
+ * rAF-over-setTimeout polyfill in RN's jest setup, so left unflushed they
+ * keep ticking past the end of the synchronous test body and update state
+ * outside of `act()`. Fake timers plus a flush after every press keep each
+ * animation's frames inside `act()`, so it settles before the test (and the
+ * suite) moves on. See FieldLocationModal.test.tsx for the same pattern.
+ */
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+
+afterEach(() => {
+  act(() => {
+    jest.runOnlyPendingTimers();
+  });
+  jest.useRealTimers();
+});
+
+/** `fireEvent.press`, then settle any Animated timing it started. */
+function press(element: unknown, ...data: unknown[]) {
+  fireEvent.press(element as never, ...(data as []));
+  act(() => {
+    jest.runOnlyPendingTimers();
+  });
+}
 
 function noop() {}
 
@@ -56,7 +85,7 @@ function pressButtonLabeled(label: string) {
     return false;
   });
   if (!pressable) throw new Error(`No pressable ancestor found for text "${label}"`);
-  fireEvent.press(pressable);
+  press(pressable);
 }
 
 /** Lays the field out at the drawing's own size and taps a point in it. */
@@ -64,19 +93,19 @@ function tapField(x: number, y: number) {
   fireEvent(screen.getByTestId('field-diagram-frame'), 'layout', {
     nativeEvent: { layout: { width: 240, height: 200 } },
   });
-  fireEvent.press(screen.getByTestId('field-diagram'), { nativeEvent: { locationX: x, locationY: y } });
+  press(screen.getByTestId('field-diagram'), { nativeEvent: { locationX: x, locationY: y } });
 }
 
 /** (99, 98) in the 240×200 drawing is spray (0.36, 0.58): the shortstop's spot. Then Next. */
 function placeAtShortAndContinue() {
   tapField(99, 98);
-  fireEvent.press(screen.getByText('Next'));
+  press(screen.getByText('Next'));
 }
 
 describe('PitchInput hit location — outcome first', () => {
   it('should open the outcome sheet, not the field, on In play', () => {
     render(<PitchInput {...baseProps()} />);
-    fireEvent.press(screen.getByText('In play'));
+    press(screen.getByText('In play'));
     expect(screen.getByText('What happened to the batter?')).toBeTruthy();
     expect(screen.queryByText('Where did it go?')).toBeNull();
   });
@@ -85,8 +114,8 @@ describe('PitchInput hit location — outcome first', () => {
     const onBattedBall = jest.fn();
     const onRecordHit = jest.fn();
     render(<PitchInput {...baseProps({ trackHitLocation: false, onBattedBall, onRecordHit })} />);
-    fireEvent.press(screen.getByText('In play'));
-    fireEvent.press(screen.getByText('1B'));
+    press(screen.getByText('In play'));
+    press(screen.getByText('1B'));
     expect(screen.queryByText('Where did it go?')).toBeNull();
     expect(onBattedBall).toHaveBeenCalledWith({});
     expect(onRecordHit).toHaveBeenCalledWith(HitType.SINGLE);
@@ -98,16 +127,16 @@ describe('PitchInput hit location — outcome first', () => {
     const onRecordOut = jest.fn(() => calls.push('out'));
     render(<PitchInput {...baseProps({ onBattedBall, onRecordOut })} />);
 
-    fireEvent.press(screen.getByText('In play'));
+    press(screen.getByText('In play'));
     pressButtonLabeled('Out');
     expect(screen.getByText('Where did it go?')).toBeTruthy();
     expect(screen.queryByText('Groundout')).toBeNull();
 
     placeAtShortAndContinue();
-    fireEvent.press(screen.getByText('Groundout'));
+    press(screen.getByText('Groundout'));
     expect(onRecordOut).not.toHaveBeenCalled();
-    fireEvent.press(screen.getByTestId('throw-position-3'));
-    fireEvent.press(screen.getByTestId('throw-done'));
+    press(screen.getByTestId('throw-position-3'));
+    press(screen.getByTestId('throw-done'));
 
     expect(onBattedBall).toHaveBeenCalledWith({
       sprayX: expect.closeTo(0.36, 6),
@@ -123,11 +152,11 @@ describe('PitchInput hit location — outcome first', () => {
     const onRecordHit = jest.fn();
     render(<PitchInput {...baseProps({ onBattedBall, onRecordHit })} />);
 
-    fireEvent.press(screen.getByText('In play'));
-    fireEvent.press(screen.getByText('HR'));
+    press(screen.getByText('In play'));
+    press(screen.getByText('HR'));
     tapField(120, 10);
     expect(screen.queryByTestId('fielder-marker-8')).toBeNull();
-    fireEvent.press(screen.getByText('Next'));
+    press(screen.getByText('Next'));
 
     // A home run records the moment Next is tapped: this fails if the capture
     // is read from stale state rather than from where Next just put it.
@@ -140,8 +169,8 @@ describe('PitchInput hit location — outcome first', () => {
     const onRecordHit = jest.fn();
     render(<PitchInput {...baseProps({ onBattedBall, onRecordHit })} />);
 
-    fireEvent.press(screen.getByText('In play'));
-    fireEvent.press(screen.getByText('1B'));
+    press(screen.getByText('In play'));
+    press(screen.getByText('1B'));
     placeAtShortAndContinue();
 
     expect(screen.queryByTestId('throw-done')).toBeNull();
@@ -153,9 +182,9 @@ describe('PitchInput hit location — outcome first', () => {
     const onBattedBall = jest.fn();
     render(<PitchInput {...baseProps({ onBattedBall })} />);
 
-    fireEvent.press(screen.getByText('In play'));
-    fireEvent.press(screen.getByText('1B'));
-    fireEvent.press(screen.getByText('Skip'));
+    press(screen.getByText('In play'));
+    press(screen.getByText('1B'));
+    press(screen.getByText('Skip'));
 
     expect(onBattedBall).toHaveBeenCalledWith({});
   });
@@ -165,8 +194,8 @@ describe('PitchInput hit location — outcome first', () => {
     const onRecordPitch = jest.fn();
     render(<PitchInput {...baseProps({ onBattedBall, onRecordPitch })} />);
 
-    fireEvent.press(screen.getByText('In play'));
-    fireEvent.press(screen.getByText('Hit by pitch'));
+    press(screen.getByText('In play'));
+    press(screen.getByText('Hit by pitch'));
 
     expect(screen.queryByText('Where did it go?')).toBeNull();
     expect(onRecordPitch).toHaveBeenCalled();
@@ -176,7 +205,7 @@ describe('PitchInput hit location — outcome first', () => {
   it('should pre-select the field pop-up fielder in the error picker', () => {
     render(<PitchInput {...baseProps()} />);
 
-    fireEvent.press(screen.getByText('In play'));
+    press(screen.getByText('In play'));
     pressButtonLabeled('Error');
     placeAtShortAndContinue();
 
@@ -188,16 +217,107 @@ describe('PitchInput hit location — outcome first', () => {
     const onBattedBall = jest.fn();
     render(<PitchInput {...baseProps({ onBattedBall })} />);
 
-    fireEvent.press(screen.getByText('In play'));
+    press(screen.getByText('In play'));
     pressButtonLabeled('Out');
     placeAtShortAndContinue();
-    fireEvent.press(screen.getByText('Cancel'));
+    press(screen.getByText('Cancel'));
 
-    fireEvent.press(screen.getByText('In play'));
-    fireEvent.press(screen.getByText('1B'));
-    fireEvent.press(screen.getByText('Skip'));
+    press(screen.getByText('In play'));
+    press(screen.getByText('1B'));
+    press(screen.getByText('Skip'));
 
     expect(onBattedBall).toHaveBeenCalledTimes(1);
     expect(onBattedBall).toHaveBeenCalledWith({});
+  });
+});
+
+describe('PitchInput hit location — other batted-ball outcome buttons', () => {
+  it.each([
+    { label: 'Sac Fly', eligibilityKey: 'sacFlyEligible', handlerKey: 'onRecordSacFly', pickRunner: false },
+    { label: 'Sac Bunt', eligibilityKey: 'sacBuntEligible', handlerKey: 'onRecordSacBunt', pickRunner: false },
+    { label: 'Double Play', eligibilityKey: 'doublePlayEligible', handlerKey: 'onRecordDoublePlay', pickRunner: true },
+    { label: 'Triple Play', eligibilityKey: 'triplePlayEligible', handlerKey: 'onRecordTriplePlay', pickRunner: false },
+  ])(
+    'opens the field for $label, then the throw step, then records',
+    ({ label, eligibilityKey, handlerKey, pickRunner }) => {
+      const onBattedBall = jest.fn();
+      const handler = jest.fn();
+      render(
+        <PitchInput
+          {...baseProps({
+            [eligibilityKey]: true,
+            [handlerKey]: handler,
+            onBattedBall,
+            runnersOnBase: [{ base: 1, runnerId: 'r1' }],
+          })}
+        />,
+      );
+
+      press(screen.getByText('In play'));
+      press(screen.getByText(label));
+      expect(screen.getByText('Where did it go?')).toBeTruthy();
+
+      placeAtShortAndContinue();
+
+      if (pickRunner) {
+        press(screen.getByText('Runner on 1st retired'));
+      }
+
+      expect(screen.getByTestId('throw-done')).toBeTruthy();
+      press(screen.getByTestId('throw-position-3'));
+      press(screen.getByTestId('throw-done'));
+
+      expect(handler).toHaveBeenCalled();
+      if (pickRunner) {
+        expect(handler).toHaveBeenCalledWith({ runnerId: 'r1', base: 1 });
+      }
+      expect(onBattedBall).toHaveBeenCalledWith(
+        expect.objectContaining({ fieldingSequence: [6, 3] }),
+      );
+    },
+  );
+
+  it('opens the field for Fielder\'s Choice, then the FC runner picker, and records with no throw step', () => {
+    const onBattedBall = jest.fn();
+    const onRecordFieldersChoice = jest.fn();
+    render(
+      <PitchInput
+        {...baseProps({
+          onBattedBall,
+          onRecordFieldersChoice,
+          runnersOnBase: [{ base: 1, runnerId: 'r1' }],
+        })}
+      />,
+    );
+
+    press(screen.getByText('In play'));
+    press(screen.getByText('Fielder\'s Choice'));
+    expect(screen.getByText('Where did it go?')).toBeTruthy();
+
+    placeAtShortAndContinue();
+
+    expect(screen.getByText('Fielder\'s Choice')).toBeTruthy();
+    press(screen.getByText('Runner on 1st retired'));
+
+    expect(screen.queryByTestId('throw-done')).toBeNull();
+    expect(onBattedBall).toHaveBeenCalledWith(
+      expect.objectContaining({ fieldingSequence: [6] }),
+    );
+    expect(onRecordFieldersChoice).toHaveBeenCalledWith('r1', 1);
+  });
+
+  it('never opens the field and never records a batted ball for Catcher Int.', () => {
+    const onBattedBall = jest.fn();
+    const onRecordCatcherInterference = jest.fn();
+    render(
+      <PitchInput {...baseProps({ onBattedBall, onRecordCatcherInterference })} />,
+    );
+
+    press(screen.getByText('In play'));
+    press(screen.getByText('Catcher Int.'));
+
+    expect(screen.queryByText('Where did it go?')).toBeNull();
+    expect(onBattedBall).not.toHaveBeenCalled();
+    expect(onRecordCatcherInterference).toHaveBeenCalled();
   });
 });
