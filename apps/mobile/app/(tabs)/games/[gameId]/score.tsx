@@ -23,6 +23,7 @@ import { PitchInput, trajectoryForOutType } from '../../../../src/features/scori
 import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerModal';
 import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
 import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../src/features/scoring/in-play-pitch';
+import { createBattedBallSlot } from '../../../../src/features/scoring/batted-ball-fields';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
 import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
@@ -475,6 +476,12 @@ export default function ScoringScreen() {
   // play / triple play) so each records its implied PITCH_THROWN first —
   // see in-play-pitch.ts. This is the single choke point all eleven of
   // those handlers flow through at the PitchInput prop boundary below.
+  // Batted-ball fields handed over by PitchInput immediately before an in-play
+  // handler runs; each handler takes them into its payload, which empties the
+  // slot. Cleared on every non-in-play pitch too, so a location from an
+  // abandoned flow can never attach to a later play.
+  const battedBallSlot = useRef(createBattedBallSlot()).current;
+
   const withInPlayPitch = useMemo(
     () =>
       makeInPlayPitchWrapper(recordEvent, () =>
@@ -683,6 +690,7 @@ export default function ScoringScreen() {
     zoneLocation?: number,
   ) {
     if (!gameState) return;
+    battedBallSlot.clear();
     const payload: PitchThrownPayload = {
       ...halfAttribution,
       outcome,
@@ -738,6 +746,7 @@ export default function ScoringScreen() {
     if (!gameState) return;
     const payload: HitPayload = {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       hitType,
     };
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, payload);
@@ -767,6 +776,7 @@ export default function ScoringScreen() {
     const anyAdvancedHome = outcomes.some((o) => o.kind === 'advanced' && o.toBase === 4);
     const payload: HitPayload = {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       hitType,
       ...(anyAdvancedHome ? { rbis: evaluation.rbis } : {}),
     };
@@ -812,6 +822,7 @@ export default function ScoringScreen() {
     const trajectory = trajectoryForOutType(outType);
     const payload: OutPayload = {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       outType,
       ...(trajectory ? { trajectory } : {}),
     };
@@ -838,12 +849,14 @@ export default function ScoringScreen() {
     if (!gameState) return;
     await recordEvent(EventType.FIELD_ERROR, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       errorBy,
     });
   }
 
   async function handleCatcherInterference() {
     if (!gameState) return;
+    battedBallSlot.clear();
     await recordEvent(EventType.CATCHER_INTERFERENCE, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
     });
@@ -853,6 +866,7 @@ export default function ScoringScreen() {
     if (!gameState) return;
     await recordEvent(EventType.SACRIFICE_FLY, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
+      ...battedBallSlot.take(),
     });
   }
 
@@ -860,6 +874,7 @@ export default function ScoringScreen() {
     if (!gameState) return;
     await recordEvent(EventType.SACRIFICE_BUNT, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
+      ...battedBallSlot.take(),
     });
   }
 
@@ -874,6 +889,7 @@ export default function ScoringScreen() {
     const trajectory = trajectoryForOutType(outType);
     await recordEvent(EventType.SACRIFICE_FLY, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       ...(trajectory ? { trajectory } : {}),
     });
   }
@@ -883,6 +899,7 @@ export default function ScoringScreen() {
     const trajectory = trajectoryForOutType(outType);
     await recordEvent(EventType.SACRIFICE_BUNT, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       ...(trajectory ? { trajectory } : {}),
     });
   }
@@ -993,6 +1010,7 @@ export default function ScoringScreen() {
     });
     const hitPayload: HitPayload = {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       hitType: HitType.SINGLE,
       fieldersChoice: true,
     };
@@ -1598,6 +1616,7 @@ export default function ScoringScreen() {
     if (!gameState) return;
     await recordEvent(EventType.DOUBLE_PLAY, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       ...(runnerOut ? { runnerOutId: runnerOut.runnerId, runnerOutBase: runnerOut.base } : {}),
     });
   }
@@ -1606,6 +1625,7 @@ export default function ScoringScreen() {
     if (!gameState) return;
     await recordEvent(EventType.TRIPLE_PLAY, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
+      ...battedBallSlot.take(),
     });
   }
 
@@ -2191,6 +2211,8 @@ export default function ScoringScreen() {
       <PitchInput
         onRecordPitch={handlePitch}
         trackPitchType={scoringConfig.pitchType}
+        trackHitLocation={scoringConfig.hitLocation}
+        onBattedBall={battedBallSlot.set}
         trackPitchLocation={scoringConfig.pitchLocation}
         {...wrappedInPlayHandlers}
         onRecordStrikeout={handleStrikeout}

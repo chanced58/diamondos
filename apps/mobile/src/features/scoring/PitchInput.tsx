@@ -1,8 +1,11 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
-import { HitType, PitchOutcome, PitchType, HitTrajectory, hitRunnerOptions, evaluateHitRunnerOutcomes } from '@baseball/shared';
-import type { DefensiveLineup, DroppedThirdStrikeOutcome, SacrificeEligibility } from '@baseball/shared';
+import { HitType, PitchOutcome, PitchType, HitTrajectory, hitRunnerOptions, evaluateHitRunnerOutcomes, EventType, requiresThrowStep } from '@baseball/shared';
+import type { DefensiveLineup, DroppedThirdStrikeOutcome, SacrificeEligibility, BattedBall } from '@baseball/shared';
 import { DefensiveDiamond } from './DefensiveDiamond';
+import { FieldLocationModal } from './FieldLocationModal';
+import { ThrowSequenceModal } from './ThrowSequenceModal';
+import { battedBallPayloadFields, type BattedBallPayloadFields } from './batted-ball-fields';
 
 interface DroppedThirdStrikeDetails {
   outcome: DroppedThirdStrikeOutcome;
@@ -87,6 +90,14 @@ interface PitchInputProps {
   trackPitchType?: boolean;
   /** Scorer opted into pitch-location tracking at game start. */
   trackPitchLocation?: boolean;
+  /** Show the field pop-up on In play (the game's GAME_START hitLocationEnabled). */
+  trackHitLocation?: boolean;
+  /**
+   * Receives the batted-ball payload fields immediately before any in-play
+   * terminal handler is invoked — {} when nothing was captured, so the
+   * receiver never holds a previous play's location.
+   */
+  onBattedBall?: (fields: BattedBallPayloadFields) => void;
   onRecordHit: (hitType: HitType) => void;
   /**
    * Optional: when present and the scorer taps 2B / 3B with runners on base,
@@ -251,6 +262,8 @@ export function PitchInput({
   onRecordPitch,
   trackPitchType = true,
   trackPitchLocation = false,
+  trackHitLocation = false,
+  onBattedBall,
   onRecordHit,
   onRecordHitWithRunnerOutcomes,
   onRecordOut,
@@ -335,6 +348,14 @@ export function PitchInput({
   const [selectedZone, setSelectedZone] = useState<number | null>(null);
   // Branch sheets opened from the primary surface.
   const [showInPlaySheet, setShowInPlaySheet] = useState(false);
+  // Hit location: the field pop-up, what it captured for the current in-play
+  // flow, and a throw step waiting to finish recording an out.
+  const [showFieldModal, setShowFieldModal] = useState(false);
+  const [battedBall, setBattedBall] = useState<BattedBall | null>(null);
+  const [pendingThrow, setPendingThrow] = useState<null | {
+    firstFielder: number;
+    finish: (throws: number[]) => void;
+  }>(null);
   const [showRunnersSheet, setShowRunnersSheet] = useState(false);
   const [showSubsSheet, setShowSubsSheet] = useState(false);
   const fcEligible = runnersOnBase.length > 0;
@@ -359,6 +380,46 @@ export function PitchInput({
     action();
   }
 
+  // In play starts a fresh flow: whatever the last flow captured is dropped
+  // before the pop-up (or the sheet, when location isn't tracked) opens.
+  function openInPlay() {
+    setBattedBall(null);
+    if (trackHitLocation) setShowFieldModal(true);
+    else setShowInPlaySheet(true);
+  }
+
+  function continueFromField(captured: BattedBall | null) {
+    setBattedBall(captured);
+    setShowFieldModal(false);
+    setShowInPlaySheet(true);
+  }
+
+  // Every in-play terminal handler is invoked through here. It hands the
+  // captured batted ball to the receiver first — or {} when there is none —
+  // and, for outs with a known first fielder, asks for the throws before
+  // recording. The capture is consumed either way.
+  function commitInPlay(terminal: EventType, record: () => void) {
+    const captured = battedBall;
+    setBattedBall(null);
+    if (captured && captured.firstFielder !== null && requiresThrowStep(terminal)) {
+      setPendingThrow({
+        firstFielder: captured.firstFielder,
+        finish: (throws) => {
+          onBattedBall?.(battedBallPayloadFields(captured, throws));
+          record();
+        },
+      });
+      return;
+    }
+    onBattedBall?.(battedBallPayloadFields(captured));
+    record();
+  }
+
+  // HBP and catcher's interference aren't batted balls: nothing to locate.
+  function discardBattedBall() {
+    setBattedBall(null);
+  }
+
   function handlePitchOutcome(outcome: PitchOutcome) {
     onRecordPitch(
       outcome,
@@ -372,13 +433,13 @@ export function PitchInput({
 
   function handleErrorPick(errorBy: number) {
     setShowErrorModal(false);
-    onRecordError(errorBy);
+    commitInPlay(EventType.FIELD_ERROR, () => onRecordError(errorBy));
   }
 
   function handleDPTap() {
     if (runnersOnBase.length === 0) {
       // No runners to force out; fall through to ambiguous DP (legacy).
-      onRecordDoublePlay(null);
+      commitInPlay(EventType.DOUBLE_PLAY, () => onRecordDoublePlay(null));
     } else {
       setShowDPModal(true);
     }
@@ -386,7 +447,7 @@ export function PitchInput({
 
   function handleDPPick(runnerId: string, base: Base) {
     setShowDPModal(false);
-    onRecordDoublePlay({ runnerId, base });
+    commitInPlay(EventType.DOUBLE_PLAY, () => onRecordDoublePlay({ runnerId, base }));
   }
 
   function handleSubPick(playerId: string) {
@@ -424,7 +485,7 @@ export function PitchInput({
 
   function handleFCPick(runnerId: string, fromBase: Base) {
     setShowFCModal(false);
-    onRecordFieldersChoice(runnerId, fromBase);
+    commitInPlay(EventType.HIT, () => onRecordFieldersChoice(runnerId, fromBase));
   }
 
   function handleRunnerOutPick(runnerId: string, fromBase: Base) {
@@ -439,7 +500,7 @@ export function PitchInput({
       runnersOnBase.length > 0 &&
       (hitType === HitType.SINGLE || hitType === HitType.DOUBLE || hitType === HitType.TRIPLE);
     if (!needsPrompt) {
-      onRecordHit(hitType);
+      commitInPlay(EventType.HIT, () => onRecordHit(hitType));
       return;
     }
     // Seed every runner with the default "auto" choice.
@@ -480,7 +541,9 @@ export function PitchInput({
       return;
     }
     const outcomes = Object.values(runnerOutcomeChoices);
-    onRecordHitWithRunnerOutcomes(pendingHitWithRunners, outcomes);
+    const hitType = pendingHitWithRunners;
+    const recordWithOutcomes = onRecordHitWithRunnerOutcomes;
+    commitInPlay(EventType.HIT, () => recordWithOutcomes(hitType, outcomes));
     setPendingHitWithRunners(null);
     setRunnerOutcomeChoices({});
   }
@@ -500,7 +563,7 @@ export function PitchInput({
     const eligibility = sacEligibilityForOutType(outType);
     if (!eligibility.sacFly && !eligibility.sacBunt) {
       setShowOutModal(false);
-      onRecordOut(outType);
+      commitInPlay(EventType.OUT, () => onRecordOut(outType));
       return;
     }
     setPendingOutType(outType);
@@ -511,7 +574,7 @@ export function PitchInput({
     if (!pendingOutType) return;
     const t = pendingOutType;
     closeOutModal();
-    onRecordOut(t);
+    commitInPlay(EventType.OUT, () => onRecordOut(t));
   }
 
   // Step 2 (sac fly path): record SACRIFICE_FLY, carrying the trajectory
@@ -520,8 +583,7 @@ export function PitchInput({
     if (!pendingOutType) return;
     const t = pendingOutType;
     closeOutModal();
-    if (onRecordSacFlyFromOut) onRecordSacFlyFromOut(t);
-    else onRecordSacFly();
+    commitInPlay(EventType.SACRIFICE_FLY, () => (onRecordSacFlyFromOut ? onRecordSacFlyFromOut(t) : onRecordSacFly()));
   }
 
   // Step 2 (sac bunt path): record SACRIFICE_BUNT with trajectory context.
@@ -529,8 +591,7 @@ export function PitchInput({
     if (!pendingOutType) return;
     const t = pendingOutType;
     closeOutModal();
-    if (onRecordSacBuntFromOut) onRecordSacBuntFromOut(t);
-    else onRecordSacBunt();
+    commitInPlay(EventType.SACRIFICE_BUNT, () => (onRecordSacBuntFromOut ? onRecordSacBuntFromOut(t) : onRecordSacBunt()));
   }
 
   function closeOutModal() {
@@ -684,7 +745,7 @@ export function PitchInput({
           caption="hit · out · reached"
           tone="inPlay"
           full
-          onPress={() => setShowInPlaySheet(true)}
+          onPress={openInPlay}
         />
       </View>
 
@@ -722,16 +783,16 @@ export function PitchInput({
           <View className="flex-row flex-wrap gap-2">
             <OutcomeButton label="Out" emoji="✋" onPress={() => runFromSheet(setShowInPlaySheet, () => setShowOutModal(true))} color="bg-gray-600" />
             {sacFlyEligible && (
-              <OutcomeButton label="Sac Fly" emoji="SF" onPress={() => runFromSheet(setShowInPlaySheet, onRecordSacFly)} color="bg-teal-600" />
+              <OutcomeButton label="Sac Fly" emoji="SF" onPress={() => runFromSheet(setShowInPlaySheet, () => commitInPlay(EventType.SACRIFICE_FLY, onRecordSacFly))} color="bg-teal-600" />
             )}
             {sacBuntEligible && (
-              <OutcomeButton label="Sac Bunt" emoji="SH" onPress={() => runFromSheet(setShowInPlaySheet, onRecordSacBunt)} color="bg-teal-700" />
+              <OutcomeButton label="Sac Bunt" emoji="SH" onPress={() => runFromSheet(setShowInPlaySheet, () => commitInPlay(EventType.SACRIFICE_BUNT, onRecordSacBunt))} color="bg-teal-700" />
             )}
             {doublePlayEligible && (
               <OutcomeButton label="Double Play" emoji="DP" onPress={() => runFromSheet(setShowInPlaySheet, handleDPTap)} color="bg-zinc-700" />
             )}
             {triplePlayEligible && (
-              <OutcomeButton label="Triple Play" emoji="TP" onPress={() => runFromSheet(setShowInPlaySheet, onRecordTriplePlay)} color="bg-zinc-800" />
+              <OutcomeButton label="Triple Play" emoji="TP" onPress={() => runFromSheet(setShowInPlaySheet, () => commitInPlay(EventType.TRIPLE_PLAY, onRecordTriplePlay))} color="bg-zinc-800" />
             )}
           </View>
         </SheetGroup>
@@ -739,8 +800,8 @@ export function PitchInput({
         <SheetGroup label="Reached base">
           <View className="flex-row flex-wrap gap-2">
             <OutcomeButton label="Error" emoji="E" onPress={() => runFromSheet(setShowInPlaySheet, () => setShowErrorModal(true))} color="bg-orange-600" />
-            <OutcomeButton label="Hit by pitch" emoji="HBP" onPress={() => runFromSheet(setShowInPlaySheet, () => handlePitchOutcome(PitchOutcome.HIT_BY_PITCH))} color="bg-orange-500" />
-            <OutcomeButton label="Catcher Int." emoji="CI" onPress={() => runFromSheet(setShowInPlaySheet, onRecordCatcherInterference)} color="bg-rose-500" />
+            <OutcomeButton label="Hit by pitch" emoji="HBP" onPress={() => runFromSheet(setShowInPlaySheet, () => { discardBattedBall(); handlePitchOutcome(PitchOutcome.HIT_BY_PITCH); })} color="bg-orange-500" />
+            <OutcomeButton label="Catcher Int." emoji="CI" onPress={() => runFromSheet(setShowInPlaySheet, () => { discardBattedBall(); onRecordCatcherInterference(); })} color="bg-rose-500" />
             {fcEligible && (
               <OutcomeButton label="Fielder's Choice" emoji="FC" onPress={() => runFromSheet(setShowInPlaySheet, () => setShowFCModal(true))} color="bg-purple-700" />
             )}
@@ -935,7 +996,9 @@ export function PitchInput({
               {FIELDER_POSITIONS.map(({ label, position }) => (
                 <TouchableOpacity
                   key={position}
-                  className="bg-white border border-slate-300 rounded-xl px-4 py-3"
+                  testID={`error-position-${position}`}
+                  accessibilityState={{ selected: battedBall?.firstFielder === position }}
+                  className={`border rounded-xl px-4 py-3 ${battedBall?.firstFielder === position ? 'bg-blue-50 border-blue-600' : 'bg-white border-slate-300'}`}
                   onPress={() => handleErrorPick(position)}
                 >
                   <Text className="text-slate-800 font-semibold">
@@ -1415,6 +1478,22 @@ export function PitchInput({
           </View>
         </View>
       </Modal>
+
+      <FieldLocationModal
+        visible={showFieldModal}
+        onNext={(captured) => continueFromField(captured)}
+        onSkip={() => continueFromField(null)}
+      />
+
+      <ThrowSequenceModal
+        visible={pendingThrow !== null}
+        firstFielder={pendingThrow?.firstFielder ?? null}
+        onDone={(throws) => {
+          const pending = pendingThrow;
+          setPendingThrow(null);
+          pending?.finish(throws);
+        }}
+      />
     </View>
   );
 }
