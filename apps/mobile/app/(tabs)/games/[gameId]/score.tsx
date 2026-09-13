@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -986,12 +986,57 @@ export default function ScoringScreen() {
     });
   }
 
+  // Set synchronously on entry, before any await, so a second Submit tap that
+  // lands while the first start is still writing cannot slip past the
+  // persisted-GAME_START check below (both would read "not started").
+  const startingGameRef = useRef(false);
+
   async function handleStartGame(
     pitcherId: string,
     battingOrder: string[],
     tracking: { pitchType: boolean; pitchLocation: boolean },
   ) {
     if (!gameState) return;
+    if (startingGameRef.current) return;
+    startingGameRef.current = true;
+    try {
+      await startGameOnce(pitcherId, battingOrder, tracking);
+    } finally {
+      startingGameRef.current = false;
+    }
+  }
+
+  async function startGameOnce(
+    pitcherId: string,
+    battingOrder: string[],
+    tracking: { pitchType: boolean; pitchLocation: boolean },
+  ) {
+    if (!gameState) return;
+    // A game starts once. A second GAME_START is not a lineup edit — it
+    // re-seeds the pitcher and leadoff mid-game, and every replay from then
+    // on reads a different game than the one that was scored. Mid-game
+    // changes are substitutions and pitching changes, which the event log
+    // needs for compliance. Checked against the persisted log rather than
+    // the rendered `events`, which can lag the write that just happened.
+    try {
+      const persisted = await fetchGameEventsForGame(
+        database.get<WdbGameEvent>('game_events'),
+        gameId,
+      );
+      if (persisted.some((e) => e.eventType === EventType.GAME_START)) {
+        console.warn(`handleStartGame: refused second GAME_START game=${gameId}`);
+        setShowLineupModal(false);
+        Alert.alert(
+          'Game already started',
+          'This game has already begun. Use substitutions or a pitching change to change the lineup.',
+        );
+        return;
+      }
+    } catch (err) {
+      console.warn(`handleStartGame: checking for an existing GAME_START failed game=${gameId}:`, err);
+      Alert.alert("Couldn't start the game", 'Could not read this game on the device. Try again.');
+      return;
+    }
     // `isHome` is derived from the async-resolved Game row and defaults to
     // true before it loads. Block starting until the row is present so a road
     // game can't seed the home* lineup slots by mistake.
@@ -1835,11 +1880,14 @@ export default function ScoringScreen() {
         ) : null}
       </View>
 
-      {/* Pre-game lineup prompt. Keyed off ourPitcherId, not
-          gameState.currentPitcherId: INNING_CHANGE resets the latter to null,
-          so this used to reappear at the top of every half-inning of a game
-          that had been under way for an hour. */}
-      {ourPitcherId === null && (
+      {/* Pre-game lineup prompt. Keyed off whether GAME_START exists — the
+          one fact that means "not started". It was once keyed off
+          gameState.currentPitcherId, which INNING_CHANGE resets, so it
+          reappeared every half-inning; then off ourPitcherId, which is null
+          on a started game whenever our pitcher isn't in the slot isHome
+          reads. Either way it offered the start wizard mid-game, and
+          running it wrote a second GAME_START. */}
+      {!gameStarted && (
         <TouchableOpacity
           className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg flex-row items-center"
           onPress={() => setShowLineupModal(true)}
