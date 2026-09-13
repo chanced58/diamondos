@@ -41,9 +41,14 @@ export function sacrificeEligibility(
     !!state.runnersOnBase.first ||
     !!state.runnersOnBase.second ||
     !!state.runnersOnBase.third;
+  // A bunt is a ball on the ground. Once the out's trajectory is known, a fly
+  // or line drive rules out a sacrifice bunt — a bunted pop-up caught is an
+  // ordinary out. An unknown trajectory (the pre-out gate) does not disqualify.
+  const trajectoryAllowsBunt =
+    trajectory === undefined || trajectory === HitTrajectory.GROUND_BALL;
 
   return {
     sacFly: runnerCanScore && trajectoryAllowsFly,
-    sacBunt: anyRunnerOn,
+    sacBunt: anyRunnerOn && trajectoryAllowsBunt,
   };
 }

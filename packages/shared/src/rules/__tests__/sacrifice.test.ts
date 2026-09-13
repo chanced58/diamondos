@@ -58,6 +58,18 @@ describe('sacrificeEligibility', () => {
     expect(sacrificeEligibility({ outs: 0, runnersOnBase: bases({ third: 'r1' }) }, undefined).sacFly).toBe(true);
   });
 
+  it('allows a sac bunt on a ground ball with a runner on', () => {
+    expect(
+      sacrificeEligibility({ outs: 0, runnersOnBase: bases({ first: 'r1' }) }, HitTrajectory.GROUND_BALL).sacBunt,
+    ).toBe(true);
+  });
+
+  it('denies a sac bunt on a fly ball or a line drive — a bunt is on the ground', () => {
+    const st = { outs: 0, runnersOnBase: bases({ first: 'r1' }) };
+    expect(sacrificeEligibility(st, HitTrajectory.FLY_BALL).sacBunt).toBe(false);
+    expect(sacrificeEligibility(st, HitTrajectory.LINE_DRIVE).sacBunt).toBe(false);
+  });
+
   it('denies a sac bunt with 2 outs even on a ground ball', () => {
     expect(
       sacrificeEligibility({ outs: 2, runnersOnBase: bases({ first: 'r1' }) }, HitTrajectory.GROUND_BALL).sacBunt,

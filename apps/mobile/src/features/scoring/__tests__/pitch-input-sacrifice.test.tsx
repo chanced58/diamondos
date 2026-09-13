@@ -158,6 +158,7 @@ describe('PitchInput sacrifice gating — post-out prompt (trajectory-aware)', (
 
     expect(screen.getByText('Flyout — sacrifice?')).toBeTruthy();
     expect(screen.getByText('Sacrifice fly')).toBeTruthy();
+    expect(screen.queryByText('Sacrifice bunt')).toBeNull();
   });
 
   it('with two outs, choosing any out type skips the sacrifice prompt and records the out directly', () => {

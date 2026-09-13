@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome, computeLineScore, evaluateGameEnd, shouldEndHalfForRunCap, isDroppedThirdStrikeAllowed, ghostRunnerBaseForHalf, defaultLeagueScoringSettings, sacrificeEligibility, hitRunnerOptions, evaluateHitRunnerOutcomes, HitType, type LeagueScoringSettings } from '@baseball/shared';
+import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome, computeLineScore, evaluateGameEnd, shouldEndHalfForRunCap, isDroppedThirdStrikeAllowed, ghostRunnerBaseForHalf, defaultLeagueScoringSettings, sacrificeEligibility, hitRunnerOptions, evaluateHitRunnerOutcomes, HitType, HitTrajectory, type LeagueScoringSettings } from '@baseball/shared';
 import type { GameEvent } from '@baseball/shared';
 import { endGameAction } from '../actions';
 import { DefensiveDiamond } from './DefensiveDiamond';
@@ -832,11 +832,19 @@ export function ScoringBoard({
   );
 
   // OBR 9.08 — see sacrificeEligibility in @baseball/shared. Kept in shared so
-  // the mobile scorer enforces exactly the same rule.
-  const sacEligibility = sacrificeEligibility({
-    outs: gameState.outs,
-    runnersOnBase: gameState.runnersOnBase,
-  });
+  // the mobile scorer enforces exactly the same rule. Once the out's trajectory
+  // is picked it narrows the post-out prompt (no sac fly on a grounder, no sac
+  // bunt on a fly); before that, an unknown trajectory does not disqualify.
+  const pendingHitTrajectory = (Object.values(HitTrajectory) as string[]).includes(pendingTrajectory ?? '')
+    ? (pendingTrajectory as HitTrajectory)
+    : undefined;
+  const sacEligibility = sacrificeEligibility(
+    {
+      outs: gameState.outs,
+      runnersOnBase: gameState.runnersOnBase,
+    },
+    pendingHitTrajectory,
+  );
   const sacFlyEligible = sacEligibility.sacFly;
   const sacBuntEligible = sacEligibility.sacBunt;
   const anySacEligible = sacFlyEligible || sacBuntEligible;
