@@ -96,6 +96,35 @@ describe('voidEvent', () => {
     });
   });
 
+  it('voiding a hit also voids the run of a runner who advanced home on it', async () => {
+    const hit = mkEvent(EventType.HIT, { batterId: 'alice', hitType: HitType.SINGLE, rbis: 1 });
+    const advance = mkEvent(EventType.BASERUNNER_ADVANCE, {
+      runnerId: 'bob',
+      fromBase: 2,
+      toBase: 4,
+      reason: AdvanceReason.ON_PLAY,
+      relatedEventId: hit.id,
+    });
+    const score = mkEvent(EventType.SCORE, { scoringPlayerId: 'bob', rbis: 0, relatedEventId: hit.id });
+    const recordVoid = jest.fn().mockResolvedValue('void-1');
+
+    await voidEvent(hit.id, [hit, advance, score], { recordVoid });
+
+    const voided = recordVoid.mock.calls.map(([payload]) => payload.voidedEventId);
+    expect(voided).toEqual([advance.id, score.id, hit.id]);
+  });
+
+  it('does not void an unrelated run when voiding a play', async () => {
+    const hit = mkEvent(EventType.HIT, { batterId: 'alice', hitType: HitType.SINGLE });
+    const stealOfHome = mkEvent(EventType.SCORE, { scoringPlayerId: 'carol', rbis: 0 });
+    const recordVoid = jest.fn().mockResolvedValue('void-1');
+
+    await voidEvent(hit.id, [hit, stealOfHome], { recordVoid });
+
+    expect(recordVoid).toHaveBeenCalledTimes(1);
+    expect(recordVoid).toHaveBeenCalledWith({ voidedEventId: hit.id, voidedSequenceNumber: hit.sequenceNumber });
+  });
+
   it('voiding an already-voided event is a no-op', async () => {
     const hit = mkEvent(EventType.HIT, { batterId: 'alice', hitType: HitType.SINGLE });
     const priorVoid: EventVoidedPayload = {

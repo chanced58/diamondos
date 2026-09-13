@@ -1363,9 +1363,10 @@ export function ScoringBoard({
           relatedEventId: hitId,
         });
         // An advance to home never credits the run — the SCORE does, as for a
-        // steal of home. The RBI already rode on the HIT.
+        // steal of home. The RBI already rode on the HIT. Linked to the hit so
+        // voiding the hit also voids the run.
         if (choice.kind === 'advanced' && choice.toBase === 4) {
-          await recordEvent('score', { scoringPlayerId: r.runnerId, rbis: 0 });
+          await recordEvent('score', { scoringPlayerId: r.runnerId, rbis: 0, relatedEventId: hitId });
         }
       }
     }

@@ -9,9 +9,10 @@ export interface VoidEventDeps {
 /**
  * Voids `eventId` by appending EVENT_VOIDED event(s) that target it — never
  * updates or deletes the original row, per the append-only `game_events`
- * invariant. Cascades to any linked BASERUNNER_OUT / BASERUNNER_ADVANCE
- * events (`relatedEventId === eventId`) so voiding a parent play (e.g. a
- * hit) also retires the runner outcomes it carried, exactly as `handleUndo`
+ * invariant. Cascades to any linked BASERUNNER_OUT / BASERUNNER_ADVANCE /
+ * SCORE events (`relatedEventId === eventId`) so voiding a parent play (e.g. a
+ * hit) also retires the runner outcomes it carried — including the run a
+ * runner scored by advancing home on it — exactly as `handleUndo`
  * has always done for the most-recent event. This is the same cascade,
  * extracted to take an explicit id so any past play — not just the most
  * recent one — can be voided.
@@ -43,15 +44,18 @@ export async function voidEvent(
     return;
   }
 
-  // Cascade: any linked outcome events (BASERUNNER_OUT / BASERUNNER_ADVANCE
-  // with relatedEventId === target.id) get voided alongside the parent so a
-  // single void retires the whole multi-event play.
+  // Cascade: any linked outcome events (BASERUNNER_OUT / BASERUNNER_ADVANCE,
+  // and the SCORE for a runner who advanced home on the play, with
+  // relatedEventId === target.id) get voided alongside the parent so a single
+  // void retires the whole multi-event play. Leaving the SCORE live would keep
+  // a run on the board for a play that no longer happened.
   const linked = events.filter((other) => {
     if (other.id === target.id) return false;
     if (voidedIds.has(other.id)) return false;
     if (
       other.eventType !== EventType.BASERUNNER_OUT &&
-      other.eventType !== EventType.BASERUNNER_ADVANCE
+      other.eventType !== EventType.BASERUNNER_ADVANCE &&
+      other.eventType !== EventType.SCORE
     ) {
       return false;
     }

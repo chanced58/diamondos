@@ -237,6 +237,14 @@ export interface ScorePayload {
   /** Set when the scoring player is an opponent_player. */
   isOpponentScore?: boolean;
   rbis: number;
+  /**
+   * The play this run belongs to, when it came from a runner outcome on that
+   * play (a runner advancing home beyond the standard advance on a hit). Lets
+   * voiding the play also void the run. Runner-override logic in the engine
+   * and stats reads relatedEventId only on BASERUNNER_OUT / BASERUNNER_ADVANCE,
+   * so a linked SCORE changes nothing there.
+   */
+  relatedEventId?: string;
 }
 
 /** Payload for STOLEN_BASE, BASERUNNER_ADVANCE, and CAUGHT_STEALING events */

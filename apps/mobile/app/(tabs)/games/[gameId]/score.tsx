@@ -808,9 +808,14 @@ export default function ScoringScreen() {
         });
         // An advance to home clears the base but never credits the run — the
         // SCORE does, same as a stolen base of home. RBI already rode on the
-        // HIT above, so this carries none.
+        // HIT above, so this carries none. Linked to the hit so voiding the
+        // hit also voids the run (void-event.ts).
         if (outcome.kind === 'advanced' && outcome.toBase === 4) {
-          const scorePayload: ScorePayload = { scoringPlayerId: outcome.runnerId, rbis: 0 };
+          const scorePayload: ScorePayload = {
+            scoringPlayerId: outcome.runnerId,
+            rbis: 0,
+            relatedEventId: hitId,
+          };
           await recordEvent(EventType.SCORE, gameState.inning, gameState.isTopOfInning, scorePayload);
         }
       }
