@@ -126,3 +126,32 @@ describe('FieldLocationModal', () => {
     expect(onSkip).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('FieldDiagram without fielders', () => {
+  it('should render no fielder markers when fielders are not shown', () => {
+    render(
+      <FieldDiagram
+        location={null}
+        selectedFielder={null}
+        showFielders={false}
+        onPlaceBall={jest.fn()}
+        onPressFielder={jest.fn()}
+      />,
+    );
+    fireEvent(screen.getByTestId('field-diagram-frame'), 'layout', {
+      nativeEvent: { layout: { width: 240, height: 200 } },
+    });
+    expect(screen.queryByTestId('fielder-marker-8')).toBeNull();
+  });
+});
+
+describe('FieldLocationModal for a home run', () => {
+  it('should record the location with no fielder and offer no fielder markers', () => {
+    const onNext = jest.fn();
+    render(<FieldLocationModal visible fielderApplies={false} onNext={onNext} onSkip={jest.fn()} />);
+    tapField(120, 10);
+    expect(screen.queryByTestId('fielder-marker-8')).toBeNull();
+    press(screen.getByText('Next'));
+    expect(onNext).toHaveBeenCalledWith({ sprayX: 0.5, sprayY: 1, firstFielder: null });
+  });
+});

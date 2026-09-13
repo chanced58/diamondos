@@ -8,13 +8,18 @@ import { FieldDiagram } from './FieldDiagram';
  * the common case: it places the ball and selects the nearest fielder. The
  * scorer can pick another fielder, clear it (over the wall), or Skip a play
  * they didn't see — Skip records nothing.
+ * On a home run there is no fielder to pick: fielderApplies={false} hides the
+ * markers and records location only.
  */
 export function FieldLocationModal({
   visible,
+  fielderApplies = true,
   onNext,
   onSkip,
 }: {
   visible: boolean;
+  /** False for a home run: location only, no fielder offered or recorded. */
+  fielderApplies?: boolean;
   onNext: (battedBall: BattedBall) => void;
   onSkip: () => void;
 }) {
@@ -30,7 +35,7 @@ export function FieldLocationModal({
 
   function placeBall(point: { sprayX: number; sprayY: number }) {
     setLocation(point);
-    setFielder(nearestFielder(point.sprayX, point.sprayY));
+    setFielder(fielderApplies ? nearestFielder(point.sprayX, point.sprayY) : null);
   }
 
   function pressFielder(position: number) {
@@ -39,7 +44,7 @@ export function FieldLocationModal({
 
   function next() {
     if (!location) return;
-    onNext({ ...location, firstFielder: fielder });
+    onNext({ ...location, firstFielder: fielderApplies ? fielder : null });
   }
 
   return (
@@ -54,13 +59,16 @@ export function FieldLocationModal({
         <View className="bg-white rounded-2xl p-4 w-full" style={{ maxWidth: 560 }}>
           <Text className="text-lg font-bold text-gray-900">Where did it go?</Text>
           <Text className="text-sm text-gray-500 mb-3">
-            {location
-              ? 'Tap a fielder to change who touched it first.'
-              : 'Tap where the ball landed or was fielded.'}
+            {!fielderApplies
+              ? 'Tap where the ball left the park.'
+              : location
+                ? 'Tap a fielder to change who touched it first.'
+                : 'Tap where the ball landed or was fielded.'}
           </Text>
           <FieldDiagram
             location={location}
             selectedFielder={fielder}
+            showFielders={fielderApplies}
             onPlaceBall={placeBall}
             onPressFielder={pressFielder}
           />

@@ -31,11 +31,14 @@ const MARKER_SIZE = 40;
 export function FieldDiagram({
   location,
   selectedFielder,
+  showFielders = true,
   onPlaceBall,
   onPressFielder,
 }: {
   location: { sprayX: number; sprayY: number } | null;
   selectedFielder: number | null;
+  /** False on a home run: nobody fielded it, so there is nobody to pick. */
+  showFielders?: boolean;
   onPlaceBall: (point: { sprayX: number; sprayY: number }) => void;
   onPressFielder: (position: number) => void;
 }) {
@@ -99,7 +102,7 @@ export function FieldDiagram({
         </Svg>
       </Pressable>
 
-      {size.width > 0 &&
+      {showFielders && size.width > 0 &&
         FIELDING_POSITION_NUMBERS.map(({ number, abbr }) => {
           const spot = FIELDER_SPRAY_POSITIONS[number];
           const point = fieldPointFromSpray(spot.sprayX, spot.sprayY);
