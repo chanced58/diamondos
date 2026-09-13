@@ -5,9 +5,9 @@ import { FieldLocationModal } from '../FieldLocationModal';
 // The SVG drawing is decoration here; the behaviour under test is the touch
 // layer and the fielder markers, which are ordinary React Native views.
 jest.mock('react-native-svg', () => {
-  const React = require('react');
-  const { View } = require('react-native');
-  const Stub = (props: { children?: unknown }) => React.createElement(View, null, props.children);
+  const React = jest.requireActual<typeof import('react')>('react');
+  const { View } = jest.requireActual<typeof import('react-native')>('react-native');
+  const Stub = (props: { children?: import('react').ReactNode }) => React.createElement(View, null, props.children);
   return { __esModule: true, default: Stub, Rect: Stub, Path: Stub, Circle: Stub, Polygon: Stub, Line: Stub };
 });
 
