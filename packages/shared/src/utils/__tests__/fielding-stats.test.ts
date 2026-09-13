@@ -410,3 +410,17 @@ describe('deriveFieldingStats — derived fieldingPct', () => {
     expect(ss.fieldingPct).toBeCloseTo(2 / 3, 5);
   });
 });
+
+describe('deriveFieldingStats — first fielder recorded on a hit', () => {
+  beforeEach(resetSeq);
+
+  it('should credit no putout or assist for the fielder who picked up a hit', () => {
+    const events: Evt[] = [
+      e(EventType.HIT, { hitType: 'single', sprayX: 0.5, sprayY: 0.9, fieldingSequence: [8] }, true),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveFieldingStats(events as any, players, ctxMap());
+    expect(stats.get('p-cf')?.putouts ?? 0).toBe(0);
+    expect(stats.get('p-cf')?.assists ?? 0).toBe(0);
+  });
+});

@@ -159,6 +159,12 @@ export interface HitPayload {
   // Spray chart coordinates: 0-1 normalized, 0,0 = home plate
   sprayX?: number;
   sprayY?: number;
+  /**
+   * Position numbers; element 0 is the fielder who first touched the ball.
+   * On a hit this credits nothing — fielding-stats reads fieldingSequence
+   * only for outs — it records who fielded it.
+   */
+  fieldingSequence?: number[];
   rbis?: number;
   /**
    * True when the batter reached base on a fielder's choice rather than
@@ -179,6 +185,9 @@ export interface OutPayload {
   opponentPitcherId?: string;
   outType: 'groundout' | 'flyout' | 'lineout' | 'popout' | 'strikeout' | 'other';
   trajectory?: HitTrajectory;
+  // Spray chart coordinates: 0-1 normalized, 0,0 = home plate
+  sprayX?: number;
+  sprayY?: number;
   fieldedBy?: string; // position abbreviation
   /** Defensive play sequence as position numbers, e.g. [6, 3] for SS-to-1B. Max 5 steps. */
   fieldingSequence?: number[];
