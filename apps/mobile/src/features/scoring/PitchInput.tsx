@@ -348,10 +348,19 @@ export function PitchInput({
   const [selectedZone, setSelectedZone] = useState<number | null>(null);
   // Branch sheets opened from the primary surface.
   const [showInPlaySheet, setShowInPlaySheet] = useState(false);
-  // Hit location: the field pop-up, what it captured for the current in-play
-  // flow, and a throw step waiting to finish recording an out.
-  const [showFieldModal, setShowFieldModal] = useState(false);
-  const [battedBall, setBattedBall] = useState<BattedBall | null>(null);
+  // Hit location. The field pop-up request for the outcome just tapped —
+  // whether a fielder applies (not on a home run) and that outcome's own next
+  // step — and what the pop-up captured for the play in progress.
+  //
+  // The capture is a ref, not state: Next stores it and runs the outcome's
+  // next step in the same tick, and an outcome that records immediately (a
+  // home run, a single with the bases empty, a sac fly) reaches commitInPlay
+  // before any re-render, where state would still read null.
+  const [fieldRequest, setFieldRequest] = useState<null | {
+    fielderApplies: boolean;
+    proceed: () => void;
+  }>(null);
+  const battedBallRef = useRef<BattedBall | null>(null);
   const [pendingThrow, setPendingThrow] = useState<null | {
     firstFielder: number;
     finish: (throws: number[]) => void;
@@ -380,18 +389,29 @@ export function PitchInput({
     action();
   }
 
-  // In play starts a fresh flow: whatever the last flow captured is dropped
-  // before the pop-up (or the sheet, when location isn't tracked) opens.
+  // In play starts a fresh play: whatever an abandoned play captured is
+  // dropped, so it can never attach to this one.
   function openInPlay() {
-    setBattedBall(null);
-    if (trackHitLocation) setShowFieldModal(true);
-    else setShowInPlaySheet(true);
+    battedBallRef.current = null;
+    setShowInPlaySheet(true);
+  }
+
+  // Every batted-ball outcome button goes through here: the field comes next,
+  // at the same moment for every play, then the outcome's own next step.
+  function chooseBattedBall(proceed: () => void, options: { fielderApplies?: boolean } = {}) {
+    battedBallRef.current = null;
+    if (!trackHitLocation) {
+      proceed();
+      return;
+    }
+    setFieldRequest({ fielderApplies: options.fielderApplies ?? true, proceed });
   }
 
   function continueFromField(captured: BattedBall | null) {
-    setBattedBall(captured);
-    setShowFieldModal(false);
-    setShowInPlaySheet(true);
+    const request = fieldRequest;
+    setFieldRequest(null);
+    battedBallRef.current = captured;
+    request?.proceed();
   }
 
   // Every in-play terminal handler is invoked through here. It hands the
@@ -399,8 +419,8 @@ export function PitchInput({
   // and, for outs with a known first fielder, asks for the throws before
   // recording. The capture is consumed either way.
   function commitInPlay(terminal: EventType, record: () => void) {
-    const captured = battedBall;
-    setBattedBall(null);
+    const captured = battedBallRef.current;
+    battedBallRef.current = null;
     if (captured && captured.firstFielder !== null && requiresThrowStep(terminal)) {
       setPendingThrow({
         firstFielder: captured.firstFielder,
@@ -417,7 +437,7 @@ export function PitchInput({
 
   // HBP and catcher's interference aren't batted balls: nothing to locate.
   function discardBattedBall() {
-    setBattedBall(null);
+    battedBallRef.current = null;
   }
 
   function handlePitchOutcome(outcome: PitchOutcome) {
@@ -772,7 +792,7 @@ export function PitchInput({
                 key={hitType}
                 label={label}
                 emoji={emoji}
-                onPress={() => runFromSheet(setShowInPlaySheet, () => handleHitTap(hitType))}
+                onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => handleHitTap(hitType), { fielderApplies: hitType !== HitType.HOME_RUN }))}
                 color={color}
               />
             ))}
@@ -781,29 +801,29 @@ export function PitchInput({
 
         <SheetGroup label="Out">
           <View className="flex-row flex-wrap gap-2">
-            <OutcomeButton label="Out" emoji="✋" onPress={() => runFromSheet(setShowInPlaySheet, () => setShowOutModal(true))} color="bg-gray-600" />
+            <OutcomeButton label="Out" emoji="✋" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => setShowOutModal(true)))} color="bg-gray-600" />
             {sacFlyEligible && (
-              <OutcomeButton label="Sac Fly" emoji="SF" onPress={() => runFromSheet(setShowInPlaySheet, () => commitInPlay(EventType.SACRIFICE_FLY, onRecordSacFly))} color="bg-teal-600" />
+              <OutcomeButton label="Sac Fly" emoji="SF" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => commitInPlay(EventType.SACRIFICE_FLY, onRecordSacFly)))} color="bg-teal-600" />
             )}
             {sacBuntEligible && (
-              <OutcomeButton label="Sac Bunt" emoji="SH" onPress={() => runFromSheet(setShowInPlaySheet, () => commitInPlay(EventType.SACRIFICE_BUNT, onRecordSacBunt))} color="bg-teal-700" />
+              <OutcomeButton label="Sac Bunt" emoji="SH" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => commitInPlay(EventType.SACRIFICE_BUNT, onRecordSacBunt)))} color="bg-teal-700" />
             )}
             {doublePlayEligible && (
-              <OutcomeButton label="Double Play" emoji="DP" onPress={() => runFromSheet(setShowInPlaySheet, handleDPTap)} color="bg-zinc-700" />
+              <OutcomeButton label="Double Play" emoji="DP" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(handleDPTap))} color="bg-zinc-700" />
             )}
             {triplePlayEligible && (
-              <OutcomeButton label="Triple Play" emoji="TP" onPress={() => runFromSheet(setShowInPlaySheet, () => commitInPlay(EventType.TRIPLE_PLAY, onRecordTriplePlay))} color="bg-zinc-800" />
+              <OutcomeButton label="Triple Play" emoji="TP" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => commitInPlay(EventType.TRIPLE_PLAY, onRecordTriplePlay)))} color="bg-zinc-800" />
             )}
           </View>
         </SheetGroup>
 
         <SheetGroup label="Reached base">
           <View className="flex-row flex-wrap gap-2">
-            <OutcomeButton label="Error" emoji="E" onPress={() => runFromSheet(setShowInPlaySheet, () => setShowErrorModal(true))} color="bg-orange-600" />
+            <OutcomeButton label="Error" emoji="E" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => setShowErrorModal(true)))} color="bg-orange-600" />
             <OutcomeButton label="Hit by pitch" emoji="HBP" onPress={() => runFromSheet(setShowInPlaySheet, () => { discardBattedBall(); handlePitchOutcome(PitchOutcome.HIT_BY_PITCH); })} color="bg-orange-500" />
             <OutcomeButton label="Catcher Int." emoji="CI" onPress={() => runFromSheet(setShowInPlaySheet, () => { discardBattedBall(); onRecordCatcherInterference(); })} color="bg-rose-500" />
             {fcEligible && (
-              <OutcomeButton label="Fielder's Choice" emoji="FC" onPress={() => runFromSheet(setShowInPlaySheet, () => setShowFCModal(true))} color="bg-purple-700" />
+              <OutcomeButton label="Fielder's Choice" emoji="FC" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => setShowFCModal(true)))} color="bg-purple-700" />
             )}
           </View>
         </SheetGroup>
@@ -997,8 +1017,8 @@ export function PitchInput({
                 <TouchableOpacity
                   key={position}
                   testID={`error-position-${position}`}
-                  accessibilityState={{ selected: battedBall?.firstFielder === position }}
-                  className={`border rounded-xl px-4 py-3 ${battedBall?.firstFielder === position ? 'bg-blue-50 border-blue-600' : 'bg-white border-slate-300'}`}
+                  accessibilityState={{ selected: battedBallRef.current?.firstFielder === position }}
+                  className={`border rounded-xl px-4 py-3 ${battedBallRef.current?.firstFielder === position ? 'bg-blue-50 border-blue-600' : 'bg-white border-slate-300'}`}
                   onPress={() => handleErrorPick(position)}
                 >
                   <Text className="text-slate-800 font-semibold">
@@ -1480,7 +1500,8 @@ export function PitchInput({
       </Modal>
 
       <FieldLocationModal
-        visible={showFieldModal}
+        visible={fieldRequest !== null}
+        fielderApplies={fieldRequest?.fielderApplies ?? true}
         onNext={(captured) => continueFromField(captured)}
         onSkip={() => continueFromField(null)}
       />
