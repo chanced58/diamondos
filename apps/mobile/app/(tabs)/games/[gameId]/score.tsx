@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -12,15 +12,21 @@ import {
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useGameState } from '../../../../src/features/scoring/use-game-state';
 import { useRecordEvent } from '../../../../src/features/scoring/use-record-event';
+import { usePlayFeed } from '../../../../src/features/scoring/use-play-feed';
+import { PlayFeed } from '../../../../src/features/scoring/PlayFeed';
+import { voidEvent as voidEventCascade } from '../../../../src/features/scoring/void-event';
+import { fetchGameEventsForGame } from '../../../../src/features/scoring/fetch-game-events';
 import { ScoreBoard } from '../../../../src/features/scoring/ScoreBoard';
 import { CountDisplay } from '../../../../src/features/scoring/CountDisplay';
 import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDisplay';
-import { PitchInput } from '../../../../src/features/scoring/PitchInput';
+import { PitchInput, trajectoryForOutType } from '../../../../src/features/scoring/PitchInput';
 import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerModal';
 import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
+import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../src/features/scoring/in-play-pitch';
+import { createBattedBallSlot } from '../../../../src/features/scoring/batted-ball-fields';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, HitTrajectory, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
@@ -30,7 +36,9 @@ import type { Game } from '../../../../src/db/models/Game';
 import type { Player } from '../../../../src/db/models/Player';
 import type { BattedOutType, RosterPlayer, RunnerOutcome } from '../../../../src/features/scoring/PitchInput';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
-import { addLineupRow, createLocalGuest } from '../../../../src/features/lineup/local-guest';
+import { isFinalizeConfigured, getFinalizeFailureCount } from '../../../../src/sync/sync-engine';
+import { describeFinalizeStatus } from '../../../../src/sync/finalize-status';
+import { addLineupRow, createLocalGuest, prepareLineupRow } from '../../../../src/features/lineup/local-guest';
 import { useGameLineups } from '../../../../src/features/lineup/use-game-lineups';
 import { useOpponentLineup, type OpponentBatter } from '../../../../src/features/lineup/use-opponent-lineup';
 import {
@@ -38,6 +46,13 @@ import {
   addOpponentBatterFromRoster,
   opponentDisplayName,
 } from '../../../../src/features/lineup/opponent-lineup';
+import {
+  buildGameStartPayload,
+  planLineupReplacement,
+  toggleBattingOrderSlot,
+  type ExistingLineupRow,
+} from '../../../../src/features/lineup/lineup-wizard';
+import type { GameLineup } from '../../../../src/db/models/GameLineup';
 
 /**
  * Live game scoring screen — the core feature of the mobile app.
@@ -89,9 +104,17 @@ export default function ScoringScreen() {
   const { width: windowWidth } = useWindowDimensions();
   const isWide = windowWidth >= 768;
 
-  const { gameState, lineScore, events, loading } = useGameState(gameId, teamId);
+  const { gameState, lineScore, events, rawEvents, loading } = useGameState(gameId, teamId);
   const { recordEvent } = useRecordEvent(gameId);
   const { isSyncing, lastSyncError, isOffline, pendingEventsCount, triggerSync } = useSyncContext();
+  // Recomputed on every render, which — via `isSyncing` above, which flips
+  // true→false on every ~30s sync cycle — includes right after each cycle
+  // that may have changed the finalize failure count read below. Cheap pure
+  // function calls; no memoization needed.
+  const finalizeStatus = describeFinalizeStatus({
+    configured: isFinalizeConfigured(),
+    consecutiveFailures: gameId ? getFinalizeFailureCount(gameId) : 0,
+  });
   const { settings: leagueSettings, leagueId, pitchRule } = useLeagueContext(teamId);
   const maxBatters = getMaxBattingOrder(leagueSettings);
   const midGameExtensionAllowed = isMidGameExtensionAllowed(leagueSettings);
@@ -124,6 +147,20 @@ export default function ScoringScreen() {
         gameState.runnersOnBase,
       )
     : null;
+  // Sac fly / sac bunt eligibility per OBR 9.08 — gates the in-play sheet's
+  // buttons. Computed without a trajectory (not yet known pre-outcome); the
+  // post-out prompt in PitchInput re-derives this with a trajectory via
+  // sacEligibilityForTrajectory below.
+  const sacEligibility = gameState
+    ? sacrificeEligibility({ outs: gameState.outs, runnersOnBase: gameState.runnersOnBase })
+    : { sacFly: false, sacBunt: false };
+
+  // Double / triple play offers. Same seam as the sacrifice gates: the batter
+  // supplies one out, so every further out needs a runner already on base,
+  // and the half ends the moment the third out lands.
+  const multipleOut = gameState
+    ? multipleOutEligibility({ outs: gameState.outs, runnersOnBase: gameState.runnersOnBase })
+    : { doublePlay: false, triplePlay: false };
 
   // Roster for substitution + pitching-change pickers.
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
@@ -171,6 +208,25 @@ export default function ScoringScreen() {
         player_id: row.playerRemoteId,
         batting_order: row.battingOrder ?? null,
       })),
+    [observedLineupRows],
+  );
+
+  // Same roster-size bound the dedicated Lineup screen applies
+  // (lineup.tsx:138) — `maxBatters` alone is the league's raw cap and is
+  // reused elsewhere (guest slots, the Add Batter flow) where that's
+  // correct; the wizard's own selection cap should match the other lineup
+  // editor's instead of drifting from it.
+  const wizardMaxBatters = getLineupSlotCap(roster.length, maxBatters);
+
+  // Prefill for the pre-game LineupSetupModal: the saved order, slot 1 first
+  // (pre-game there are no SUBSTITUTION events to fold in, so this reads the
+  // raw rows rather than going through applyLineupSubstitutions/battingSlots).
+  const initialBattingOrder = useMemo(
+    () =>
+      observedLineupRows
+        .filter((row) => !row.isGuest && row.battingOrder != null)
+        .sort((a, b) => (a.battingOrder ?? 0) - (b.battingOrder ?? 0))
+        .map((row) => row.playerRemoteId),
     [observedLineupRows],
   );
 
@@ -416,6 +472,49 @@ export default function ScoringScreen() {
       : {}),
   };
 
+  // Batted-ball fields handed over by PitchInput immediately before an in-play
+  // handler runs; each handler takes them into its payload, which empties the
+  // slot. Cleared on every non-in-play pitch too, so a location from an
+  // abandoned flow can never attach to a later play.
+  const battedBallSlot = useRef(createBattedBallSlot()).current;
+
+  // Wraps the in-play terminal handlers (Hit / Out / error / sac / double
+  // play / triple play) so each records its implied PITCH_THROWN first —
+  // see in-play-pitch.ts. This is the single choke point all eleven of
+  // those handlers flow through at the PitchInput prop boundary below.
+  const withInPlayPitch = useMemo(
+    () =>
+      makeInPlayPitchWrapper(recordEvent, () =>
+        gameState
+          ? { inning: gameState.inning, isTopOfInning: gameState.isTopOfInning, attribution: halfAttribution }
+          : null,
+      ),
+    [recordEvent, gameState, halfAttribution],
+  );
+
+  // Built from IN_PLAY_HANDLER_TERMINALS (in-play-pitch.ts) rather than
+  // eleven hand-written `withInPlayPitch(EventType.X, handler)` JSX props:
+  // wrapInPlayHandlers requires every key that map declares, so dropping a
+  // handler here — or the map gaining a key this object doesn't supply —
+  // is a `pnpm type-check` failure, not a silent gap in the wired set.
+  const wrappedInPlayHandlers = useMemo(
+    () =>
+      wrapInPlayHandlers(withInPlayPitch, {
+        onRecordHit: handleHit,
+        onRecordHitWithRunnerOutcomes: handleHitWithRunnerOutcomes,
+        onRecordOut: handleOut,
+        onRecordError: handleError,
+        onRecordSacFly: handleSacrificeFly,
+        onRecordSacBunt: handleSacrificeBunt,
+        onRecordSacFlyFromOut: handleSacrificeFlyFromOut,
+        onRecordSacBuntFromOut: handleSacrificeBuntFromOut,
+        onRecordFieldersChoice: handleFieldersChoice,
+        onRecordDoublePlay: handleDoublePlay,
+        onRecordTriplePlay: handleTriplePlay,
+      }),
+    [withInPlayPitch],
+  );
+
   // Display names for the "Now batting" strip + batter picker: roster names
   // win; ad-hoc guests fall back to their lineup display name.
   const nameById = useMemo(() => {
@@ -452,6 +551,18 @@ export default function ScoringScreen() {
     return () => { cancelled = true; };
   }, [battingSlots, nameById]);
   const batterName = (id: string) => nameById.get(id) ?? extraNames[id] ?? 'Unknown batter';
+
+  // Both sides' names, flattened to id -> display name for the play feed.
+  // nameById wins over extraNames (same precedence as batterName above);
+  // opponentTeamId ids are a disjoint id space so ordering between the two
+  // teams doesn't matter.
+  const playFeedPlayerNames = useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = { ...extraNames };
+    for (const [id, name] of nameById) map[id] = name;
+    for (const [id, name] of opponentNameById) map[id] = name;
+    return map;
+  }, [nameById, extraNames, opponentNameById]);
+  const playFeedRows = usePlayFeed(rawEvents, playFeedPlayerNames);
 
   /**
    * The batting team's order, whichever side that is — the card the scorer
@@ -503,6 +614,7 @@ export default function ScoringScreen() {
     return {
       pitchType: gsp.pitchTypeEnabled !== false,
       pitchLocation: gsp.pitchLocationEnabled !== false,
+      hitLocation: gsp.hitLocationEnabled !== false,
     };
   }, [events]);
 
@@ -578,6 +690,7 @@ export default function ScoringScreen() {
     zoneLocation?: number,
   ) {
     if (!gameState) return;
+    battedBallSlot.clear();
     const payload: PitchThrownPayload = {
       ...halfAttribution,
       outcome,
@@ -633,6 +746,7 @@ export default function ScoringScreen() {
     if (!gameState) return;
     const payload: HitPayload = {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       hitType,
     };
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, payload);
@@ -644,9 +758,27 @@ export default function ScoringScreen() {
   // shows e.g. "Double (Runner thrown out at 3B)".
   async function handleHitWithRunnerOutcomes(hitType: HitType, outcomes: RunnerOutcome[]) {
     if (!gameState) return;
+    // The prompt refuses to confirm an impossible combination, so this is a
+    // second line of defence rather than the gate.
+    const evaluation = evaluateHitRunnerOutcomes(
+      hitType,
+      outcomes.map(({ fromBase, runnerId: _runnerId, ...choice }) => ({ fromBase, choice })),
+    );
+    if (evaluation.error) {
+      console.warn(`handleHitWithRunnerOutcomes: refused game=${gameId}: ${evaluation.error}`);
+      return;
+    }
+    // RBI on a hit is derived from runners the HIT itself scores, and a runner
+    // with a linked outcome is deliberately excluded from that — so a runner
+    // who scores by advancing beyond the standard base would drive in nothing.
+    // Only when that happens is the count made explicit; otherwise rbis stays
+    // omitted and derivation (batting-stats, maxpreps-export) is untouched.
+    const anyAdvancedHome = outcomes.some((o) => o.kind === 'advanced' && o.toBase === 4);
     const payload: HitPayload = {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       hitType,
+      ...(anyAdvancedHome ? { rbis: evaluation.rbis } : {}),
     };
     const hitId = await recordEvent(
       EventType.HIT,
@@ -665,7 +797,8 @@ export default function ScoringScreen() {
           reason: AdvanceReason.ON_PLAY,
         });
       } else {
-        // 'held' — runner stops short of the default advance.
+        // 'held' stops short of the default advance; 'advanced' goes beyond
+        // it. Both are a linked BASERUNNER_ADVANCE to the runner's real base.
         await recordEvent(EventType.BASERUNNER_ADVANCE, gameState.inning, gameState.isTopOfInning, {
           runnerId: outcome.runnerId,
           fromBase: outcome.fromBase,
@@ -673,20 +806,28 @@ export default function ScoringScreen() {
           reason: AdvanceReason.ON_PLAY,
           relatedEventId: hitId,
         });
+        // An advance to home clears the base but never credits the run — the
+        // SCORE does, same as a stolen base of home. RBI already rode on the
+        // HIT above, so this carries none. Linked to the hit so voiding the
+        // hit also voids the run (void-event.ts).
+        if (outcome.kind === 'advanced' && outcome.toBase === 4) {
+          const scorePayload: ScorePayload = {
+            scoringPlayerId: outcome.runnerId,
+            rbis: 0,
+            relatedEventId: hitId,
+          };
+          await recordEvent(EventType.SCORE, gameState.inning, gameState.isTopOfInning, scorePayload);
+        }
       }
     }
   }
 
   async function handleOut(outType: BattedOutType) {
     if (!gameState) return;
-    const trajectory: HitTrajectory | undefined =
-      outType === 'groundout' ? HitTrajectory.GROUND_BALL
-      : outType === 'flyout' ? HitTrajectory.FLY_BALL
-      : outType === 'lineout' ? HitTrajectory.LINE_DRIVE
-      : outType === 'popout' ? HitTrajectory.FLY_BALL
-      : undefined;
+    const trajectory = trajectoryForOutType(outType);
     const payload: OutPayload = {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       outType,
       ...(trajectory ? { trajectory } : {}),
     };
@@ -713,12 +854,14 @@ export default function ScoringScreen() {
     if (!gameState) return;
     await recordEvent(EventType.FIELD_ERROR, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       errorBy,
     });
   }
 
   async function handleCatcherInterference() {
     if (!gameState) return;
+    battedBallSlot.clear();
     await recordEvent(EventType.CATCHER_INTERFERENCE, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
     });
@@ -728,6 +871,7 @@ export default function ScoringScreen() {
     if (!gameState) return;
     await recordEvent(EventType.SACRIFICE_FLY, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
+      ...battedBallSlot.take(),
     });
   }
 
@@ -735,26 +879,22 @@ export default function ScoringScreen() {
     if (!gameState) return;
     await recordEvent(EventType.SACRIFICE_BUNT, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
+      ...battedBallSlot.take(),
     });
   }
 
   // Sacrifice path that came from the Out modal — the scorer first picked
   // a trajectory, then upgraded it to a sacrifice. We carry the trajectory
   // on the payload so the play preserves the context the scorer already
-  // identified (e.g. flyout → sac fly retains FLY_BALL).
-  function trajectoryForOutType(outType: BattedOutType): HitTrajectory | undefined {
-    return outType === 'groundout' ? HitTrajectory.GROUND_BALL
-      : outType === 'flyout' ? HitTrajectory.FLY_BALL
-      : outType === 'lineout' ? HitTrajectory.LINE_DRIVE
-      : outType === 'popout' ? HitTrajectory.FLY_BALL
-      : undefined;
-  }
-
+  // identified (e.g. flyout → sac fly retains FLY_BALL). trajectoryForOutType
+  // is imported from PitchInput.tsx — the single source of truth for this
+  // mapping, also used by handleOut above and PitchInput's post-out prompt.
   async function handleSacrificeFlyFromOut(outType: BattedOutType) {
     if (!gameState) return;
     const trajectory = trajectoryForOutType(outType);
     await recordEvent(EventType.SACRIFICE_FLY, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       ...(trajectory ? { trajectory } : {}),
     });
   }
@@ -764,6 +904,7 @@ export default function ScoringScreen() {
     const trajectory = trajectoryForOutType(outType);
     await recordEvent(EventType.SACRIFICE_BUNT, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       ...(trajectory ? { trajectory } : {}),
     });
   }
@@ -874,6 +1015,7 @@ export default function ScoringScreen() {
     });
     const hitPayload: HitPayload = {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       hitType: HitType.SINGLE,
       fieldersChoice: true,
     };
@@ -893,12 +1035,57 @@ export default function ScoringScreen() {
     });
   }
 
+  // Set synchronously on entry, before any await, so a second Submit tap that
+  // lands while the first start is still writing cannot slip past the
+  // persisted-GAME_START check below (both would read "not started").
+  const startingGameRef = useRef(false);
+
   async function handleStartGame(
     pitcherId: string,
-    batterId: string,
-    tracking: { pitchType: boolean; pitchLocation: boolean },
+    battingOrder: string[],
+    tracking: { pitchType: boolean; pitchLocation: boolean; hitLocation: boolean },
   ) {
     if (!gameState) return;
+    if (startingGameRef.current) return;
+    startingGameRef.current = true;
+    try {
+      await startGameOnce(pitcherId, battingOrder, tracking);
+    } finally {
+      startingGameRef.current = false;
+    }
+  }
+
+  async function startGameOnce(
+    pitcherId: string,
+    battingOrder: string[],
+    tracking: { pitchType: boolean; pitchLocation: boolean; hitLocation: boolean },
+  ) {
+    if (!gameState) return;
+    // A game starts once. A second GAME_START is not a lineup edit — it
+    // re-seeds the pitcher and leadoff mid-game, and every replay from then
+    // on reads a different game than the one that was scored. Mid-game
+    // changes are substitutions and pitching changes, which the event log
+    // needs for compliance. Checked against the persisted log rather than
+    // the rendered `events`, which can lag the write that just happened.
+    try {
+      const persisted = await fetchGameEventsForGame(
+        database.get<WdbGameEvent>('game_events'),
+        gameId,
+      );
+      if (persisted.some((e) => e.eventType === EventType.GAME_START)) {
+        console.warn(`handleStartGame: refused second GAME_START game=${gameId}`);
+        setShowLineupModal(false);
+        Alert.alert(
+          'Game already started',
+          'This game has already begun. Use substitutions or a pitching change to change the lineup.',
+        );
+        return;
+      }
+    } catch (err) {
+      console.warn(`handleStartGame: checking for an existing GAME_START failed game=${gameId}:`, err);
+      Alert.alert("Couldn't start the game", 'Could not read this game on the device. Try again.');
+      return;
+    }
     // `isHome` is derived from the async-resolved Game row and defaults to
     // true before it loads. Block starting until the row is present so a road
     // game can't seed the home* lineup slots by mistake.
@@ -909,16 +1096,60 @@ export default function ScoringScreen() {
     }
     // Which team are we scoring? `isHome` comes from the resolved Game row's
     // locationType / neutralHomeTeam so road games seed the away* lineup
-    // slots instead of misattributing to home*.
-    const payload = {
-      ...(isHome
-        ? { homeLineupPitcherId: pitcherId, homeLeadoffBatterId: batterId }
-        : { awayLineupPitcherId: pitcherId, awayLeadoffBatterId: batterId }),
-      // Same keys the web scorer writes, so either client can read the other's
-      // games. Read back via scoringConfig above.
-      pitchTypeEnabled: tracking.pitchType,
-      pitchLocationEnabled: tracking.pitchLocation,
-    };
+    // slots instead of misattributing to home*. The order is the source of
+    // truth; the leadoff written into GAME_START is derived from slot 1 —
+    // same keys the web scorer writes (and deriveGameState reads), so either
+    // client can read the other's games.
+
+    // Plan the game_lineups rewrite *before* touching GAME_START — the "+
+    // Guest" toolbar button isn't gated on game status, so a guest can
+    // already occupy one of the slots this order is about to claim. Read the
+    // current rows fresh (not the reactive `observedLineupRows`, which can
+    // lag a beat behind a guest just added) and hand them to the same
+    // pure decision the dedicated Lineup screen's guestCollision guard
+    // makes, so the coach is told and gets to choose instead of the sync
+    // engine silently renumbering — or dropping — a starter later.
+    let lineupPlan: ReturnType<typeof planLineupReplacement>;
+    try {
+      const existingLineupModels = await database
+        .get<GameLineup>('game_lineups')
+        .query(Q.where('game_remote_id', gameId))
+        .fetch();
+      const existingRows: ExistingLineupRow[] = existingLineupModels.map((row) => ({
+        playerRemoteId: row.playerRemoteId,
+        battingOrder: row.battingOrder ?? null,
+        startingPosition: row.startingPosition ?? null,
+        isGuest: row.isGuest,
+      }));
+      lineupPlan = planLineupReplacement(existingRows, gameId, battingOrder, pitcherId);
+    } catch (err) {
+      console.warn(`handleStartGame: reading existing lineup rows failed game=${gameId}:`, err);
+      Alert.alert(
+        "Couldn't start the game",
+        'Could not read the current lineup on this device. Try again.',
+      );
+      return;
+    }
+    if (lineupPlan.guestSlotCollisions.length > 0) {
+      const slots = lineupPlan.guestSlotCollisions;
+      const plural = slots.length > 1;
+      Alert.alert(
+        `Slot${plural ? 's' : ''} ${slots.join(', ')} already taken by a guest`,
+        `A guest player already holds batting order slot${plural ? 's' : ''} ${slots.join(', ')}. ` +
+          'Remove the guest, or set the lineup from the Lineup screen instead, before starting the game.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Open Lineup',
+            onPress: () =>
+              router.push({ pathname: '/(tabs)/games/[gameId]/lineup', params: { gameId } }),
+          },
+        ],
+      );
+      return;
+    }
+
+    const payload = buildGameStartPayload({ isHome, pitcherId, battingOrder, tracking });
     try {
       await recordEvent(EventType.GAME_START, gameState.inning, gameState.isTopOfInning, payload);
     } catch (err) {
@@ -930,6 +1161,45 @@ export default function ScoringScreen() {
         'The starting lineup was not saved. Check your connection and try again.',
       );
       return;
+    }
+
+    // Write the batting order into game_lineups through the existing
+    // offline-first path (prepareLineupRow), so the rows sync two-way via
+    // lineup-sync.ts and the order rail / due-batter rotation have a lineup
+    // to read — the whole point of this wizard, not just GAME_START's
+    // slot-1 leadoff. Existing non-guest rows are replaced (soft-deleted,
+    // like the dedicated lineup screen's save) so re-running the wizard
+    // (e.g. a retry after this fails) can't leave duplicate/stale slots.
+    // `lineupPlan.rowsToCreate` already preserves any starting_position a
+    // returning player had (e.g. set on the Lineup screen) instead of
+    // nulling it out — see planLineupReplacement/buildBattingOrderLineupRows.
+    try {
+      await database.write(async () => {
+        const collection = database.get<GameLineup>('game_lineups');
+        const existing = await collection
+          .query(Q.where('game_remote_id', gameId), Q.where('is_guest', false))
+          .fetch();
+        const now = Date.now();
+        for (const row of existing) {
+          await row.update((r) => {
+            r.updatedAt = now;
+          });
+          await row.markAsDeleted();
+        }
+        await database.batch(...lineupPlan.rowsToCreate.map(prepareLineupRow));
+      });
+      triggerSync().catch((err) =>
+        console.warn(`handleStartGame: lineup sync trigger failed game=${gameId}:`, err),
+      );
+    } catch (err) {
+      // Non-fatal: GAME_START already recorded, so the game still starts and
+      // the leadoff still attributes correctly. Without a lineup, though,
+      // the order rail reads empty from batter two on — surface it.
+      console.warn(`handleStartGame: writing game_lineups failed game=${gameId}:`, err);
+      Alert.alert(
+        'Lineup not saved',
+        "The game started, but the batting order couldn't be saved on this device. Set it from the Lineup screen.",
+      );
     }
     // Reflect the transition locally right away (list badge); the server
     // flips via fn_start_game in the sync engine's lifecycle scan.
@@ -1005,9 +1275,10 @@ export default function ScoringScreen() {
 
   function confirmEndGame() {
     if (!gameState || !lineScore) return;
+    const scoreLine = `Final score ${lineScore.homeRuns}–${lineScore.awayRuns}.`;
     Alert.alert(
       'End game?',
-      `Final score ${lineScore.homeRuns}–${lineScore.awayRuns}. The result finalizes automatically when the device is back online.`,
+      finalizeStatus.alertBody(scoreLine),
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'End Game', style: 'destructive', onPress: () => { handleEndGame().catch(console.warn); } },
@@ -1172,6 +1443,35 @@ export default function ScoringScreen() {
     return null;
   }
 
+  /**
+   * Voids ANY event from the game's full history — not just the most recent
+   * one — by appending EVENT_VOIDED event(s) that target it. `game_events`
+   * is append-only: this never updates or deletes the original row. Voiding
+   * a parent play cascades to its linked BASERUNNER_OUT / BASERUNNER_ADVANCE
+   * events (same cascade `handleUndo` has always used, now shared via
+   * `voidEventCascade`), and voiding an already-voided event is a no-op.
+   *
+   * Queries the full event history (no trailing window) rather than reusing
+   * `rawEvents` state, via `fetchGameEventsForGame` (fetch-game-events.ts) —
+   * the target, and any linked children it may cascade to, can sit many
+   * innings back, arbitrarily far from the tail of the log, and a fresh
+   * query guarantees we see anything just written this tick. The query and
+   * the WDB→shared field mapping live in that module (not inlined here) so
+   * they're directly testable against a fake collection — see
+   * fetch-game-events.test.ts. Used both as the Undo button's
+   * implementation (see `handleUndo` below) and as the play feed's per-row
+   * Void action.
+   */
+  async function voidEvent(eventId: string): Promise<void> {
+    if (!gameState) return;
+    const eventsCollection = database.get<WdbGameEvent>('game_events');
+    const sharedEvents = await fetchGameEventsForGame(eventsCollection, gameId);
+    await voidEventCascade(eventId, sharedEvents, {
+      recordVoid: (payload: EventVoidedPayload) =>
+        recordEvent(EventType.EVENT_VOIDED, gameState.inning, gameState.isTopOfInning, payload),
+    });
+  }
+
   // Only scan this far back when searching for an event to void. Typical
   // scorer Undo use lives within the last few events; a 64-event trailing
   // window covers well over an inning of activity while keeping the query
@@ -1206,37 +1506,15 @@ export default function ScoringScreen() {
     }
 
     // Already sorted descending, so iterate forward to find the most
-    // recent non-correction, non-voided event.
+    // recent non-correction, non-voided event, then hand off to voidEvent —
+    // which performs the actual cascade-void (parent + any linked
+    // BASERUNNER_OUT / BASERUNNER_ADVANCE) — so Undo and the play feed's
+    // per-row Void action share one implementation.
     for (const e of recent) {
       if (e.eventType === EventType.EVENT_VOIDED) continue;
       if (e.eventType === EventType.PITCH_REVERTED) continue;
       if (voidedIds.has(e.remoteId)) continue;
-      // Cascade-undo: when voiding a parent play, also void any linked
-      // outcome events (BASERUNNER_OUT / BASERUNNER_ADVANCE with
-      // relatedEventId === parent.id) so a single Undo tap retires the
-      // full multi-event play (e.g. "Double + R1 thrown out at 3B").
-      const linked = recent.filter((other) => {
-        if (other.remoteId === e.remoteId) return false;
-        if (voidedIds.has(other.remoteId)) return false;
-        if (
-          other.eventType !== EventType.BASERUNNER_OUT &&
-          other.eventType !== EventType.BASERUNNER_ADVANCE
-        ) return false;
-        const p = other.payload as { relatedEventId?: string };
-        return p.relatedEventId === e.remoteId;
-      });
-      for (const child of linked) {
-        const childPayload: EventVoidedPayload = {
-          voidedEventId: child.remoteId,
-          voidedSequenceNumber: child.sequenceNumber,
-        };
-        await recordEvent(EventType.EVENT_VOIDED, gameState.inning, gameState.isTopOfInning, childPayload);
-      }
-      const payload: EventVoidedPayload = {
-        voidedEventId: e.remoteId,
-        voidedSequenceNumber: e.sequenceNumber,
-      };
-      await recordEvent(EventType.EVENT_VOIDED, gameState.inning, gameState.isTopOfInning, payload);
+      await voidEvent(e.remoteId);
       return;
     }
   }
@@ -1343,6 +1621,7 @@ export default function ScoringScreen() {
     if (!gameState) return;
     await recordEvent(EventType.DOUBLE_PLAY, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
+      ...battedBallSlot.take(),
       ...(runnerOut ? { runnerOutId: runnerOut.runnerId, runnerOutBase: runnerOut.base } : {}),
     });
   }
@@ -1351,6 +1630,7 @@ export default function ScoringScreen() {
     if (!gameState) return;
     await recordEvent(EventType.TRIPLE_PLAY, gameState.inning, gameState.isTopOfInning, {
       ...halfAttribution,
+      ...battedBallSlot.take(),
     });
   }
 
@@ -1482,12 +1762,25 @@ export default function ScoringScreen() {
           <View className="px-3 py-1 rounded-full bg-gray-900">
             <Text className="text-white text-xs font-bold uppercase tracking-wide">Final</Text>
           </View>
-          {pendingEventsCount > 0 && (
-            <Text className="text-amber-600 text-xs mt-2">
-              Result finalizes automatically when the device is back online.
-            </Text>
-          )}
         </View>
+        {/*
+          NOTE (Minor, task-8-review.md #2): `game?.status` briefly reads
+          'completed' here even when finalize is failing or unconfigured,
+          for roughly one sync interval right after End Game — handleEndGame
+          writes the local `games` row's status optimistically, before any
+          sync/finalize attempt runs. It self-corrects on the next pull that
+          finds the row no longer locally-dirty. Not fixed here: doing so
+          would mean holding back the optimistic write (complicating the
+          fully-offline End Game flow) for a window that is bounded and
+          self-healing, and that never produces a false *positive* — only a
+          brief false silence in the failure case.
+        */}
+        {gameState.isFinal && game?.status !== 'completed' && (
+          <View className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+            <Text className="text-sm font-semibold text-amber-900">{finalizeStatus.bannerTitle}</Text>
+            <Text className="text-xs text-amber-800 mt-0.5">{finalizeStatus.bannerDetail}</Text>
+          </View>
+        )}
         {lineScore && (
           <View className="mx-4 mt-3 border border-gray-200 rounded-xl overflow-hidden">
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -1530,7 +1823,12 @@ export default function ScoringScreen() {
       />
 
       <PaneRow isWide={isWide}>
-      <BookPane isWide={isWide}>
+      <BookPane
+        isWide={isWide}
+        // Outside the pane's ScrollView: a FlatList nested in a same-orientation
+        // ScrollView is invalid, and RN logs it on every render.
+        footer={gameStarted ? <PlayFeed rows={playFeedRows} onVoid={voidEvent} /> : null}
+      >
 
       {/* Book toolbar. These were floating over the pane on absolute
           positioning, which put them on top of the count once this column
@@ -1633,18 +1931,21 @@ export default function ScoringScreen() {
         ) : null}
       </View>
 
-      {/* Pre-game lineup prompt. Keyed off ourPitcherId, not
-          gameState.currentPitcherId: INNING_CHANGE resets the latter to null,
-          so this used to reappear at the top of every half-inning of a game
-          that had been under way for an hour. */}
-      {ourPitcherId === null && (
+      {/* Pre-game lineup prompt. Keyed off whether GAME_START exists — the
+          one fact that means "not started". It was once keyed off
+          gameState.currentPitcherId, which INNING_CHANGE resets, so it
+          reappeared every half-inning; then off ourPitcherId, which is null
+          on a started game whenever our pitcher isn't in the slot isHome
+          reads. Either way it offered the start wizard mid-game, and
+          running it wrote a second GAME_START. */}
+      {!gameStarted && (
         <TouchableOpacity
           className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg flex-row items-center"
           onPress={() => setShowLineupModal(true)}
         >
           <Text className="flex-1 text-sm text-amber-900">
             <Text className="font-semibold">Set starting lineup</Text>
-            <Text> — tap to pick your starting pitcher and leadoff batter.</Text>
+            <Text> — tap to pick your starting pitcher and batting order.</Text>
           </Text>
           <Text className="text-amber-900 font-semibold">Set</Text>
         </TouchableOpacity>
@@ -1653,9 +1954,11 @@ export default function ScoringScreen() {
       <LineupSetupModal
         visible={showLineupModal}
         roster={roster}
-        // Prefill from the saved lineup: slot 1 leads off; the player whose
-        // starting position is pitcher takes the mound.
-        initialBatterId={deriveDueBatter(battingSlots, 0)?.playerId ?? null}
+        maxBatters={wizardMaxBatters}
+        // Prefill from the saved lineup: the player whose starting position
+        // is pitcher takes the mound; the saved order (slot 1 first) seeds
+        // the batting-order step.
+        initialBattingOrder={initialBattingOrder}
         initialPitcherId={
           observedLineupRows.find((row) => row.startingPosition === 'pitcher')?.playerRemoteId ?? null
         }
@@ -1745,6 +2048,8 @@ export default function ScoringScreen() {
         </View>
       )}
 
+      {/* Play-by-play — below the batting order, scrolling independently
+          of the rest of the read pane. */}
       <BatterPickerModal
         visible={showBatterPicker}
         slots={battingSlots}
@@ -1839,10 +2144,34 @@ export default function ScoringScreen() {
         />
       )}
 
-      {/* Bottom: 3-outs prompt or pitch / outcome input. deriveGameState
-          holds the half open until an explicit INNING_CHANGE, so at 3 outs
-          the input surface is replaced by the switch-sides prompt. */}
-      {gameState.outs >= OUTS_PER_INNING ? (
+      {/* Bottom: lineup gate, 3-outs prompt, or pitch / outcome input.
+          deriveGameState holds the half open until an explicit
+          INNING_CHANGE, so at 3 outs the input surface is replaced by the
+          switch-sides prompt.
+
+          The lineup gate comes first and is a hard block, not a nag. Pitcher
+          attribution is derived from GAME_START / PITCHING_CHANGE, so a pitch
+          recorded before GAME_START belongs to no pitcher at all — it lands in
+          game_events, counts toward nothing, and silently corrupts the pitch
+          count that compliance depends on. GAME_START is written only by
+          handleStartGame, which the wizard reaches only with a starting
+          pitcher and a non-empty batting order, so gating on it enforces both
+          without duplicating the wizard's rules here. */}
+      {!gameStarted ? (
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-2xl font-bold text-gray-900 mb-1">Lineup required</Text>
+          <Text className="text-sm text-gray-500 text-center mb-5">
+            Set your batting order and starting pitcher before scoring. Pitches
+            recorded without a lineup can&apos;t be credited to a pitcher.
+          </Text>
+          <TouchableOpacity
+            onPress={() => setShowLineupModal(true)}
+            className="w-full bg-blue-600 rounded-2xl py-4 items-center"
+          >
+            <Text className="text-white text-lg font-bold">Set starting lineup</Text>
+          </TouchableOpacity>
+        </View>
+      ) : gameState.outs >= OUTS_PER_INNING ? (
         <View className="flex-1 items-center justify-center px-6">
           <Text className="text-2xl font-bold text-gray-900 mb-1">3 outs</Text>
           <Text className="text-sm text-gray-500 mb-5">
@@ -1887,24 +2216,28 @@ export default function ScoringScreen() {
       <PitchInput
         onRecordPitch={handlePitch}
         trackPitchType={scoringConfig.pitchType}
+        trackHitLocation={scoringConfig.hitLocation}
+        onBattedBall={battedBallSlot.set}
         trackPitchLocation={scoringConfig.pitchLocation}
-        onRecordHit={handleHit}
-        onRecordHitWithRunnerOutcomes={handleHitWithRunnerOutcomes}
-        onRecordOut={handleOut}
+        {...wrappedInPlayHandlers}
         onRecordStrikeout={handleStrikeout}
-        onRecordError={handleError}
         onRecordCatcherInterference={handleCatcherInterference}
-        onRecordSacFly={handleSacrificeFly}
-        onRecordSacBunt={handleSacrificeBunt}
-        onRecordSacFlyFromOut={handleSacrificeFlyFromOut}
-        onRecordSacBuntFromOut={handleSacrificeBuntFromOut}
-        onRecordFieldersChoice={handleFieldersChoice}
+        sacFlyEligible={sacEligibility.sacFly}
+        sacBuntEligible={sacEligibility.sacBunt}
+        doublePlayEligible={multipleOut.doublePlay}
+        triplePlayEligible={multipleOut.triplePlay}
+        sacEligibilityForTrajectory={(trajectory) =>
+          gameState
+            ? sacrificeEligibility(
+                { outs: gameState.outs, runnersOnBase: gameState.runnersOnBase },
+                trajectory,
+              )
+            : { sacFly: false, sacBunt: false }
+        }
         onRecordRunnerOut={handleRunnerOut}
         onRecordWildPitch={handleWildPitch}
         onRecordPassedBall={handlePassedBall}
         onRecordBalk={handleBalk}
-        onRecordDoublePlay={handleDoublePlay}
-        onRecordTriplePlay={handleTriplePlay}
         onRecordPitchingChange={handlePitchingChange}
         onRecordPinchHitter={handlePinchHitter}
         onRecordDefensiveSub={handleDefensiveSub}
@@ -1978,11 +2311,20 @@ function PaneRow({ isWide, children }: { isWide: boolean; children: ReactNode })
  * set directly on a ScrollView is not honoured — it collapses towards its
  * content — which is why earlier splits only ever worked at 1:1.
  */
-function BookPane({ isWide, children }: { isWide: boolean; children: ReactNode }) {
-  if (!isWide) return <>{children}</>;
+function BookPane({
+  isWide,
+  children,
+  footer,
+}: {
+  isWide: boolean;
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
+  if (!isWide) return <>{children}{footer}</>;
   return (
     <View className="border-r border-gray-200 bg-white" style={{ flex: 5 }}>
       <ScrollView style={{ flex: 1 }}>{children}</ScrollView>
+      {footer}
     </View>
   );
 }
@@ -2835,45 +3177,66 @@ function TrackingToggle({
 function LineupSetupModal({
   visible,
   roster,
+  maxBatters,
   initialPitcherId = null,
-  initialBatterId = null,
+  initialBattingOrder = [],
   onCancel,
   onSubmit,
 }: {
   visible: boolean;
   roster: RosterPlayer[];
-  /** Prefill from the saved lineup (position = pitcher / batting slot 1). */
+  /** League cap on batting-order slots (getMaxBattingOrder) — expanded
+   *  lineups can exceed nine. */
+  maxBatters: number;
+  /** Prefill from the saved lineup (position = pitcher / saved order). */
   initialPitcherId?: string | null;
-  initialBatterId?: string | null;
+  initialBattingOrder?: string[];
   onCancel: () => void;
   onSubmit: (
     pitcherId: string,
-    batterId: string,
-    tracking: { pitchType: boolean; pitchLocation: boolean },
+    battingOrder: string[],
+    tracking: { pitchType: boolean; pitchLocation: boolean; hitLocation: boolean },
   ) => void;
 }) {
   const [pitcherId, setPitcherId] = useState<string | null>(null);
-  const [batterId, setBatterId] = useState<string | null>(null);
+  // Order is the source of truth: tapping a player appends them and shows
+  // their slot number; tapping a selected player removes them. Slot 1 is
+  // the leadoff batter — see buildGameStartPayload / deriveLeadoffFromOrder.
+  const [battingOrder, setBattingOrder] = useState<string[]>([]);
   const [step, setStep] = useState<'pitcher' | 'batter' | 'tracking'>('pitcher');
   const [trackPitchType, setTrackPitchType] = useState(true);
   const [trackPitchLocation, setTrackPitchLocation] = useState(false);
+  // On by default: the coach asked for hit location, and Skip keeps a play
+  // the scorer didn't see from costing more than one tap.
+  const [trackHitLocation, setTrackHitLocation] = useState(true);
 
+  // Reset only on the transition to open. initialPitcherId and
+  // initialBattingOrder derive from the live game_lineups observation, so a
+  // sync landing while the wizard is open gives them new values — resetting
+  // then would wipe the coach's in-progress picks and send them back to the
+  // first step. Reopening still starts from the latest saved lineup.
+  const wasVisibleRef = useRef(false);
   useEffect(() => {
-    if (visible) {
+    if (visible && !wasVisibleRef.current) {
       setPitcherId(initialPitcherId);
-      setBatterId(initialBatterId);
+      setBattingOrder(initialBattingOrder);
       setStep('pitcher');
       setTrackPitchType(true);
       setTrackPitchLocation(false);
+      setTrackHitLocation(true);
     }
-  }, [visible, initialPitcherId, initialBatterId]);
+    wasVisibleRef.current = visible;
+  }, [visible, initialPitcherId, initialBattingOrder]);
 
   const onPitcherStep = step === 'pitcher';
   const onBatterStep = step === 'batter';
   const onTrackingStep = step === 'tracking';
-  const selectedId = onPitcherStep ? pitcherId : batterId;
   // The tracking step is always satisfiable — tracking nothing is a valid choice.
-  const canAdvance = onTrackingStep || selectedId !== null;
+  const canAdvance = onTrackingStep
+    ? true
+    : onPitcherStep
+      ? pitcherId !== null
+      : battingOrder.length > 0;
   const stepNumber = onPitcherStep ? 1 : onBatterStep ? 2 : 3;
   const label = (p: RosterPlayer) =>
     `${p.jerseyNumber !== undefined ? `#${p.jerseyNumber} ` : ''}${p.name}`;
@@ -2897,9 +3260,15 @@ function LineupSetupModal({
               {onPitcherStep
                 ? "Who's pitching?"
                 : onBatterStep
-                  ? "Who's batting first?"
+                  ? 'Set your batting order'
                   : 'What do you want to track?'}
             </Text>
+            {onBatterStep ? (
+              <Text className="text-sm text-gray-500 mt-1">
+                Tap a name to add them to the order, tap again to remove. Up
+                to {maxBatters}; slot 1 leads off.
+              </Text>
+            ) : null}
             {!onPitcherStep && pitcher ? (
               <Text className="text-sm text-gray-500 mt-1">
                 Pitcher: {label(pitcher)}
@@ -2929,6 +3298,12 @@ function LineupSetupModal({
                   value={trackPitchLocation}
                   onToggle={() => setTrackPitchLocation((v) => !v)}
                 />
+                <TrackingToggle
+                  label="Hit location"
+                  hint="Where each ball in play went, and who fielded it"
+                  value={trackHitLocation}
+                  onToggle={() => setTrackHitLocation((v) => !v)}
+                />
               </View>
             </ScrollView>
           ) : roster.length === 0 ? (
@@ -2939,31 +3314,68 @@ function LineupSetupModal({
             <ScrollView className="px-5" style={{ flexShrink: 1 }}>
               <View className="gap-2 pb-2">
                 {roster.map((p) => {
-                  const isSelected = selectedId === p.id;
-                  const selectedClass = onPitcherStep
-                    ? 'bg-blue-600 border-blue-700'
-                    : 'bg-green-600 border-green-700';
+                  if (onPitcherStep) {
+                    const isSelected = pitcherId === p.id;
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        className={`flex-row items-center justify-between rounded-xl px-4 py-3 border ${
+                          isSelected ? 'bg-blue-600 border-blue-700' : 'bg-white border-gray-300'
+                        }`}
+                        onPress={() => setPitcherId(p.id)}
+                      >
+                        <Text
+                          className={
+                            isSelected ? 'text-white font-semibold' : 'text-gray-900 font-semibold'
+                          }
+                        >
+                          {label(p)}
+                        </Text>
+                        {isSelected ? (
+                          <Text className="text-white font-bold">✓</Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  }
+
+                  // Batter step: multi-select and ordered. The badge shows
+                  // the player's slot number (their index + 1) instead of a
+                  // checkmark, so the order forms visibly as the coach taps.
+                  // Unselected players are disabled once the order hits the
+                  // league cap — matches toggleBattingOrderSlot's no-op.
+                  const slotIndex = battingOrder.indexOf(p.id);
+                  const isSelected = slotIndex !== -1;
+                  const atCap = !isSelected && battingOrder.length >= maxBatters;
                   return (
                     <TouchableOpacity
                       key={p.id}
+                      disabled={atCap}
                       className={`flex-row items-center justify-between rounded-xl px-4 py-3 border ${
-                        isSelected ? selectedClass : 'bg-white border-gray-300'
+                        isSelected
+                          ? 'bg-green-600 border-green-700'
+                          : atCap
+                            ? 'bg-gray-50 border-gray-200'
+                            : 'bg-white border-gray-300'
                       }`}
                       onPress={() =>
-                        onPitcherStep ? setPitcherId(p.id) : setBatterId(p.id)
+                        setBattingOrder((prev) => toggleBattingOrderSlot(prev, p.id, maxBatters))
                       }
                     >
                       <Text
                         className={
                           isSelected
                             ? 'text-white font-semibold'
-                            : 'text-gray-900 font-semibold'
+                            : atCap
+                              ? 'text-gray-400 font-semibold'
+                              : 'text-gray-900 font-semibold'
                         }
                       >
                         {label(p)}
                       </Text>
                       {isSelected ? (
-                        <Text className="text-white font-bold">✓</Text>
+                        <View className="w-6 h-6 rounded-full bg-white items-center justify-center">
+                          <Text className="text-green-700 font-bold text-xs">{slotIndex + 1}</Text>
+                        </View>
                       ) : null}
                     </TouchableOpacity>
                   );
@@ -2997,10 +3409,11 @@ function LineupSetupModal({
                   setStep('batter');
                 } else if (onBatterStep) {
                   setStep('tracking');
-                } else if (pitcherId && batterId) {
-                  onSubmit(pitcherId, batterId, {
+                } else if (pitcherId && battingOrder.length > 0) {
+                  onSubmit(pitcherId, battingOrder, {
                     pitchType: trackPitchType,
                     pitchLocation: trackPitchLocation,
+                    hitLocation: trackHitLocation,
                   });
                 }
               }}

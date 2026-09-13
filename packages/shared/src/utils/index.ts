@@ -33,3 +33,4 @@ export * from './mobile-scoring';
 export * from './lineup-sync';
 export * from './game-rsvp-summary';
 export * from './due-batter';
+export * from './format-event';

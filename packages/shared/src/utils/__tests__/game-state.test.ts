@@ -894,3 +894,61 @@ describe('deriveGameState — pitch and strike totals', () => {
     expect(state.pitcherStrikeCounts.p1 ?? 0).toBe(0);
   });
 });
+
+describe('runner advancing beyond the standard base on a hit — engine and stats agree', () => {
+  beforeEach(resetSeq);
+
+  const start = () => [
+    e(EventType.GAME_START, {
+      awayLineupPitcherId: 'home-p',
+      homeLineupPitcherId: 'away-p',
+      awayLeadoffBatterId: 'a1',
+      homeLeadoffBatterId: 'h1',
+    }),
+  ];
+  const roster = [
+    { id: 'a1', firstName: 'Ann', lastName: 'One' },
+    { id: 'a2', firstName: 'Ben', lastName: 'Two' },
+  ];
+
+  /**
+   * What the scorer's prompt now records when a runner from second scores on
+   * a single: the HIT with an explicit RBI, a linked advance to home, and a
+   * SCORE for the run.
+   */
+  function runnerFromSecondScoresOnSingle(): GameEvent[] {
+    const pa1 = batterHit('a1', HitType.DOUBLE);
+    const pitch2 = e(EventType.PITCH_THROWN, { batterId: 'a2', outcome: PitchOutcome.IN_PLAY });
+    const hit2 = e(EventType.HIT, { batterId: 'a2', hitType: HitType.SINGLE, rbis: 1 });
+    const advance = e(EventType.BASERUNNER_ADVANCE, {
+      runnerId: 'a1', fromBase: 2, toBase: 4, reason: 'on_play', relatedEventId: hit2.id,
+    });
+    const score = e(EventType.SCORE, { scoringPlayerId: 'a1', rbis: 0 });
+    return [...start(), ...pa1, pitch2, hit2, advance, score];
+  }
+
+  it('should score exactly one run and leave only the batter on base', () => {
+    const state = deriveGameState(GAME, runnerFromSecondScoresOnSingle(), HOME_TEAM);
+    expect(state.awayScore).toBe(1);
+    expect(state.runnersOnBase).toEqual({ first: 'a2', second: null, third: null });
+  });
+
+  it('should credit the run to the runner and the RBI to the batter', () => {
+    const stats = deriveBattingStats(runnerFromSecondScoresOnSingle(), roster);
+    expect(stats.get('a1')?.runs).toBe(1);
+    expect(stats.get('a2')?.rbi).toBe(1);
+    expect(stats.get('a2')?.runs).toBe(0);
+  });
+
+  it('should place a runner from first on third when they take an extra base on a single', () => {
+    const pa1 = batterHit('a1', HitType.SINGLE);
+    const pitch2 = e(EventType.PITCH_THROWN, { batterId: 'a2', outcome: PitchOutcome.IN_PLAY });
+    const hit2 = e(EventType.HIT, { batterId: 'a2', hitType: HitType.SINGLE });
+    const advance = e(EventType.BASERUNNER_ADVANCE, {
+      runnerId: 'a1', fromBase: 1, toBase: 3, reason: 'on_play', relatedEventId: hit2.id,
+    });
+    const state = deriveGameState(GAME, [...start(), ...pa1, pitch2, hit2, advance], HOME_TEAM);
+    expect(state.runnersOnBase).toEqual({ first: 'a2', second: null, third: 'a1' });
+    expect(state.awayScore).toBe(0);
+  });
+});

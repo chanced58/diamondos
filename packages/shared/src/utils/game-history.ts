@@ -306,6 +306,8 @@ export function formatEventLabel(event: GameEvent, nameMap: Map<string, string>)
 
     case EventType.FIELD_ERROR: {
       const p = event.payload as OutPayload;
+      const errPos = p.errorBy ? POSITION_NAMES[p.errorBy] ?? String(p.errorBy) : '';
+      if (errPos) return `Error (${errPos})`;
       const seq = formatFieldingSequence(p.fieldingSequence);
       return seq ? `Error (${seq})` : 'Error';
     }

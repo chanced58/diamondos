@@ -717,6 +717,53 @@ export async function syncWithSupabase(): Promise<void> {
 // only: a restart re-confirms with one query (idempotent).
 const lifecycleReconciledGames = new Set<string>();
 
+// Set once the missing-EXPO_PUBLIC_API_BASE_URL warning has fired, so a
+// misconfigured build logs it once instead of once per sync cycle forever.
+let warnedMissingApiBase = false;
+
+// Consecutive finalize-call failures (non-2xx response or thrown fetch) per
+// game id, since the last success. Reset to 0 (deleted) the moment a
+// finalize call for that game succeeds. This is the signal that lets the UI
+// tell "just needs time" (a handful of failures, or none yet) apart from
+// "will never happen without a human" (failing every cycle for a while) —
+// see `describeFinalizeStatus` in `./finalize-status`, which is what
+// actually renders on that count.
+const finalizeFailureCounts = new Map<string, number>();
+
+// Game ids for which a finalize-call failure has already been logged once.
+// Mirrors `warnedMissingApiBase`'s one-shot shape, but per-game rather than
+// global: unlike the missing-config case (fixed only by a rebuild, i.e. a
+// fresh process), a per-game HTTP/network failure can plausibly start
+// succeeding again without a restart, so latching per-game rather than for
+// the whole process still lets a *different* game's failures be seen, while
+// stopping the identical warning from spamming every ~30s for the same one.
+const warnedFinalizeFailureGames = new Set<string>();
+
+/**
+ * Consecutive finalize-call failures recorded for a game, for UI copy that
+ * needs to distinguish "still waiting" from "stuck." 0 if no failures have
+ * been recorded (either nothing attempted yet, or the last attempt for this
+ * game succeeded).
+ */
+export function getFinalizeFailureCount(gameId: string): number {
+  return finalizeFailureCounts.get(gameId) ?? 0;
+}
+
+/**
+ * True when the app can reach the finalize endpoint at all.
+ *
+ * `apiBaseUrl` is normally omitted — real callers rely on the default, which
+ * reads `EXPO_PUBLIC_API_BASE_URL`. Expo's babel preset inlines
+ * `EXPO_PUBLIC_*` vars into a literal at build time, so a test process cannot
+ * change `process.env.EXPO_PUBLIC_API_BASE_URL` and observe a different
+ * result; the parameter exists so tests can exercise both branches directly.
+ */
+export function isFinalizeConfigured(
+  apiBaseUrl: string | undefined = process.env.EXPO_PUBLIC_API_BASE_URL,
+): boolean {
+  return !!apiBaseUrl;
+}
+
 /**
  * Server-side game lifecycle reconciliation, run after each sync cycle.
  *
@@ -796,10 +843,12 @@ async function reconcileGameLifecycle(
     if (!endEvent) continue;
 
     if (!apiBaseUrl) {
-      console.warn(
-        'sync: EXPO_PUBLIC_API_BASE_URL is not set — cannot finalize game',
-        g.id,
-      );
+      if (!warnedMissingApiBase) {
+        warnedMissingApiBase = true;
+        console.warn(
+          'sync: EXPO_PUBLIC_API_BASE_URL is not set — completed games cannot finalize',
+        );
+      }
       continue;
     }
     if (accessToken === null) {
@@ -829,12 +878,33 @@ async function reconcileGameLifecycle(
       });
       if (res.ok) {
         lifecycleReconciledGames.add(g.id as string);
+        finalizeFailureCounts.delete(g.id as string);
+        warnedFinalizeFailureGames.delete(g.id as string);
       } else {
-        const body = await res.text().catch(() => '');
-        console.warn('sync: finalize call failed', g.id, res.status, body);
+        const gameKey = g.id as string;
+        finalizeFailureCounts.set(gameKey, (finalizeFailureCounts.get(gameKey) ?? 0) + 1);
+        if (!warnedFinalizeFailureGames.has(gameKey)) {
+          warnedFinalizeFailureGames.add(gameKey);
+          const body = await res.text().catch(() => '');
+          console.warn(
+            'sync: finalize call failed; will retry silently after this first warning',
+            gameKey,
+            res.status,
+            body,
+          );
+        }
       }
     } catch (err) {
-      console.warn('sync: finalize call errored; will retry', g.id, err);
+      const gameKey = g.id as string;
+      finalizeFailureCounts.set(gameKey, (finalizeFailureCounts.get(gameKey) ?? 0) + 1);
+      if (!warnedFinalizeFailureGames.has(gameKey)) {
+        warnedFinalizeFailureGames.add(gameKey);
+        console.warn(
+          'sync: finalize call errored; will retry silently after this first warning',
+          gameKey,
+          err,
+        );
+      }
     }
   }
 }

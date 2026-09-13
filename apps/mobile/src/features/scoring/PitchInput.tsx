@@ -1,8 +1,11 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
-import { HitType, PitchOutcome, PitchType } from '@baseball/shared';
-import type { DefensiveLineup, DroppedThirdStrikeOutcome } from '@baseball/shared';
+import { HitType, PitchOutcome, PitchType, HitTrajectory, hitRunnerOptions, evaluateHitRunnerOutcomes, EventType, requiresThrowStep } from '@baseball/shared';
+import type { DefensiveLineup, DroppedThirdStrikeOutcome, SacrificeEligibility, BattedBall } from '@baseball/shared';
 import { DefensiveDiamond } from './DefensiveDiamond';
+import { FieldLocationModal } from './FieldLocationModal';
+import { ThrowSequenceModal } from './ThrowSequenceModal';
+import { battedBallPayloadFields, type BattedBallPayloadFields } from './batted-ball-fields';
 
 interface DroppedThirdStrikeDetails {
   outcome: DroppedThirdStrikeOutcome;
@@ -14,6 +17,29 @@ interface DroppedThirdStrikeDetails {
 type Base = 1 | 2 | 3;
 
 export type BattedOutType = 'groundout' | 'flyout' | 'lineout' | 'popout' | 'other';
+
+/**
+ * Maps the scorer's chosen batted-ball out type to the `HitTrajectory` the
+ * shared sacrifice rule (`sacrificeEligibility` in `@baseball/shared`)
+ * expects. 'other' has no trajectory equivalent and deliberately maps to
+ * `undefined` (the rule treats an unknown trajectory as non-disqualifying).
+ * Single source of truth — also used by `score.tsx`'s `handleOut` so the
+ * OUT event payload's trajectory matches what gated this exact prompt.
+ */
+export function trajectoryForOutType(outType: BattedOutType): HitTrajectory | undefined {
+  switch (outType) {
+    case 'groundout':
+      return HitTrajectory.GROUND_BALL;
+    case 'flyout':
+      return HitTrajectory.FLY_BALL;
+    case 'lineout':
+      return HitTrajectory.LINE_DRIVE;
+    case 'popout':
+      return HitTrajectory.FLY_BALL;
+    default:
+      return undefined;
+  }
+}
 
 export type RosterPlayer = {
   id: string;
@@ -29,11 +55,17 @@ export type RosterPlayer = {
 /**
  * Per-runner outcome on a play whose batter-result stands but whose
  * existing runners diverge from the default auto-advance. Used by the
- * post-hit modal for 2B/3B hits with runners on base.
+ * post-hit modal for singles, doubles and triples with runners on base.
+ * Which bases each kind may name comes from hitRunnerOptions in
+ * @baseball/shared; whether a set of choices can all be true together, from
+ * evaluateHitRunnerOutcomes.
  *
  * - `auto`     — runner advances by the default amount (no event emitted).
  * - `held`     — runner stops at `toBase`, short of the default. Recorded
  *                as a BASERUNNER_ADVANCE event linked via relatedEventId.
+ * - `advanced` — runner takes more than the default, to `toBase` (4 = scored).
+ *                Recorded as a linked BASERUNNER_ADVANCE, plus a SCORE when
+ *                they reach home — the advance never credits the run itself.
  * - `thrown_out` — runner is thrown out advancing. Recorded as a
  *                BASERUNNER_OUT event linked via relatedEventId.
  */
@@ -43,6 +75,7 @@ export type RunnerOutcome = {
 } & (
   | { kind: 'auto' }
   | { kind: 'held'; toBase: 2 | 3 }
+  | { kind: 'advanced'; toBase: 3 | 4 }
   | { kind: 'thrown_out' }
 );
 
@@ -57,6 +90,14 @@ interface PitchInputProps {
   trackPitchType?: boolean;
   /** Scorer opted into pitch-location tracking at game start. */
   trackPitchLocation?: boolean;
+  /** Show the field pop-up after a batted-ball outcome is chosen (the game's GAME_START hitLocationEnabled). */
+  trackHitLocation?: boolean;
+  /**
+   * Receives the batted-ball payload fields immediately before any in-play
+   * terminal handler is invoked — {} when nothing was captured, so the
+   * receiver never holds a previous play's location.
+   */
+  onBattedBall?: (fields: BattedBallPayloadFields) => void;
   onRecordHit: (hitType: HitType) => void;
   /**
    * Optional: when present and the scorer taps 2B / 3B with runners on base,
@@ -75,6 +116,28 @@ interface PitchInputProps {
   onRecordCatcherInterference: () => void;
   onRecordSacFly: () => void;
   onRecordSacBunt: () => void;
+  /** Sac fly may be credited — OBR 9.08(d). Hidden when false. Computed by
+   *  the caller via `sacrificeEligibility` before the batted-ball trajectory
+   *  is known, so this gates the in-play sheet's button only. Required —
+   *  and deliberately has no permissive default — because this and its two
+   *  sibling sac props exist to prevent an ineligible sacrifice from ever
+   *  being offered; a caller that forgets one must fail to compile rather
+   *  than silently fall back to "always eligible". */
+  sacFlyEligible: boolean;
+  /** Sac bunt may be credited — OBR 9.08(a). Hidden when false. */
+  sacBuntEligible: boolean;
+  /**
+   * Re-derives sacrifice eligibility once the out's trajectory is known
+   * (the post-out "was this a sacrifice?" prompt). Delegates back to the
+   * caller — which owns `gameState` and calls `sacrificeEligibility` from
+   * `@baseball/shared` — so the OBR 9.08 rule stays defined in exactly one
+   * place instead of being re-derived here. Required, with no fallback to
+   * the trajectory-agnostic `sacFlyEligible`/`sacBuntEligible` above: those
+   * flags are computed with no trajectory, which the shared rule treats as
+   * non-disqualifying, so falling back to them here would silently re-offer
+   * a sac fly on a groundout — the exact bug this gating exists to prevent.
+   */
+  sacEligibilityForTrajectory: (trajectory: HitTrajectory | undefined) => SacrificeEligibility;
   /** Sacrifice fly chosen via the in-Out follow-up — carries the trajectory
    *  the scorer initially picked (groundout/flyout/lineout/popout/other) so
    *  the recorded payload preserves that context. */
@@ -90,6 +153,14 @@ interface PitchInputProps {
   onRecordBalk: () => void;
   onRecordDoublePlay: (runnerOut: { runnerId: string; base: Base } | null) => void;
   onRecordTriplePlay: () => void;
+  /**
+   * Whether a multiple-out play is possible from the current situation.
+   * Computed by multipleOutEligibility in @baseball/shared — a double play
+   * needs a runner to retire and two outs left in the half, a triple play
+   * needs two runners and a clean inning.
+   */
+  doublePlayEligible: boolean;
+  triplePlayEligible: boolean;
   onRecordPitchingChange: (newPitcherId: string) => void;
   onRecordPinchHitter: (newBatterId: string) => void;
   /** Defensive substitution: replace one fielder with another, optionally taking a new position. */
@@ -114,6 +185,44 @@ interface PitchInputProps {
   d3kModalOpen?: boolean;
   setD3KModalOpen?: (open: boolean) => void;
 }
+
+// Task 12 fix round 2 (review: task-12-review.md Critical finding).
+//
+// Round 1 gave the modifiers pane a `minHeight` floor. That closed the
+// original bug (the pane shrinking past its own content with no visual
+// cue) but opened a worse one: the wrapping View had no `flexGrow`, and a
+// `flex:1` ScrollView reports ~0 intrinsic size to Yoga's measurement
+// pass, so the wrapper rendered at *exactly* `minHeight` — never more,
+// never less. None of its siblings in the column (`RunnersPanel`,
+// `PitchCountStrip`, the outcome buttons below) set `flexShrink`, and RN's
+// Yoga defaults `flexShrink` to 0 (unlike web CSS's default of 1), so none
+// of them could give up space either. On phone portrait, `BookPane`/
+// `ActionPane` are pass-throughs with no ScrollView anywhere in the
+// column, so a floor that refuses to shrink further has nowhere to push
+// its overflow except off the bottom of the screen — worst case, past the
+// Ball/Strike/Foul/In-Play buttons that are tapped on every pitch.
+//
+// The fix removes the floor entirely and goes back to a plain
+// `flexShrink: 1, flexBasis: auto` item (no `flex: 1`, no `minHeight`) —
+// this is what the pane had *before* Task 12 round 1, and it is the only
+// item in this column with any `flexShrink` at all, so it is guaranteed
+// to absorb 100% of any deficit before an unshrinkable sibling ever
+// moves: `flexBasis: auto` sizes the pane to its actual content (both
+// sections fully visible with no floor needed, e.g. iPad landscape) when
+// there's room, and standard flexbox shrink distributes 100% of any
+// negative free space onto it alone, down to 0 if the screen genuinely
+// can't fit it, precisely because it's the sole `flexShrink` participant.
+// The primary outcome buttons (`flexShrink: 0` via RN's default, `mt-auto`)
+// can therefore never be displaced — there is nothing left in this column
+// that could push them, once the modifiers pane has nothing left to give.
+//
+// What replaces the floor as the "don't let a clip look complete" guard
+// is the measured overflow affordance below (`modifiersOverflowing`),
+// which now reflects the pane's *real* rendered height in every case
+// (it no longer gets pinned at a constant regardless of actual space) —
+// so a squeeze that used to be invisible now reliably shows "Scroll for
+// more" instead, whether the squeeze is small (a few pixels) or total
+// (the pane rendered at ~0).
 
 const PITCH_TYPES: Array<{ label: string; value: PitchType }> = [
   { label: 'FB', value: PitchType.FASTBALL },
@@ -153,6 +262,8 @@ export function PitchInput({
   onRecordPitch,
   trackPitchType = true,
   trackPitchLocation = false,
+  trackHitLocation = false,
+  onBattedBall,
   onRecordHit,
   onRecordHitWithRunnerOutcomes,
   onRecordOut,
@@ -161,6 +272,9 @@ export function PitchInput({
   onRecordCatcherInterference,
   onRecordSacFly,
   onRecordSacBunt,
+  sacFlyEligible,
+  sacBuntEligible,
+  sacEligibilityForTrajectory,
   onRecordSacFlyFromOut,
   onRecordSacBuntFromOut,
   onRecordFieldersChoice,
@@ -170,6 +284,8 @@ export function PitchInput({
   onRecordBalk,
   onRecordDoublePlay,
   onRecordTriplePlay,
+  doublePlayEligible,
+  triplePlayEligible,
   onRecordPitchingChange,
   onRecordPinchHitter,
   onRecordDefensiveSub,
@@ -187,6 +303,24 @@ export function PitchInput({
 }: PitchInputProps) {
   const showD3KModal = d3kModalOpen;
   const setShowD3KModal = setD3KModalOpen ?? (() => {});
+  // Overflow tracking for the modifiers pane's explicit scroll affordance.
+  // Only shown once we've actually measured that content exceeds the
+  // rendered height, and hidden again once the scorer has scrolled to see
+  // the rest — so it never appears on a layout that already fits
+  // everything, but never lets a genuinely clipped state look complete
+  // either. This is now the *only* guard against a silent clip (see the
+  // comment above the render for why there is no minHeight floor
+  // alongside it).
+  const modifiersContainerHeight = useRef(0);
+  const modifiersContentHeight = useRef(0);
+  const [modifiersOverflowing, setModifiersOverflowing] = useState(false);
+  const [modifiersAtBottom, setModifiersAtBottom] = useState(false);
+  function updateModifiersOverflow() {
+    setModifiersOverflowing(
+      modifiersContainerHeight.current > 0 &&
+        modifiersContentHeight.current > modifiersContainerHeight.current + 1,
+    );
+  }
   const [showFCModal, setShowFCModal] = useState(false);
   const [showRunnerOutModal, setShowRunnerOutModal] = useState(false);
   // Pending HIT awaiting per-runner outcome confirmation (2B/3B with
@@ -214,9 +348,36 @@ export function PitchInput({
   const [selectedZone, setSelectedZone] = useState<number | null>(null);
   // Branch sheets opened from the primary surface.
   const [showInPlaySheet, setShowInPlaySheet] = useState(false);
+  // Hit location. The field pop-up request for the outcome just tapped —
+  // whether a fielder applies (not on a home run) and that outcome's own next
+  // step — and what the pop-up captured for the play in progress.
+  //
+  // The capture is a ref, not state: Next stores it and runs the outcome's
+  // next step in the same tick, and an outcome that records immediately (a
+  // home run, a single with the bases empty, a sac fly) reaches commitInPlay
+  // before any re-render, where state would still read null.
+  const [fieldRequest, setFieldRequest] = useState<null | {
+    fielderApplies: boolean;
+    proceed: () => void;
+  }>(null);
+  const battedBallRef = useRef<BattedBall | null>(null);
+  const [pendingThrow, setPendingThrow] = useState<null | {
+    firstFielder: number;
+    finish: (throws: number[]) => void;
+  }>(null);
   const [showRunnersSheet, setShowRunnersSheet] = useState(false);
   const [showSubsSheet, setShowSubsSheet] = useState(false);
   const fcEligible = runnersOnBase.length > 0;
+
+  // Sacrifice eligibility once the out's trajectory is known (post-out
+  // prompt). Always delegates to the caller-supplied `sacEligibilityForTrajectory`
+  // — required, no fallback — so this never re-derives OBR 9.08 itself and
+  // never falls back to the trajectory-agnostic flags (which would silently
+  // re-permit e.g. a sac fly on a groundout).
+  function sacEligibilityForOutType(outType: BattedOutType): SacrificeEligibility {
+    const trajectory = trajectoryForOutType(outType);
+    return sacEligibilityForTrajectory(trajectory);
+  }
 
   /**
    * Close the branch sheet, then run the action. Several actions open a
@@ -226,6 +387,57 @@ export function PitchInput({
   function runFromSheet(close: (open: boolean) => void, action: () => void) {
     close(false);
     action();
+  }
+
+  // In play starts a fresh play: whatever an abandoned play captured is
+  // dropped, so it can never attach to this one.
+  function openInPlay() {
+    battedBallRef.current = null;
+    setShowInPlaySheet(true);
+  }
+
+  // Every batted-ball outcome button goes through here: the field comes next,
+  // at the same moment for every play, then the outcome's own next step.
+  function chooseBattedBall(proceed: () => void, options: { fielderApplies?: boolean } = {}) {
+    battedBallRef.current = null;
+    if (!trackHitLocation) {
+      proceed();
+      return;
+    }
+    setFieldRequest({ fielderApplies: options.fielderApplies ?? true, proceed });
+  }
+
+  function continueFromField(captured: BattedBall | null) {
+    const request = fieldRequest;
+    setFieldRequest(null);
+    battedBallRef.current = captured;
+    request?.proceed();
+  }
+
+  // Every in-play terminal handler is invoked through here. It hands the
+  // captured batted ball to the receiver first — or {} when there is none —
+  // and, for outs with a known first fielder, asks for the throws before
+  // recording. The capture is consumed either way.
+  function commitInPlay(terminal: EventType, record: () => void) {
+    const captured = battedBallRef.current;
+    battedBallRef.current = null;
+    if (captured && captured.firstFielder !== null && requiresThrowStep(terminal)) {
+      setPendingThrow({
+        firstFielder: captured.firstFielder,
+        finish: (throws) => {
+          onBattedBall?.(battedBallPayloadFields(captured, throws));
+          record();
+        },
+      });
+      return;
+    }
+    onBattedBall?.(battedBallPayloadFields(captured));
+    record();
+  }
+
+  // HBP and catcher's interference aren't batted balls: nothing to locate.
+  function discardBattedBall() {
+    battedBallRef.current = null;
   }
 
   function handlePitchOutcome(outcome: PitchOutcome) {
@@ -241,13 +453,13 @@ export function PitchInput({
 
   function handleErrorPick(errorBy: number) {
     setShowErrorModal(false);
-    onRecordError(errorBy);
+    commitInPlay(EventType.FIELD_ERROR, () => onRecordError(errorBy));
   }
 
   function handleDPTap() {
     if (runnersOnBase.length === 0) {
       // No runners to force out; fall through to ambiguous DP (legacy).
-      onRecordDoublePlay(null);
+      commitInPlay(EventType.DOUBLE_PLAY, () => onRecordDoublePlay(null));
     } else {
       setShowDPModal(true);
     }
@@ -255,7 +467,7 @@ export function PitchInput({
 
   function handleDPPick(runnerId: string, base: Base) {
     setShowDPModal(false);
-    onRecordDoublePlay({ runnerId, base });
+    commitInPlay(EventType.DOUBLE_PLAY, () => onRecordDoublePlay({ runnerId, base }));
   }
 
   function handleSubPick(playerId: string) {
@@ -293,7 +505,7 @@ export function PitchInput({
 
   function handleFCPick(runnerId: string, fromBase: Base) {
     setShowFCModal(false);
-    onRecordFieldersChoice(runnerId, fromBase);
+    commitInPlay(EventType.HIT, () => onRecordFieldersChoice(runnerId, fromBase));
   }
 
   function handleRunnerOutPick(runnerId: string, fromBase: Base) {
@@ -306,9 +518,9 @@ export function PitchInput({
     const needsPrompt =
       supportsOutcomes &&
       runnersOnBase.length > 0 &&
-      (hitType === HitType.DOUBLE || hitType === HitType.TRIPLE);
+      (hitType === HitType.SINGLE || hitType === HitType.DOUBLE || hitType === HitType.TRIPLE);
     if (!needsPrompt) {
-      onRecordHit(hitType);
+      commitInPlay(EventType.HIT, () => onRecordHit(hitType));
       return;
     }
     // Seed every runner with the default "auto" choice.
@@ -320,32 +532,38 @@ export function PitchInput({
     setPendingHitWithRunners(hitType);
   }
 
-  function setRunnerChoice(runnerId: string, fromBase: Base, kind: 'auto' | 'held' | 'thrown_out') {
-    setRunnerOutcomeChoices((prev) => {
-      const next = { ...prev };
-      if (kind === 'auto') {
-        next[runnerId] = { runnerId, fromBase, kind: 'auto' };
-      } else if (kind === 'thrown_out') {
-        next[runnerId] = { runnerId, fromBase, kind: 'thrown_out' };
-      } else {
-        // "Held" — pick the next base the runner could realistically stop at.
-        // For a runner on 1B that's 2B; for a runner on 2B that's 3B. Runners
-        // on 3B can't "hold" further (3B is their default; advancing is to
-        // home, which is the "auto" outcome).
-        const toBase: 2 | 3 = fromBase === 1 ? 2 : 3;
-        next[runnerId] = { runnerId, fromBase, kind: 'held', toBase };
-      }
-      return next;
-    });
+  function setRunnerChoice(
+    runnerId: string,
+    fromBase: Base,
+    choice: { kind: 'auto' } | { kind: 'held'; toBase: 3 } | { kind: 'advanced'; toBase: 3 | 4 } | { kind: 'thrown_out' },
+  ) {
+    setRunnerOutcomeChoices((prev) => ({ ...prev, [runnerId]: { runnerId, fromBase, ...choice } }));
   }
 
+  // Whether the choices on screen can all be true on one play. Recomputed
+  // each render: a choice for one runner can make another's impossible (a
+  // runner from second held at third on a double leaves the runner from
+  // first nowhere to finish), which no per-runner option list can show.
+  const runnerEvaluation = pendingHitWithRunners
+    ? evaluateHitRunnerOutcomes(
+        pendingHitWithRunners,
+        runnersOnBase.map(({ base, runnerId }) => ({
+          fromBase: base,
+          choice: runnerOutcomeChoices[runnerId] ?? { kind: 'auto' as const },
+        })),
+      )
+    : null;
+
   function confirmHitWithRunners() {
+    if (runnerEvaluation?.error) return;
     if (!pendingHitWithRunners || !onRecordHitWithRunnerOutcomes) {
       setPendingHitWithRunners(null);
       return;
     }
     const outcomes = Object.values(runnerOutcomeChoices);
-    onRecordHitWithRunnerOutcomes(pendingHitWithRunners, outcomes);
+    const hitType = pendingHitWithRunners;
+    const recordWithOutcomes = onRecordHitWithRunnerOutcomes;
+    commitInPlay(EventType.HIT, () => recordWithOutcomes(hitType, outcomes));
     setPendingHitWithRunners(null);
     setRunnerOutcomeChoices({});
   }
@@ -355,10 +573,19 @@ export function PitchInput({
     setRunnerOutcomeChoices({});
   }
 
-  // Step 1: scorer picks the trajectory of the out. We stash it and advance
-  // to step 2 where the scorer confirms it was a regular out or upgrades it
-  // to a sacrifice fly/bunt.
+  // Step 1: scorer picks the trajectory of the out. When neither sacrifice
+  // is possible (e.g. 2 outs already, or a groundout with nobody in scoring
+  // position), step 2 would render with only a "Regular out" button — skip
+  // it and record the out directly instead. Otherwise stash the trajectory
+  // and advance to step 2 where the scorer confirms it was a regular out or
+  // upgrades it to a sacrifice fly/bunt.
   function handleOutPick(outType: BattedOutType) {
+    const eligibility = sacEligibilityForOutType(outType);
+    if (!eligibility.sacFly && !eligibility.sacBunt) {
+      setShowOutModal(false);
+      commitInPlay(EventType.OUT, () => onRecordOut(outType));
+      return;
+    }
     setPendingOutType(outType);
   }
 
@@ -367,7 +594,7 @@ export function PitchInput({
     if (!pendingOutType) return;
     const t = pendingOutType;
     closeOutModal();
-    onRecordOut(t);
+    commitInPlay(EventType.OUT, () => onRecordOut(t));
   }
 
   // Step 2 (sac fly path): record SACRIFICE_FLY, carrying the trajectory
@@ -376,8 +603,7 @@ export function PitchInput({
     if (!pendingOutType) return;
     const t = pendingOutType;
     closeOutModal();
-    if (onRecordSacFlyFromOut) onRecordSacFlyFromOut(t);
-    else onRecordSacFly();
+    commitInPlay(EventType.SACRIFICE_FLY, () => (onRecordSacFlyFromOut ? onRecordSacFlyFromOut(t) : onRecordSacFly()));
   }
 
   // Step 2 (sac bunt path): record SACRIFICE_BUNT with trajectory context.
@@ -385,8 +611,7 @@ export function PitchInput({
     if (!pendingOutType) return;
     const t = pendingOutType;
     closeOutModal();
-    if (onRecordSacBuntFromOut) onRecordSacBuntFromOut(t);
-    else onRecordSacBunt();
+    commitInPlay(EventType.SACRIFICE_BUNT, () => (onRecordSacBuntFromOut ? onRecordSacBuntFromOut(t) : onRecordSacBunt()));
   }
 
   function closeOutModal() {
@@ -403,48 +628,105 @@ export function PitchInput({
     <View className="flex-1 bg-slate-50">
       {/* Modifiers — only rendered when the scorer opted in at game start.
           Placed directly above the outcome buttons so the thumb travels
-          modifier → outcome in the order a pitch is actually observed. */}
+          modifier → outcome in the order a pitch is actually observed.
+
+          Deliberately no `minHeight` here — see the comment above this
+          component for why a floor is the wrong tool: it pinned this pane
+          to a constant height regardless of available room and had no
+          reciprocal protection against the *screen* running out of space,
+          which could push the primary outcome buttons off-screen with no
+          scroll path on phone portrait. `flexShrink: 1` with
+          `flexBasis: auto` (the default — no `flex: 1` on the ScrollView)
+          sizes this pane to its full content when there's room (e.g. iPad
+          landscape, both sections fully visible) and lets it give up
+          space first — down to 0 if it must — before any unshrinkable
+          sibling (`RunnersPanel`, `PitchCountStrip`, the outcome buttons
+          below, all `flexShrink: 0` by RN's default) is touched. The
+          measured overflow hint below is what keeps a squeezed pane from
+          looking complete now — it fires off this pane's *actual*
+          rendered height in every case, not a static budget. */}
       {(trackPitchType || trackPitchLocation) && (
-        <ScrollView className="px-4 pt-3" style={{ flexShrink: 1 }}>
-          {trackPitchType && (
-            <View className="mb-3">
-              <Text className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
-                Pitch type
-              </Text>
-              <View className="flex-row flex-wrap gap-1.5">
-                {PITCH_TYPES.map(({ label, value }) => {
-                  const selected = selectedPitchType === value;
-                  return (
-                    <TouchableOpacity
-                      key={value}
-                      className={`rounded-lg px-3 py-2 border ${
-                        selected ? 'bg-slate-800 border-slate-900' : 'bg-white border-slate-300'
-                      }`}
-                      onPress={() => setSelectedPitchType(selected ? null : value)}
-                    >
-                      <Text
-                        className={`text-xs font-bold tracking-wide ${
-                          selected ? 'text-white' : 'text-slate-600'
+        <View style={{ flexShrink: 1 }}>
+          <ScrollView
+            testID="modifiers-scroll-view"
+            className="px-4 pt-3"
+            style={{ flexShrink: 1 }}
+            onLayout={(e) => {
+              modifiersContainerHeight.current = e.nativeEvent.layout.height;
+              updateModifiersOverflow();
+            }}
+            onContentSizeChange={(_width, height) => {
+              modifiersContentHeight.current = height;
+              updateModifiersOverflow();
+            }}
+            onScroll={(e) => {
+              const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+              const distanceFromBottom =
+                contentSize.height - (contentOffset.y + layoutMeasurement.height);
+              setModifiersAtBottom(distanceFromBottom < 8);
+            }}
+            scrollEventThrottle={32}
+            indicatorStyle="black"
+          >
+            {trackPitchType && (
+              <View className="mb-3">
+                <Text className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
+                  Pitch type
+                </Text>
+                <View className="flex-row flex-wrap gap-1.5">
+                  {PITCH_TYPES.map(({ label, value }) => {
+                    const selected = selectedPitchType === value;
+                    return (
+                      <TouchableOpacity
+                        key={value}
+                        className={`rounded-lg px-3 py-2 border ${
+                          selected ? 'bg-slate-800 border-slate-900' : 'bg-white border-slate-300'
                         }`}
+                        onPress={() => setSelectedPitchType(selected ? null : value)}
                       >
-                        {label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                        <Text
+                          className={`text-xs font-bold tracking-wide ${
+                            selected ? 'text-white' : 'text-slate-600'
+                          }`}
+                        >
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {trackPitchLocation && (
+              <View className="mb-2">
+                <Text className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
+                  Location
+                </Text>
+                <StrikeZoneGrid selected={selectedZone} onSelect={setSelectedZone} />
+              </View>
+            )}
+          </ScrollView>
+
+          {/* Explicit scroll affordance — only rendered once onLayout /
+              onContentSizeChange have actually measured that content
+              exceeds the pane, and hidden again once the scorer scrolls
+              to the bottom. Never appears on a layout that already fits
+              everything; never lets a clipped one pass as finished. */}
+          {modifiersOverflowing && !modifiersAtBottom && (
+            <View
+              pointerEvents="none"
+              className="absolute left-0 right-0 bottom-0 items-center pb-1"
+              testID="modifiers-scroll-hint"
+            >
+              <View className="bg-slate-800/90 rounded-full px-3 py-1">
+                <Text className="text-white text-[11px] font-semibold">
+                  ▾ Scroll for more
+                </Text>
               </View>
             </View>
           )}
-
-          {trackPitchLocation && (
-            <View className="mb-2">
-              <Text className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
-                Location
-              </Text>
-              <StrikeZoneGrid selected={selectedZone} onSelect={setSelectedZone} />
-            </View>
-          )}
-        </ScrollView>
+        </View>
       )}
 
       {/* Primary outcomes — pinned to the bottom of the screen, never
@@ -483,7 +765,7 @@ export function PitchInput({
           caption="hit · out · reached"
           tone="inPlay"
           full
-          onPress={() => setShowInPlaySheet(true)}
+          onPress={openInPlay}
         />
       </View>
 
@@ -510,7 +792,7 @@ export function PitchInput({
                 key={hitType}
                 label={label}
                 emoji={emoji}
-                onPress={() => runFromSheet(setShowInPlaySheet, () => handleHitTap(hitType))}
+                onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => handleHitTap(hitType), { fielderApplies: hitType !== HitType.HOME_RUN }))}
                 color={color}
               />
             ))}
@@ -519,21 +801,29 @@ export function PitchInput({
 
         <SheetGroup label="Out">
           <View className="flex-row flex-wrap gap-2">
-            <OutcomeButton label="Out" emoji="✋" onPress={() => runFromSheet(setShowInPlaySheet, () => setShowOutModal(true))} color="bg-gray-600" />
-            <OutcomeButton label="Sac Fly" emoji="SF" onPress={() => runFromSheet(setShowInPlaySheet, onRecordSacFly)} color="bg-teal-600" />
-            <OutcomeButton label="Sac Bunt" emoji="SH" onPress={() => runFromSheet(setShowInPlaySheet, onRecordSacBunt)} color="bg-teal-700" />
-            <OutcomeButton label="Double Play" emoji="DP" onPress={() => runFromSheet(setShowInPlaySheet, handleDPTap)} color="bg-zinc-700" />
-            <OutcomeButton label="Triple Play" emoji="TP" onPress={() => runFromSheet(setShowInPlaySheet, onRecordTriplePlay)} color="bg-zinc-800" />
+            <OutcomeButton label="Out" emoji="✋" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => setShowOutModal(true)))} color="bg-gray-600" />
+            {sacFlyEligible && (
+              <OutcomeButton label="Sac Fly" emoji="SF" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => commitInPlay(EventType.SACRIFICE_FLY, onRecordSacFly)))} color="bg-teal-600" />
+            )}
+            {sacBuntEligible && (
+              <OutcomeButton label="Sac Bunt" emoji="SH" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => commitInPlay(EventType.SACRIFICE_BUNT, onRecordSacBunt)))} color="bg-teal-700" />
+            )}
+            {doublePlayEligible && (
+              <OutcomeButton label="Double Play" emoji="DP" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(handleDPTap))} color="bg-zinc-700" />
+            )}
+            {triplePlayEligible && (
+              <OutcomeButton label="Triple Play" emoji="TP" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => commitInPlay(EventType.TRIPLE_PLAY, onRecordTriplePlay)))} color="bg-zinc-800" />
+            )}
           </View>
         </SheetGroup>
 
         <SheetGroup label="Reached base">
           <View className="flex-row flex-wrap gap-2">
-            <OutcomeButton label="Error" emoji="E" onPress={() => runFromSheet(setShowInPlaySheet, () => setShowErrorModal(true))} color="bg-orange-600" />
-            <OutcomeButton label="Hit by pitch" emoji="HBP" onPress={() => runFromSheet(setShowInPlaySheet, () => handlePitchOutcome(PitchOutcome.HIT_BY_PITCH))} color="bg-orange-500" />
-            <OutcomeButton label="Catcher Int." emoji="CI" onPress={() => runFromSheet(setShowInPlaySheet, onRecordCatcherInterference)} color="bg-rose-500" />
+            <OutcomeButton label="Error" emoji="E" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => setShowErrorModal(true)))} color="bg-orange-600" />
+            <OutcomeButton label="Hit by pitch" emoji="HBP" onPress={() => runFromSheet(setShowInPlaySheet, () => { discardBattedBall(); handlePitchOutcome(PitchOutcome.HIT_BY_PITCH); })} color="bg-orange-500" />
+            <OutcomeButton label="Catcher Int." emoji="CI" onPress={() => runFromSheet(setShowInPlaySheet, () => { discardBattedBall(); onRecordCatcherInterference(); })} color="bg-rose-500" />
             {fcEligible && (
-              <OutcomeButton label="Fielder's Choice" emoji="FC" onPress={() => runFromSheet(setShowInPlaySheet, () => setShowFCModal(true))} color="bg-purple-700" />
+              <OutcomeButton label="Fielder's Choice" emoji="FC" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => setShowFCModal(true)))} color="bg-purple-700" />
             )}
           </View>
         </SheetGroup>
@@ -726,7 +1016,9 @@ export function PitchInput({
               {FIELDER_POSITIONS.map(({ label, position }) => (
                 <TouchableOpacity
                   key={position}
-                  className="bg-white border border-slate-300 rounded-xl px-4 py-3"
+                  testID={`error-position-${position}`}
+                  accessibilityState={{ selected: battedBallRef.current?.firstFielder === position }}
+                  className={`border rounded-xl px-4 py-3 ${battedBallRef.current?.firstFielder === position ? 'bg-blue-50 border-blue-600' : 'bg-white border-slate-300'}`}
                   onPress={() => handleErrorPick(position)}
                 >
                   <Text className="text-slate-800 font-semibold">
@@ -928,7 +1220,11 @@ export function PitchInput({
       >
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
-            {pendingOutType === null ? (
+            {(() => {
+              const pendingSac: SacrificeEligibility = pendingOutType
+                ? sacEligibilityForOutType(pendingOutType)
+                : { sacFly: false, sacBunt: false };
+              return pendingOutType === null ? (
               <>
                 <Text className="text-lg font-bold text-gray-900 mb-1">Out</Text>
                 <Text className="text-sm text-gray-500 mb-4">
@@ -978,25 +1274,29 @@ export function PitchInput({
                     </Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    className="bg-white border border-slate-300 rounded-xl px-5 py-4"
-                    onPress={confirmSacFlyFromOut}
-                  >
-                    <Text className="text-slate-800 font-semibold">Sacrifice fly</Text>
-                    <Text className="text-slate-500 text-xs mt-0.5">
-                      Runner scored from 3rd on the catch — PA but not an AB
-                    </Text>
-                  </TouchableOpacity>
+                  {pendingSac.sacFly && (
+                    <TouchableOpacity
+                      className="bg-white border border-slate-300 rounded-xl px-5 py-4"
+                      onPress={confirmSacFlyFromOut}
+                    >
+                      <Text className="text-slate-800 font-semibold">Sacrifice fly</Text>
+                      <Text className="text-slate-500 text-xs mt-0.5">
+                        Runner scored from 3rd on the catch — PA but not an AB
+                      </Text>
+                    </TouchableOpacity>
+                  )}
 
-                  <TouchableOpacity
-                    className="bg-white border border-slate-300 rounded-xl px-5 py-4"
-                    onPress={confirmSacBuntFromOut}
-                  >
-                    <Text className="text-slate-800 font-semibold">Sacrifice bunt</Text>
-                    <Text className="text-slate-500 text-xs mt-0.5">
-                      Bunt out that intentionally advanced a runner — PA but not an AB
-                    </Text>
-                  </TouchableOpacity>
+                  {pendingSac.sacBunt && (
+                    <TouchableOpacity
+                      className="bg-white border border-slate-300 rounded-xl px-5 py-4"
+                      onPress={confirmSacBuntFromOut}
+                    >
+                      <Text className="text-slate-800 font-semibold">Sacrifice bunt</Text>
+                      <Text className="text-slate-500 text-xs mt-0.5">
+                        Bunt out that intentionally advanced a runner — PA but not an AB
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
 
                 <View className="flex-row justify-between items-center mt-4">
@@ -1008,7 +1308,8 @@ export function PitchInput({
                   </TouchableOpacity>
                 </View>
               </>
-            )}
+              );
+            })()}
           </View>
         </View>
       </Modal>
@@ -1095,7 +1396,7 @@ export function PitchInput({
         </View>
       </Modal>
 
-      {/* Per-runner outcomes prompt for 2B/3B with runners on base.
+      {/* Per-runner outcomes prompt for a single, double or triple with runners on base.
        *  Records the HIT plus any linked BASERUNNER_OUT / BASERUNNER_ADVANCE
        *  events (via relatedEventId) so the platform shows e.g.
        *  "Double (Runner from 2nd held at 3B)" in the play feed. */}
@@ -1108,7 +1409,7 @@ export function PitchInput({
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
             <Text className="text-lg font-bold text-gray-900 mb-1">
-              {pendingHitWithRunners === HitType.TRIPLE ? 'Triple' : 'Double'} — Runner Outcomes
+              {hitName(pendingHitWithRunners)} — Runner Outcomes
             </Text>
             <Text className="text-sm text-gray-500 mb-4">
               For each runner on base, choose what happened. Default is the
@@ -1119,10 +1420,14 @@ export function PitchInput({
               {runnersOnBase.map(({ base, runnerId }) => {
                 const choice = runnerOutcomeChoices[runnerId];
                 const kind = choice?.kind ?? 'auto';
-                // "Held" only makes sense when the runner could stop short
-                // of the default end base. A runner on 3B has no shorter
-                // advance than scoring, so we suppress that option.
-                const canHold = base === 1 || base === 2;
+                // Standard, the one hold (if any), and each base beyond the
+                // standard advance — all from hitRunnerOptions. The batter
+                // takes a base too, so none of this is simply fromBase + n.
+                const options = pendingHitWithRunners
+                  ? hitRunnerOptions(base, pendingHitWithRunners)
+                  : null;
+                const heldBase = options?.heldBase ?? null;
+                const advancedToBase = choice?.kind === 'advanced' ? choice.toBase : null;
                 return (
                   <View key={runnerId} className="mb-4 border border-gray-200 rounded-xl p-3">
                     <Text className="text-sm font-semibold text-gray-700 mb-2">
@@ -1131,25 +1436,36 @@ export function PitchInput({
                     <View className="flex-row flex-wrap gap-2">
                       <TouchableOpacity
                         className={`px-3 py-2 rounded-lg ${kind === 'auto' ? 'bg-slate-700' : 'bg-slate-100'}`}
-                        onPress={() => setRunnerChoice(runnerId, base, 'auto')}
+                        onPress={() => setRunnerChoice(runnerId, base, { kind: 'auto' })}
                       >
                         <Text className={kind === 'auto' ? 'text-white font-semibold' : 'text-gray-700'}>
-                          Advanced as expected
+                          Standard: {options ? (options.standardBase === 4 ? 'scores' : finishLabel(options.standardBase)) : '—'}
                         </Text>
                       </TouchableOpacity>
-                      {canHold && (
+                      {heldBase !== null && (
                         <TouchableOpacity
                           className={`px-3 py-2 rounded-lg ${kind === 'held' ? 'bg-amber-600' : 'bg-slate-100'}`}
-                          onPress={() => setRunnerChoice(runnerId, base, 'held')}
+                          onPress={() => setRunnerChoice(runnerId, base, { kind: 'held', toBase: heldBase })}
                         >
                           <Text className={kind === 'held' ? 'text-white font-semibold' : 'text-gray-700'}>
-                            Held at {base === 1 ? '2B' : '3B'}
+                            Held at {heldBase}B
                           </Text>
                         </TouchableOpacity>
                       )}
+                      {options?.advancedBases.map((toBase) => (
+                        <TouchableOpacity
+                          key={toBase}
+                          className={`px-3 py-2 rounded-lg ${advancedToBase === toBase ? 'bg-emerald-700' : 'bg-slate-100'}`}
+                          onPress={() => setRunnerChoice(runnerId, base, { kind: 'advanced', toBase })}
+                        >
+                          <Text className={advancedToBase === toBase ? 'text-white font-semibold' : 'text-gray-700'}>
+                            Advance {finishLabel(toBase)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
                       <TouchableOpacity
                         className={`px-3 py-2 rounded-lg ${kind === 'thrown_out' ? 'bg-rose-700' : 'bg-slate-100'}`}
-                        onPress={() => setRunnerChoice(runnerId, base, 'thrown_out')}
+                        onPress={() => setRunnerChoice(runnerId, base, { kind: 'thrown_out' })}
                       >
                         <Text className={kind === 'thrown_out' ? 'text-white font-semibold' : 'text-gray-700'}>
                           Thrown out
@@ -1161,12 +1477,16 @@ export function PitchInput({
               })}
             </ScrollView>
 
+            {runnerEvaluation?.error ? (
+              <Text className="text-sm text-rose-700 mt-2">{runnerEvaluation.error}</Text>
+            ) : null}
             <TouchableOpacity
-              className="bg-slate-800 rounded-xl px-5 py-4 mt-2"
+              className={`rounded-xl px-5 py-4 mt-2 ${runnerEvaluation?.error ? 'bg-slate-300' : 'bg-slate-800'}`}
+              disabled={!!runnerEvaluation?.error}
               onPress={confirmHitWithRunners}
             >
               <Text className="text-white font-semibold text-center">
-                Confirm {pendingHitWithRunners === HitType.TRIPLE ? 'Triple' : 'Double'}
+                Confirm {hitName(pendingHitWithRunners)}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1178,6 +1498,23 @@ export function PitchInput({
           </View>
         </View>
       </Modal>
+
+      <FieldLocationModal
+        visible={fieldRequest !== null}
+        fielderApplies={fieldRequest?.fielderApplies ?? true}
+        onNext={(captured) => continueFromField(captured)}
+        onSkip={() => continueFromField(null)}
+      />
+
+      <ThrowSequenceModal
+        visible={pendingThrow !== null}
+        firstFielder={pendingThrow?.firstFielder ?? null}
+        onDone={(throws) => {
+          const pending = pendingThrow;
+          setPendingThrow(null);
+          pending?.finish(throws);
+        }}
+      />
     </View>
   );
 }
@@ -1358,6 +1695,17 @@ function StrikeZoneGrid({
       </TouchableOpacity>
     </View>
   );
+}
+
+/** "to 3B" / "home" — where a runner finishes, for the outcome buttons. */
+function finishLabel(base: 2 | 3 | 4): string {
+  return base === 4 ? 'home' : `to ${base}B`;
+}
+
+function hitName(hitType: HitType | null): string {
+  if (hitType === HitType.SINGLE) return 'Single';
+  if (hitType === HitType.TRIPLE) return 'Triple';
+  return 'Double';
 }
 
 function baseLabel(base: Base): string {
