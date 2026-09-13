@@ -3190,6 +3190,7 @@ function LineupSetupModal({
       setStep('pitcher');
       setTrackPitchType(true);
       setTrackPitchLocation(false);
+      setTrackHitLocation(true);
     }
     // initialBattingOrder comes from score.tsx's useMemo keyed on
     // observedLineupRows, so its identity is stable across unrelated
