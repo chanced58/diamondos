@@ -498,6 +498,14 @@ function ConfigToggle({
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 
+/** A game event that failed to persist; recordEvent has already rolled it back and shown the save error. */
+class EventPersistError extends Error {
+  constructor(eventType: string, detail: string) {
+    super(`Failed to persist ${eventType}: ${detail}`);
+    this.name = 'EventPersistError';
+  }
+}
+
 /** One runner's choice in the runner-outcomes panel; bases come from hitRunnerOptions. */
 type WebRunnerChoice =
   | { kind: 'auto' }
@@ -1176,6 +1184,13 @@ export function ScoringBoard({
         // Roll back the optimistic insert so local state matches what is actually persisted.
         setEventRows((prev) => prev.filter((r) => r.id !== newRow.id));
         setSaveError('Failed to save last action. Please try again.');
+        // Throw rather than return the rolled-back id. Plays are multi-event —
+        // a pitch then its result, a hit then its linked runner outcomes and
+        // runs — and callers chain on this; returning the id let them append
+        // events referencing a row that was never saved. Throwing stops every
+        // chain, including indirect ones (a pitch that auto-completes a walk),
+        // at the write that failed.
+        throw new EventPersistError(eventType, upsertError.message);
       }
       return newRow.id as string;
     },
