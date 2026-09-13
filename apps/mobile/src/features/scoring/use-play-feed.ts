@@ -97,8 +97,11 @@ function describeLinkedOutcome(
     if (options && p.toBase > options.standardBase) {
       return p.toBase === 4 ? `${name} scored` : `${name} took ${base}`;
     }
+    return `${name} held at ${base}`;
   }
-  return `${name} held at ${base}`;
+  // Off a non-hit parent (e.g. a throwing error on a pickoff) there is no
+  // standard advance to fall short of: the runner simply advanced.
+  return `${name} advanced to ${base}`;
 }
 
 interface PartitionResult {
@@ -199,7 +202,9 @@ export function buildPlayFeedRows(
   for (const event of live) {
     if (linkedIds.has(event.id)) continue;
     current.push(event);
-    if (PA_ENDING_EVENT_TYPES.has(event.eventType)) {
+    // A voided terminal event does not end the plate appearance: replay drops
+    // it, the batter is still up, and the pitches before it stay visible.
+    if (PA_ENDING_EVENT_TYPES.has(event.eventType) && !voidedIds.has(event.id)) {
       paGroups.push({ events: current, closed: true });
       current = [];
     }

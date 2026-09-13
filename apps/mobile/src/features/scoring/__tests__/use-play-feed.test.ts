@@ -65,6 +65,27 @@ describe('usePlayFeed', () => {
     expect(result.current[0]).toMatchObject({ eventId: hit.id, isVoided: true });
   });
 
+  it('keeps the pitches of a plate appearance visible after its terminal event is voided', () => {
+    const ball = mkEvent(EventType.PITCH_THROWN, { batterId: 'alice', outcome: PitchOutcome.BALL });
+    const inPlay = mkEvent(EventType.PITCH_THROWN, { batterId: 'alice', outcome: PitchOutcome.IN_PLAY });
+    const hit = mkEvent(EventType.HIT, { batterId: 'alice', hitType: HitType.SINGLE });
+    const voidPayload: EventVoidedPayload = { voidedEventId: hit.id, voidedSequenceNumber: hit.sequenceNumber };
+    const events: GameEvent[] = [
+      ball,
+      inPlay,
+      hit,
+      mkEvent(EventType.EVENT_VOIDED, voidPayload as unknown as Record<string, unknown>),
+    ];
+    const { result } = renderHook(() => usePlayFeed(events, names));
+    // Replay drops the hit, so Alice is still batting: her pitches stay listed
+    // under the struck-through hit instead of disappearing with it.
+    expect(result.current.map((r) => [r.eventId, r.isVoided])).toEqual([
+      [hit.id, true],
+      [inPlay.id, false],
+      [ball.id, false],
+    ]);
+  });
+
   it('returns rows newest-first', () => {
     const events: GameEvent[] = [
       mkEvent(EventType.HIT, { batterId: 'alice', hitType: HitType.SINGLE }),
@@ -166,7 +187,7 @@ describe('usePlayFeed', () => {
     // Must leave a trace: one standalone row for the otherwise-orphaned play.
     expect(result.current).toHaveLength(1);
     expect(result.current[0]).toMatchObject({ eventId: pickoff.id, isVoided: false });
-    expect(result.current[0].description).toBe('Bob held at 2B');
+    expect(result.current[0].description).toBe('Bob advanced to 2B');
   });
 
   it('drops events truncated by a PITCH_REVERTED, but leaves a collapsed trace row behind', () => {
