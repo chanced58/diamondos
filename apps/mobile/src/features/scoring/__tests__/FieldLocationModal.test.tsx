@@ -1,4 +1,4 @@
-import { render, fireEvent, screen } from '@testing-library/react-native';
+import { render, fireEvent, screen, act } from '@testing-library/react-native';
 import { FieldDiagram } from '../FieldDiagram';
 import { FieldLocationModal } from '../FieldLocationModal';
 
@@ -11,12 +11,41 @@ jest.mock('react-native-svg', () => {
   return { __esModule: true, default: Stub, Rect: Stub, Path: Stub, Circle: Stub, Polygon: Stub, Line: Stub };
 });
 
+/**
+ * Real RN `TouchableOpacity` starts a 250ms `Animated.timing` fade whenever
+ * its `disabled` prop flips (see `componentDidUpdate` in TouchableOpacity) —
+ * exactly what happens to the modal's Next button the instant a location is
+ * placed. That animation runs on real timers via the rAF-over-setTimeout
+ * polyfill in RN's jest setup, so left unflushed it keeps ticking past the
+ * end of the synchronous test body and updates state outside of `act()`.
+ * Fake timers plus a flush after every press keep each animation's frames
+ * inside `act()`, so it settles before the test (and the suite) moves on.
+ */
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+
+afterEach(() => {
+  act(() => {
+    jest.runOnlyPendingTimers();
+  });
+  jest.useRealTimers();
+});
+
+/** `fireEvent.press`, then settle any Animated timing it started. */
+function press(element: unknown, ...data: unknown[]) {
+  fireEvent.press(element as never, ...(data as []));
+  act(() => {
+    jest.runOnlyPendingTimers();
+  });
+}
+
 /** Lays the diagram out at the drawing's own 240×200 size, then taps a point in it. */
 function tapField(x: number, y: number) {
   fireEvent(screen.getByTestId('field-diagram-frame'), 'layout', {
     nativeEvent: { layout: { width: 240, height: 200 } },
   });
-  fireEvent.press(screen.getByTestId('field-diagram'), { nativeEvent: { locationX: x, locationY: y } });
+  press(screen.getByTestId('field-diagram'), { nativeEvent: { locationX: x, locationY: y } });
 }
 
 describe('FieldDiagram', () => {
@@ -27,14 +56,14 @@ describe('FieldDiagram', () => {
       nativeEvent: { layout: { width: 480, height: 400 } },
     });
     // (240, 70) at double size is (120, 35) in the drawing: the deep centre wall.
-    fireEvent.press(screen.getByTestId('field-diagram'), { nativeEvent: { locationX: 240, locationY: 70 } });
+    press(screen.getByTestId('field-diagram'), { nativeEvent: { locationX: 240, locationY: 70 } });
     expect(onPlaceBall).toHaveBeenCalledWith({ sprayX: 0.5, sprayY: 1 });
   });
 
   it('should ignore a tap that lands before the diagram has been measured', () => {
     const onPlaceBall = jest.fn();
     render(<FieldDiagram location={null} selectedFielder={null} onPlaceBall={onPlaceBall} onPressFielder={jest.fn()} />);
-    fireEvent.press(screen.getByTestId('field-diagram'), { nativeEvent: { locationX: 120, locationY: 35 } });
+    press(screen.getByTestId('field-diagram'), { nativeEvent: { locationX: 120, locationY: 35 } });
     expect(onPlaceBall).not.toHaveBeenCalled();
   });
 
@@ -45,7 +74,7 @@ describe('FieldDiagram', () => {
     fireEvent(screen.getByTestId('field-diagram-frame'), 'layout', {
       nativeEvent: { layout: { width: 240, height: 200 } },
     });
-    fireEvent.press(screen.getByTestId('fielder-marker-6'));
+    press(screen.getByTestId('fielder-marker-6'));
     expect(onPressFielder).toHaveBeenCalledWith(6);
     expect(onPlaceBall).not.toHaveBeenCalled();
   });
@@ -55,7 +84,7 @@ describe('FieldLocationModal', () => {
   it('should not allow Next before a location is placed', () => {
     const onNext = jest.fn();
     render(<FieldLocationModal visible onNext={onNext} onSkip={jest.fn()} />);
-    fireEvent.press(screen.getByText('Next'));
+    press(screen.getByText('Next'));
     expect(onNext).not.toHaveBeenCalled();
   });
 
@@ -64,7 +93,7 @@ describe('FieldLocationModal', () => {
     render(<FieldLocationModal visible onNext={onNext} onSkip={jest.fn()} />);
     // (99, 98) in the drawing is spray (0.36, 0.58): the shortstop's spot.
     tapField(99, 98);
-    fireEvent.press(screen.getByText('Next'));
+    press(screen.getByText('Next'));
     expect(onNext).toHaveBeenCalledWith({
       sprayX: expect.closeTo(0.36, 6),
       sprayY: expect.closeTo(0.58, 6),
@@ -76,8 +105,8 @@ describe('FieldLocationModal', () => {
     const onNext = jest.fn();
     render(<FieldLocationModal visible onNext={onNext} onSkip={jest.fn()} />);
     tapField(99, 98);
-    fireEvent.press(screen.getByTestId('fielder-marker-4'));
-    fireEvent.press(screen.getByText('Next'));
+    press(screen.getByTestId('fielder-marker-4'));
+    press(screen.getByText('Next'));
     expect(onNext).toHaveBeenCalledWith(expect.objectContaining({ firstFielder: 4 }));
   });
 
@@ -85,15 +114,15 @@ describe('FieldLocationModal', () => {
     const onNext = jest.fn();
     render(<FieldLocationModal visible onNext={onNext} onSkip={jest.fn()} />);
     tapField(120, 10);
-    fireEvent.press(screen.getByTestId('fielder-marker-8'));
-    fireEvent.press(screen.getByText('Next'));
+    press(screen.getByTestId('fielder-marker-8'));
+    press(screen.getByText('Next'));
     expect(onNext).toHaveBeenCalledWith({ sprayX: 0.5, sprayY: 1, firstFielder: null });
   });
 
   it('should skip without a location', () => {
     const onSkip = jest.fn();
     render(<FieldLocationModal visible onNext={jest.fn()} onSkip={onSkip} />);
-    fireEvent.press(screen.getByText('Skip'));
+    press(screen.getByText('Skip'));
     expect(onSkip).toHaveBeenCalledTimes(1);
   });
 });
