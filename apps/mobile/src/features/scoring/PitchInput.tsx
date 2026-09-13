@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
-import { HitType, PitchOutcome, PitchType, HitTrajectory } from '@baseball/shared';
+import { HitType, PitchOutcome, PitchType, HitTrajectory, extraBaseHitRunnerOptions } from '@baseball/shared';
 import type { DefensiveLineup, DroppedThirdStrikeOutcome, SacrificeEligibility } from '@baseball/shared';
 import { DefensiveDiamond } from './DefensiveDiamond';
 
@@ -452,12 +452,16 @@ export function PitchInput({
       } else if (kind === 'thrown_out') {
         next[runnerId] = { runnerId, fromBase, kind: 'thrown_out' };
       } else {
-        // "Held" — pick the next base the runner could realistically stop at.
-        // For a runner on 1B that's 2B; for a runner on 2B that's 3B. Runners
-        // on 3B can't "hold" further (3B is their default; advancing is to
-        // home, which is the "auto" outcome).
-        const toBase: 2 | 3 = fromBase === 1 ? 2 : 3;
-        next[runnerId] = { runnerId, fromBase, kind: 'held', toBase };
+        // "Held" — the base the shared rule says this runner can stop at. The
+        // batter takes a base too, so this is not simply fromBase + 1: a
+        // runner from first cannot be held at second on a double. The button
+        // is only rendered when a hold exists, so a null here means a stale
+        // tap on a prompt whose hit type changed — ignore it.
+        const heldBase = pendingHitWithRunners
+          ? extraBaseHitRunnerOptions(fromBase, pendingHitWithRunners)?.heldBase ?? null
+          : null;
+        if (heldBase === null) return prev;
+        next[runnerId] = { runnerId, fromBase, kind: 'held', toBase: heldBase };
       }
       return next;
     });
@@ -1326,10 +1330,16 @@ export function PitchInput({
               {runnersOnBase.map(({ base, runnerId }) => {
                 const choice = runnerOutcomeChoices[runnerId];
                 const kind = choice?.kind ?? 'auto';
-                // "Held" only makes sense when the runner could stop short
-                // of the default end base. A runner on 3B has no shorter
-                // advance than scoring, so we suppress that option.
-                const canHold = base === 1 || base === 2;
+                // A hold exists only when there is a free base between the
+                // batter's and the standard advance — see
+                // extraBaseHitRunnerOptions. On a double that is a runner from
+                // second held at third, and nothing else; on a triple, never.
+                const options = pendingHitWithRunners
+                  ? extraBaseHitRunnerOptions(base, pendingHitWithRunners)
+                  : null;
+                const heldBase = options?.heldBase ?? null;
+                const standardLabel =
+                  options?.standardBase === 3 ? 'Advanced to 3B' : 'Scored';
                 return (
                   <View key={runnerId} className="mb-4 border border-gray-200 rounded-xl p-3">
                     <Text className="text-sm font-semibold text-gray-700 mb-2">
@@ -1341,16 +1351,16 @@ export function PitchInput({
                         onPress={() => setRunnerChoice(runnerId, base, 'auto')}
                       >
                         <Text className={kind === 'auto' ? 'text-white font-semibold' : 'text-gray-700'}>
-                          Advanced as expected
+                          {standardLabel}
                         </Text>
                       </TouchableOpacity>
-                      {canHold && (
+                      {heldBase !== null && (
                         <TouchableOpacity
                           className={`px-3 py-2 rounded-lg ${kind === 'held' ? 'bg-amber-600' : 'bg-slate-100'}`}
                           onPress={() => setRunnerChoice(runnerId, base, 'held')}
                         >
                           <Text className={kind === 'held' ? 'text-white font-semibold' : 'text-gray-700'}>
-                            Held at {base === 1 ? '2B' : '3B'}
+                            Held at {heldBase}B
                           </Text>
                         </TouchableOpacity>
                       )}

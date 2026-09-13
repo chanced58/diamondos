@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome, computeLineScore, evaluateGameEnd, shouldEndHalfForRunCap, isDroppedThirdStrikeAllowed, ghostRunnerBaseForHalf, defaultLeagueScoringSettings, sacrificeEligibility, type LeagueScoringSettings } from '@baseball/shared';
+import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome, computeLineScore, evaluateGameEnd, shouldEndHalfForRunCap, isDroppedThirdStrikeAllowed, ghostRunnerBaseForHalf, defaultLeagueScoringSettings, sacrificeEligibility, extraBaseHitRunnerOptions, HitType, type LeagueScoringSettings } from '@baseball/shared';
 import type { GameEvent } from '@baseball/shared';
 import { endGameAction } from '../actions';
 import { DefensiveDiamond } from './DefensiveDiamond';
@@ -497,6 +497,11 @@ function ConfigToggle({
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
+
+/** The runner-outcomes panel stores its hit as a string literal; the shared rules take the enum. */
+function hitTypeOf(hitType: 'double' | 'triple'): HitType {
+  return hitType === 'double' ? HitType.DOUBLE : HitType.TRIPLE;
+}
 
 export function ScoringBoard({
   game,
@@ -1323,9 +1328,17 @@ export function ScoringBoard({
   function setRunnerOutcomeChoice(runnerId: string, fromBase: 1 | 2 | 3, kind: 'auto' | 'held' | 'thrown_out') {
     setPendingHitRunnerOutcomes((prev) => {
       if (!prev) return prev;
-      const toBase: 2 | 3 = fromBase === 1 ? 2 : 3;
       const next = { ...prev.choices };
-      next[runnerId] = kind === 'held' ? { kind, toBase } : { kind };
+      if (kind === 'held') {
+        // The base the shared rule allows — not fromBase + 1, since the
+        // batter takes a base too. No hold exists → the button isn't shown,
+        // so a null here is a stale click; leave the choice unchanged.
+        const heldBase = extraBaseHitRunnerOptions(fromBase, hitTypeOf(prev.hitType))?.heldBase ?? null;
+        if (heldBase === null) return prev;
+        next[runnerId] = { kind, toBase: heldBase };
+      } else {
+        next[runnerId] = { kind };
+      }
       return { ...prev, choices: next };
     });
   }
@@ -3485,8 +3498,12 @@ export function ScoringBoard({
               {pendingHitRunnerOutcomes.runners.map(({ runnerId, fromBase }) => {
                 const choice = pendingHitRunnerOutcomes.choices[runnerId];
                 const kind = choice?.kind ?? 'auto';
-                const canHold = fromBase === 1 || fromBase === 2;
-                const heldLabel = fromBase === 1 ? 'Held at 2B' : 'Held at 3B';
+                // See extraBaseHitRunnerOptions: a hold needs a free base
+                // between the batter's and the standard advance — on a double
+                // only a runner from second (held at third); on a triple never.
+                const options = extraBaseHitRunnerOptions(fromBase, hitTypeOf(pendingHitRunnerOutcomes.hitType));
+                const heldBase = options?.heldBase ?? null;
+                const standardLabel = options?.standardBase === 3 ? 'Advanced to 3B' : 'Scored';
                 return (
                   <div key={runnerId} className="mb-3 border border-gray-200 rounded-lg p-3">
                     <div className="text-sm font-semibold text-gray-700 mb-2">
@@ -3498,15 +3515,15 @@ export function ScoringBoard({
                         onClick={() => setRunnerOutcomeChoice(runnerId, fromBase, 'auto')}
                         className={`px-3 py-2 text-xs font-semibold rounded-md ${kind === 'auto' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                       >
-                        Advanced as expected
+                        {standardLabel}
                       </button>
-                      {canHold && (
+                      {heldBase !== null && (
                         <button
                           type="button"
                           onClick={() => setRunnerOutcomeChoice(runnerId, fromBase, 'held')}
                           className={`px-3 py-2 text-xs font-semibold rounded-md ${kind === 'held' ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                         >
-                          {heldLabel}
+                          Held at {heldBase}B
                         </button>
                       )}
                       <button
