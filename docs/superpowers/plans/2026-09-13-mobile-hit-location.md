@@ -1631,3 +1631,557 @@ order by sequence_number desc limit 20;
 Expected: the single `seq [8]`; the groundout `seq [6,3]`; the fly `seq [7]`; the home run with `x`/`y` and no `seq`; the skipped play and the hit batsman with no `x`, `y` or `seq`.
 
 - [ ] **Step 4: Report** tap accuracy and marker size on the iPad mini, and whether a skip-heavy half-inning stayed fast. Watch specifically that the outcome sheet actually appears after Next / Skip, and the throw step after picking an out: each closes one iOS modal and opens another in the same tick. The app already does this (sheet → Out modal), but if a second modal ever fails to present, that is the cause. Delete the shakedown game and its events only at the end of the full regression pass, scoped by its id.
+
+---
+
+## Revision 1 — outcome first, field immediately after (Tasks 7–9)
+
+The first device test reversed the flow (spec "Revision 1"). **Tap an outcome; the field comes next**, for every batted ball. Follow-up detail (out type, runner outcomes, the FC/DP runner, the error position) comes after the field. A home run shows the field with no fielder markers and records no fielder. Hit by pitch and catcher's interference never open the field. Tasks 1–5 stand; Task 6's device check is superseded by Task 9.
+
+**Additional global constraints for Tasks 7–9:**
+- The field pop-up opens immediately after a batted-ball outcome button is tapped: 1B, 2B, 3B, HR, Out, Sac Fly, Sac Bunt, Double Play, Triple Play, Error, Fielder's Choice. Never for Hit by pitch or Catcher Int.
+- A home run records `sprayX` / `sprayY` and never `fieldingSequence`.
+- The captured batted ball must be readable by `commitInPlay` in the same tick it is captured: an outcome that records immediately after Next (a home run, a single with the bases empty, a sac fly, a triple play) must still record its location.
+
+---
+
+### Task 7: Home runs show no fielders
+
+**Files:**
+- Modify: `apps/mobile/src/features/scoring/FieldDiagram.tsx`
+- Modify: `apps/mobile/src/features/scoring/FieldLocationModal.tsx`
+- Modify: `apps/mobile/src/features/scoring/__tests__/FieldLocationModal.test.tsx` (append)
+
+**Interfaces:**
+- Consumes: existing `FieldDiagram`, `FieldLocationModal`, `nearestFielder`.
+- Produces:
+  - `FieldDiagram` gains `showFielders?: boolean` (default `true`); when `false`, no `fielder-marker-<n>` renders.
+  - `FieldLocationModal` gains `fielderApplies?: boolean` (default `true`); when `false`, no marker renders, no fielder is ever selected, and `onNext` always emits `firstFielder: null`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `apps/mobile/src/features/scoring/__tests__/FieldLocationModal.test.tsx`. This file already defines `press`, `tapField`, fake timers, and the `react-native-svg` mock — use them.
+
+```tsx
+describe('FieldDiagram without fielders', () => {
+  it('should render no fielder markers when fielders are not shown', () => {
+    render(
+      <FieldDiagram
+        location={null}
+        selectedFielder={null}
+        showFielders={false}
+        onPlaceBall={jest.fn()}
+        onPressFielder={jest.fn()}
+      />,
+    );
+    fireEvent(screen.getByTestId('field-diagram-frame'), 'layout', {
+      nativeEvent: { layout: { width: 240, height: 200 } },
+    });
+    expect(screen.queryByTestId('fielder-marker-8')).toBeNull();
+  });
+});
+
+describe('FieldLocationModal for a home run', () => {
+  it('should record the location with no fielder and offer no fielder markers', () => {
+    const onNext = jest.fn();
+    render(<FieldLocationModal visible fielderApplies={false} onNext={onNext} onSkip={jest.fn()} />);
+    tapField(120, 10);
+    expect(screen.queryByTestId('fielder-marker-8')).toBeNull();
+    press(screen.getByText('Next'));
+    expect(onNext).toHaveBeenCalledWith({ sprayX: 0.5, sprayY: 1, firstFielder: null });
+  });
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run (from `apps/mobile`): `pnpm exec jest src/features/scoring/__tests__/FieldLocationModal.test.tsx`
+Expected: FAIL — `fielder-marker-8` is found (markers still render) / `firstFielder: 8` instead of `null`. TypeScript may also reject the unknown props; either failure is the expected RED.
+
+- [ ] **Step 3: Implement**
+
+In `FieldDiagram.tsx`, add `showFielders = true,` to the destructured props directly after `onPressFielder,`, and to the props type directly after `onPressFielder: (position: number) => void;`:
+
+```ts
+  /** False on a home run: nobody fielded it, so there is nobody to pick. */
+  showFielders?: boolean;
+```
+
+and change the marker render guard
+
+```tsx
+      {size.width > 0 &&
+```
+to
+```tsx
+      {showFielders && size.width > 0 &&
+```
+
+In `FieldLocationModal.tsx`:
+
+(a) Add the prop. Change the destructured props to
+
+```tsx
+export function FieldLocationModal({
+  visible,
+  fielderApplies = true,
+  onNext,
+  onSkip,
+}: {
+  visible: boolean;
+  /** False for a home run: location only, no fielder offered or recorded. */
+  fielderApplies?: boolean;
+  onNext: (battedBall: BattedBall) => void;
+  onSkip: () => void;
+}) {
+```
+
+(b) Replace `placeBall` and `next`:
+
+```tsx
+  function placeBall(point: { sprayX: number; sprayY: number }) {
+    setLocation(point);
+    setFielder(fielderApplies ? nearestFielder(point.sprayX, point.sprayY) : null);
+  }
+```
+```tsx
+  function next() {
+    if (!location) return;
+    onNext({ ...location, firstFielder: fielderApplies ? fielder : null });
+  }
+```
+
+(c) Replace the prompt text
+
+```tsx
+            {location
+              ? 'Tap a fielder to change who touched it first.'
+              : 'Tap where the ball landed or was fielded.'}
+```
+with
+```tsx
+            {!fielderApplies
+              ? 'Tap where the ball left the park.'
+              : location
+                ? 'Tap a fielder to change who touched it first.'
+                : 'Tap where the ball landed or was fielded.'}
+```
+
+(d) Pass the flag to the diagram — add `showFielders={fielderApplies}` to the `<FieldDiagram` element.
+
+Update the component's doc comment's last sentence to: `On a home run there is no fielder to pick: fielderApplies={false} hides the markers and records location only.`
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run (from `apps/mobile`): `pnpm exec jest src/features/scoring/__tests__/FieldLocationModal.test.tsx`
+Expected: PASS, with no `act()` warnings.
+
+- [ ] **Step 5: Verify the whole repo**
+
+Run: `pnpm type-check && pnpm test`
+Expected: type-check exits 0; all suites pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add apps/mobile/src/features/scoring/FieldDiagram.tsx apps/mobile/src/features/scoring/FieldLocationModal.tsx apps/mobile/src/features/scoring/__tests__/FieldLocationModal.test.tsx
+git commit -m "feat(mobile): record location only, with no fielder, on a home run
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 8: Open the field immediately after the outcome
+
+**Files:**
+- Modify: `apps/mobile/src/features/scoring/PitchInput.tsx`
+- Rewrite: `apps/mobile/src/features/scoring/__tests__/pitch-input-hit-location.test.tsx`
+
+**Interfaces:**
+- Consumes: `FieldLocationModal` with `fielderApplies` (Task 7); `commitInPlay`, `battedBallPayloadFields`, `ThrowSequenceModal`, `requiresThrowStep` (Tasks 2 and 5, already wired).
+- Produces: no new exports. `PitchInputProps` is unchanged (`trackHitLocation`, `onBattedBall` stay). `score.tsx` is not touched.
+
+- [ ] **Step 1: Rewrite the test for the new flow**
+
+Replace the entire contents of `apps/mobile/src/features/scoring/__tests__/pitch-input-hit-location.test.tsx` with:
+
+```tsx
+import { render, fireEvent, screen } from '@testing-library/react-native';
+import { HitType } from '@baseball/shared';
+import { PitchInput } from '../PitchInput';
+
+jest.mock('react-native-svg', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  const Stub = (props: { children?: unknown }) => React.createElement(View, null, props.children);
+  return { __esModule: true, default: Stub, Rect: Stub, Path: Stub, Circle: Stub, Polygon: Stub, Line: Stub };
+});
+
+function noop() {}
+
+/** Bases empty, nobody out: no sacrifice is possible, so an Out records straight through. */
+function baseProps(overrides: Record<string, unknown> = {}) {
+  return {
+    onRecordPitch: jest.fn(),
+    onRecordHit: jest.fn(),
+    onRecordOut: jest.fn(),
+    onRecordStrikeout: noop,
+    onRecordError: jest.fn(),
+    onRecordCatcherInterference: jest.fn(),
+    onRecordSacFly: noop,
+    onRecordSacBunt: noop,
+    onRecordFieldersChoice: noop,
+    onRecordRunnerOut: noop,
+    onRecordWildPitch: noop,
+    onRecordPassedBall: noop,
+    onRecordBalk: noop,
+    onRecordDoublePlay: noop,
+    onRecordTriplePlay: noop,
+    onRecordPitchingChange: noop,
+    onRecordPinchHitter: noop,
+    roster: [],
+    onUndoLastEvent: noop,
+    runnersOnBase: [] as { base: 1 | 2 | 3; runnerId: string }[],
+    sacFlyEligible: false,
+    sacBuntEligible: false,
+    doublePlayEligible: false,
+    triplePlayEligible: false,
+    sacEligibilityForTrajectory: () => ({ sacFly: false, sacBunt: false }),
+    trackHitLocation: true,
+    onBattedBall: jest.fn(),
+    ...overrides,
+  };
+}
+
+/** Presses the pressable ancestor of `label` — "Out" and "Error" are both group headings or titles and buttons. */
+function pressButtonLabeled(label: string) {
+  const pressable = screen.getAllByText(label).find((node) => {
+    let el: typeof node.parent = node.parent;
+    while (el) {
+      if (typeof el.props?.onPress === 'function') return true;
+      el = el.parent;
+    }
+    return false;
+  });
+  if (!pressable) throw new Error(`No pressable ancestor found for text "${label}"`);
+  fireEvent.press(pressable);
+}
+
+/** Lays the field out at the drawing's own size and taps a point in it. */
+function tapField(x: number, y: number) {
+  fireEvent(screen.getByTestId('field-diagram-frame'), 'layout', {
+    nativeEvent: { layout: { width: 240, height: 200 } },
+  });
+  fireEvent.press(screen.getByTestId('field-diagram'), { nativeEvent: { locationX: x, locationY: y } });
+}
+
+/** (99, 98) in the 240×200 drawing is spray (0.36, 0.58): the shortstop's spot. Then Next. */
+function placeAtShortAndContinue() {
+  tapField(99, 98);
+  fireEvent.press(screen.getByText('Next'));
+}
+
+describe('PitchInput hit location — outcome first', () => {
+  it('should open the outcome sheet, not the field, on In play', () => {
+    render(<PitchInput {...baseProps()} />);
+    fireEvent.press(screen.getByText('In play'));
+    expect(screen.getByText('What happened to the batter?')).toBeTruthy();
+    expect(screen.queryByText('Where did it go?')).toBeNull();
+  });
+
+  it('should open no field and record no location when the game does not track hit location', () => {
+    const onBattedBall = jest.fn();
+    const onRecordHit = jest.fn();
+    render(<PitchInput {...baseProps({ trackHitLocation: false, onBattedBall, onRecordHit })} />);
+    fireEvent.press(screen.getByText('In play'));
+    fireEvent.press(screen.getByText('1B'));
+    expect(screen.queryByText('Where did it go?')).toBeNull();
+    expect(onBattedBall).toHaveBeenCalledWith({});
+    expect(onRecordHit).toHaveBeenCalledWith(HitType.SINGLE);
+  });
+
+  it('should open the field immediately after Out, before the out type, and record a 6-3 groundout', () => {
+    const calls: string[] = [];
+    const onBattedBall = jest.fn(() => calls.push('battedBall'));
+    const onRecordOut = jest.fn(() => calls.push('out'));
+    render(<PitchInput {...baseProps({ onBattedBall, onRecordOut })} />);
+
+    fireEvent.press(screen.getByText('In play'));
+    pressButtonLabeled('Out');
+    expect(screen.getByText('Where did it go?')).toBeTruthy();
+    expect(screen.queryByText('Groundout')).toBeNull();
+
+    placeAtShortAndContinue();
+    fireEvent.press(screen.getByText('Groundout'));
+    expect(onRecordOut).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByTestId('throw-position-3'));
+    fireEvent.press(screen.getByTestId('throw-done'));
+
+    expect(onBattedBall).toHaveBeenCalledWith({
+      sprayX: expect.closeTo(0.36, 6),
+      sprayY: expect.closeTo(0.58, 6),
+      fieldingSequence: [6, 3],
+    });
+    expect(onRecordOut).toHaveBeenCalledWith('groundout');
+    expect(calls).toEqual(['battedBall', 'out']);
+  });
+
+  it('should record a home run location with no fielder and offer no fielders', () => {
+    const onBattedBall = jest.fn();
+    const onRecordHit = jest.fn();
+    render(<PitchInput {...baseProps({ onBattedBall, onRecordHit })} />);
+
+    fireEvent.press(screen.getByText('In play'));
+    fireEvent.press(screen.getByText('HR'));
+    tapField(120, 10);
+    expect(screen.queryByTestId('fielder-marker-8')).toBeNull();
+    fireEvent.press(screen.getByText('Next'));
+
+    // A home run records the moment Next is tapped: this fails if the capture
+    // is read from stale state rather than from where Next just put it.
+    expect(onBattedBall).toHaveBeenCalledWith({ sprayX: 0.5, sprayY: 1 });
+    expect(onRecordHit).toHaveBeenCalledWith(HitType.HOME_RUN);
+  });
+
+  it('should record the first fielder on a single with the bases empty, without a throw step', () => {
+    const onBattedBall = jest.fn();
+    const onRecordHit = jest.fn();
+    render(<PitchInput {...baseProps({ onBattedBall, onRecordHit })} />);
+
+    fireEvent.press(screen.getByText('In play'));
+    fireEvent.press(screen.getByText('1B'));
+    placeAtShortAndContinue();
+
+    expect(screen.queryByTestId('throw-done')).toBeNull();
+    expect(onBattedBall).toHaveBeenCalledWith(expect.objectContaining({ fieldingSequence: [6] }));
+    expect(onRecordHit).toHaveBeenCalledWith(HitType.SINGLE);
+  });
+
+  it('should record no batted-ball fields when the scorer skips', () => {
+    const onBattedBall = jest.fn();
+    render(<PitchInput {...baseProps({ onBattedBall })} />);
+
+    fireEvent.press(screen.getByText('In play'));
+    fireEvent.press(screen.getByText('1B'));
+    fireEvent.press(screen.getByText('Skip'));
+
+    expect(onBattedBall).toHaveBeenCalledWith({});
+  });
+
+  it('should never open the field for a hit batsman', () => {
+    const onBattedBall = jest.fn();
+    const onRecordPitch = jest.fn();
+    render(<PitchInput {...baseProps({ onBattedBall, onRecordPitch })} />);
+
+    fireEvent.press(screen.getByText('In play'));
+    fireEvent.press(screen.getByText('Hit by pitch'));
+
+    expect(screen.queryByText('Where did it go?')).toBeNull();
+    expect(onRecordPitch).toHaveBeenCalled();
+    expect(onBattedBall).not.toHaveBeenCalled();
+  });
+
+  it('should pre-select the field pop-up fielder in the error picker', () => {
+    render(<PitchInput {...baseProps()} />);
+
+    fireEvent.press(screen.getByText('In play'));
+    pressButtonLabeled('Error');
+    placeAtShortAndContinue();
+
+    expect(screen.getByTestId('error-position-6').props.accessibilityState).toEqual({ selected: true });
+    expect(screen.getByTestId('error-position-5').props.accessibilityState).toEqual({ selected: false });
+  });
+
+  it('should not carry a location from a play abandoned at the out type to the next play', () => {
+    const onBattedBall = jest.fn();
+    render(<PitchInput {...baseProps({ onBattedBall })} />);
+
+    fireEvent.press(screen.getByText('In play'));
+    pressButtonLabeled('Out');
+    placeAtShortAndContinue();
+    fireEvent.press(screen.getByText('Cancel'));
+
+    fireEvent.press(screen.getByText('In play'));
+    fireEvent.press(screen.getByText('1B'));
+    fireEvent.press(screen.getByText('Skip'));
+
+    expect(onBattedBall).toHaveBeenCalledTimes(1);
+    expect(onBattedBall).toHaveBeenCalledWith({});
+  });
+});
+```
+
+If this file prints `act()` warnings, apply the pattern already used in `FieldLocationModal.test.tsx` (fake timers in `beforeEach`, flush pending timers inside `act()` in `afterEach` and after each press). Keep every assertion.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run (from `apps/mobile`): `pnpm exec jest src/features/scoring/__tests__/pitch-input-hit-location.test.tsx`
+Expected: FAIL — "should open the outcome sheet, not the field, on In play" fails because In play still opens `Where did it go?`.
+
+- [ ] **Step 3: Implement in `PitchInput.tsx`**
+
+(a) Replace the state block
+
+```ts
+  // Hit location: the field pop-up, what it captured for the current in-play
+  // flow, and a throw step waiting to finish recording an out.
+  const [showFieldModal, setShowFieldModal] = useState(false);
+  const [battedBall, setBattedBall] = useState<BattedBall | null>(null);
+```
+with
+```ts
+  // Hit location. The field pop-up request for the outcome just tapped —
+  // whether a fielder applies (not on a home run) and that outcome's own next
+  // step — and what the pop-up captured for the play in progress.
+  //
+  // The capture is a ref, not state: Next stores it and runs the outcome's
+  // next step in the same tick, and an outcome that records immediately (a
+  // home run, a single with the bases empty, a sac fly) reaches commitInPlay
+  // before any re-render, where state would still read null.
+  const [fieldRequest, setFieldRequest] = useState<null | {
+    fielderApplies: boolean;
+    proceed: () => void;
+  }>(null);
+  const battedBallRef = useRef<BattedBall | null>(null);
+```
+
+(leave the `pendingThrow` state that follows unchanged).
+
+(b) Replace `openInPlay`, `continueFromField`, `commitInPlay`'s first two lines, and `discardBattedBall`. The block
+
+```ts
+  // In play starts a fresh flow: whatever the last flow captured is dropped
+  // before the pop-up (or the sheet, when location isn't tracked) opens.
+  function openInPlay() {
+    setBattedBall(null);
+    if (trackHitLocation) setShowFieldModal(true);
+    else setShowInPlaySheet(true);
+  }
+
+  function continueFromField(captured: BattedBall | null) {
+    setBattedBall(captured);
+    setShowFieldModal(false);
+    setShowInPlaySheet(true);
+  }
+```
+becomes
+```ts
+  // In play starts a fresh play: whatever an abandoned play captured is
+  // dropped, so it can never attach to this one.
+  function openInPlay() {
+    battedBallRef.current = null;
+    setShowInPlaySheet(true);
+  }
+
+  // Every batted-ball outcome button goes through here: the field comes next,
+  // at the same moment for every play, then the outcome's own next step.
+  function chooseBattedBall(proceed: () => void, options: { fielderApplies?: boolean } = {}) {
+    battedBallRef.current = null;
+    if (!trackHitLocation) {
+      proceed();
+      return;
+    }
+    setFieldRequest({ fielderApplies: options.fielderApplies ?? true, proceed });
+  }
+
+  function continueFromField(captured: BattedBall | null) {
+    const request = fieldRequest;
+    setFieldRequest(null);
+    battedBallRef.current = captured;
+    request?.proceed();
+  }
+```
+
+In `commitInPlay`, replace
+
+```ts
+    const captured = battedBall;
+    setBattedBall(null);
+```
+with
+```ts
+    const captured = battedBallRef.current;
+    battedBallRef.current = null;
+```
+
+and replace `discardBattedBall`'s body `setBattedBall(null);` with `battedBallRef.current = null;`.
+
+(c) Route each batted-ball outcome button through `chooseBattedBall`. In the In play sheet, make exactly these `onPress` replacements:
+
+| Button | Before | After |
+|---|---|---|
+| Hit (`HIT_TYPES.map`) | `() => runFromSheet(setShowInPlaySheet, () => handleHitTap(hitType))` | `() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => handleHitTap(hitType), { fielderApplies: hitType !== HitType.HOME_RUN }))` |
+| Out | `() => runFromSheet(setShowInPlaySheet, () => setShowOutModal(true))` | `() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => setShowOutModal(true)))` |
+| Sac Fly | `() => runFromSheet(setShowInPlaySheet, () => commitInPlay(EventType.SACRIFICE_FLY, onRecordSacFly))` | `() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => commitInPlay(EventType.SACRIFICE_FLY, onRecordSacFly)))` |
+| Sac Bunt | `() => runFromSheet(setShowInPlaySheet, () => commitInPlay(EventType.SACRIFICE_BUNT, onRecordSacBunt))` | `() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => commitInPlay(EventType.SACRIFICE_BUNT, onRecordSacBunt)))` |
+| Double Play | `() => runFromSheet(setShowInPlaySheet, handleDPTap)` | `() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(handleDPTap))` |
+| Triple Play | `() => runFromSheet(setShowInPlaySheet, () => commitInPlay(EventType.TRIPLE_PLAY, onRecordTriplePlay))` | `() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => commitInPlay(EventType.TRIPLE_PLAY, onRecordTriplePlay)))` |
+| Error | `() => runFromSheet(setShowInPlaySheet, () => setShowErrorModal(true))` | `() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => setShowErrorModal(true)))` |
+| Fielder's Choice | `() => runFromSheet(setShowInPlaySheet, () => setShowFCModal(true))` | `() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => setShowFCModal(true)))` |
+
+Hit by pitch and Catcher Int. are unchanged.
+
+(d) Error picker: replace both occurrences of `battedBall?.firstFielder` with `battedBallRef.current?.firstFielder`.
+
+(e) Replace the modal element
+
+```tsx
+      <FieldLocationModal
+        visible={showFieldModal}
+        onNext={(captured) => continueFromField(captured)}
+        onSkip={() => continueFromField(null)}
+      />
+```
+with
+```tsx
+      <FieldLocationModal
+        visible={fieldRequest !== null}
+        fielderApplies={fieldRequest?.fielderApplies ?? true}
+        onNext={(captured) => continueFromField(captured)}
+        onSkip={() => continueFromField(null)}
+      />
+```
+
+After these edits, `grep -n "setBattedBall\|showFieldModal\|setShowFieldModal" apps/mobile/src/features/scoring/PitchInput.tsx` must print nothing.
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run (from `apps/mobile`): `pnpm exec jest src/features/scoring/__tests__/pitch-input-hit-location.test.tsx`
+Expected: PASS — all nine tests, no `act()` warnings.
+
+- [ ] **Step 5: Verify the whole repo**
+
+Run: `pnpm type-check && pnpm test`
+Expected: type-check exits 0; all suites pass, including the unchanged `pitch-input-*` suites.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add apps/mobile/src/features/scoring/PitchInput.tsx apps/mobile/src/features/scoring/__tests__/pitch-input-hit-location.test.tsx
+git commit -m "feat(mobile): open the field immediately after the outcome, for every batted ball
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 9: Device verification (controller-run, supersedes Task 6)
+
+No subagent. Writes to prod under the shakedown protocol.
+
+- [ ] **Step 1: Reload** — JavaScript-only change since Task 6's native build: relaunch the app. Metro must be running with `NODE_OPTIONS=--unhandled-rejections=warn` (Node 25 otherwise crashes on the pnpm HMR entry-path rejection).
+
+- [ ] **Step 2: The coach scores, in landscape, on the shakedown game** (`842151c0-b385-4ae6-adc5-d297aeab3b82`): a single fielded by CF; a 6-3 groundout; a caught fly to LF; a home run; one Skipped play; a hit batsman; an error charged to SS.
+
+- [ ] **Step 3: Verify the recorded payloads**
+
+```sql
+select sequence_number, event_type, payload->>'hitType' as hit, payload->'sprayX' as x, payload->'sprayY' as y, payload->'fieldingSequence' as seq, payload->'errorBy' as err
+from game_events where game_id = '842151c0-b385-4ae6-adc5-d297aeab3b82'
+order by sequence_number desc limit 30;
+```
+
+Expected: the single `seq [8]`; the groundout `[6,3]`; the fly `[7]`; the home run with `x`/`y` and **no** `seq`; the skipped play and the hit batsman with no `x`/`y`/`seq`; the error with `seq [6]` and `err 6`.
+
+- [ ] **Step 4: Report** tap accuracy, and that every follow-up screen appeared after the field (out type after Out, error position after Error, throw step after the out type).
