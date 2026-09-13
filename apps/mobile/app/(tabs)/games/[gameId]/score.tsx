@@ -3210,8 +3210,14 @@ function LineupSetupModal({
   // the scorer didn't see from costing more than one tap.
   const [trackHitLocation, setTrackHitLocation] = useState(true);
 
+  // Reset only on the transition to open. initialPitcherId and
+  // initialBattingOrder derive from the live game_lineups observation, so a
+  // sync landing while the wizard is open gives them new values — resetting
+  // then would wipe the coach's in-progress picks and send them back to the
+  // first step. Reopening still starts from the latest saved lineup.
+  const wasVisibleRef = useRef(false);
   useEffect(() => {
-    if (visible) {
+    if (visible && !wasVisibleRef.current) {
       setPitcherId(initialPitcherId);
       setBattingOrder(initialBattingOrder);
       setStep('pitcher');
@@ -3219,9 +3225,7 @@ function LineupSetupModal({
       setTrackPitchLocation(false);
       setTrackHitLocation(true);
     }
-    // initialBattingOrder comes from score.tsx's useMemo keyed on
-    // observedLineupRows, so its identity is stable across unrelated
-    // re-renders and only changes when the underlying lineup does.
+    wasVisibleRef.current = visible;
   }, [visible, initialPitcherId, initialBattingOrder]);
 
   const onPitcherStep = step === 'pitcher';
