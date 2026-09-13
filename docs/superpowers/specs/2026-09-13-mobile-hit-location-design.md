@@ -193,7 +193,7 @@ skip-heavy inning to confirm the flow stays fast.
 ## Out of scope
 
 - Refactoring web's `SprayChartPicker` onto the shared geometry.
-- Web honoring `hitLocationEnabled` (web does not read any tracking toggle today).
+- Web honoring `hitLocationEnabled` (web reads the pitch-type and pitch-location toggles in `score/page.tsx`, but a hit-location toggle there is not part of this change).
 - A spray chart view on mobile.
 - Putout credit for the force on a fielder's choice via its BASERUNNER_OUT.
 - Hit distance or exit direction beyond the spray point.
