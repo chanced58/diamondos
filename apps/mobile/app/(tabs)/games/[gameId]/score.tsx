@@ -472,16 +472,16 @@ export default function ScoringScreen() {
       : {}),
   };
 
-  // Wraps the in-play terminal handlers (Hit / Out / error / sac / double
-  // play / triple play) so each records its implied PITCH_THROWN first —
-  // see in-play-pitch.ts. This is the single choke point all eleven of
-  // those handlers flow through at the PitchInput prop boundary below.
   // Batted-ball fields handed over by PitchInput immediately before an in-play
   // handler runs; each handler takes them into its payload, which empties the
   // slot. Cleared on every non-in-play pitch too, so a location from an
   // abandoned flow can never attach to a later play.
   const battedBallSlot = useRef(createBattedBallSlot()).current;
 
+  // Wraps the in-play terminal handlers (Hit / Out / error / sac / double
+  // play / triple play) so each records its implied PITCH_THROWN first —
+  // see in-play-pitch.ts. This is the single choke point all eleven of
+  // those handlers flow through at the PitchInput prop boundary below.
   const withInPlayPitch = useMemo(
     () =>
       makeInPlayPitchWrapper(recordEvent, () =>

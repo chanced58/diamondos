@@ -199,11 +199,12 @@ tests hold the shared functions to.
   through `commitInPlay`, which opens the throw step for the qualifying
   outcomes, then passes the batted-ball fields through `onBattedBall` and
   records. HIT_BY_PITCH and CATCHER_INTERFERENCE never open the field.
-- `score.tsx` — holds the current batted ball in a ref set by `onBattedBall`;
-  each in-play terminal handler spreads `takeBattedBallFields()` into its
-  payload, which returns the fields and clears the ref. The ref is also
-  cleared whenever a non-in-play pitch is recorded, so a location abandoned
-  mid-flow can never attach to a later play.
+- `score.tsx` — holds the current batted ball in a `createBattedBallSlot()`
+  slot set by `onBattedBall`; each in-play terminal handler spreads
+  `battedBallSlot.take()` into its payload, which returns the fields and
+  clears the slot. The slot is also cleared whenever a non-in-play pitch is
+  recorded, so a location abandoned mid-flow can never attach to a later
+  play.
 - `lineup-wizard.ts` / the wizard's tracking step — the `hitLocation` toggle
   and `hitLocationEnabled` in `buildGameStartPayload`.
 - `apps/mobile/package.json` — `react-native-svg` 15.2.0 via `expo install`.

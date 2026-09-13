@@ -4,10 +4,10 @@ import { nearestFielder, type BattedBall } from '@baseball/shared';
 import { FieldDiagram } from './FieldDiagram';
 
 /**
- * The pop-up shown on In play when the game tracks hit location. One tap is
- * the common case: it places the ball and selects the nearest fielder. The
- * scorer can pick another fielder, clear it (over the wall), or Skip a play
- * they didn't see — Skip records nothing.
+ * The pop-up shown after a batted-ball outcome is chosen, when the game
+ * tracks hit location. One tap is the common case: it places the ball and
+ * selects the nearest fielder. The scorer can pick another fielder, clear it
+ * (over the wall), or Skip a play they didn't see — Skip records nothing.
  * On a home run there is no fielder to pick: fielderApplies={false} hides the
  * markers and records location only.
  */

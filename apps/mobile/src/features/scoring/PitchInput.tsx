@@ -90,7 +90,7 @@ interface PitchInputProps {
   trackPitchType?: boolean;
   /** Scorer opted into pitch-location tracking at game start. */
   trackPitchLocation?: boolean;
-  /** Show the field pop-up on In play (the game's GAME_START hitLocationEnabled). */
+  /** Show the field pop-up after a batted-ball outcome is chosen (the game's GAME_START hitLocationEnabled). */
   trackHitLocation?: boolean;
   /**
    * Receives the batted-ball payload fields immediately before any in-play
