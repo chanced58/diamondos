@@ -307,7 +307,7 @@ unless a mirror is added — say so rather than silently degrading.
 ---
 
 ### H5. The lineup editor permits an invalid defensive alignment
-**Route:** `(tabs)/games/[gameId]/lineup`  **Severity:** H  **Status:** open
+**Route:** `(tabs)/games/[gameId]/lineup`  **Severity:** H  **Status:** fixed (W1, commit `690df56`)
 **Repro:** open the lineup for a game and assign the same fielding position to two players.
 
 **Observed — verified in prod, not inferred from the screen.** `game_lineups` for the live
@@ -340,9 +340,25 @@ editor allowed to become invalid.
 
 **Defect bar:** wrong record.
 
-**Fix (for Task 10):** the rule belongs in `packages/shared/src/rules/` behind the phase 2 seam —
-both clients must enforce it, and the expanded-lineup / EH cases mean it is a real rule, not a form
-check. Note that a null position (batting slot 10 here) is legitimate and must stay allowed.
+**Fixed in W1 (`690df56`).** `validateFieldingPositions` in
+`packages/shared/src/rules/fielding-positions.ts`, called by both clients before any write. The
+nine specific positions plus DH are exclusive; `INFIELD` / `OUTFIELD` / `UTILITY` and `null` may
+repeat (batting slot 10 here is a legitimate null). Entries with a null `battingOrder` are skipped
+because bench pitchers are deliberately stored as `batting_order: null` + `starting_position:
+'pitcher'` so pitch counts keep tracking them — a rule that counted them would have rejected every
+lineup with a bench pitcher, a worse regression than the bug. Covered by 7 unit tests including
+that regression guard.
+
+**Verified in the simulator**, not just by test: opening this game's lineup and pressing Save now
+shows "Two players are assigned to RF. Each fielding position can only be assigned once." and
+blocks the save. `game_lineups` re-queried afterwards is byte-for-byte unchanged, confirming the
+guard runs before any write — on web it sits ahead of the existing `.delete()`, so a rejected save
+cannot wipe the lineup and then fail to reinsert.
+
+**Existing data is NOT repaired.** This game still holds two right fielders; the fix prevents new
+invalid alignments but does not correct live rows, which was out of scope by decision. Practical
+consequence: a coach opening this lineup cannot save until they reassign slot 8 or 9 — arguably the
+right outcome, but it is a behaviour change on existing bad data and the owner should know.
 
 ---
 
@@ -500,7 +516,7 @@ commit, except where noted.
 
 | # | Item | Findings | Bar | Where the fix belongs |
 |---|------|----------|-----|----------------------|
-| **W1** | Reject duplicate defensive positions | H5 | wrong record | `packages/shared/src/rules/` (both clients) |
+| ~~**W1**~~ | ~~Reject duplicate defensive positions~~ **DONE** `690df56` | H5 | wrong record | `packages/shared/src/rules/fielding-positions.ts` |
 | **W2** | Schedule + Practices: real error state, read games offline | H4 | misleads | `schedule.tsx`, `practices/index.tsx` |
 | **W3** | Unique play-feed header keys | H1 | misleads | `PlayFeed.tsx` |
 | **W4** | Propagate server-side deletions to the device | H3 | misleads | `sync-engine.ts` |
