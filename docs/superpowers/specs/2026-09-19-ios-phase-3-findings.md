@@ -30,15 +30,11 @@ Conditions that shape how findings were gathered. Recorded so the evidence's lim
    margin of error and any borderline case is checked in the source rather than logged from
    measurement alone.
 
-2. **PORTRAIT ORIENTATION WAS NOT SWEPT — blocked.** The plan called for every route in both
-   orientations. The simulator control tool has no rotate action, `xcrun simctl ui` exposes only
-   appearance / contrast / content_size (no orientation), and driving the Simulator's own
-   Device ▸ Rotate menu needs computer-use access to the Simulator app, **which the owner denied**.
-   All 13 routes were therefore swept in **landscape only**. This is a real gap against the spec's
-   exit criterion 1, not a silent narrowing: portrait may hold defects this sweep cannot have seen,
-   and the risk is elevated because the app declares itself portrait-only (see note 6) while iPad
-   permits all four orientations. Unblocking it needs either Simulator app access or a manual
-   rotate by the owner.
+2. **Portrait was initially blocked, then unblocked by the owner.** The simulator control tool has
+   no rotate action and `xcrun simctl ui` exposes only appearance / contrast / content_size, so the
+   first pass covered landscape only. The owner then rotated the device by hand and the portrait
+   pass was completed. All 13 routes are now swept in both orientations except sign-in, which
+   cannot be reached while the session is authenticated (see M1/M5).
 
 3. **Screenshots and taps share one frame, rotated 90° from upright.** The capture frame is
    834×1210 with origin top-left, and taps land where the screenshot shows them — verified
@@ -84,19 +80,19 @@ guest-only players still 0, Huskies 25 games → 24. Census is now clean for pha
 
 | # | Route | Pass | Landscape | Portrait | Findings |
 |---|-------|------|-----------|----------|----------|
-| 1 | `(auth)/sign-in` | A | done | blocked | M1 |
-| 2 | `(tabs)/index` | A | done | blocked | H3 |
-| 3 | `(tabs)/schedule` | A | done | blocked | H4 |
-| 4 | `(tabs)/games/index` | A | done | blocked | M2 |
-| 5 | `(tabs)/roster/index` | A | done | blocked | none |
-| 6 | `(tabs)/messages/index` | A | done | blocked | none |
-| 7 | `(tabs)/messages/[channelId]` | A | done | blocked | M4 |
-| 8 | `(tabs)/practices/index` | A | done | blocked | H4 |
-| 9 | `(tabs)/practices/[practiceId]/card` | A | done | blocked | M3 |
-| 10 | `(tabs)/practices/[practiceId]/attendance` | A | source-only | blocked | see M3 |
-| 11 | `(tabs)/games/[gameId]/attendance` | A | done | blocked | none |
-| 12 | `(tabs)/games/[gameId]/lineup` | A+B | done | blocked | H5 |
-| 13 | `(tabs)/games/[gameId]/score` | A+B | done | blocked | H1, H2, Q1 |
+| 1 | `(auth)/sign-in` | A | done | n/a (signed in) | M1, M5 |
+| 2 | `(tabs)/index` | A | done | done | H3 |
+| 3 | `(tabs)/schedule` | A | done | done | H4 |
+| 4 | `(tabs)/games/index` | A | done | done | M2 |
+| 5 | `(tabs)/roster/index` | A | done | done | none |
+| 6 | `(tabs)/messages/index` | A | done | done | M7 |
+| 7 | `(tabs)/messages/[channelId]` | A | done | done | M4 |
+| 8 | `(tabs)/practices/index` | A | done | done | H4 |
+| 9 | `(tabs)/practices/[practiceId]/card` | A | done | done | M3 |
+| 10 | `(tabs)/practices/[practiceId]/attendance` | A | source-only | done | see M3 |
+| 11 | `(tabs)/games/[gameId]/attendance` | A | done | done | none |
+| 12 | `(tabs)/games/[gameId]/lineup` | A+B | done | done | H5 |
+| 13 | `(tabs)/games/[gameId]/score` | A+B | done | done | H1, H2, M6, Q1 |
 
 ## Findings
 
@@ -421,6 +417,97 @@ action, not mine. Confirm by signing out with accessibility text enabled and che
 
 ---
 
+### M6. Entering the scoring screen by deep link or push notification loses the team names
+**Route:** `(tabs)/games/[gameId]/score`  **Severity:** M  **Status:** open
+**Repro:**
+1. Open the scoring screen via a deep link carrying only `gameId`
+   (`baseballcoaches:///games/<id>/score`) — or tap a `kind: 'game'` push notification.
+2. Compare with reaching the same game by tapping it in the app.
+
+**Observed (deep link):** header "**vs Opponent**", scoreboard "**Home** – **Opponent**",
+"No **Opponent** order set".
+**Observed (in-app nav, same game, same orientation):** "vs Timberlake", "Huskies 0 – 3 Timberlake",
+"No Timberlake order set".
+**Expected:** the real team names either way.
+
+**Isolated by controlled comparison.** This first appeared during the portrait pass and looked like
+an orientation defect. Re-entering the *same route* in the *same orientation* by in-app navigation
+rendered correctly, which rules orientation out — the variable is how the screen is entered.
+
+**Cause:** [`score.tsx:63`](<../../../apps/mobile/app/(tabs)/games/[gameId]/score.tsx>) reads the
+names from route params with literal fallbacks:
+
+```ts
+const { gameId, teamId: teamIdParam = '', opponentName = 'Opponent', teamName = 'Home' } =
+  useLocalSearchParams<...>();
+```
+
+In-app navigation passes `teamName` / `opponentName` as params; a deep link supplies only `gameId`.
+Note the screen already solves this correctly one line down for the team id —
+`const teamId = game?.teamId ?? (teamIdParam as string)` (line 92) prefers the loaded game record
+and falls back to the param. The names never got the same treatment, even though `game` carries
+them.
+
+**Reachability is a shipped path, not a hypothetical.**
+[`notifications.ts:103-108`](../../../apps/mobile/src/lib/notifications.ts) routes game
+notifications with `params: { gameId: data.gameId }` and nothing else, so **tapping a game push
+notification always lands on a scoreboard labelled "Home – Opponent"**. The same handler sends
+pre-practice notifications straight to the practice card, which is the M3 screen.
+
+**Why it is Medium, not Severe:** `teamName` / `opponentName` are display-only — screen title,
+scoreboard labels, batting-order headings, the "Add X batter" modal. They are never written into an
+event payload, so no wrong record is produced. Scores and all game state remain correct.
+
+**Defect bar:** misleads — with three games in progress, the header is a coach's main confirmation
+that they are scoring the right one.
+
+**Fix (for Task 10):** mirror line 92 — derive both names from the loaded `game` record with the
+route param as fallback. Then add `teamName` / `opponentName` to the notification params as a
+belt-and-braces measure.
+
+---
+
+### M7. Direct-message channels show no counterparty
+**Route:** `(tabs)/messages/index`  **Severity:** M  **Status:** open
+**Observed:** the team's direct channel renders as the literal string "Direct Message", with no
+participant name and no subtitle, while topic and announcement channels show a name and description.
+**Expected:** the other participant's name.
+
+**Cause:** [`messages/index.tsx:48`](<../../../apps/mobile/app/(tabs)/messages/index.tsx>) —
+`{channel.name ?? 'Direct Message'}`. Direct channels store `channels.name = null` (confirmed in
+prod), and nothing resolves the counterparty from channel membership.
+
+**Defect bar:** blocks task — with one DM it is merely unhelpful; with two or more, every row reads
+"Direct Message" and the coach cannot tell the conversations apart or pick the right one. Logged now
+because the cause is structural rather than data-dependent.
+
+
+---
+
+## Portrait pass — result
+
+All 13 routes re-driven in portrait after the owner rotated the device. **No portrait-only layout
+defect was found.** Every previously logged finding that has a visual component reproduced
+identically in portrait: H1, H4, H5, M2, M3 and M4 all recur.
+
+The more interesting result is the reverse of what was expected. **Portrait renders better than
+landscape**, not worse:
+
+- the games list shows opponent, date, venue, score, status pill and both action buttons in each
+  card, where landscape stretched the same cards wide and crammed the content into a sliver
+- the lineup screen reveals a "Guests — Guest players are disabled by the league" section that
+  landscape cut off entirely
+- the dashboard shows the full nav list plus a **Sign out** button, and the **tab bar** is visible;
+  landscape pushed all of them below the fold
+
+This is consistent with harness note 6: the app declares `orientation: "portrait"` and its layouts
+were evidently designed for portrait, while iPad silently permits landscape. So the untuned
+orientation is **landscape** — the one a coach is most likely to use to score a game on an iPad.
+That reframes the "wasted horizontal space" observations from the landscape pass: they are not
+isolated preferences but symptoms of screens being shown in an orientation nothing designed for.
+Left unlogged individually per the defect bar, but recorded here as a pattern worth a product
+decision: either design the landscape layouts or lock the iPad to portrait.
+
 ## Checks that resolved as "no defect"
 
 **Dark mode — spec open question #4: RESOLVED, out of scope.** With
@@ -471,3 +558,7 @@ Recorded so they are not re-investigated:
   bug (H1) is real in production; only its on-screen warning is dev-only.
 - **RSVP list sorted by jersey number while Roster is alphabetical.** Inconsistent, harmless.
 - **"No Timberlake order set" on a game with no lineup.** Correct copy, correct condition.
+- **Attendance appeared to omit two active players.** Landscape RSVPs showed 13 rows against 15
+  active players in `players`, suggesting Jace Irwin #33 and Carlos Guzman #34 were being dropped.
+  Re-checked in portrait: all 15 render. They were simply below the fold. No defect — recorded so
+  the discrepancy is not re-investigated.
