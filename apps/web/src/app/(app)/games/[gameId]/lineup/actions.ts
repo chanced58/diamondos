@@ -3,7 +3,14 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { getMaxBattingOrder, isCoachRole, POSITION_TO_DB } from '@baseball/shared';
+import {
+  DB_TO_POSITION,
+  getMaxBattingOrder,
+  isCoachRole,
+  POSITION_TO_DB,
+  validateFieldingPositions,
+  type PlayerPosition,
+} from '@baseball/shared';
 import { getLeagueSettingsForTeam } from '@/lib/league-settings';
 
 export async function saveLineupAction(
@@ -70,6 +77,18 @@ export async function saveLineupAction(
   const uniqueOrders = new Set(orders);
   if (orders.length !== uniqueOrders.size) {
     return 'Duplicate batting order positions. Each spot can only be assigned once.';
+  }
+
+  const fieldingValidity = validateFieldingPositions(
+    entries.map((e) => ({
+      battingOrder: e.batting_order,
+      position: e.starting_position as PlayerPosition | null,
+    })),
+  );
+  if (!fieldingValidity.valid) {
+    const conflict = fieldingValidity.conflicts[0];
+    const label = DB_TO_POSITION[conflict.position] ?? conflict.position;
+    return `Two players are assigned to ${label}. Each fielding position can only be assigned once.`;
   }
 
   // Delete existing non-guest lineup and insert fresh. Guest entries are managed
