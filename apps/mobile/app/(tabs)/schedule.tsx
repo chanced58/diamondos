@@ -1,113 +1,154 @@
-import { Stack, router, type Href } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Q } from '@nozbe/watermelondb';
+import { Stack, router } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from 'react-native';
+import { database, Game } from '../../src/db';
 import { getSupabaseClient } from '../../src/lib/supabase';
 import { useRole } from '../../src/providers/RoleProvider';
-
-type ScheduleItem = {
-  id: string;
-  kind: 'game' | 'practice' | 'event';
-  startsAt: string;
-  title: string;
-  detail: string | null;
-  href?: Href;
-};
+import {
+  buildScheduleState,
+  SCHEDULE_FULL_PAGE_ERROR,
+  type ScheduleEventRow,
+  type ScheduleFetchOutcome,
+  type ScheduleGameRow,
+  type ScheduleItem,
+  type SchedulePracticeRow,
+} from '../../src/features/schedule/schedule-data';
 
 export default function ScheduleScreen() {
   const { activeTeam, loading: roleLoading } = useRole();
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<ScheduleItem[]>([]);
+  const [fullPageError, setFullPageError] = useState<string | null>(null);
+  const [partialError, setPartialError] = useState<string | null>(null);
+  const unmountedRef = useRef(false);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!activeTeam) {
       setItems([]);
+      setFullPageError(null);
+      setPartialError(null);
       setLoading(false);
       return;
     }
-    let cancelled = false;
-    (async () => {
+    setLoading(true);
+    // Whatever goes wrong below — including a Supabase call that rejects
+    // outright rather than resolving with { error } — this must land on the
+    // full-page error state and clear the spinner, not swallow the failure
+    // or leave the screen stuck loading forever on a Retry press.
+    try {
+      const sinceMs = Date.now() - 24 * 60 * 60 * 1000;
+      const sinceIso = new Date(sinceMs).toISOString();
+
+      // Games are mirrored locally by the sync engine, so read them from
+      // WatermelonDB instead of Supabase — this is the one source on this
+      // screen that keeps working offline. practices and team_events are
+      // not in the sync engine's pull payload (see sync-engine.ts) and stay
+      // online-only.
+      let games: ScheduleFetchOutcome<ScheduleGameRow>;
+      try {
+        const rows = await database
+          .get<Game>('games')
+          .query(
+            Q.where('team_id', activeTeam.teamId),
+            Q.where('scheduled_at', Q.gte(sinceMs)),
+            Q.sortBy('scheduled_at', Q.asc),
+          )
+          .fetch();
+        games = {
+          data: rows.map((g) => ({
+            remoteId: g.remoteId,
+            teamId: g.teamId,
+            opponentName: g.opponentName,
+            scheduledAt: g.scheduledAt,
+            status: g.status,
+          })),
+          failed: false,
+        };
+      } catch (error) {
+        console.warn('schedule games fetch failed', error);
+        games = { data: [], failed: true };
+      }
+
       const supabase = getSupabaseClient();
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const [games, practices, events] = await Promise.all([
-        supabase
-          .from('games')
-          .select('id, scheduled_at, opponent_name, status')
-          .eq('team_id', activeTeam.teamId)
-          .gte('scheduled_at', since)
-          .order('scheduled_at'),
+      const [practicesResult, eventsResult] = await Promise.all([
         supabase
           .from('practices')
           .select('id, scheduled_at, location, run_status')
           .eq('team_id', activeTeam.teamId)
-          .gte('scheduled_at', since)
+          .gte('scheduled_at', sinceIso)
           .order('scheduled_at'),
         supabase
           .from('team_events')
           .select('id, starts_at, title, location')
           .eq('team_id', activeTeam.teamId)
-          .gte('starts_at', since)
+          .gte('starts_at', sinceIso)
           .order('starts_at'),
       ]);
-      if (cancelled) return;
-      if (games.error || practices.error || events.error) {
-        console.warn('schedule fetch failed', {
-          games: games.error?.message,
-          practices: practices.error?.message,
-          events: events.error?.message,
+      if (practicesResult.error || eventsResult.error) {
+        console.warn('schedule online fetch failed', {
+          practices: practicesResult.error?.message,
+          events: eventsResult.error?.message,
         });
       }
-      const next: ScheduleItem[] = [
-        ...(games.data ?? []).map((game) => ({
-          id: `game:${game.id}`,
-          kind: 'game' as const,
-          startsAt: game.scheduled_at,
-          title: `Game vs ${game.opponent_name ?? 'TBD'}`,
-          detail: game.status,
-          // Scheduled games open in the pre-game state (start the game at
-          // the field), live games in the scoring surface, and completed
-          // games in the read-only Final view — same as the Games tab.
-          href: ['scheduled', 'in_progress', 'completed'].includes(game.status)
-            ? ({
-                pathname: '/(tabs)/games/[gameId]/score',
-                params: {
-                  gameId: game.id,
-                  teamId: activeTeam.teamId,
-                  opponentName: game.opponent_name || 'TBD',
-                },
-              } as const)
-            : undefined,
-        })),
-        ...(practices.data ?? []).map((practice) => ({
-          id: `practice:${practice.id}`,
-          kind: 'practice' as const,
-          startsAt: practice.scheduled_at,
-          title: 'Practice',
-          detail: practice.location ?? practice.run_status,
-        })),
-        ...(events.data ?? []).map((event) => ({
-          id: `event:${event.id}`,
-          kind: 'event' as const,
-          startsAt: event.starts_at,
-          title: event.title,
-          detail: event.location,
-        })),
-      ].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
-      setItems(next);
-      setLoading(false);
-    })().catch((error) => {
+      const practices: ScheduleFetchOutcome<SchedulePracticeRow> = {
+        data: (practicesResult.data ?? []) as unknown as SchedulePracticeRow[],
+        failed: Boolean(practicesResult.error),
+      };
+      const events: ScheduleFetchOutcome<ScheduleEventRow> = {
+        data: (eventsResult.data ?? []) as unknown as ScheduleEventRow[],
+        failed: Boolean(eventsResult.error),
+      };
+
+      const state = buildScheduleState({ games, practices, events });
+      if (unmountedRef.current) return;
+      setItems(state.items);
+      setFullPageError(state.fullPageError);
+      setPartialError(state.partialError);
+    } catch (error) {
       console.warn('schedule fetch failed', error);
-      if (!cancelled) {
-        setItems([]);
+      if (unmountedRef.current) return;
+      setItems([]);
+      setFullPageError(SCHEDULE_FULL_PAGE_ERROR);
+      setPartialError(null);
+    } finally {
+      if (!unmountedRef.current) {
         setLoading(false);
       }
-    });
-    return () => {
-      cancelled = true;
-    };
+    }
   }, [activeTeam?.teamId]);
+
+  useEffect(() => {
+    unmountedRef.current = false;
+    load();
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, [load]);
 
   if (roleLoading || loading) {
     return <View className="flex-1 items-center justify-center bg-gray-50"><ActivityIndicator /></View>;
+  }
+
+  if (fullPageError) {
+    return (
+      <>
+        <Stack.Screen options={{ title: 'Schedule' }} />
+        <View className="flex-1 items-center justify-center bg-gray-50 px-6">
+          <View className="w-full bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+            <Text className="text-sm text-red-700">{fullPageError}</Text>
+          </View>
+          <TouchableOpacity
+            className="px-4 py-2 rounded-lg bg-white border border-gray-200"
+            onPress={() => {
+              load();
+            }}
+          >
+            <Text className="text-sm font-semibold text-gray-700">Try again</Text>
+          </TouchableOpacity>
+        </View>
+      </>
+    );
   }
 
   return (
@@ -118,6 +159,20 @@ export default function ScheduleScreen() {
         contentContainerStyle={{ padding: 16 }}
         data={items}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={
+          partialError ? (
+            <View className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3 flex-row items-center justify-between">
+              <Text className="text-xs text-red-700 flex-1 mr-2">{partialError}</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  load();
+                }}
+              >
+                <Text className="text-xs font-semibold text-red-700">Try again</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null
+        }
         renderItem={({ item }) => {
           const content = (
             <>
