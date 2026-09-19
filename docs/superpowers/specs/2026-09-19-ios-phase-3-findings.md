@@ -99,7 +99,7 @@ guest-only players still 0, Huskies 25 games → 24. Census is now clean for pha
 <!-- Entry format — copy verbatim per finding:
 
 ### <ID>. <one-line symptom>
-**Route:** <route>  **Severity:** <S|H|M>  **Status:** open
+**Route:** <route>  **Severity:** <S|H|M>  **Status:** <open | fixed | closed | not reproducible>
 **Repro:** numbered steps from a cold launch
 **Observed:** what the screen or the row actually did
 **Expected:** what it should do
