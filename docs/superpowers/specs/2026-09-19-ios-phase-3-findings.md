@@ -86,7 +86,7 @@ guest-only players still 0, Huskies 25 games → 24. Census is now clean for pha
 | 10 | `(tabs)/practices/[practiceId]/attendance` | A | | | |
 | 11 | `(tabs)/games/[gameId]/attendance` | A | | | |
 | 12 | `(tabs)/games/[gameId]/lineup` | A+B | | | |
-| 13 | `(tabs)/games/[gameId]/score` | A+B | partial | | H1, H2? |
+| 13 | `(tabs)/games/[gameId]/score` | A+B | partial | | H1, H2, Q1 |
 
 ## Findings
 
@@ -102,11 +102,12 @@ guest-only players still 0, Huskies 25 games → 24. Census is now clean for pha
 **Defect bar:** which of the three tests it meets — wrong record | blocks task | misleads
 -->
 
-### H1. Play feed emits duplicate React keys, so plays can render under the wrong half-inning
+### H1. Play feed emits duplicate React keys when a half-inning recurs after a correction
 **Route:** `(tabs)/games/[gameId]/score`  **Severity:** H  **Status:** open
 **Repro:**
-1. Cold launch the app on a game with a substantial event log (observed on a 99-event game).
-2. Open the scoring screen and let the play-by-play feed render.
+1. Score into a later half-inning, then void the events back and resume the earlier half-inning.
+   (Observed on two independent real games, including "vs Timberlake" on the Huskies.)
+2. Open the scoring screen.
 3. Observe the React warning toast at the bottom of the screen.
 
 **Observed:** `Encountered two children with the same key, '.$header-1-true'. Keys should be
@@ -114,30 +115,61 @@ unique so that components maintain their identity across updates.`
 
 **Expected:** every FlatList child carries a unique key.
 
-**Cause:** [`PlayFeed.tsx:20-32`](../../../apps/mobile/src/features/scoring/PlayFeed.tsx) —
-`toFeedItems` inserts a half-inning header only when `(inning, isTopOfInning)` *changes from the
-previous row*, and keys it `header-${inning}-${isTopOfInning}`. That is correct only if every
-half-inning appears as one contiguous run. When a half-inning recurs non-contiguously the function
-emits a second header with a key identical to the first. The warning firing on a real game proves
-the rows are not always contiguously grouped — so the latent assumption is actually violated in
-production data, not just in theory.
+**Cause — verified against `game_events` in prod, not inferred from the screen.**
+[`PlayFeed.tsx:20-32`](../../../apps/mobile/src/features/scoring/PlayFeed.tsx) —
+`toFeedItems` inserts a half-inning header whenever `(inning, isTopOfInning)` differs from the
+*previous* row, and keys it `header-${inning}-${isTopOfInning}`. That is unique only if each
+half-inning appears as one contiguous run.
+
+The Timberlake game's log shows the run is not contiguous, legitimately:
+
+| seq | events | inning |
+|-----|--------|--------|
+| 1–13  | game_start, pitches, strikeout, hits, inning_change | Top 1 |
+| 14–23 | hits, pickoffs, caught stealing, inning_change | Bot 1 |
+| 24–26 | hit, caught stealing, hit | Top 2 |
+| 27–41 | 15 × `event_voided` (filtered out of the feed) | — |
+| 42–47 | pitches, strikeout | Top 1 |
+| 48    | **a second `game_start`** | Top 1 |
+| 49–58 | pitches, walk, 2 × stolen base | Top 1 |
+
+Newest-first, the live rows therefore group Top 1 (58–42) → Top 2 (26–24) → Bot 1 (23–14) →
+**Top 1 again** (13–1). The two Top 1 headers collide on key `header-1-true`, exactly the observed
+warning.
+
+**The feed's ordering is correct.** `buildPlayFeedRows` sorts by `sequenceNumber` and reverses
+([`use-play-feed.ts:284`](../../../apps/mobile/src/features/scoring/use-play-feed.ts)), and voided
+rows are deliberately retained struck-through. An earlier reading of the screenshot suggested the
+sort was broken — the rows disprove that. `Play ball!` appearing mid-feed is the seq-48 second
+`game_start` in its correct chronological slot, not a sorting error.
 
 **Why it is High, not Medium:** duplicate keys make React reuse component instances across
-positions, so the feed can display a play under the wrong half-inning header or fail to update a
-row after a void. The play feed is the coach's only way to review and correct earlier plays
-(phase 2's S4 built it for exactly that), so a feed that can misattribute a play to the wrong
-inning undermines the correction path it exists to provide. No data is corrupted — `game_events`
-is untouched — which is why it is not Severe.
+positions, so the feed can render a row under the wrong half-inning header or fail to update one
+after a void. The play feed is the coach's only surface for reviewing and correcting earlier plays
+(phase 2 built it as S4 for exactly that), so a feed that can misattribute a play to the wrong
+inning undermines the correction path it exists to provide. `game_events` is untouched, so no data
+is corrupted — hence not Severe.
 
 **Defect bar:** misleads.
 
-**Fix sketch (for Task 10):** the key must be unique regardless of grouping — include the item's
-index or the first row's `eventId` in the header key. Additionally decide whether non-contiguous
-half-innings are themselves correct: if the feed is meant to be strictly newest-first by
-half-inning, the rows should be sorted before grouping, and the duplicate key is a *symptom* of a
-sort bug rather than the defect itself. Determine which before fixing — patching only the key
-would hide a real ordering problem. A regression test must build rows with a non-contiguous
-half-inning and assert both key uniqueness and header count.
+**Fix (for Task 10):** make the header key unique independently of grouping — include the ordinal
+of the header within the item list, or the `eventId` of the first row beneath it. Do **not**
+"fix" the ordering: it is correct, and sorting rows by half-inning to force contiguity would
+falsify the record by hiding that the coach reverted and resumed.
+
+A regression test must construct rows whose half-inning recurs non-contiguously (Top 1, Top 2,
+Bot 1, Top 1) and assert that all generated keys are distinct and that four headers are emitted,
+not three — the existing `PlayFeed.test.tsx` has no such case.
+
+---
+
+### QUESTION-1. A single game holds two `game_start` events
+Not a finding yet — an open question raised by H1's evidence. The Timberlake log has `game_start`
+at seq 1 **and** seq 48. Determine during Task 7 how `deriveGameState` treats a second
+`game_start`: whether it re-initialises (discarding earlier state), is ignored, or produces
+undefined behaviour. If a restart-after-void is a supported coach action, the state machine's
+handling of it needs a test; if it is not supported, the UI should not permit it. Resolve before
+the phase closes rather than leaving it latent.
 
 ---
 
@@ -155,11 +187,16 @@ lookups missed. The same game showed "No … order set", i.e. it had no `game_li
 exactly phase 2's H1 symptom — so these runners were most likely added mid-game via "+ Batter" as
 free text and never got a persisted identity.
 
-**Why provisional:** the only evidence is a game created before phase 2's lineup fix landed, and
-which has since been deleted. It may be pre-fix residue rather than current behaviour. **Do not fix
-this from the evidence above.** Reconfirm during Task 7's clean Pass B game — specifically by
-adding a batter mid-game via "+ Batter" and checking whether that runner is named on base. If it
-does not reproduce, close this as `not reproducible` rather than fixing speculatively.
+**Now reproduced on a second, independent game.** The "vs Timberlake" game (a real, undeleted
+Huskies game) shows the same thing: ON BASE lists 3B and 2B both as "Unnamed runner", and the same
+screen reads "No Timberlake order set". So this is not residue from the deleted phase 2 game.
+
+**Still provisional on one point:** both observed games lack `game_lineups` rows, so the runners
+were most likely added mid-game via "+ Batter" as free text. What is not yet established is whether
+a game *with* a proper lineup also loses runner identity. Confirm during Task 7 — score a runner
+onto base from a wizard-created lineup and check the ON BASE panel names them. If a proper lineup
+resolves names correctly, this narrows to "runners added via + Batter have no persisted identity",
+which is a different and smaller fix than a general identity-resolution failure.
 
 **Defect bar:** blocks task (a scorer who cannot identify baserunners cannot score a steal,
 pickoff, or runner outcome correctly).
