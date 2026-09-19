@@ -45,6 +45,22 @@ export async function GET(request: NextRequest) {
   // getAppOrigin defensively strips any /auth/callback suffix from the env var.
   const origin = getAppOrigin(request.nextUrl.origin);
 
+  // Supabase redirects here with ?error=... when the OAuth sign-in was
+  // rejected upstream — most commonly the enforce_invite_only_signup DB
+  // trigger blocking an unrecognized Google email. Handle it explicitly so
+  // it doesn't fall through to the hash-bridge branch below (which expects
+  // either no params, or a successful auth response).
+  const oauthError = searchParams.get('error');
+  if (oauthError) {
+    console.error(
+      '[auth/callback] OAuth error:',
+      oauthError,
+      searchParams.get('error_description'),
+    );
+    const errorCode = oauthError === 'server_error' ? 'google_not_invited' : 'auth_failed';
+    return NextResponse.redirect(new URL(`/login?error=${errorCode}`, origin));
+  }
+
   const next = (nextParam.startsWith('/') && !nextParam.startsWith('//'))
     ? nextParam
     : '/dashboard';
