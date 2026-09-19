@@ -30,24 +30,34 @@ Conditions that shape how findings were gathered. Recorded so the evidence's lim
    margin of error and any borderline case is checked in the source rather than logged from
    measurement alone.
 
-2. **Screenshots and taps share one frame, rotated 90° from upright.** The capture frame is
+2. **PORTRAIT ORIENTATION WAS NOT SWEPT — blocked.** The plan called for every route in both
+   orientations. The simulator control tool has no rotate action, `xcrun simctl ui` exposes only
+   appearance / contrast / content_size (no orientation), and driving the Simulator's own
+   Device ▸ Rotate menu needs computer-use access to the Simulator app, **which the owner denied**.
+   All 13 routes were therefore swept in **landscape only**. This is a real gap against the spec's
+   exit criterion 1, not a silent narrowing: portrait may hold defects this sweep cannot have seen,
+   and the risk is elevated because the app declares itself portrait-only (see note 6) while iPad
+   permits all four orientations. Unblocking it needs either Simulator app access or a manual
+   rotate by the owner.
+
+3. **Screenshots and taps share one frame, rotated 90° from upright.** The capture frame is
    834×1210 with origin top-left, and taps land where the screenshot shows them — verified
    empirically by tapping the sign-in email field at (420, 605) and observing focus plus keyboard.
    **The upright view is the screenshot rotated 90° clockwise:** image-left is true-top,
    image-top is true-right, image-right is true-bottom, image-bottom is true-left. Every layout
    judgement below applies that transform. Stated once here rather than repeated per finding.
 
-3. **Metro's HMR entry-point registration fails** with `Unable to resolve module
+4. **Metro's HMR entry-point registration fails** with `Unable to resolve module
    .../expo-router/entry` from `HmrServer._registerEntryPoint`. The initial bundle builds and the
    app runs, so this is a developer-experience problem, not a coach-facing one — it fails the
    defect bar and is not logged as a finding. Practical effect on this sweep: fast refresh is
    unreliable, so fixes are verified against full rebuilds.
 
-4. **A stale simulator binary initially showed `requireNativeComponent: "RNSVGRect" was not found
+5. **A stale simulator binary initially showed `requireNativeComponent: "RNSVGRect" was not found
    in the UIManager`.** Resolved by the `expo run:ios` rebuild — `react-native-svg` is a native
    module, as CLAUDE.md warns. Not a defect; recorded so the symptom is not re-investigated.
 
-5. **The app declares portrait-only but iPad permits all four orientations.** `app.json` sets
+6. **The app declares portrait-only but iPad permits all four orientations.** `app.json` sets
    `orientation: "portrait"`, and the generated `Info.plist` carries
    `UISupportedInterfaceOrientations` = Portrait/PortraitUpsideDown for iPhone but
    `UISupportedInterfaceOrientations~ipad` = Portrait/PortraitUpsideDown/LandscapeLeft/LandscapeRight.
@@ -74,19 +84,19 @@ guest-only players still 0, Huskies 25 games → 24. Census is now clean for pha
 
 | # | Route | Pass | Landscape | Portrait | Findings |
 |---|-------|------|-----------|----------|----------|
-| 1 | `(auth)/sign-in` | A | partial | | M1 |
-| 2 | `(tabs)/index` | A | | | |
-| 3 | `(tabs)/schedule` | A | | | |
-| 4 | `(tabs)/games/index` | A | | | |
-| 5 | `(tabs)/roster/index` | A | | | |
-| 6 | `(tabs)/messages/index` | A | | | |
-| 7 | `(tabs)/messages/[channelId]` | A | | | |
-| 8 | `(tabs)/practices/index` | A | | | |
-| 9 | `(tabs)/practices/[practiceId]/card` | A | | | |
-| 10 | `(tabs)/practices/[practiceId]/attendance` | A | | | |
-| 11 | `(tabs)/games/[gameId]/attendance` | A | | | |
-| 12 | `(tabs)/games/[gameId]/lineup` | A+B | | | |
-| 13 | `(tabs)/games/[gameId]/score` | A+B | partial | | H1, H2, Q1 |
+| 1 | `(auth)/sign-in` | A | done | blocked | M1 |
+| 2 | `(tabs)/index` | A | done | blocked | H3 |
+| 3 | `(tabs)/schedule` | A | done | blocked | H4 |
+| 4 | `(tabs)/games/index` | A | done | blocked | M2 |
+| 5 | `(tabs)/roster/index` | A | done | blocked | none |
+| 6 | `(tabs)/messages/index` | A | done | blocked | none |
+| 7 | `(tabs)/messages/[channelId]` | A | done | blocked | M4 |
+| 8 | `(tabs)/practices/index` | A | done | blocked | H4 |
+| 9 | `(tabs)/practices/[practiceId]/card` | A | done | blocked | M3 |
+| 10 | `(tabs)/practices/[practiceId]/attendance` | A | source-only | blocked | see M3 |
+| 11 | `(tabs)/games/[gameId]/attendance` | A | done | blocked | none |
+| 12 | `(tabs)/games/[gameId]/lineup` | A+B | done | blocked | H5 |
+| 13 | `(tabs)/games/[gameId]/score` | A+B | done | blocked | H1, H2, Q1 |
 
 ## Findings
 
@@ -223,6 +233,225 @@ mistypes their address is stranded on a screen whose sole exit is the hardest th
 
 ---
 
+---
+
+### H3. Server-side deletions never reach the device — 7 of 9 synced collections ignore them
+**Route:** `(tabs)/index` (observed), sync-wide  **Severity:** H  **Status:** open
+**Repro:**
+1. Note a game shown on the dashboard.
+2. Delete that game's row server-side.
+3. Let the app sync, then reopen the dashboard.
+
+**Observed:** the deleted game is still listed as **GAME IN PROGRESS**, indefinitely. Directly
+observed: "vs SHAKEDOWN phase2 - do not use" remained on the dashboard for 20+ minutes and multiple
+sync cycles after its row was deleted from prod.
+
+**Expected:** a row the server no longer exposes to this device disappears from it.
+
+**Cause:** [`sync-engine.ts:355-400`](../../../apps/mobile/src/sync/sync-engine.ts) — the pull
+payload hardcodes `deleted: []` for `games`, `game_events`, `players`, `channels`, `messages`,
+`league_players` and `opponent_players`. Only `game_lineups` and `opponent_game_lineups` compute a
+real deletion set, by diffing local ids against server ids (Postgres keeps no tombstones). The
+technique to fix the rest already exists in this file — `computeLineupDeletes` and the
+`deletedOppLineupIds` diff at lines 274-285 — it was simply never applied to the other seven.
+
+**Reachability — stated precisely, because it governs the severity.** Outright game *deletion* is
+not a routine coach action: the only product path is
+[`admin/setup/actions.ts:340`](<../../../apps/web/src/app/(app)/admin/setup/actions.ts>), a
+platform-admin-only reset that deletes every game and team anyway. The routine path is different:
+because the pull filters by team and RLS, **any row that leaves the device's scope is simply absent
+from `updated`**, and with `deleted: []` it persists locally forever. A coach removed from a team,
+or a game reassigned to another team, therefore keeps that data — and the games remain openable and
+scoreable. That path is inferred from the code, not yet demonstrated, which is why this is H and
+not S.
+
+**Consequence if scored into:** `game_events.game_id` is a foreign key, so events recorded against
+a locally-surviving deleted game cannot insert. Whether that fails only those events or wedges the
+whole `synchronize()` cycle is **not yet established** — determine it in Task 7 rather than
+assuming, since a wedged cycle would stop all other sync and would raise this to Severe.
+
+**Defect bar:** misleads (the app presents data the server no longer has as live), and potentially
+wrong record.
+
+---
+
+### H4. Schedule and Practices report a failed fetch as "nothing scheduled"
+**Route:** `(tabs)/schedule`, `(tabs)/practices/index`  **Severity:** H  **Status:** open
+**Repro:**
+1. Put the device offline (or otherwise make the Supabase query fail).
+2. Open Schedule, then Practices.
+
+**Observed:** "No upcoming events." / "No upcoming practices."
+**Expected:** an error state that distinguishes "we could not load this" from "you have nothing."
+
+**Cause:** both screens query Supabase directly and swallow every failure.
+[`schedule.tsx:52-57`](<../../../apps/mobile/app/(tabs)/schedule.tsx>) logs `console.warn` on query
+error and then builds the list from `games.data ?? []`; the outer `.catch` at line 97 does the same;
+there is no `error` state variable anywhere in the file, so line 148's `ListEmptyComponent` renders
+the empty copy. [`practices/index.tsx:36-37`](<../../../apps/mobile/app/(tabs)/practices/index.tsx>)
+has the identical shape. **One root cause, two screens — one fix.**
+
+This directly violates CLAUDE.md's error-handling convention ("Never swallow errors silently").
+
+**Compounding: both screens are online-only.** They call `getSupabaseClient()` rather than reading
+WatermelonDB, even though `games` is already mirrored locally. In an offline-first app whose users
+are coaches standing on fields, the two schedule surfaces are the ones that stop working without
+signal — and they fail by lying rather than by saying so.
+
+**Defect bar:** misleads.
+
+**Fix (for Task 10):** add a real error state to both, and read games from WatermelonDB so Schedule
+works offline. Practices have no local mirror, so that screen can only gain an honest error state
+unless a mirror is added — say so rather than silently degrading.
+
+---
+
+### H5. The lineup editor permits an invalid defensive alignment
+**Route:** `(tabs)/games/[gameId]/lineup`  **Severity:** H  **Status:** open
+**Repro:** open the lineup for a game and assign the same fielding position to two players.
+
+**Observed — verified in prod, not inferred from the screen.** `game_lineups` for the live
+"vs Timberlake" game (`52786885-9e0d-43cc-b104-f7b78e5844ad`):
+
+| batting_order | starting_position |
+|---|---|
+| 8 | `right_field` |
+| 9 | `right_field` |
+
+Both `is_starter = true`, and **no row carries `center_field`.** Nine fielders are assigned to eight
+positions, with centre field unmanned. The editor accepted it and the screen displays it without
+comment.
+
+**Expected:** a duplicate defensive position is rejected, or at minimum flagged, the way a duplicate
+batting slot already is.
+
+**Cause:** validation covers the batting order but not the field.
+[`lineup.tsx:203`](<../../../apps/mobile/app/(tabs)/games/[gameId]/lineup.tsx>) rejects "Duplicate
+batting order positions", and line 213 guards guest slot collisions; web mirrors the batting-order
+rule at
+[`lineup/actions.ts:68-72`](<../../../apps/web/src/app/(app)/games/[gameId]/lineup/actions.ts>).
+No equivalent check exists for `starting_position` on either client.
+
+**Why it is High:** fielding putouts and assists are credited from the fielding sequence against the
+lineup's positions (see CLAUDE.md, **HitLocation**). With two right fielders the position→player
+mapping is ambiguous, so fielding credit cannot be attributed correctly; and a ball hit to centre
+has no fielder to credit at all. This is the app's own statistics pillar consuming data its own
+editor allowed to become invalid.
+
+**Defect bar:** wrong record.
+
+**Fix (for Task 10):** the rule belongs in `packages/shared/src/rules/` behind the phase 2 seam —
+both clients must enforce it, and the expanded-lineup / EH cases mean it is a real rule, not a form
+check. Note that a null position (batting slot 10 here) is legitimate and must stay allowed.
+
+---
+
+### M2. The games list is sorted oldest-first, so live games are last
+**Route:** `(tabs)/games/index`  **Severity:** M  **Status:** open
+**Repro:** open Games on a team with a full season of history.
+
+**Observed:** the list opens on March games from six months ago; the three in-progress games sit at
+the bottom of a 24-game list.
+**Expected:** the games a coach needs today are reachable without scrolling past the whole season.
+
+**Cause:** [`games/index.tsx:205`](<../../../apps/mobile/app/(tabs)/games/index.tsx>) —
+`Q.sortBy('scheduled_at', Q.asc)`.
+
+**Defect bar:** blocks task — on game day, reaching the live game is the screen's whole purpose.
+
+---
+
+### M3. Practice card shows the raw route pattern as its title, and misidentifies coaches
+**Route:** `(tabs)/practices/[practiceId]/card`  **Severity:** M  **Status:** open
+**Repro:** open a practice card as a head coach.
+
+**Observed:** the navigation title reads **`practices/[practiceId]/card`** — the literal Expo Router
+segment — and the body reads "You are not on this team's roster, so there's nothing to show here."
+**Expected:** a real title, and copy that does not tell a head coach they are not on their own team.
+
+**Cause — one branch, two symptoms.**
+[`card.tsx:73`](<../../../apps/mobile/app/(tabs)/practices/[practiceId]/card.tsx>) renders
+`<Stack.Screen options={{ title: 'My Practice' }} />` **only inside the success return**. Both the
+loading branch (lines 52-58) and the no-player branch (lines 60-68) return before it, so Expo Router
+falls back to the route pattern. The gate itself is `!activeTeam?.playerId` — correct logic, since
+this screen is a *player's* rotation card and a coach has no `playerId`, but the copy asserts
+something false about a coach's team membership.
+
+**Defect bar:** misleads.
+
+**Fix (for Task 10):** hoist `<Stack.Screen>` above the conditionals, and rewrite the copy for the
+coach case ("This is a player's practice card — open the practice plan instead"). Check
+`attendance.tsx:149` for the same title-inside-a-branch pattern while in there.
+
+---
+
+### M4. An empty message channel renders a blank void with no empty state
+**Route:** `(tabs)/messages/[channelId]`  **Severity:** M  **Status:** open
+**Repro:** open a channel that has no messages (observed on "General").
+
+**Observed:** the entire message area is blank. No "No messages yet", no illustration, nothing —
+only the composer at the bottom.
+**Expected:** absence reads as absence. Every other list in the app does this correctly
+("No upcoming events.", "No upcoming practices.", the games empty state).
+
+**Defect bar:** misleads — an empty channel is indistinguishable from one that failed to load or is
+still loading.
+
+---
+
+### M5. The sign-in screen has no scroll container, so large text can strand it
+**Route:** `(auth)/sign-in`  **Severity:** M  **Status:** open — **structural finding, not yet reproduced**
+**Observed:** `sign-in.tsx` is the only top-level screen with no scroll container. Its root is
+`KeyboardAvoidingView > View className="flex-1 items-center justify-center"`; every other surveyed
+screen (dashboard, roster, messages, games, schedule, practices) wraps content in a `ScrollView` or
+`FlatList`.
+
+**Why it matters:** at `accessibility-extra-extra-extra-large` the dashboard's content grew past the
+fold but stayed reachable *because it scrolls*. Sign-in cannot do that. With the keyboard raised in
+landscape (~480pt of usable height) and accessibility text, the stacked title, subtitle, label,
+input, button and footer can exceed the viewport with no way to reach the button. The "Check your
+email" branch is worse — it carries an extra input and the extra link.
+
+**Not yet reproduced** because confirming it requires signing out, and authenticating is the owner's
+action, not mine. Confirm by signing out with accessibility text enabled and checking the
+"Send magic link" button is still reachable with the keyboard up. If it is reachable, close as
+`not reproducible`.
+
+**Defect bar:** blocks task — if it reproduces, a low-vision coach cannot sign in at all.
+
+---
+
+## Checks that resolved as "no defect"
+
+**Dark mode — spec open question #4: RESOLVED, out of scope.** With
+`xcrun simctl ui <udid> appearance dark`, every surveyed screen renders **identically to light
+mode** — white cards, light backgrounds, dark text, no adaptation anywhere. Per the rule set in the
+ledger before testing: uniform absence of dark-mode support is a feature request, not a defect. It
+would only be in scope if support were *partial*, producing unreadable or mismatched panels. It is
+not partial. Closed.
+
+**Dynamic Type — mostly clean.** At `accessibility-extra-extra-extra-large`, text scales correctly
+and nothing truncates or clips; cards grow and content reflows below the fold, which is correct
+behaviour given every main screen scrolls. The single exception is sign-in, logged as M5 above.
+
+**Role gating — spec open question #5: RESOLVED as static-only.** The sweep ran on one head-coach
+account. Testing a player or parent view would require a second account, and creating one is out of
+bounds. Per the plan's decision rule, role gating was therefore **not** verified by observation, and
+no role-gating findings are claimed. One adjacent observation did surface and is logged as M3: the
+practice card gates on `activeTeam.playerId`, which correctly excludes coaches but tells them they
+are "not on this team's roster".
+
+---
+
+## Carried from phase 2 — not re-logged
+
+- **No game creation on mobile** (phase 2's H3). Still absent, but it is now a *disclosed* product
+  decision rather than an oversight: `games/index.tsx:41` tells the coach "Games are added by
+  coaches on the web dashboard." It therefore does not mislead. It does still block a coach who is
+  at a field with only an iPad and needs a scrimmage or makeup game. Left for the owner to decide
+  rather than re-litigated here. **Operational impact on this phase:** Task 6's "create the game
+  from the app" step is impossible, so Pass B's game must be created on web.
+
 ## Not logged (failed the defect bar)
 
 Recorded so they are not re-investigated:
@@ -235,3 +464,10 @@ Recorded so they are not re-investigated:
 - **Sign-in form stretches full width on iPad.** `w-full` inside `px-6` with no `max-w-*`, so the
   email field spans nearly the whole landscape width. Ugly, but it does not block, mislead, or
   corrupt. Preference, not defect.
+- **Roster and dashboard cards are mostly empty space on iPad.** Full-width rows holding a badge and
+  a name. Same reasoning as above — preference.
+- **Dev-build artefacts.** The LogBox warning toast, its overlap with the tab bar, and Metro's
+  broken HMR entry-point registration do not ship in a release build. The *underlying* duplicate-key
+  bug (H1) is real in production; only its on-screen warning is dev-only.
+- **RSVP list sorted by jersey number while Roster is alphabetical.** Inconsistent, harmless.
+- **"No Timberlake order set" on a game with no lineup.** Correct copy, correct condition.
