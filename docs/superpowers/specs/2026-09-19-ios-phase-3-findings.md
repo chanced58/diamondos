@@ -92,7 +92,7 @@ guest-only players still 0, Huskies 25 games → 24. Census is now clean for pha
 | 10 | `(tabs)/practices/[practiceId]/attendance` | A | source-only | done | see M3 |
 | 11 | `(tabs)/games/[gameId]/attendance` | A | done | done | none |
 | 12 | `(tabs)/games/[gameId]/lineup` | A+B | done | done | H5 |
-| 13 | `(tabs)/games/[gameId]/score` | A+B | done | done | H1, H2, M6, Q1 |
+| 13 | `(tabs)/games/[gameId]/score` | A+B | done | done | H1, M6, Q1 (H2 closed) |
 
 ## Findings
 
@@ -179,33 +179,37 @@ the phase closes rather than leaving it latent.
 
 ---
 
-### H2. Baserunners render as "Unnamed runner" — the scorer cannot tell who is on base
-**Route:** `(tabs)/games/[gameId]/score`  **Severity:** H  **Status:** open — **provisional, needs reconfirmation**
-**Repro:** observed on the phase 2 residue game: the ON BASE panel listed 1B, 2B and 3B all as
-"Unnamed runner".
+### H2. Baserunners render as "Unnamed runner" — **CLOSED at triage, does not meet the defect bar**
+**Route:** `(tabs)/games/[gameId]/score`  **Severity:** —  **Status:** closed, not a defect
 
-**Observed:** three occupied bases, no runner identifiable.
-**Expected:** each occupied base names its runner.
+**What was observed:** the ON BASE panel listed occupied bases as "Unnamed runner" on two
+independent games.
 
-**Cause (candidate):** [`score.tsx:1704`](<../../../apps/mobile/app/(tabs)/games/[gameId]/score.tsx>) —
-`runnerIdentity.get(id)?.name ?? nameById.get(id) ?? extraNames[id] ?? 'Unnamed runner'`. All three
-lookups missed. The same game showed "No … order set", i.e. it had no `game_lineups` rows, which is
-exactly phase 2's H1 symptom — so these runners were most likely added mid-game via "+ Batter" as
-free text and never got a persisted identity.
+**What triage established.** The Timberlake game has **10 `game_lineups` rows but 0
+`opponent_game_lineups` / `opponent_lineup_entries` rows**. The screen was in the top of the 1st, so
+the batting side was the *opponent* — which is also why the same screen read "No Timberlake order
+set" (that copy is the opponent branch of
+[`score.tsx:2024`](<../../../apps/mobile/app/(tabs)/games/[gameId]/score.tsx>), not our own lineup).
+The unnamed runners are Timberlake runners, unnamed because no opponent lineup was ever entered.
+The earlier hypothesis — a general identity-resolution failure, possibly phase 2 residue — was
+wrong.
 
-**Now reproduced on a second, independent game.** The "vs Timberlake" game (a real, undeleted
-Huskies game) shows the same thing: ON BASE lists 3B and 2B both as "Unnamed runner", and the same
-screen reads "No Timberlake order set". So this is not residue from the deleted phase 2 game.
+**Why it is closed rather than fixed.** Re-tested against all three tests:
 
-**Still provisional on one point:** both observed games lack `game_lineups` rows, so the runners
-were most likely added mid-game via "+ Batter" as free text. What is not yet established is whether
-a game *with* a proper lineup also loses runner identity. Confirm during Task 7 — score a runner
-onto base from a wizard-created lineup and check the ON BASE panel names them. If a proper lineup
-resolves names correctly, this narrows to "runners added via + Batter have no persisted identity",
-which is a different and smaller fix than a general identity-resolution failure.
+- *Wrong record?* No. `game_events` stores runner ids; the label is presentation only.
+- *Blocks a task?* No. Each ON BASE row carries its own base badge (2B, 3B) and its own
+  Steal / Caught / Wild pitch / Passed ball / Pickoff chips, so two simultaneous runners remain
+  individually addressable. The earlier claim that a scorer "cannot tell who is on base" was
+  mistaken — they are disambiguated by base, just not by name.
+- *Misleads?* No. "Unnamed runner" is an accurate description of a runner nobody named. The app
+  offers "+ Batter" to name opponent batters; declining to is the coach's choice.
 
-**Defect bar:** blocks task (a scorer who cannot identify baserunners cannot score a steal,
-pickoff, or runner outcome correctly).
+**Product observation, not a defect:** entering no opponent lineup makes the opponent's half of the
+play-by-play read without names. That is reasonable degradation — most coaches do not roster the
+opposition — but if the owner wants opponent narrative parity, that is a feature, not a fix.
+
+**Owner call available:** this is the one finding closed on judgement rather than evidence. If you
+want "Unnamed runner" treated as a defect anyway, say so and it goes back in as M.
 
 ---
 
@@ -483,6 +487,71 @@ because the cause is structural rather than data-dependent.
 
 
 ---
+
+## Fix order
+
+Triage completed 2026-09-19. **11 open findings** (H2 closed at triage), consolidated into
+**10 work items** — H4 already covers two screens under one cause, and M1+M5 are grouped because
+they share a file and a single review. Below the 25-finding escape hatch, so no renegotiation
+needed.
+
+Work strictly in this order: all High, then all Medium. Each item is one Task 10 instance and one
+commit, except where noted.
+
+| # | Item | Findings | Bar | Where the fix belongs |
+|---|------|----------|-----|----------------------|
+| **W1** | Reject duplicate defensive positions | H5 | wrong record | `packages/shared/src/rules/` (both clients) |
+| **W2** | Schedule + Practices: real error state, read games offline | H4 | misleads | `schedule.tsx`, `practices/index.tsx` |
+| **W3** | Unique play-feed header keys | H1 | misleads | `PlayFeed.tsx` |
+| **W4** | Propagate server-side deletions to the device | H3 | misleads | `sync-engine.ts` |
+| **W5** | Derive team names from the game record, not route params | M6 | misleads | `score.tsx` → extract `use-game-identity` |
+| **W6** | Practice card: hoist title, fix coach copy | M3 | misleads | `practices/[practiceId]/card.tsx` |
+| **W7** | Sign-in: 44pt escape hatch + scroll container | M1, M5 | blocks | `(auth)/sign-in.tsx` |
+| **W8** | Games list newest-first | M2 | blocks | `games/index.tsx` |
+| **W9** | Empty-state for an empty channel | M4 | misleads | `messages/[channelId].tsx` |
+| **W10** | Name the direct-message counterparty | M7 | blocks | `messages/index.tsx` |
+
+### Ordering rationale
+
+**W1 first** — it is the only finding that writes a wrong record. A live game already holds two
+right fielders and no centre fielder, and fielding putouts are credited by position, so every day
+it stays open is more mis-attributed fielding data.
+
+**W2 second** — one cause, two screens, and it is the app's worst failure mode in its core
+scenario: an offline-first product telling a coach on a signal-less field that their schedule is
+empty. Highest ratio of harm to effort.
+
+**W3 third** — protects the correction surface phase 2 built. Fix the key only; **do not** sort rows
+to force contiguity, which would hide a real revert-and-resume from the record.
+
+**W4 fourth, and it opens with an investigation, not a patch.** The demonstrated path
+(platform-admin reset) nukes everything anyway, so the severity rests on the inferred RLS-scope
+path. **First establish whether a row leaving RLS scope actually persists locally.** If it does,
+apply the `computeLineupDeletes` diff already in this file to the other seven collections. If it
+provably cannot, downgrade W4 to M and say so rather than building deletion diffing for a case that
+never occurs. Also settle, while here, whether events orphaned against a deleted game fail alone or
+wedge the whole `synchronize()` cycle — a wedged cycle would make this Severe.
+
+**W5–W10** are independent and can run in any order; listed by blast radius. W5 is worth doing
+early among the Mediums because every game push notification currently lands on a "Home – Opponent"
+scoreboard.
+
+### Notes carried into Task 10
+
+- **W5 and the `score.tsx` extraction rule.** The plan requires extracting a region of `score.tsx`
+  before editing it. Lines 63–98 (param read, `teamId` derivation, `homeLabel`/`awayLabel`) are a
+  coherent unit: extract them as `use-game-identity.ts` in `features/scoring/`. That makes the fix
+  unit-testable without rendering a 3,430-line screen, which is the rule's actual purpose — not a
+  token extraction to satisfy it.
+- **W1 belongs behind the phase 2 rules seam**, not in a form check. Expanded lineups and EH slots
+  make "which position assignments are legal" a league rule. A null `starting_position` is
+  legitimate (batting slot 10 in the observed game) and must stay allowed.
+- **W7 carries an unconfirmed half.** M1 is confirmed from source; M5 needs a sign-out with
+  accessibility text to reproduce. Reproduce M5 first; if it does not, fix M1 alone and close M5 as
+  not reproducible.
+- **Q1 is not in this list.** Whether `deriveGameState` handles a second `game_start` is an open
+  question for Task 7's Pass B, not a fix.
+
 
 ## Portrait pass — result
 
