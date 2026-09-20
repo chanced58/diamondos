@@ -212,4 +212,27 @@ describe('PlayFeed grouping and key uniqueness', () => {
     // Should have no duplicates
     expect(uniqueKeys.size).toBe(allKeys.length);
   });
+
+  it('header and its first row do not share the same key despite using the same eventId', () => {
+    const rows = [
+      actionableRow({ eventId: 'evt-100', description: 'Alice — out', inning: 1, isTopOfInning: true }),
+      actionableRow({ eventId: 'evt-99', description: 'Bob — double', inning: 1, isTopOfInning: false }),
+    ];
+
+    const items = toFeedItems(rows);
+
+    // First item should be a header for Top 1
+    expect(items[0]).toEqual(expect.objectContaining({ kind: 'header' }));
+    const firstHeader = items[0];
+
+    // Second item should be the first row (evt-100)
+    expect(items[1]).toEqual(expect.objectContaining({ kind: 'row' }));
+    const firstRow = items[1];
+
+    // Header is keyed on the first row's eventId (with 'header-' prefix),
+    // row is keyed directly on eventId; they must not collide
+    expect(firstHeader.key).toBe('header-evt-100');
+    expect(firstRow.key).toBe('evt-100');
+    expect(firstHeader.key).not.toBe(firstRow.key);
+  });
 });

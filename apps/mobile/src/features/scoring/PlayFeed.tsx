@@ -17,10 +17,17 @@ function halfLabel(inning: number, isTopOfInning: boolean): string {
  * `rows` is already newest-first, so a header is inserted whenever the
  * (inning, isTopOfInning) pair changes from the previous row.
  *
- * Headers are keyed by their ordinal position in the emitted items list to
- * ensure uniqueness even when the same half-inning appears non-contiguously
- * (e.g., a coach reverts and resumes a half-inning). Row items key on
- * `eventId` to maintain identity across updates.
+ * Headers are keyed by the eventId of the first row in that group, prefixed
+ * to avoid collision with row keys. This ensures stable identity under the
+ * feed's prepend-only update pattern: when a new play is added to the
+ * topmost group, only that group's header receives a new key; all downstream
+ * headers retain their identity indefinitely, as their first-row-below remains
+ * unchanged. Non-contiguous half-inning groups (e.g., coach reverts and
+ * resumes an inning) still generate distinct headers because the first row
+ * under each group is unique.
+ *
+ * Row items key on `eventId` to maintain identity across updates. Header keys
+ * are namespaced with `header-` prefix to remain distinct from row keys.
  */
 export function toFeedItems(rows: PlayFeedRow[]): FeedItem[] {
   const items: FeedItem[] = [];
@@ -28,7 +35,7 @@ export function toFeedItems(rows: PlayFeedRow[]): FeedItem[] {
   for (const row of rows) {
     const half = `${row.inning}-${row.isTopOfInning}`;
     if (half !== lastHalf) {
-      items.push({ kind: 'header', key: `header-${items.length}`, label: halfLabel(row.inning, row.isTopOfInning) });
+      items.push({ kind: 'header', key: `header-${row.eventId}`, label: halfLabel(row.inning, row.isTopOfInning) });
       lastHalf = half;
     }
     items.push({ kind: 'row', key: row.eventId, row });
