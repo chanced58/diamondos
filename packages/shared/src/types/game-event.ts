@@ -156,9 +156,15 @@ export interface HitPayload {
   opponentPitcherId?: string;
   hitType: HitType;
   trajectory?: HitTrajectory;
-  // Spray chart coordinates: 0-1 normalized, 0,0 = home plate
+  // Spray chart coordinates: 0-1 normalized; home plate is (0.5, 0), the deep centre wall is sprayY 1
   sprayX?: number;
   sprayY?: number;
+  /**
+   * Position numbers; element 0 is the fielder who first touched the ball.
+   * On a hit this credits nothing — fielding-stats reads fieldingSequence
+   * only for outs — it records who fielded it.
+   */
+  fieldingSequence?: number[];
   rbis?: number;
   /**
    * True when the batter reached base on a fielder's choice rather than
@@ -179,9 +185,14 @@ export interface OutPayload {
   opponentPitcherId?: string;
   outType: 'groundout' | 'flyout' | 'lineout' | 'popout' | 'strikeout' | 'other';
   trajectory?: HitTrajectory;
+  // Spray chart coordinates: 0-1 normalized; home plate is (0.5, 0), the deep centre wall is sprayY 1
+  sprayX?: number;
+  sprayY?: number;
   fieldedBy?: string; // position abbreviation
   /** Defensive play sequence as position numbers, e.g. [6, 3] for SS-to-1B. Max 5 steps. */
   fieldingSequence?: number[];
+  /** Position number of the fielder charged with the error (1-9). Set on FIELD_ERROR events only. */
+  errorBy?: number;
 }
 
 /** Payload for SACRIFICE_FLY and SACRIFICE_BUNT events. All fields optional;
@@ -226,6 +237,14 @@ export interface ScorePayload {
   /** Set when the scoring player is an opponent_player. */
   isOpponentScore?: boolean;
   rbis: number;
+  /**
+   * The play this run belongs to, when it came from a runner outcome on that
+   * play (a runner advancing home beyond the standard advance on a hit). Lets
+   * voiding the play also void the run. Runner-override logic in the engine
+   * and stats reads relatedEventId only on BASERUNNER_OUT / BASERUNNER_ADVANCE,
+   * so a linked SCORE changes nothing there.
+   */
+  relatedEventId?: string;
 }
 
 /** Payload for STOLEN_BASE, BASERUNNER_ADVANCE, and CAUGHT_STEALING events */

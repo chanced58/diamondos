@@ -793,3 +793,162 @@ describe('deriveGameState — HIT_BY_PITCH pair (regression guard)', () => {
     expect(state.completedTopHalfPAs).toBe(4);
   });
 });
+
+describe('deriveGameState — anonymous opponent batters', () => {
+  beforeEach(resetSeq);
+
+  // A scorer keeping their own team's book has no opponent roster, so events
+  // recorded during the opponent's half carry a pitcher but no batter of any
+  // kind. Those runners still have to occupy bases and score, otherwise a
+  // string of opponent hits leaves the scoreboard at 0.
+  it('places a batter-less hit on base so later hits drive them in', () => {
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, { homeLineupPitcherId: 'home-p' }),
+      // Opponent doubles twice, then homers — no batter id on any of them.
+      e(EventType.HIT, { hitType: HitType.DOUBLE, pitcherId: 'home-p' }),
+      e(EventType.HIT, { hitType: HitType.DOUBLE, pitcherId: 'home-p' }),
+      e(EventType.HIT, { hitType: HitType.HOME_RUN, pitcherId: 'home-p' }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+
+    // Double, then a double scoring that runner, then a 2-run homer = 3.
+    expect(state.awayScore).toBe(3);
+    expect(state.runnersOnBase).toEqual({ first: null, second: null, third: null });
+  });
+
+  it('keeps anonymous runners distinct rather than collapsing them onto one base', () => {
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, { homeLineupPitcherId: 'home-p' }),
+      e(EventType.WALK, { pitcherId: 'home-p' }),
+      e(EventType.WALK, { pitcherId: 'home-p' }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+
+    expect(state.runnersOnBase.first).not.toBeNull();
+    expect(state.runnersOnBase.second).not.toBeNull();
+    expect(state.runnersOnBase.first).not.toBe(state.runnersOnBase.second);
+    expect(state.awayScore).toBe(0);
+  });
+
+  it('does not credit an anonymous runner to a named batter', () => {
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, { homeLineupPitcherId: 'home-p' }),
+      e(EventType.HIT, { hitType: HitType.SINGLE, pitcherId: 'home-p' }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    const batting = deriveBattingStats(events, [
+      { id: 'home-p', firstName: 'Home', lastName: 'Pitcher' },
+    ]);
+
+    expect(state.runnersOnBase.first).not.toBeNull();
+    // The stand-in identifies a runner only; it must never appear as a batter.
+    expect(batting.has(state.runnersOnBase.first!)).toBe(false);
+  });
+});
+
+describe('deriveGameState — pitch and strike totals', () => {
+  beforeEach(resetSeq);
+
+  const pitch = (pitcherId: string, outcome: PitchOutcome) =>
+    e(EventType.PITCH_THROWN, { batterId: 'a1', pitcherId, outcome });
+
+  it('counts every pitch that is not a ball or hit batsman as a strike', () => {
+    const state = deriveGameState(GAME, [
+      e(EventType.GAME_START, { homeLineupPitcherId: 'p1' }),
+      pitch('p1', PitchOutcome.CALLED_STRIKE),
+      pitch('p1', PitchOutcome.SWINGING_STRIKE),
+      pitch('p1', PitchOutcome.FOUL),
+      pitch('p1', PitchOutcome.FOUL_TIP),
+      pitch('p1', PitchOutcome.IN_PLAY),
+      pitch('p1', PitchOutcome.BALL),
+      pitch('p1', PitchOutcome.INTENTIONAL_BALL),
+      pitch('p1', PitchOutcome.HIT_BY_PITCH),
+    ], HOME_TEAM);
+
+    expect(state.pitcherPitchCounts.p1).toBe(8);
+    expect(state.pitcherStrikeCounts.p1).toBe(5);
+  });
+
+  it('keeps strikes separate per pitcher across a pitching change', () => {
+    const state = deriveGameState(GAME, [
+      e(EventType.GAME_START, { homeLineupPitcherId: 'p1' }),
+      pitch('p1', PitchOutcome.CALLED_STRIKE),
+      pitch('p1', PitchOutcome.BALL),
+      pitch('p2', PitchOutcome.FOUL),
+      pitch('p2', PitchOutcome.SWINGING_STRIKE),
+      pitch('p2', PitchOutcome.BALL),
+    ], HOME_TEAM);
+
+    expect(state.pitcherStrikeCounts.p1).toBe(1);
+    expect(state.pitcherPitchCounts.p1).toBe(2);
+    expect(state.pitcherStrikeCounts.p2).toBe(2);
+    expect(state.pitcherPitchCounts.p2).toBe(3);
+  });
+
+  it('reports no strikes for a pitcher who has thrown none', () => {
+    const state = deriveGameState(GAME, [
+      e(EventType.GAME_START, { homeLineupPitcherId: 'p1' }),
+      pitch('p1', PitchOutcome.BALL),
+    ], HOME_TEAM);
+
+    expect(state.pitcherStrikeCounts.p1 ?? 0).toBe(0);
+  });
+});
+
+describe('runner advancing beyond the standard base on a hit — engine and stats agree', () => {
+  beforeEach(resetSeq);
+
+  const start = () => [
+    e(EventType.GAME_START, {
+      awayLineupPitcherId: 'home-p',
+      homeLineupPitcherId: 'away-p',
+      awayLeadoffBatterId: 'a1',
+      homeLeadoffBatterId: 'h1',
+    }),
+  ];
+  const roster = [
+    { id: 'a1', firstName: 'Ann', lastName: 'One' },
+    { id: 'a2', firstName: 'Ben', lastName: 'Two' },
+  ];
+
+  /**
+   * What the scorer's prompt now records when a runner from second scores on
+   * a single: the HIT with an explicit RBI, a linked advance to home, and a
+   * SCORE for the run.
+   */
+  function runnerFromSecondScoresOnSingle(): GameEvent[] {
+    const pa1 = batterHit('a1', HitType.DOUBLE);
+    const pitch2 = e(EventType.PITCH_THROWN, { batterId: 'a2', outcome: PitchOutcome.IN_PLAY });
+    const hit2 = e(EventType.HIT, { batterId: 'a2', hitType: HitType.SINGLE, rbis: 1 });
+    const advance = e(EventType.BASERUNNER_ADVANCE, {
+      runnerId: 'a1', fromBase: 2, toBase: 4, reason: 'on_play', relatedEventId: hit2.id,
+    });
+    const score = e(EventType.SCORE, { scoringPlayerId: 'a1', rbis: 0 });
+    return [...start(), ...pa1, pitch2, hit2, advance, score];
+  }
+
+  it('should score exactly one run and leave only the batter on base', () => {
+    const state = deriveGameState(GAME, runnerFromSecondScoresOnSingle(), HOME_TEAM);
+    expect(state.awayScore).toBe(1);
+    expect(state.runnersOnBase).toEqual({ first: 'a2', second: null, third: null });
+  });
+
+  it('should credit the run to the runner and the RBI to the batter', () => {
+    const stats = deriveBattingStats(runnerFromSecondScoresOnSingle(), roster);
+    expect(stats.get('a1')?.runs).toBe(1);
+    expect(stats.get('a2')?.rbi).toBe(1);
+    expect(stats.get('a2')?.runs).toBe(0);
+  });
+
+  it('should place a runner from first on third when they take an extra base on a single', () => {
+    const pa1 = batterHit('a1', HitType.SINGLE);
+    const pitch2 = e(EventType.PITCH_THROWN, { batterId: 'a2', outcome: PitchOutcome.IN_PLAY });
+    const hit2 = e(EventType.HIT, { batterId: 'a2', hitType: HitType.SINGLE });
+    const advance = e(EventType.BASERUNNER_ADVANCE, {
+      runnerId: 'a1', fromBase: 1, toBase: 3, reason: 'on_play', relatedEventId: hit2.id,
+    });
+    const state = deriveGameState(GAME, [...start(), ...pa1, pitch2, hit2, advance], HOME_TEAM);
+    expect(state.runnersOnBase).toEqual({ first: 'a2', second: null, third: 'a1' });
+    expect(state.awayScore).toBe(0);
+  });
+});

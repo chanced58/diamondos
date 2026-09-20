@@ -110,6 +110,33 @@ describe('buildGameHistoryTree — DROPPED_THIRD_STRIKE rendering', () => {
   });
 });
 
+describe('formatEventLabel — FIELD_ERROR', () => {
+  beforeEach(resetSeq);
+
+  it('labels the error from errorBy when it differs from fieldingSequence[0]', () => {
+    // Grounder to SS (fieldingSequence [6]), but 1B drops the throw — error charged to 3, not 6.
+    const event = mkEvent(EventType.FIELD_ERROR, {
+      batterId: 'p1',
+      fieldingSequence: [6],
+      errorBy: 3,
+    });
+    expect(formatEventLabel(event, players)).toBe('Error (1B)');
+  });
+
+  it('falls back to fieldingSequence when errorBy is absent', () => {
+    const event = mkEvent(EventType.FIELD_ERROR, {
+      batterId: 'p1',
+      fieldingSequence: [6],
+    });
+    expect(formatEventLabel(event, players)).toBe('Error (SS)');
+  });
+
+  it('renders plain "Error" when neither errorBy nor fieldingSequence is present', () => {
+    const event = mkEvent(EventType.FIELD_ERROR, { batterId: 'p1' });
+    expect(formatEventLabel(event, players)).toBe('Error');
+  });
+});
+
 describe('buildGameHistoryTree — CATCHER_INTERFERENCE rendering', () => {
   beforeEach(resetSeq);
 

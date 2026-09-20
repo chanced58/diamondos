@@ -716,7 +716,7 @@ The Game-Winning RBI statistic was an MLB official stat from 1980 to 1988, then 
 
 ### 9.08 Sacrifices
 
-**9.08(a) — Sacrifice Bunt (SH).** A batter who is put out on a bunt that advances at least one runner is credited with a sacrifice bunt. The scorer must judge that the batter's intent was to advance the runner (not to reach base). No SH if the batter is bunting to bunt for a hit. SH does not count as an AB but does count as a PA.
+**9.08(a) — Sacrifice Bunt (SH).** A batter who, **before two are out**, is put out on a bunt that advances at least one runner is credited with a sacrifice bunt. With two out no sacrifice is credited — the batter's out ends the inning. The scorer must judge that the batter's intent was to advance the runner (not to reach base). No SH if the batter is bunting for a hit. SH does not count as an AB but does count as a PA.
 
 **9.08(b) — Sacrifice Fly (SF).** A batter who hits a fly ball that is caught and allows a runner at third to score (or a runner at second, by scorer's judgment, if the runner would have scored on the play) is credited with a sacrifice fly. SF does not count as an AB but does count as a PA.
 
@@ -963,8 +963,9 @@ Run scored
 | Contact type | Bunt | Fly ball (caught) |
 | Batter outcome | Put out | Put out |
 | Runner advance required | At least one runner advances at least one base | At least one runner scores from 3rd |
+| Outs required | Fewer than 2 | Fewer than 2 |
 | Stats impact | PA, not AB | PA, not AB |
-| Common scenarios | Squeeze play, 1-2 hole runner advance | Runner on 3rd, fewer than 2 outs |
+| Common scenarios | Squeeze play, 1-2 hole runner advance | Runner on 3rd tagging up |
 
 ### A.6 — Double Play Notation Reference
 
