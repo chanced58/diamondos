@@ -276,7 +276,7 @@ wrong record.
 ---
 
 ### H4. Schedule and Practices report a failed fetch as "nothing scheduled"
-**Route:** `(tabs)/schedule`, `(tabs)/practices/index`  **Severity:** H  **Status:** open
+**Route:** `(tabs)/schedule`, `(tabs)/practices/index`  **Severity:** H  **Status:** fixed (W2, commit `441ca2f`)
 **Repro:**
 1. Put the device offline (or otherwise make the Supabase query fail).
 2. Open Schedule, then Practices.
@@ -300,9 +300,27 @@ signal — and they fail by lying rather than by saying so.
 
 **Defect bar:** misleads.
 
-**Fix (for Task 10):** add a real error state to both, and read games from WatermelonDB so Schedule
-works offline. Practices have no local mirror, so that screen can only gain an honest error state
-unless a mirror is added — say so rather than silently degrading.
+**Fixed in W2 (`441ca2f`).** Both screens gained a real error state with a `Try again` control, so
+a failure can no longer render the empty copy. Schedule now reads games from WatermelonDB and works
+offline for games; practices and `team_events` have no local mirror and stay online-only, so a
+partial failure shows the games it has plus an inline "Practices and events couldn't be loaded."
+banner rather than discarding them. The merge/normalise logic was extracted to
+`apps/mobile/src/features/schedule/schedule-data.ts` and covered by 9 unit tests.
+
+Three data-shape traps were handled: WatermelonDB stores `scheduled_at` as a Unix ms number while
+Postgres returns an ISO string (the merged list sorts with `localeCompare`, which would have thrown
+on a number); the local `since` filter compares against ms; and the game `href` routes on
+`remoteId` rather than the local row id.
+
+**Verification is partial and the gap is deliberate.** The success path was confirmed on device —
+Schedule still renders "No upcoming events." on a genuine empty success with no banner, so the new
+branch does not swallow the empty state. The *failure* path was not exercised on device: the iOS
+Simulator shares the host network and its Airplane Mode does not sever it, and the only other lever
+(repointing `EXPO_PUBLIC_SUPABASE_URL`) risks a failed token refresh clearing the cached session,
+which this session cannot restore because auth is magic-link. Failure rendering therefore rests on
+the unit tests plus code review; `schedule.tsx:133` returns on `fullPageError` before the
+`FlatList`, so the empty copy is structurally unreachable on failure. **Worth one manual offline
+check on a real device before merge.**
 
 ---
 
@@ -517,7 +535,7 @@ commit, except where noted.
 | # | Item | Findings | Bar | Where the fix belongs |
 |---|------|----------|-----|----------------------|
 | ~~**W1**~~ | ~~Reject duplicate defensive positions~~ **DONE** `690df56` | H5 | wrong record | `packages/shared/src/rules/fielding-positions.ts` |
-| **W2** | Schedule + Practices: real error state, read games offline | H4 | misleads | `schedule.tsx`, `practices/index.tsx` |
+| ~~**W2**~~ | ~~Schedule + Practices error state + offline games~~ **DONE** `441ca2f` | H4 | misleads | `schedule.tsx`, `practices/index.tsx`, `features/schedule/schedule-data.ts` |
 | **W3** | Unique play-feed header keys | H1 | misleads | `PlayFeed.tsx` |
 | **W4** | Propagate server-side deletions to the device | H3 | misleads | `sync-engine.ts` |
 | **W5** | Derive team names from the game record, not route params | M6 | misleads | `score.tsx` → extract `use-game-identity` |
