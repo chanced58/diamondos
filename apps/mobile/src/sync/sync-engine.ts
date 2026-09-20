@@ -19,7 +19,7 @@ import {
 } from './lineup-sync';
 import {
   computeCascadeDeletions,
-  reconcileIfFetchSucceeded,
+  computeTableDeletion,
 } from './reconcile-deletions';
 
 
@@ -137,32 +137,71 @@ const EPOCH_ISO = new Date(0).toISOString();
 
 type IdSetResult = { ok: true; ids: Set<string> } | { ok: false };
 
+// Supabase/PostgREST caps a response at a fixed row count (this project's own
+// `apps/web/.../card/actions.ts:210` documents the default 1000-row cap) —
+// undocumented per-request, so a query with no `.range()` silently truncates
+// once a table crosses it. A truncated page is `{ data: [...], error: null }`,
+// a *successful* response, so it defeated both existing safety layers
+// (round-1 review, Critical 1): every row outside the arbitrary, unordered
+// slice that came back looked exactly like a real deletion. Every id fetch
+// below is paginated with `.order()` + `.range()` so it always reads the
+// whole table, not just however much fits in one page.
+const ID_FETCH_PAGE_SIZE = 1000;
+// Defensive circuit breaker: stop paginating (and report failure) rather
+// than loop indefinitely if a table somehow never returns a short page. At
+// ID_FETCH_PAGE_SIZE=1000 this allows 1,000,000 rows per table per cycle —
+// far beyond anything this app's tables should reach — before tripping.
+const MAX_ID_FETCH_PAGES = 1000;
+
+type PageFetcher = (
+  offset: number,
+  limit: number,
+) => PromiseLike<{
+  data: Array<Record<string, unknown>> | null;
+  error: { message: string } | null;
+}>;
+
 /**
- * Fetches an id-only column for one table and turns any failure (thrown
- * error or a Postgrest `error` field) into `{ ok: false }` rather than
- * letting it propagate. The second safety rule from the brief lives here:
- * a failed fetch must read as "no information" to the caller, never as "the
- * server has zero rows" — `{ ok: false }` and `{ ok: true, ids: new Set() }`
- * are deliberately distinct shapes so they can't be confused downstream.
+ * Fetches every row of a paginated id query, looping on `.range()` until a
+ * short page (fewer than a full page) signals the end. Folds every failure
+ * mode — a thrown exception, a Postgrest `error`, or a response with no
+ * `data` array at all (round-1 review, Important 3: `{ data: null, error:
+ * null }` must not be read as "confirmed empty table") — into `{ ok: false
+ * }`, never into an empty-but-successful result. Exported for direct testing
+ * (round-1 review, Important 5): this is the exact I/O boundary where the
+ * second safety rule (a failed fetch is "no information", not "no rows")
+ * has to hold, and it needs nothing beyond a fake `PromiseLike` to test.
  */
-async function fetchIdSet(
+export async function fetchAllRows(
   label: string,
-  query: PromiseLike<{
-    data: Array<Record<string, unknown>> | null;
-    error: { message: string } | null;
-  }>,
-  pickId: (row: Record<string, unknown>) => string,
-): Promise<IdSetResult> {
+  pageFactory: PageFetcher,
+  pageSize: number = ID_FETCH_PAGE_SIZE,
+): Promise<{ ok: true; rows: Array<Record<string, unknown>> } | { ok: false }> {
+  const rows: Array<Record<string, unknown>> = [];
   try {
-    const { data, error } = await query;
-    if (error) {
-      console.warn(
-        `sync: ${label} id fetch failed; reconciling nothing for ${label} this cycle`,
-        error,
-      );
-      return { ok: false };
+    for (let page = 0; page < MAX_ID_FETCH_PAGES; page++) {
+      const offset = page * pageSize;
+      const { data, error } = await pageFactory(offset, pageSize);
+      if (error) {
+        console.warn(
+          `sync: ${label} id fetch failed at offset ${offset}; reconciling nothing for ${label} this cycle`,
+          error,
+        );
+        return { ok: false };
+      }
+      if (!Array.isArray(data)) {
+        console.warn(
+          `sync: ${label} id fetch returned no data array at offset ${offset}; reconciling nothing for ${label} this cycle`,
+        );
+        return { ok: false };
+      }
+      rows.push(...data);
+      if (data.length < pageSize) return { ok: true, rows };
     }
-    return { ok: true, ids: new Set((data ?? []).map(pickId)) };
+    console.warn(
+      `sync: ${label} id fetch exceeded ${MAX_ID_FETCH_PAGES} pages without finishing; reconciling nothing for ${label} this cycle`,
+    );
+    return { ok: false };
   } catch (err) {
     console.warn(
       `sync: ${label} id fetch threw; reconciling nothing for ${label} this cycle`,
@@ -170,6 +209,20 @@ async function fetchIdSet(
     );
     return { ok: false };
   }
+}
+
+/**
+ * Fetches an id-only column for one table (paginated — see `fetchAllRows`)
+ * and reduces it to the id `Set` shape `reconcileIfFetchSucceeded` expects.
+ */
+async function fetchIdSet(
+  label: string,
+  pageFactory: PageFetcher,
+  pickId: (row: Record<string, unknown>) => string,
+): Promise<IdSetResult> {
+  const result = await fetchAllRows(label, pageFactory);
+  if (!result.ok) return { ok: false };
+  return { ok: true, ids: new Set(result.rows.map(pickId)) };
 }
 
 /**
@@ -183,26 +236,36 @@ async function fetchIdSet(
  * A bare `select('id')` on `players` alone would only return the coach's own
  * team, so every cross-team identity mirrored locally for the guest picker
  * would look "deleted" and get wiped on every reconciliation pass. The id
- * fetch must union both sources, exactly mirroring that merge.
+ * fetch must union both sources, exactly mirroring that merge — each one
+ * paginated independently, and both must succeed or the whole table is
+ * treated as failed (a half-correct union is not a correct scope).
  */
 async function fetchPlayerIdSet(
   supabase: ReturnType<typeof getSupabaseClient>,
 ): Promise<IdSetResult> {
-  try {
-    const [ownTeam, leagueIdentities] = await Promise.all([
-      supabase.from('players').select('id'),
-      supabase.rpc('league_player_identities', { p_since: EPOCH_ISO }),
-    ]);
-    if (ownTeam.error) throw ownTeam.error;
-    if (leagueIdentities.error) throw leagueIdentities.error;
-    const ids = new Set<string>();
-    for (const row of (ownTeam.data ?? []) as Array<{ id: string }>) ids.add(row.id);
-    for (const row of (leagueIdentities.data ?? []) as Array<{ id: string }>) ids.add(row.id);
-    return { ok: true, ids };
-  } catch (err) {
-    console.warn('sync: players id fetch failed; reconciling nothing for players this cycle', err);
-    return { ok: false };
-  }
+  const [ownTeam, leagueIdentities] = await Promise.all([
+    fetchAllRows('players (own team)', (offset, limit) =>
+      supabase
+        .from('players')
+        .select('id')
+        .order('id')
+        .range(offset, offset + limit - 1),
+    ),
+    // p_since defaults to '-infinity' server-side; passed explicitly here so
+    // this fetch is unambiguously "every identity", independent of what the
+    // main pull's incremental p_since happens to be this cycle.
+    fetchAllRows('players (league identities)', (offset, limit) =>
+      supabase
+        .rpc('league_player_identities', { p_since: EPOCH_ISO })
+        .order('id')
+        .range(offset, offset + limit - 1),
+    ),
+  ]);
+  if (!ownTeam.ok || !leagueIdentities.ok) return { ok: false };
+  const ids = new Set<string>();
+  for (const row of ownTeam.rows as Array<{ id: string }>) ids.add(row.id);
+  for (const row of leagueIdentities.rows as Array<{ id: string }>) ids.add(row.id);
+  return { ok: true, ids };
 }
 
 interface DeletionResult {
@@ -216,10 +279,45 @@ interface DeletionResult {
 }
 
 /**
+ * Converts an id-fetch outcome into the `Set<string> | null` shape
+ * `computeTableDeletion` takes, in exactly one place — so there is one spot
+ * for the "ok ? ids : null" mapping to get wrong, not five hand-written
+ * copies (round-1 review, Important 5, point 3).
+ */
+function toIdSetOrNull(result: IdSetResult): Set<string> | null {
+  return result.ok ? result.ids : null;
+}
+
+/**
+ * Applies `computeTableDeletion` for one table and logs loudly if the
+ * blast-radius guard suppressed it (round-1 review, Critical 2) — a failed
+ * fetch is already logged inside `fetchAllRows`, so only the guard case
+ * needs its own log here.
+ */
+function resolveTableDeletion(
+  label: string,
+  idSetResult: IdSetResult,
+  localRows: Array<{ id: string; syncedAt: number | null | undefined }>,
+): string[] {
+  const outcome = computeTableDeletion(toIdSetOrNull(idSetResult), localRows);
+  if (outcome.status === 'blast-radius-guarded') {
+    const syncedRowCount = localRows.filter((r) => r.syncedAt != null).length;
+    console.warn(
+      `sync: ${label} deletion blast radius exceeded (${outcome.attemptedCount} of ${syncedRowCount} synced rows would have been deleted) — skipping deletion for ${label} this cycle`,
+    );
+  }
+  return outcome.ids;
+}
+
+/**
  * Fetches id sets for the five small, bounded parent tables (in parallel,
  * each isolated so one table's failure doesn't block the others), diffs
- * each against its local rows, then derives the two unbounded child tables
- * by cascading from the games/channels actually deleted this cycle.
+ * each against its local rows (guarded by both the syncedAt safety rule and
+ * the blast-radius ceiling), then derives the two unbounded child tables by
+ * cascading from the games/channels actually deleted this cycle. Never
+ * throws — see the try/catch around this call in pullChanges — but every
+ * internal failure mode degrades to "delete nothing for that table," never
+ * to "delete everything."
  */
 async function reconcileServerDeletions(
   supabase: ReturnType<typeof getSupabaseClient>,
@@ -227,24 +325,43 @@ async function reconcileServerDeletions(
 ): Promise<DeletionResult> {
   const [gamesIdSet, playersIdSet, channelsIdSet, leaguePlayersIdSet, oppPlayersIdSet] =
     await Promise.all([
-      fetchIdSet('games', supabase.from('games').select('id'), (r) => r.id as string),
+      fetchIdSet(
+        'games',
+        (offset, limit) =>
+          supabase.from('games').select('id').order('id').range(offset, offset + limit - 1),
+        (r) => r.id as string,
+      ),
       fetchPlayerIdSet(supabase),
       fetchIdSet(
         'channels',
-        supabase
-          .from('channels')
-          .select('id, channel_members!inner(user_id, can_post)')
-          .eq('channel_members.user_id', userId),
+        (offset, limit) =>
+          supabase
+            .from('channels')
+            .select('id, channel_members!inner(user_id, can_post)')
+            .eq('channel_members.user_id', userId)
+            .order('id')
+            .range(offset, offset + limit - 1),
         (r) => r.id as string,
       ),
       fetchIdSet(
         'league_players',
-        supabase.from('league_players').select('league_id, player_id'),
+        (offset, limit) =>
+          supabase
+            .from('league_players')
+            .select('league_id, player_id')
+            .order('league_id')
+            .order('player_id')
+            .range(offset, offset + limit - 1),
         (r) => leaguePlayerRecordId(r.league_id as string, r.player_id as string),
       ),
       fetchIdSet(
         'opponent_players',
-        supabase.from('opponent_players').select('id'),
+        (offset, limit) =>
+          supabase
+            .from('opponent_players')
+            .select('id')
+            .order('id')
+            .range(offset, offset + limit - 1),
         (r) => r.id as string,
       ),
     ]);
@@ -257,30 +374,36 @@ async function reconcileServerDeletions(
     database.get<OpponentPlayer>('opponent_players').query().fetch(),
   ]);
 
-  const games = reconcileIfFetchSucceeded(
-    gamesIdSet.ok ? gamesIdSet.ids : null,
+  const games = resolveTableDeletion(
+    'games',
+    gamesIdSet,
     gameRows.map((r) => ({ id: r.id, syncedAt: r.syncedAt })),
   );
-  const players = reconcileIfFetchSucceeded(
-    playersIdSet.ok ? playersIdSet.ids : null,
+  const players = resolveTableDeletion(
+    'players',
+    playersIdSet,
     playerRows.map((r) => ({ id: r.id, syncedAt: r.syncedAt })),
   );
-  const channels = reconcileIfFetchSucceeded(
-    channelsIdSet.ok ? channelsIdSet.ids : null,
+  const channels = resolveTableDeletion(
+    'channels',
+    channelsIdSet,
     channelRows.map((r) => ({ id: r.id, syncedAt: r.syncedAt })),
   );
-  const leaguePlayers = reconcileIfFetchSucceeded(
-    leaguePlayersIdSet.ok ? leaguePlayersIdSet.ids : null,
+  const leaguePlayers = resolveTableDeletion(
+    'league_players',
+    leaguePlayersIdSet,
     leaguePlayerRows.map((r) => ({ id: r.id, syncedAt: r.syncedAt })),
   );
-  const opponentPlayers = reconcileIfFetchSucceeded(
-    oppPlayersIdSet.ok ? oppPlayersIdSet.ids : null,
+  const opponentPlayers = resolveTableDeletion(
+    'opponent_players',
+    oppPlayersIdSet,
     oppPlayerRows.map((r) => ({ id: r.id, syncedAt: r.syncedAt })),
   );
 
   // Cascades run off THIS cycle's confirmed parent deletions only — if the
-  // games fetch failed, `games` is [] and no event is ever cascaded from it
-  // this cycle, which is the correct, conservative outcome.
+  // games fetch failed (or was blast-radius-guarded), `games` is [] and no
+  // event is ever cascaded from it this cycle, which is the correct,
+  // conservative outcome.
   const [eventRows, messageRows] = await Promise.all([
     games.length > 0
       ? database
@@ -303,6 +426,43 @@ async function reconcileServerDeletions(
     channels,
     messageRows.map((r) => ({ id: r.id, parentId: r.channelRemoteId })),
   );
+
+  // Deletion audit log (round-1 review, "also required"): the only logging
+  // before this was on fetch *failure* — nothing recorded what was actually
+  // removed. When a coach reports "my game vanished," this is the only trail
+  // that can distinguish a genuine server-side delete from a cap artifact or
+  // a scope flip. Cascades carry no syncedAt guard, so the unsynced counts
+  // here are the actual offline-work-loss figures for this cycle, not just
+  // row counts.
+  const totalDeletions =
+    games.length +
+    players.length +
+    channels.length +
+    leaguePlayers.length +
+    opponentPlayers.length +
+    gameEvents.length +
+    messages.length;
+  if (totalDeletions > 0) {
+    const gameEventIds = new Set(gameEvents);
+    const messageIds = new Set(messages);
+    const unsyncedGameEventsDeleted = eventRows.filter(
+      (r) => gameEventIds.has(r.id) && r.syncedAt == null,
+    ).length;
+    const unsyncedMessagesDeleted = messageRows.filter(
+      (r) => messageIds.has(r.id) && r.syncedAt == null,
+    ).length;
+    console.warn('sync: deletion reconciliation removing local rows this cycle', {
+      games: games.length,
+      players: players.length,
+      channels: channels.length,
+      leaguePlayers: leaguePlayers.length,
+      opponentPlayers: opponentPlayers.length,
+      gameEvents: gameEvents.length,
+      unsyncedGameEventsDeleted,
+      messages: messages.length,
+      unsyncedMessagesDeleted,
+    });
+  }
 
   return { games, players, channels, leaguePlayers, opponentPlayers, gameEvents, messages };
 }
@@ -586,10 +746,26 @@ export async function syncWithSupabase(): Promise<void> {
       // the server clock already captured above; using it here (rather than
       // the device clock) keeps the cadence consistent with the rest of this
       // pull even if the device clock is off.
+      //
+      // The whole attempt is wrapped: this is a best-effort cleanup step the
+      // brief treats as optional (a stale row lingering is harmless), and it
+      // must never be able to fail the entire sync cycle — which would also
+      // block the push of queued offline events, since push runs after pull
+      // inside synchronize() (round-1 review, Important 4). Every internal
+      // failure path already degrades gracefully to "skip that table," but
+      // this catches anything else (e.g. a WDB read throwing) and degrades
+      // the whole cycle to "skip every table" rather than aborting the pull.
       let deletions = EMPTY_DELETIONS;
       if (shouldReconcileDeletions(pullTimestamp, lastDeletionReconcileAt)) {
         lastDeletionReconcileAt = pullTimestamp;
-        deletions = await reconcileServerDeletions(supabase, userId);
+        try {
+          deletions = await reconcileServerDeletions(supabase, userId);
+        } catch (err) {
+          console.warn(
+            'sync: deletion reconciliation failed; skipping all deletions this cycle',
+            err,
+          );
+        }
       }
 
       // Every pulled row goes in `updated`, never `created`.

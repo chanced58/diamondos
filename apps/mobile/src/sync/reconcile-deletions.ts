@@ -54,6 +54,106 @@ export function reconcileIfFetchSucceeded(
   return computeDeletions(serverIds, localRows);
 }
 
+/**
+ * Blast-radius ceiling (round-1 review, Critical 2): every main pull is
+ * incremental, so once a row is destroyed locally it is never re-delivered
+ * until its server-side timestamp changes again — there is no self-healing.
+ * A *correct* id diff can still be catastrophic if it's fed a wrong id set:
+ * a transient RLS/scope flip (a coach briefly removed from a team, a bug in
+ * a policy, a truncated page that slipped past the fetch-failure guard) would
+ * otherwise be applied exactly like a genuine mass deletion.
+ *
+ * A genuine mass deletion is not urgent to apply — the brief itself says a
+ * stale row lingering locally is harmless — so any candidate deletion list
+ * that looks like "most of this table" is treated the same as a failed
+ * fetch: skip it this cycle rather than risk applying a wrong one. This is
+ * independent of, and in addition to, the syncedAt guard in
+ * `computeDeletions` above.
+ */
+export interface BlastRadiusOptions {
+  /** Deletion ratio (of locally-synced rows) above which the table is guarded. */
+  fraction?: number;
+  /** Absolute deletion count above which the table is guarded regardless of ratio. */
+  floor?: number;
+}
+
+export interface BlastRadiusResult {
+  /** The original ids, or [] if guarded. */
+  ids: string[];
+  /** True if this table's deletions were suppressed this cycle. */
+  guarded: boolean;
+  /**
+   * The count that was attempted, i.e. `deletionIds.length`, preserved even
+   * when `guarded` is true and `ids` is emptied — otherwise a caller logging
+   * "why was this guarded" has nothing but its own already-known input to
+   * report, which defeats the point of a diagnostic message.
+   */
+  attemptedCount: number;
+}
+
+const DEFAULT_BLAST_RADIUS_FRACTION = 0.25;
+const DEFAULT_BLAST_RADIUS_FLOOR = 100;
+
+/**
+ * Suppresses a deletion list that is disproportionate to what's known
+ * locally (`fraction`) or simply large in absolute terms (`floor`), either
+ * of which trips the guard. `floor` exists because a fraction alone doesn't
+ * protect a large table: 20% of a 10,000-row table is still 2,000 rows
+ * gone. `fraction` exists because a floor alone doesn't protect a small
+ * table: losing 3 of a team's 4 games is not "over the floor" but is still
+ * a near-total wipe.
+ */
+export function applyBlastRadiusGuard(
+  deletionIds: string[],
+  syncedRowCount: number,
+  options: BlastRadiusOptions = {},
+): BlastRadiusResult {
+  const fraction = options.fraction ?? DEFAULT_BLAST_RADIUS_FRACTION;
+  const floor = options.floor ?? DEFAULT_BLAST_RADIUS_FLOOR;
+  const count = deletionIds.length;
+  if (count === 0) return { ids: [], guarded: false, attemptedCount: 0 };
+
+  const exceedsFloor = count > floor;
+  const exceedsFraction = count > fraction * syncedRowCount;
+  if (exceedsFloor || exceedsFraction) {
+    return { ids: [], guarded: true, attemptedCount: count };
+  }
+  return { ids: deletionIds, guarded: false, attemptedCount: count };
+}
+
+export type TableDeletionStatus = 'ok' | 'fetch-failed' | 'blast-radius-guarded';
+
+export interface TableDeletionOutput {
+  ids: string[];
+  status: TableDeletionStatus;
+  /** Rows that would have been deleted; meaningful mainly when guarded. */
+  attemptedCount: number;
+}
+
+/**
+ * The full per-table decision, composing both safety layers without
+ * changing either: `reconcileIfFetchSucceeded` (unchanged — still the sole
+ * place the `syncedAt` guard and the failed-fetch guard apply) feeding into
+ * `applyBlastRadiusGuard` (new). Used identically for all five id-diffed
+ * tables in sync-engine.ts so there is exactly one call site's worth of
+ * "ok ? ids : null" logic to get right, not five hand-written copies.
+ */
+export function computeTableDeletion(
+  serverIds: Set<string> | null,
+  localRows: LocalRowForDeletion[],
+  blastRadius: BlastRadiusOptions = {},
+): TableDeletionOutput {
+  if (serverIds === null) return { ids: [], status: 'fetch-failed', attemptedCount: 0 };
+  const raw = reconcileIfFetchSucceeded(serverIds, localRows);
+  const syncedRowCount = localRows.filter((row) => row.syncedAt != null).length;
+  const guard = applyBlastRadiusGuard(raw, syncedRowCount, blastRadius);
+  return {
+    ids: guard.ids,
+    status: guard.guarded ? 'blast-radius-guarded' : 'ok',
+    attemptedCount: guard.attemptedCount,
+  };
+}
+
 export interface LocalChildRow {
   id: string;
   parentId: string;

@@ -1,6 +1,8 @@
 import {
+  applyBlastRadiusGuard,
   computeCascadeDeletions,
   computeDeletions,
+  computeTableDeletion,
   reconcileIfFetchSucceeded,
 } from '../reconcile-deletions';
 
@@ -103,5 +105,126 @@ describe('computeCascadeDeletions', () => {
     const deletedGameIds = ['game-1'];
     const localEvents = [{ id: 'unsynced-evt', parentId: 'game-1' }];
     expect(computeCascadeDeletions(deletedGameIds, localEvents)).toEqual(['unsynced-evt']);
+  });
+});
+
+describe('applyBlastRadiusGuard', () => {
+  it('passes through an empty deletion list untouched', () => {
+    expect(applyBlastRadiusGuard([], 100)).toEqual({ ids: [], guarded: false, attemptedCount: 0 });
+  });
+
+  it('passes through a small deletion well under both thresholds', () => {
+    // 2 of 28 synced rows (~7%), far under the 25% fraction and the 100 floor.
+    expect(applyBlastRadiusGuard(['a', 'b'], 28)).toEqual({
+      ids: ['a', 'b'],
+      guarded: false,
+      attemptedCount: 2,
+    });
+  });
+
+  it('guards when the deletion ratio exceeds the fraction, even under the floor', () => {
+    // 3 of 4 synced rows (75%) — a near-total wipe of a small table, well
+    // under the absolute floor but still catastrophic proportionally.
+    const ids = ['a', 'b', 'c'];
+    expect(applyBlastRadiusGuard(ids, 4)).toEqual({ ids: [], guarded: true, attemptedCount: 3 });
+  });
+
+  it('preserves the attempted count when guarded, for diagnostic logging', () => {
+    // The guard discards `ids` (that's the whole point), but a caller
+    // logging "why was this guarded" needs the count that was suppressed,
+    // not just "something, we don't know how much".
+    const ids = Array.from({ length: 500 }, (_, i) => `id-${i}`);
+    expect(applyBlastRadiusGuard(ids, 1_000_000).attemptedCount).toBe(500);
+  });
+
+  it('does not guard exactly at the fraction boundary (25% of synced rows)', () => {
+    // 25 of 100 is exactly the fraction — the guard uses a strict `>`, so
+    // this must still pass through.
+    const ids = Array.from({ length: 25 }, (_, i) => `id-${i}`);
+    expect(applyBlastRadiusGuard(ids, 100).guarded).toBe(false);
+  });
+
+  it('guards just above the fraction boundary', () => {
+    const ids = Array.from({ length: 26 }, (_, i) => `id-${i}`);
+    expect(applyBlastRadiusGuard(ids, 100).guarded).toBe(true);
+  });
+
+  it('guards when the absolute floor is exceeded even though the ratio is small', () => {
+    // 150 of 10,000 synced rows is 1.5% — nowhere near the 25% fraction —
+    // but 150 absolute rows gone is still a large blast radius worth halting.
+    const ids = Array.from({ length: 150 }, (_, i) => `id-${i}`);
+    expect(applyBlastRadiusGuard(ids, 10_000).guarded).toBe(true);
+  });
+
+  it('does not guard exactly at the floor boundary', () => {
+    const ids = Array.from({ length: 100 }, (_, i) => `id-${i}`);
+    expect(applyBlastRadiusGuard(ids, 1_000_000).guarded).toBe(false);
+  });
+
+  it('respects custom fraction/floor options', () => {
+    expect(applyBlastRadiusGuard(['a', 'b'], 10, { fraction: 0.1 }).guarded).toBe(true);
+    expect(applyBlastRadiusGuard(['a'], 10, { floor: 0 }).guarded).toBe(true);
+  });
+});
+
+describe('computeTableDeletion', () => {
+  it('reports fetch-failed and deletes nothing when serverIds is null', () => {
+    const localRows = [{ id: 'a', syncedAt: 100 }];
+    expect(computeTableDeletion(null, localRows)).toEqual({
+      ids: [],
+      status: 'fetch-failed',
+      attemptedCount: 0,
+    });
+  });
+
+  it('reports ok and the safety-rule diff when the fetch succeeded and the result is small', () => {
+    // 9 synced rows plus 1 unsynced; only 1 of the 9 synced rows is deleted
+    // (~11%), comfortably under both blast-radius thresholds.
+    const localRows = [
+      ...Array.from({ length: 9 }, (_, i) => ({ id: `keep-${i}`, syncedAt: 100 })),
+      { id: 'gone', syncedAt: 100 },
+      { id: 'never-pushed', syncedAt: null },
+    ];
+    const serverIds = new Set(localRows.filter((r) => r.id !== 'gone' && r.id !== 'never-pushed').map((r) => r.id));
+    expect(computeTableDeletion(serverIds, localRows)).toEqual({
+      ids: ['gone'],
+      status: 'ok',
+      attemptedCount: 1,
+    });
+  });
+
+  it('reports blast-radius-guarded and deletes nothing when the diff is disproportionate', () => {
+    const localRows = Array.from({ length: 4 }, (_, i) => ({ id: `id-${i}`, syncedAt: 100 }));
+    // Server set is empty -> all 4 synced rows would be deleted (100%).
+    expect(computeTableDeletion(new Set(), localRows)).toEqual({
+      ids: [],
+      status: 'blast-radius-guarded',
+      attemptedCount: 4,
+    });
+  });
+
+  it('applies the same ok/fetch-failed mapping uniformly regardless of which "table" is passed', () => {
+    // This is the direct counter to a copy-paste bug where one table's id
+    // set is used unconditionally for another (round-1 finding, Important 5,
+    // point 3): every table goes through this one function, so there is
+    // exactly one place the "ok ? ids : null" mapping can be wrong, and it
+    // is covered here for both branches.
+    // 9 padding rows keep the single deletion well under the blast-radius
+    // fraction so 'ok' is the outcome under test, not a guard.
+    const padding = Array.from({ length: 9 }, (_, i) => ({ id: `keep-${i}`, syncedAt: 1 }));
+    const tables = [
+      { serverIds: new Set(padding.map((r) => r.id)), localRows: [...padding, { id: 'gone', syncedAt: 1 }] },
+      { serverIds: null, localRows: [...padding, { id: 'gone', syncedAt: 1 }] },
+    ];
+    expect(computeTableDeletion(tables[0].serverIds, tables[0].localRows)).toEqual({
+      ids: ['gone'],
+      status: 'ok',
+      attemptedCount: 1,
+    });
+    expect(computeTableDeletion(tables[1].serverIds, tables[1].localRows)).toEqual({
+      ids: [],
+      status: 'fetch-failed',
+      attemptedCount: 0,
+    });
   });
 });
