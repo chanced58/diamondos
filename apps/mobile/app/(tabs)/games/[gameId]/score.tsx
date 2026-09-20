@@ -10,6 +10,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useGameIdentity } from '../../../../src/features/scoring/use-game-identity';
 import { useGameState } from '../../../../src/features/scoring/use-game-state';
 import { useRecordEvent } from '../../../../src/features/scoring/use-record-event';
 import { usePlayFeed } from '../../../../src/features/scoring/use-play-feed';
@@ -26,13 +27,12 @@ import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../src/feat
 import { createBattedBallSlot } from '../../../../src/features/scoring/batted-ball-fields';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, weAreHome, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
 import { database } from '../../../../src/db';
 import type { GameEvent as WdbGameEvent } from '../../../../src/db/models/GameEvent';
-import type { Game } from '../../../../src/db/models/Game';
 import type { Player } from '../../../../src/db/models/Player';
 import type { BattedOutType, RosterPlayer, RunnerOutcome } from '../../../../src/features/scoring/PitchInput';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
@@ -60,42 +60,17 @@ import type { GameLineup } from '../../../../src/db/models/GameLineup';
  * then synced to Supabase in the background.
  */
 export default function ScoringScreen() {
-  const { gameId, teamId: teamIdParam = '', opponentName = 'Opponent', teamName = 'Home' } =
-    useLocalSearchParams<{
-      gameId: string;
-      teamId: string;
-      opponentName: string;
-      teamName: string;
-    }>();
+  const { gameId } = useLocalSearchParams<{ gameId: string }>();
 
   const router = useRouter();
 
-  // Resolve the Game row from the local DB — the games list only passes the
-  // game id, so team identity (roster, league settings) and home/away must
-  // come from the synced games mirror, not route params.
-  const [game, setGame] = useState<Game | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const matches = await database
-          .get<Game>('games')
-          .query(Q.where('remote_id', gameId))
-          .fetch();
-        if (!cancelled) setGame(matches[0] ?? null);
-      } catch (err) {
-        console.warn(`Score game lookup failed game=${gameId}:`, err);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [gameId]);
-  const teamId = game?.teamId ?? (teamIdParam as string);
-  const isHome = game ? weAreHome(game.locationType, game.neutralHomeTeam ?? null) : true;
-  // ScoreBoard maps teamName→homeScore and opponentName→awayScore, so the
-  // labels must be the actual home/away teams, not our-team/opponent — for a
-  // road game those are swapped.
-  const homeLabel = isHome ? (teamName as string) : (opponentName as string);
-  const awayLabel = isHome ? (opponentName as string) : (teamName as string);
+  // Team identity (roster, league settings), home/away, and the display
+  // names all come from the synced games mirror, not route params — a deep
+  // link or push notification only ever supplies `gameId`. See
+  // use-game-identity.ts for the resolution rules and why they're pulled out
+  // of this file.
+  const { game, teamId, isHome, teamName, opponentName, homeLabel, awayLabel } =
+    useGameIdentity(gameId);
 
   // Tablet-width layouts put game state and the input surface side by side
   // instead of stacking them, so a scorer on a dugout iPad can see the count,
