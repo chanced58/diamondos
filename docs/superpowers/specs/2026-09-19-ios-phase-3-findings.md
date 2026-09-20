@@ -249,7 +249,7 @@ mistypes their address is stranded on a screen whose sole exit is the hardest th
 ---
 
 ### H3. Server-side deletions never reach the device — 7 of 9 synced collections ignore them
-**Route:** `(tabs)/index` (observed), sync-wide  **Severity:** H  **Status:** open
+**Route:** `(tabs)/index` (observed), sync-wide  **Severity:** H  **Status:** fixed (W4, commits `fd5d3d5`→`4ed8bff`)
 **Repro:**
 1. Note a game shown on the dashboard.
 2. Delete that game's row server-side.
@@ -553,7 +553,7 @@ commit, except where noted.
 | ~~**W1**~~ | ~~Reject duplicate defensive positions~~ **DONE** `690df56` | H5 | wrong record | `packages/shared/src/rules/fielding-positions.ts` |
 | ~~**W2**~~ | ~~Schedule + Practices error state + offline games~~ **DONE** `441ca2f` | H4 | misleads | `schedule.tsx`, `practices/index.tsx`, `features/schedule/schedule-data.ts` |
 | ~~**W3**~~ | ~~Unique play-feed header keys~~ **DONE** `e2a617b` | H1 | misleads | `PlayFeed.tsx` |
-| **W4** | Propagate server-side deletions to the device | H3 | misleads | `sync-engine.ts` |
+| ~~**W4**~~ | ~~Propagate server-side deletions~~ **DONE** `4ed8bff` | H3 | misleads | `sync-engine.ts`, `sync/reconcile-deletions.ts` |
 | **W5** | Derive team names from the game record, not route params | M6 | misleads | `score.tsx` → extract `use-game-identity` |
 | **W6** | Practice card: hoist title, fix coach copy | M3 | misleads | `practices/[practiceId]/card.tsx` |
 | **W7** | Sign-in: 44pt escape hatch + scroll container | M1, M5 | blocks | `(auth)/sign-in.tsx` |
