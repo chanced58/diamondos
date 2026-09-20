@@ -122,39 +122,53 @@ describe('applyBlastRadiusGuard', () => {
     });
   });
 
-  it('round-2 N2: applies a near-total wipe of a small table — the fraction no longer binds tiny tables', () => {
-    // 3 of 4 synced rows (75%). Round-1 guarded this; round-2 review (N2)
-    // found that binding the fraction below minSyncedForFraction made the
-    // guard a PERMANENT no-op on any device holding a handful of rows —
-    // exactly H3's own motivating case (one stale game on an early-season
-    // device). Below the minimum, only the absolute floor protects a table,
-    // so this now applies.
-    const ids = ['a', 'b', 'c'];
-    expect(applyBlastRadiusGuard(ids, 4)).toEqual({ ids, guarded: false, attemptedCount: 3 });
-  });
-
-  it('round-2 N2: deleting 1 of 3 synced rows now applies (was a permanent no-op)', () => {
-    // The exact scenario the finding traced: syncedRowCount=3, deleting 1 —
-    // under the old spec 1 > 0.25*3 (0.75) tripped the guard every cycle
-    // forever, since the denominator never changes. This is the primary
-    // regression test for N2.
+  it('round-2 N2: deleting 1 of 3 synced rows applies (was a permanent no-op before N2)', () => {
+    // The exact scenario N2 traced: syncedRowCount=3, deleting 1 — under the
+    // pre-N2 spec 1 > 0.25*3 (0.75) tripped the guard every cycle forever,
+    // since the denominator never changes. count=1 is below
+    // minCountForFraction (3), so the fraction never engages here regardless
+    // of table size. This is the regression test for N2, still valid under
+    // round-3's count-gated version: H3's own symptom (one stuck row) must
+    // always apply.
     expect(applyBlastRadiusGuard(['a'], 3)).toEqual({ ids: ['a'], guarded: false, attemptedCount: 1 });
   });
 
-  it('round-2 N2: a genuine mass deletion (20 of 24) is still suppressed once minSyncedForFraction is reached', () => {
-    // 24 >= minSyncedForFraction (8), so the fraction check is active:
-    // 20 > 0.25 * 24 (6) trips it. This is the counterpart to the previous
-    // test — the fix must not simply disable the fraction guard everywhere.
+  it('round-3 R3-1: a 3-row wipe of a 3-row table is guarded — round-2 let this through unconditionally', () => {
+    // 3 of 3 synced rows (100%). Round-2's syncedRowCount>=8 gate let this
+    // apply unconditionally (synced=3 never reaches 8, so the fraction never
+    // engaged regardless of ratio). Round-3 review found that a device with
+    // ≤7 games — every device early in a season — therefore had NO
+    // proportional protection on `games`, whose cascade to `game_events`
+    // carries no syncedAt guard. Gating on the deletion COUNT (>=3) instead
+    // of table size catches this: count=3 clears the count gate, and 3 >
+    // 0.25*3 (0.75) trips the fraction.
+    const ids = ['a', 'b', 'c'];
+    expect(applyBlastRadiusGuard(ids, 3)).toEqual({ ids: [], guarded: true, attemptedCount: 3 });
+  });
+
+  it('round-3 R3-1: a 7-row wipe of a 7-row table is guarded', () => {
+    // 7 of 7 (100%) — same reasoning as the 3-of-3 case above, at the other
+    // end of the "every device early in a season" range the finding named.
+    const ids = Array.from({ length: 7 }, (_, i) => `id-${i}`);
+    expect(applyBlastRadiusGuard(ids, 7)).toEqual({ ids: [], guarded: true, attemptedCount: 7 });
+  });
+
+  it('round-2 N2: a genuine mass deletion (20 of 24) is still suppressed', () => {
+    // count=20 clears the count gate (>=3), and 20 > 0.25*24 (6) trips the
+    // fraction. This is the counterpart to the single-row test above — the
+    // fix must not simply disable the fraction guard everywhere.
     const ids = Array.from({ length: 20 }, (_, i) => `id-${i}`);
     expect(applyBlastRadiusGuard(ids, 24)).toEqual({ ids: [], guarded: true, attemptedCount: 20 });
   });
 
-  it('round-2 N2: pins the minSyncedForFraction boundary itself, both sides', () => {
-    // Below the threshold (7 rows): fraction never engages, even at a ratio
-    // that would trip it above the threshold.
-    expect(applyBlastRadiusGuard(['a', 'b', 'c'], 7).guarded).toBe(false); // 3 of 7 = ~43%
-    // At the threshold (8 rows): fraction is active and this ratio trips it.
-    expect(applyBlastRadiusGuard(['a', 'b', 'c'], 8).guarded).toBe(true); // 3 of 8 = 37.5% > 25%
+  it('round-3 R3-1: pins the minCountForFraction boundary itself, both sides', () => {
+    // Below the threshold (count=2): fraction never engages, however high
+    // the ratio.
+    expect(applyBlastRadiusGuard(['a', 'b'], 4).guarded).toBe(false); // 2 of 4 = 50%
+    // At the threshold (count=3): fraction is active and this ratio trips it
+    // — this is also the exact "3 of 4" case round-2 shipped as "applies,"
+    // which round-3 review found should have been guarded all along.
+    expect(applyBlastRadiusGuard(['a', 'b', 'c'], 4).guarded).toBe(true); // 3 of 4 = 75%
   });
 
   it('preserves the attempted count when guarded, for diagnostic logging', () => {
@@ -189,9 +203,19 @@ describe('applyBlastRadiusGuard', () => {
     expect(applyBlastRadiusGuard(ids, 1_000_000).guarded).toBe(false);
   });
 
-  it('respects custom fraction/floor options', () => {
-    expect(applyBlastRadiusGuard(['a', 'b'], 10, { fraction: 0.1 }).guarded).toBe(true);
+  it('respects custom fraction/floor/minCountForFraction options', () => {
+    // count=3 clears the default minCountForFraction (3), so a custom,
+    // tighter fraction can still trip it: 3 > 0.1*10 (1).
+    expect(applyBlastRadiusGuard(['a', 'b', 'c'], 10, { fraction: 0.1 }).guarded).toBe(true);
+    // floor=0 guards any non-empty deletion regardless of the count gate.
     expect(applyBlastRadiusGuard(['a'], 10, { floor: 0 }).guarded).toBe(true);
+    // A custom minCountForFraction can re-widen the exemption round-3
+    // narrowed — e.g. restoring round-2-like behavior for a caller that
+    // wants it: count=2 stays exempt from the fraction up to a custom
+    // minimum of 5, even at a high ratio.
+    expect(
+      applyBlastRadiusGuard(['a', 'b'], 4, { minCountForFraction: 5 }).guarded,
+    ).toBe(false); // 2 of 4 = 50%, but count(2) < minCountForFraction(5)
   });
 });
 

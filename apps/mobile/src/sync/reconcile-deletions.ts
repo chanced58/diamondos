@@ -74,20 +74,29 @@ export function reconcileIfFetchSucceeded(
  * made this a permanent no-op on small tables — H3's own motivating symptom
  * (one stuck game on a device early in a season, syncedRowCount as low as
  * 1-3) could never clear, because deleting even a single row already exceeds
- * 25% of a table that small, and the denominator never changes. The fraction
- * check now only engages once a table has at least `minSyncedForFraction`
- * synced rows — below that, only the absolute `floor` still protects it,
- * which is intentional: a near-total wipe of a 1-7 row table is exactly the
- * common case (a lone stale game, a short roster) this feature exists to fix,
- * not the pathological one it exists to guard against.
+ * 25% of a table that small, and the denominator never changes.
+ *
+ * Round-2's fix gated the fraction on `syncedRowCount >= 8`. Round-3 review
+ * found that choice strictly worse than gating on `count >= 3` instead:
+ * for `syncedRowCount >= 8`, `count > 0.25 * syncedRowCount` already implies
+ * `count >= 3` on integers, so the two gates are exactly equivalent there —
+ * but for `syncedRowCount <= 7` (every device early in a season, on `games`
+ * specifically — the one table whose cascade to `game_events` carries no
+ * syncedAt guard, so this is the only thing between a wrongly-scoped id set
+ * and destroyed offline scoring), a `count >= 3` gate still catches a 3+ row
+ * wipe (e.g. 3 of 3, 7 of 7) that the syncedRowCount gate let straight
+ * through. `count >= 3` is a strict improvement with no case where it guards
+ * something the syncedRowCount gate correctly allowed — it does not weaken
+ * N2's fix: H3's own symptom is a single stuck row (`count = 1`), which
+ * clears `count >= 3` and applies exactly as N2 intended.
  */
 export interface BlastRadiusOptions {
   /** Deletion ratio (of locally-synced rows) above which the table is guarded. */
   fraction?: number;
   /** Absolute deletion count above which the table is guarded regardless of ratio. */
   floor?: number;
-  /** Synced-row count below which the fraction check does not apply at all. */
-  minSyncedForFraction?: number;
+  /** Deletion count below which the fraction check does not apply at all. */
+  minCountForFraction?: number;
 }
 
 export interface BlastRadiusResult {
@@ -106,25 +115,32 @@ export interface BlastRadiusResult {
 
 const DEFAULT_BLAST_RADIUS_FRACTION = 0.25;
 const DEFAULT_BLAST_RADIUS_FLOOR = 100;
-// Chosen fix for round-2 N2: "only apply the fraction when syncedRowCount >=
-// 8" (the finding's second suggested option). At 8 rows, 25% is 2 — the
-// fraction can only trip on a deletion of 3+ out of 8, which is a real
-// multi-row event rather than the routine single-row case this guard was
-// blocking. Below 8, only `floor` (100) protects the table.
-const DEFAULT_MIN_SYNCED_FOR_FRACTION = 8;
+// Chosen fix for round-3 R3-1: gate the fraction on the DELETION count, not
+// the table size. `count >= 3` is provably equivalent to round-2's
+// `syncedRowCount >= 8` everywhere that gate could ever fire (see the class
+// doc comment above), and additionally guards a 3+ row wipe of a tiny table
+// (3 of 3, 7 of 7), which round-2's version let through unconditionally.
+// Below 3, only `floor` (100) protects the table — H3's own symptom
+// (count = 1) is exactly this case and applies, unguarded, as intended.
+const DEFAULT_MIN_COUNT_FOR_FRACTION = 3;
 
 /**
  * Suppresses a deletion list that is disproportionate to what's known
- * locally (`fraction`, but only once the table has at least
- * `minSyncedForFraction` synced rows) or simply large in absolute terms
- * (`floor`), either of which trips the guard. `floor` exists because a
- * fraction alone doesn't protect a large table: 20% of a 10,000-row table is
- * still 2,000 rows gone. `fraction` exists because a floor alone doesn't
- * protect a large-but-not-huge table from a proportionally big loss well
- * under the floor. `minSyncedForFraction` exists because, without it, the
- * fraction check alone makes small tables permanently undeletable (see the
- * doc comment above) — a table with only a handful of rows relies on
- * `floor` only.
+ * locally (`fraction`, but only once the deletion itself is at least
+ * `minCountForFraction` rows) or simply large in absolute terms (`floor`),
+ * either of which trips the guard. `floor` exists because a fraction alone
+ * doesn't protect a large table: 20% of a 10,000-row table is still 2,000
+ * rows gone. `fraction` exists because a floor alone doesn't protect a
+ * large-but-not-huge table from a proportionally big loss well under the
+ * floor. `minCountForFraction` exists because, without it, the fraction
+ * check alone makes small tables permanently undeletable — deleting even one
+ * row already exceeds 25% of a 1-3 row table, and the denominator never
+ * changes, so nothing ever clears. Gating on the deletion COUNT rather than
+ * the table size (round-2's approach) is what makes this a strict
+ * improvement rather than a trade-off: below the count minimum the fraction
+ * simply never engages, so it can never block the single-row case this
+ * guard exists to allow through, while a 3+ row deletion is still caught
+ * regardless of how small the table is.
  */
 export function applyBlastRadiusGuard(
   deletionIds: string[],
@@ -133,13 +149,12 @@ export function applyBlastRadiusGuard(
 ): BlastRadiusResult {
   const fraction = options.fraction ?? DEFAULT_BLAST_RADIUS_FRACTION;
   const floor = options.floor ?? DEFAULT_BLAST_RADIUS_FLOOR;
-  const minSyncedForFraction = options.minSyncedForFraction ?? DEFAULT_MIN_SYNCED_FOR_FRACTION;
+  const minCountForFraction = options.minCountForFraction ?? DEFAULT_MIN_COUNT_FOR_FRACTION;
   const count = deletionIds.length;
   if (count === 0) return { ids: [], guarded: false, attemptedCount: 0 };
 
   const exceedsFloor = count > floor;
-  const exceedsFraction =
-    syncedRowCount >= minSyncedForFraction && count > fraction * syncedRowCount;
+  const exceedsFraction = count >= minCountForFraction && count > fraction * syncedRowCount;
   if (exceedsFloor || exceedsFraction) {
     return { ids: [], guarded: true, attemptedCount: count };
   }

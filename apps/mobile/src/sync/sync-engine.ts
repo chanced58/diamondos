@@ -174,10 +174,13 @@ type IdSetResult = { ok: true; ids: Set<string> } | { ok: false };
 // round trip when a table happens to end exactly on a page boundary.
 const ID_FETCH_PAGE_SIZE = 1000;
 // Defensive circuit breaker: stop paginating (and report failure) rather
-// than loop indefinitely if a table somehow never returns an empty page. At
-// ID_FETCH_PAGE_SIZE=1000 this allows at least 1,000,000 rows per table per
-// cycle — far beyond anything this app's tables should reach — before
-// tripping.
+// than loop indefinitely if a table somehow never returns an empty page.
+// With empty-page termination, MAX_ID_FETCH_PAGES full pages plus one
+// terminating empty page is the real budget, so at
+// ID_FETCH_PAGE_SIZE=1000 this allows 999,000 rows per table per cycle
+// (999 full pages, then the 1000th call — page index 999 — must come back
+// empty or the breaker trips) — far beyond anything this app's tables
+// should reach — before tripping.
 const MAX_ID_FETCH_PAGES = 1000;
 
 /**
