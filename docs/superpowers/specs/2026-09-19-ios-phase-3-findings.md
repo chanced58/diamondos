@@ -409,7 +409,7 @@ the bottom of a 24-game list.
 ---
 
 ### M3. Practice card shows the raw route pattern as its title, and misidentifies coaches
-**Route:** `(tabs)/practices/[practiceId]/card`  **Severity:** M  **Status:** open
+**Route:** `(tabs)/practices/[practiceId]/card`, `.../attendance`  **Severity:** M  **Status:** fixed (W6, commit `2102dd3`)
 **Repro:** open a practice card as a head coach.
 
 **Observed:** the navigation title reads **`practices/[practiceId]/card`** — the literal Expo Router
@@ -426,9 +426,29 @@ something false about a coach's team membership.
 
 **Defect bar:** misleads.
 
-**Fix (for Task 10):** hoist `<Stack.Screen>` above the conditionals, and rewrite the copy for the
-coach case ("This is a player's practice card — open the practice plan instead"). Check
-`attendance.tsx:149` for the same title-inside-a-branch pattern while in there.
+**The sibling screen had it too.** `attendance.tsx:149` has the identical
+`<Stack.Screen>`-inside-the-success-branch bug, so its loading and not-a-coach branches also showed
+the raw route pattern. Both were fixed.
+
+**Reachability was the opposite of what it looked like.** `practices/index.tsx:115-121` already
+routes by role — coaches to attendance, players to the card — so a coach never lands here *through
+the app*. But `notifications.ts:95` routes `pre_practice` to the card **unconditionally**, and
+`pre_practice` is genuinely dispatched by `practice-notifications-dispatch`. So the only way a coach
+reaches this screen is the one path that actually fires in production. That makes the coach branch
+the main case, not an edge case — and, per the correction under M6, this is the live notification
+path, not M6's.
+
+**Fixed in W6 (`2102dd3`).** `<Stack.Screen>` is hoisted so the title applies on every branch in
+both files. The `!activeTeam?.playerId` gate is unchanged — it is correct, since this screen builds
+a *player's* rotation and a coach has none — but the branch now splits on `activeTeam.isCoach`: a
+coach sees "This is the player's practice card. As a coach, open attendance instead." with an
+**Open attendance** control that `router.replace`s to the attendance route for the same practice
+(`replace`, not `push`, so the back stack does not accumulate a screen they were never meant to
+see). Anyone else with no `playerId` still sees the original copy, which is accurate for them.
+
+**`notifications.ts` was deliberately left alone.** Role-routing at notification-tap time would be
+a race — `useRole()` resolves asynchronously and may not have loaded when the tap is handled.
+Handling it on the destination screen works regardless of when role resolves.
 
 ---
 
@@ -570,7 +590,7 @@ commit, except where noted.
 | ~~**W3**~~ | ~~Unique play-feed header keys~~ **DONE** `e2a617b` | H1 | misleads | `PlayFeed.tsx` |
 | ~~**W4**~~ | ~~Propagate server-side deletions~~ **DONE** `4ed8bff` | H3 | misleads | `sync-engine.ts`, `sync/reconcile-deletions.ts` |
 | ~~**W5**~~ | ~~Derive team names from the game record~~ **DONE** `c8374d4` | M6 | misleads | `features/scoring/game-identity.ts` |
-| **W6** | Practice card: hoist title, fix coach copy | M3 | misleads | `practices/[practiceId]/card.tsx` |
+| ~~**W6**~~ | ~~Practice card title + coach copy~~ **DONE** `2102dd3` | M3 | misleads | `practices/[practiceId]/{card,attendance}.tsx` |
 | **W7** | Sign-in: 44pt escape hatch + scroll container | M1, M5 | blocks | `(auth)/sign-in.tsx` |
 | **W8** | Games list newest-first | M2 | blocks | `games/index.tsx` |
 | **W9** | Empty-state for an empty channel | M4 | misleads | `messages/[channelId].tsx` |
