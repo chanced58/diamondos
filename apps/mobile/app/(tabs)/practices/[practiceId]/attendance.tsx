@@ -128,19 +128,25 @@ export default function AttendanceScreen() {
 
   if (roleLoading || loading) {
     return (
-      <View className="flex-1 items-center justify-center bg-gray-50">
-        <ActivityIndicator />
-      </View>
+      <>
+        <Stack.Screen options={{ title: 'Attendance' }} />
+        <View className="flex-1 items-center justify-center bg-gray-50">
+          <ActivityIndicator />
+        </View>
+      </>
     );
   }
 
   if (!activeTeam?.isCoach) {
     return (
-      <View className="flex-1 items-center justify-center bg-gray-50 p-4">
-        <Text className="text-gray-600 text-center">
-          Only coaches can take attendance.
-        </Text>
-      </View>
+      <>
+        <Stack.Screen options={{ title: 'Attendance' }} />
+        <View className="flex-1 items-center justify-center bg-gray-50 p-4">
+          <Text className="text-gray-600 text-center">
+            Only coaches can take attendance.
+          </Text>
+        </View>
+      </>
     );
   }
 
