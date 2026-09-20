@@ -468,8 +468,8 @@ action, not mine. Confirm by signing out with accessibility text enabled and che
 
 ---
 
-### M6. Entering the scoring screen by deep link or push notification loses the team names
-**Route:** `(tabs)/games/[gameId]/score`  **Severity:** M  **Status:** open
+### M6. Entering the scoring screen by deep link loses the team names
+**Route:** `(tabs)/games/[gameId]/score`  **Severity:** M  **Status:** fixed (W5, commit `c8374d4`)
 **Repro:**
 1. Open the scoring screen via a deep link carrying only `gameId`
    (`baseballcoaches:///games/<id>/score`) — or tap a `kind: 'game'` push notification.
@@ -499,11 +499,14 @@ Note the screen already solves this correctly one line down for the team id —
 and falls back to the param. The names never got the same treatment, even though `game` carries
 them.
 
-**Reachability is a shipped path, not a hypothetical.**
-[`notifications.ts:103-108`](../../../apps/mobile/src/lib/notifications.ts) routes game
-notifications with `params: { gameId: data.gameId }` and nothing else, so **tapping a game push
-notification always lands on a scoreboard labelled "Home – Opponent"**. The same handler sends
-pre-practice notifications straight to the practice card, which is the M3 screen.
+**Reachability — corrected.** I first wrote that every game push notification lands on a
+"Home – Opponent" scoreboard. That over-claimed. Checking server-side, the only `kind` any edge
+function sends is `pre_practice`, and `pitch-count-calculator` sends no `kind` at all, so the
+`kind: 'game'` branch at [`notifications.ts:103-108`](../../../apps/mobile/src/lib/notifications.ts)
+is **unreachable today** — the handler exists, nothing triggers it. M6 is reachable through plain
+deep links (`baseballcoaches:///games/<id>/score`), which is how it was reproduced. The *live*
+notification reachability belongs to **M3** instead: `pre_practice` really is sent, and it routes
+straight to the practice card.
 
 **Scores are unaffected** — re-checked on device: the deep-linked scoreboard reads 0 – 3, identical
 to the in-app-navigated view. Only the two names degrade.
@@ -515,9 +518,21 @@ event payload, so no wrong record is produced. Scores and all game state remain 
 **Defect bar:** misleads — with three games in progress, the header is a coach's main confirmation
 that they are scoring the right one.
 
-**Fix (for Task 10):** mirror line 92 — derive both names from the loaded `game` record with the
-route param as fallback. Then add `teamName` / `opponentName` to the notification params as a
-belt-and-braces measure.
+**Fixed in W5 (`c8374d4`).** The derivation moved out of the 3,430-line screen into
+`apps/mobile/src/features/scoring/game-identity.ts` (pure) plus `use-game-identity.ts` (the hook),
+so the resolution rules are unit-testable without rendering the screen. `opponentName` now resolves
+`game.opponentName` → param → `TBD`, treating the empty string as absent because `mapGame` coerces a
+NULL server opponent to `''`. `teamName` resolves from `activeTeam.teamName` **only when
+`activeTeam.teamId === teamId`** — there is no local `teams` table, and the device can hold another
+team's in-progress game via the unscoped `public_view_in_progress_games` policy, so an unconditional
+`activeTeam.teamName` would label that game confidently wrong rather than merely generic. `isHome`
+and the home/away label swap are unchanged, verified line-by-line against the pre-extraction code.
+
+`notifications.ts` was deliberately left alone: forwarding params on a branch nothing triggers would
+be dead code.
+
+**Verified in the simulator** through the entry path that produced the bug — the same deep link now
+renders "vs Timberlake", "Huskies 0 – 3 Timberlake" and "No Timberlake order set".
 
 ---
 
@@ -554,7 +569,7 @@ commit, except where noted.
 | ~~**W2**~~ | ~~Schedule + Practices error state + offline games~~ **DONE** `441ca2f` | H4 | misleads | `schedule.tsx`, `practices/index.tsx`, `features/schedule/schedule-data.ts` |
 | ~~**W3**~~ | ~~Unique play-feed header keys~~ **DONE** `e2a617b` | H1 | misleads | `PlayFeed.tsx` |
 | ~~**W4**~~ | ~~Propagate server-side deletions~~ **DONE** `4ed8bff` | H3 | misleads | `sync-engine.ts`, `sync/reconcile-deletions.ts` |
-| **W5** | Derive team names from the game record, not route params | M6 | misleads | `score.tsx` → extract `use-game-identity` |
+| ~~**W5**~~ | ~~Derive team names from the game record~~ **DONE** `c8374d4` | M6 | misleads | `features/scoring/game-identity.ts` |
 | **W6** | Practice card: hoist title, fix coach copy | M3 | misleads | `practices/[practiceId]/card.tsx` |
 | **W7** | Sign-in: 44pt escape hatch + scroll container | M1, M5 | blocks | `(auth)/sign-in.tsx` |
 | **W8** | Games list newest-first | M2 | blocks | `games/index.tsx` |
