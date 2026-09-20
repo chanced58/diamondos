@@ -69,12 +69,25 @@ export function reconcileIfFetchSucceeded(
  * fetch: skip it this cycle rather than risk applying a wrong one. This is
  * independent of, and in addition to, the syncedAt guard in
  * `computeDeletions` above.
+ *
+ * Round-2 review, N2: the original spec (fraction OR floor, with no minimum)
+ * made this a permanent no-op on small tables — H3's own motivating symptom
+ * (one stuck game on a device early in a season, syncedRowCount as low as
+ * 1-3) could never clear, because deleting even a single row already exceeds
+ * 25% of a table that small, and the denominator never changes. The fraction
+ * check now only engages once a table has at least `minSyncedForFraction`
+ * synced rows — below that, only the absolute `floor` still protects it,
+ * which is intentional: a near-total wipe of a 1-7 row table is exactly the
+ * common case (a lone stale game, a short roster) this feature exists to fix,
+ * not the pathological one it exists to guard against.
  */
 export interface BlastRadiusOptions {
   /** Deletion ratio (of locally-synced rows) above which the table is guarded. */
   fraction?: number;
   /** Absolute deletion count above which the table is guarded regardless of ratio. */
   floor?: number;
+  /** Synced-row count below which the fraction check does not apply at all. */
+  minSyncedForFraction?: number;
 }
 
 export interface BlastRadiusResult {
@@ -93,15 +106,25 @@ export interface BlastRadiusResult {
 
 const DEFAULT_BLAST_RADIUS_FRACTION = 0.25;
 const DEFAULT_BLAST_RADIUS_FLOOR = 100;
+// Chosen fix for round-2 N2: "only apply the fraction when syncedRowCount >=
+// 8" (the finding's second suggested option). At 8 rows, 25% is 2 — the
+// fraction can only trip on a deletion of 3+ out of 8, which is a real
+// multi-row event rather than the routine single-row case this guard was
+// blocking. Below 8, only `floor` (100) protects the table.
+const DEFAULT_MIN_SYNCED_FOR_FRACTION = 8;
 
 /**
  * Suppresses a deletion list that is disproportionate to what's known
- * locally (`fraction`) or simply large in absolute terms (`floor`), either
- * of which trips the guard. `floor` exists because a fraction alone doesn't
- * protect a large table: 20% of a 10,000-row table is still 2,000 rows
- * gone. `fraction` exists because a floor alone doesn't protect a small
- * table: losing 3 of a team's 4 games is not "over the floor" but is still
- * a near-total wipe.
+ * locally (`fraction`, but only once the table has at least
+ * `minSyncedForFraction` synced rows) or simply large in absolute terms
+ * (`floor`), either of which trips the guard. `floor` exists because a
+ * fraction alone doesn't protect a large table: 20% of a 10,000-row table is
+ * still 2,000 rows gone. `fraction` exists because a floor alone doesn't
+ * protect a large-but-not-huge table from a proportionally big loss well
+ * under the floor. `minSyncedForFraction` exists because, without it, the
+ * fraction check alone makes small tables permanently undeletable (see the
+ * doc comment above) — a table with only a handful of rows relies on
+ * `floor` only.
  */
 export function applyBlastRadiusGuard(
   deletionIds: string[],
@@ -110,11 +133,13 @@ export function applyBlastRadiusGuard(
 ): BlastRadiusResult {
   const fraction = options.fraction ?? DEFAULT_BLAST_RADIUS_FRACTION;
   const floor = options.floor ?? DEFAULT_BLAST_RADIUS_FLOOR;
+  const minSyncedForFraction = options.minSyncedForFraction ?? DEFAULT_MIN_SYNCED_FOR_FRACTION;
   const count = deletionIds.length;
   if (count === 0) return { ids: [], guarded: false, attemptedCount: 0 };
 
   const exceedsFloor = count > floor;
-  const exceedsFraction = count > fraction * syncedRowCount;
+  const exceedsFraction =
+    syncedRowCount >= minSyncedForFraction && count > fraction * syncedRowCount;
   if (exceedsFloor || exceedsFraction) {
     return { ids: [], guarded: true, attemptedCount: count };
   }

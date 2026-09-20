@@ -122,11 +122,39 @@ describe('applyBlastRadiusGuard', () => {
     });
   });
 
-  it('guards when the deletion ratio exceeds the fraction, even under the floor', () => {
-    // 3 of 4 synced rows (75%) — a near-total wipe of a small table, well
-    // under the absolute floor but still catastrophic proportionally.
+  it('round-2 N2: applies a near-total wipe of a small table — the fraction no longer binds tiny tables', () => {
+    // 3 of 4 synced rows (75%). Round-1 guarded this; round-2 review (N2)
+    // found that binding the fraction below minSyncedForFraction made the
+    // guard a PERMANENT no-op on any device holding a handful of rows —
+    // exactly H3's own motivating case (one stale game on an early-season
+    // device). Below the minimum, only the absolute floor protects a table,
+    // so this now applies.
     const ids = ['a', 'b', 'c'];
-    expect(applyBlastRadiusGuard(ids, 4)).toEqual({ ids: [], guarded: true, attemptedCount: 3 });
+    expect(applyBlastRadiusGuard(ids, 4)).toEqual({ ids, guarded: false, attemptedCount: 3 });
+  });
+
+  it('round-2 N2: deleting 1 of 3 synced rows now applies (was a permanent no-op)', () => {
+    // The exact scenario the finding traced: syncedRowCount=3, deleting 1 —
+    // under the old spec 1 > 0.25*3 (0.75) tripped the guard every cycle
+    // forever, since the denominator never changes. This is the primary
+    // regression test for N2.
+    expect(applyBlastRadiusGuard(['a'], 3)).toEqual({ ids: ['a'], guarded: false, attemptedCount: 1 });
+  });
+
+  it('round-2 N2: a genuine mass deletion (20 of 24) is still suppressed once minSyncedForFraction is reached', () => {
+    // 24 >= minSyncedForFraction (8), so the fraction check is active:
+    // 20 > 0.25 * 24 (6) trips it. This is the counterpart to the previous
+    // test — the fix must not simply disable the fraction guard everywhere.
+    const ids = Array.from({ length: 20 }, (_, i) => `id-${i}`);
+    expect(applyBlastRadiusGuard(ids, 24)).toEqual({ ids: [], guarded: true, attemptedCount: 20 });
+  });
+
+  it('round-2 N2: pins the minSyncedForFraction boundary itself, both sides', () => {
+    // Below the threshold (7 rows): fraction never engages, even at a ratio
+    // that would trip it above the threshold.
+    expect(applyBlastRadiusGuard(['a', 'b', 'c'], 7).guarded).toBe(false); // 3 of 7 = ~43%
+    // At the threshold (8 rows): fraction is active and this ratio trips it.
+    expect(applyBlastRadiusGuard(['a', 'b', 'c'], 8).guarded).toBe(true); // 3 of 8 = 37.5% > 25%
   });
 
   it('preserves the attempted count when guarded, for diagnostic logging', () => {
@@ -194,12 +222,16 @@ describe('computeTableDeletion', () => {
   });
 
   it('reports blast-radius-guarded and deletes nothing when the diff is disproportionate', () => {
-    const localRows = Array.from({ length: 4 }, (_, i) => ({ id: `id-${i}`, syncedAt: 100 }));
-    // Server set is empty -> all 4 synced rows would be deleted (100%).
+    // 150 synced rows, all deleted: well past minSyncedForFraction (8) so the
+    // fraction check is live (100% far exceeds 25%), and also past the
+    // absolute floor (100) independently — guarded either way. (A 4-row
+    // table at 100% is deliberately NOT guarded post-round-2 — see the
+    // dedicated N2 tests in the applyBlastRadiusGuard suite above.)
+    const localRows = Array.from({ length: 150 }, (_, i) => ({ id: `id-${i}`, syncedAt: 100 }));
     expect(computeTableDeletion(new Set(), localRows)).toEqual({
       ids: [],
       status: 'blast-radius-guarded',
-      attemptedCount: 4,
+      attemptedCount: 150,
     });
   });
 

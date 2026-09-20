@@ -6,7 +6,11 @@ import type { Channel } from '../db/models/Channel';
 import type { Game } from '../db/models/Game';
 import type { GameEvent } from '../db/models/GameEvent';
 import type { GameLineup } from '../db/models/GameLineup';
-import { leaguePlayerRecordId, type LeaguePlayer } from '../db/models/LeaguePlayer';
+import {
+  leaguePlayerRecordId,
+  parseLeaguePlayerRecordId,
+  type LeaguePlayer,
+} from '../db/models/LeaguePlayer';
 import type { Message } from '../db/models/Message';
 import type { OpponentGameLineup } from '../db/models/OpponentGameLineup';
 import type { OpponentPlayer } from '../db/models/OpponentPlayer';
@@ -139,22 +143,51 @@ type IdSetResult = { ok: true; ids: Set<string> } | { ok: false };
 
 // Supabase/PostgREST caps a response at a fixed row count (this project's own
 // `apps/web/.../card/actions.ts:210` documents the default 1000-row cap) —
-// undocumented per-request, so a query with no `.range()` silently truncates
-// once a table crosses it. A truncated page is `{ data: [...], error: null }`,
-// a *successful* response, so it defeated both existing safety layers
-// (round-1 review, Critical 1): every row outside the arbitrary, unordered
-// slice that came back looked exactly like a real deletion. Every id fetch
-// below is paginated with `.order()` + `.range()` so it always reads the
-// whole table, not just however much fits in one page.
+// undocumented per-request, so a naive query silently truncates once a table
+// crosses it. A truncated page is `{ data: [...], error: null }`, a
+// *successful* response, so it defeated both existing safety layers
+// (round-1 review, Critical 1).
+//
+// Round-1's fix (`.order('id') + .range(offset, ...)`, stopping at a short
+// page) was itself unsafe (round-2 review, N1): offset pagination re-reads a
+// live table. A row deleted server-side between page N and page N+1 shifts
+// every following row left by one, so the row that lands exactly on the new
+// page boundary is skipped entirely — never returned on either page — and
+// reads as a false deletion. On `games` this is the original catastrophic
+// path verbatim, since the game_events cascade below carries no syncedAt
+// guard.
+//
+// Every id fetch below uses KEYSET pagination instead: `.gt(<key>, cursor)`
+// rather than an offset. A row deleted after the cursor cannot cause an
+// already-scanned or not-yet-scanned surviving row to be skipped — the next
+// page is simply "everything with a key greater than the last one we saw,"
+// which is unaffected by row shifts before or after that point.
+//
+// N3: termination is on an EMPTY page, not a short one. `ID_FETCH_PAGE_SIZE`
+// happens to equal the documented default cap; terminating on "fewer than
+// pageSize" would silently reintroduce Critical 1 the moment a deployment's
+// `db-max-rows` is set below that value (a capped-short page would look like
+// the true last page). Terminating only on empty is correct regardless of
+// the relationship between pageSize and whatever cap is actually in effect:
+// if the server caps a page below pageSize, the next call's cursor simply
+// continues from the last row actually received, at the cost of one extra
+// round trip when a table happens to end exactly on a page boundary.
 const ID_FETCH_PAGE_SIZE = 1000;
 // Defensive circuit breaker: stop paginating (and report failure) rather
-// than loop indefinitely if a table somehow never returns a short page. At
-// ID_FETCH_PAGE_SIZE=1000 this allows 1,000,000 rows per table per cycle —
-// far beyond anything this app's tables should reach — before tripping.
+// than loop indefinitely if a table somehow never returns an empty page. At
+// ID_FETCH_PAGE_SIZE=1000 this allows at least 1,000,000 rows per table per
+// cycle — far beyond anything this app's tables should reach — before
+// tripping.
 const MAX_ID_FETCH_PAGES = 1000;
 
+/**
+ * `cursor` is the identify-function's value from the last row of the
+ * previous page, or `null` for the first page. Each table's factory decides
+ * how to turn that into a `.gt(...)` (or, for a composite key, an `.or(...)`
+ * keyset) filter.
+ */
 type PageFetcher = (
-  offset: number,
+  cursor: string | null,
   limit: number,
 ) => PromiseLike<{
   data: Array<Record<string, unknown>> | null;
@@ -162,41 +195,49 @@ type PageFetcher = (
 }>;
 
 /**
- * Fetches every row of a paginated id query, looping on `.range()` until a
- * short page (fewer than a full page) signals the end. Folds every failure
- * mode — a thrown exception, a Postgrest `error`, or a response with no
- * `data` array at all (round-1 review, Important 3: `{ data: null, error:
- * null }` must not be read as "confirmed empty table") — into `{ ok: false
- * }`, never into an empty-but-successful result. Exported for direct testing
- * (round-1 review, Important 5): this is the exact I/O boundary where the
- * second safety rule (a failed fetch is "no information", not "no rows")
- * has to hold, and it needs nothing beyond a fake `PromiseLike` to test.
+ * Fetches every row of a keyset-paginated id query, looping until an empty
+ * page signals the end (see the design notes above `ID_FETCH_PAGE_SIZE` for
+ * why keyset + empty-termination, not offset + short-page termination).
+ * Folds every failure mode — a thrown exception, a Postgrest `error`, or a
+ * response with no `data` array at all (round-1 review, Important 3: `{
+ * data: null, error: null }` must not be read as "confirmed empty table") —
+ * into `{ ok: false }`, never into an empty-but-successful result. Exported
+ * for direct testing (round-1 review, Important 5): this is the exact I/O
+ * boundary where the second safety rule (a failed fetch is "no information,"
+ * not "no rows") has to hold, and it needs nothing beyond a fake
+ * `PromiseLike` to test.
+ *
+ * `getCursor` extracts the next cursor from the last row of a page — for
+ * every table here this is the same function used to build the final id
+ * `Set` (see `fetchIdSet`), since the row's identity IS the keyset sort key.
  */
 export async function fetchAllRows(
   label: string,
   pageFactory: PageFetcher,
+  getCursor: (row: Record<string, unknown>) => string,
   pageSize: number = ID_FETCH_PAGE_SIZE,
 ): Promise<{ ok: true; rows: Array<Record<string, unknown>> } | { ok: false }> {
   const rows: Array<Record<string, unknown>> = [];
+  let cursor: string | null = null;
   try {
     for (let page = 0; page < MAX_ID_FETCH_PAGES; page++) {
-      const offset = page * pageSize;
-      const { data, error } = await pageFactory(offset, pageSize);
+      const { data, error } = await pageFactory(cursor, pageSize);
       if (error) {
         console.warn(
-          `sync: ${label} id fetch failed at offset ${offset}; reconciling nothing for ${label} this cycle`,
+          `sync: ${label} id fetch failed after cursor ${cursor ?? '(start)'}; reconciling nothing for ${label} this cycle`,
           error,
         );
         return { ok: false };
       }
       if (!Array.isArray(data)) {
         console.warn(
-          `sync: ${label} id fetch returned no data array at offset ${offset}; reconciling nothing for ${label} this cycle`,
+          `sync: ${label} id fetch returned no data array after cursor ${cursor ?? '(start)'}; reconciling nothing for ${label} this cycle`,
         );
         return { ok: false };
       }
+      if (data.length === 0) return { ok: true, rows };
       rows.push(...data);
-      if (data.length < pageSize) return { ok: true, rows };
+      cursor = getCursor(data[data.length - 1]);
     }
     console.warn(
       `sync: ${label} id fetch exceeded ${MAX_ID_FETCH_PAGES} pages without finishing; reconciling nothing for ${label} this cycle`,
@@ -212,17 +253,20 @@ export async function fetchAllRows(
 }
 
 /**
- * Fetches an id-only column for one table (paginated — see `fetchAllRows`)
- * and reduces it to the id `Set` shape `reconcileIfFetchSucceeded` expects.
+ * Fetches an id-only column for one table (keyset-paginated — see
+ * `fetchAllRows`) and reduces it to the id `Set` shape `computeTableDeletion`
+ * expects. `identify` does double duty as both the id extractor and the
+ * pagination cursor, since for every table here the row's identity is
+ * exactly its keyset sort key.
  */
 async function fetchIdSet(
   label: string,
   pageFactory: PageFetcher,
-  pickId: (row: Record<string, unknown>) => string,
+  identify: (row: Record<string, unknown>) => string,
 ): Promise<IdSetResult> {
-  const result = await fetchAllRows(label, pageFactory);
+  const result = await fetchAllRows(label, pageFactory, identify);
   if (!result.ok) return { ok: false };
-  return { ok: true, ids: new Set(result.rows.map(pickId)) };
+  return { ok: true, ids: new Set(result.rows.map(identify)) };
 }
 
 /**
@@ -237,28 +281,37 @@ async function fetchIdSet(
  * team, so every cross-team identity mirrored locally for the guest picker
  * would look "deleted" and get wiped on every reconciliation pass. The id
  * fetch must union both sources, exactly mirroring that merge — each one
- * paginated independently, and both must succeed or the whole table is
- * treated as failed (a half-correct union is not a correct scope).
+ * keyset-paginated independently, and both must succeed or the whole table
+ * is treated as failed (a half-correct union is not a correct scope).
  */
 async function fetchPlayerIdSet(
   supabase: ReturnType<typeof getSupabaseClient>,
 ): Promise<IdSetResult> {
+  const identify = (row: Record<string, unknown>) => row.id as string;
   const [ownTeam, leagueIdentities] = await Promise.all([
-    fetchAllRows('players (own team)', (offset, limit) =>
-      supabase
-        .from('players')
-        .select('id')
-        .order('id')
-        .range(offset, offset + limit - 1),
+    fetchAllRows(
+      'players (own team)',
+      (cursor, limit) => {
+        let query = supabase.from('players').select('id').order('id').limit(limit);
+        if (cursor !== null) query = query.gt('id', cursor);
+        return query;
+      },
+      identify,
     ),
     // p_since defaults to '-infinity' server-side; passed explicitly here so
     // this fetch is unambiguously "every identity", independent of what the
     // main pull's incremental p_since happens to be this cycle.
-    fetchAllRows('players (league identities)', (offset, limit) =>
-      supabase
-        .rpc('league_player_identities', { p_since: EPOCH_ISO })
-        .order('id')
-        .range(offset, offset + limit - 1),
+    fetchAllRows(
+      'players (league identities)',
+      (cursor, limit) => {
+        let query = supabase
+          .rpc('league_player_identities', { p_since: EPOCH_ISO })
+          .order('id')
+          .limit(limit);
+        if (cursor !== null) query = query.gt('id', cursor);
+        return query;
+      },
+      identify,
     ),
   ]);
   if (!ownTeam.ok || !leagueIdentities.ok) return { ok: false };
@@ -327,41 +380,64 @@ async function reconcileServerDeletions(
     await Promise.all([
       fetchIdSet(
         'games',
-        (offset, limit) =>
-          supabase.from('games').select('id').order('id').range(offset, offset + limit - 1),
+        (cursor, limit) => {
+          let query = supabase.from('games').select('id').order('id').limit(limit);
+          if (cursor !== null) query = query.gt('id', cursor);
+          return query;
+        },
         (r) => r.id as string,
       ),
       fetchPlayerIdSet(supabase),
       fetchIdSet(
         'channels',
-        (offset, limit) =>
-          supabase
+        (cursor, limit) => {
+          let query = supabase
             .from('channels')
             .select('id, channel_members!inner(user_id, can_post)')
             .eq('channel_members.user_id', userId)
             .order('id')
-            .range(offset, offset + limit - 1),
+            .limit(limit);
+          if (cursor !== null) query = query.gt('id', cursor);
+          return query;
+        },
         (r) => r.id as string,
       ),
+      // league_players has no `id` column (composite PK: league_id,
+      // player_id), so its keyset cursor is the same flattened
+      // `${leagueId}:${playerId}` string already used as the local record
+      // id — parsed back apart here to build a composite `.or()` keyset
+      // filter: `league_id > cursorLeagueId OR (league_id = cursorLeagueId
+      // AND player_id > cursorPlayerId)`, the standard tuple-comparison
+      // pattern for a two-column keyset, expressed as PostgREST's `.or()`
+      // syntax since there is no direct tuple-`.gt()`. Both columns are
+      // UUIDs, which never contain `:`, `,`, or `.`, so the interpolated
+      // values can't break the filter grammar.
       fetchIdSet(
         'league_players',
-        (offset, limit) =>
-          supabase
+        (cursor, limit) => {
+          let query = supabase
             .from('league_players')
             .select('league_id, player_id')
             .order('league_id')
             .order('player_id')
-            .range(offset, offset + limit - 1),
+            .limit(limit);
+          if (cursor !== null) {
+            const { leagueId, playerRemoteId } = parseLeaguePlayerRecordId(cursor);
+            query = query.or(
+              `league_id.gt.${leagueId},and(league_id.eq.${leagueId},player_id.gt.${playerRemoteId})`,
+            );
+          }
+          return query;
+        },
         (r) => leaguePlayerRecordId(r.league_id as string, r.player_id as string),
       ),
       fetchIdSet(
         'opponent_players',
-        (offset, limit) =>
-          supabase
-            .from('opponent_players')
-            .select('id')
-            .order('id')
-            .range(offset, offset + limit - 1),
+        (cursor, limit) => {
+          let query = supabase.from('opponent_players').select('id').order('id').limit(limit);
+          if (cursor !== null) query = query.gt('id', cursor);
+          return query;
+        },
         (r) => r.id as string,
       ),
     ]);
