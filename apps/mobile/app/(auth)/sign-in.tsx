@@ -1,11 +1,18 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { getSupabaseClient } from '../../src/lib/supabase';
+
+const GOOGLE_REDIRECT_URI = 'baseballcoaches://auth-callback';
+const GOOGLE_NOT_INVITED_MESSAGE =
+  "That Google account isn't associated with an invite. Contact your coach, or sign in with the email your invite was sent to.";
 
 export default function SignInScreen() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,6 +38,45 @@ export default function SignInScreen() {
     setLoading(false);
   }
 
+  async function handleGoogleSignIn() {
+    setGoogleLoading(true);
+    setError(null);
+
+    const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: GOOGLE_REDIRECT_URI, skipBrowserRedirect: true },
+    });
+
+    if (oauthError || !data?.url) {
+      setError(oauthError?.message ?? 'Unable to start Google sign-in.');
+      setGoogleLoading(false);
+      return;
+    }
+
+    const result = await WebBrowser.openAuthSessionAsync(data.url, GOOGLE_REDIRECT_URI);
+
+    if (result.type !== 'success') {
+      // User cancelled or dismissed the browser — not an error.
+      setGoogleLoading(false);
+      return;
+    }
+
+    const { queryParams } = Linking.parse(result.url);
+
+    if (queryParams?.error) {
+      setError(GOOGLE_NOT_INVITED_MESSAGE);
+      setGoogleLoading(false);
+      return;
+    }
+
+    const code = queryParams?.code;
+    if (typeof code === 'string') {
+      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+      if (exchangeError) setError(exchangeError.message);
+    }
+    setGoogleLoading(false);
+  }
+
   if (sent) {
     return (
       <View className="flex-1 bg-brand-900 items-center justify-center px-6">
@@ -54,6 +100,20 @@ export default function SignInScreen() {
       <View className="flex-1 items-center justify-center px-6">
         <Text className="text-white text-3xl font-bold mb-2">Baseball Coaches</Text>
         <Text className="text-blue-300 mb-10">Sign in to your account</Text>
+
+        <TouchableOpacity
+          className={`w-full bg-white rounded-xl py-3.5 items-center mb-4 ${
+            googleLoading ? 'opacity-50' : ''
+          }`}
+          onPress={handleGoogleSignIn}
+          disabled={googleLoading}
+        >
+          <Text className="text-brand-700 font-bold text-base">
+            {googleLoading ? 'Opening Google…' : 'Continue with Google'}
+          </Text>
+        </TouchableOpacity>
+
+        <Text className="text-blue-400 text-xs mb-6">or sign in with email</Text>
 
         <View className="w-full mb-4">
           <Text className="text-blue-200 text-sm font-medium mb-1">Email address</Text>
