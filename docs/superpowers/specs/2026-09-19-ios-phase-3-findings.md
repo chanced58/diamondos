@@ -109,7 +109,7 @@ guest-only players still 0, Huskies 25 games → 24. Census is now clean for pha
 -->
 
 ### H1. Play feed emits duplicate React keys when a half-inning recurs after a correction
-**Route:** `(tabs)/games/[gameId]/score`  **Severity:** H  **Status:** open
+**Route:** `(tabs)/games/[gameId]/score`  **Severity:** H  **Status:** fixed (W3, commit `e2a617b`)
 **Repro:**
 1. Score into a later half-inning, then void the events back and resume the earlier half-inning.
    (Observed on two independent real games, including "vs Timberlake" on the Huskies.)
@@ -163,9 +163,22 @@ of the header within the item list, or the `eventId` of the first row beneath it
 "fix" the ordering: it is correct, and sorting rows by half-inning to force contiguity would
 falsify the record by hiding that the coach reverted and resumed.
 
-A regression test must construct rows whose half-inning recurs non-contiguously (Top 1, Top 2,
-Bot 1, Top 1) and assert that all generated keys are distinct and that four headers are emitted,
-not three — the existing `PlayFeed.test.tsx` has no such case.
+**Fixed in W3 (`e2a617b`).** Headers are now keyed by the `eventId` of the first row beneath them,
+namespaced as `header-${eventId}` so a header cannot collide with that same event's row key. The
+ordering was left untouched, as required — `use-play-feed.ts` is byte-for-byte unchanged.
+
+The first attempt (`3f56b10`) keyed headers by ordinal index and was sent back in review: because
+the feed is newest-first and prepends, an ordinal shifts every downstream header's key on every
+recorded play. Harmless in itself (headers are stateless text) but strictly worse than keying on a
+stable id, so it went through one fix round.
+
+Five tests now cover grouping: the non-contiguous production shape asserts **both** four headers
+and nine distinct keys — either assertion alone would pass against buggy code — plus a
+header/first-row no-collision test that fails if the prefix is dropped.
+
+**Verified in the simulator:** the `.$header-1-true` warning no longer appears on the game that
+reproduced it, and the feed renders Top 1 → Top 2 → Bot 1 with voided entries struck through,
+matching the event log exactly.
 
 ---
 
@@ -492,6 +505,9 @@ notifications with `params: { gameId: data.gameId }` and nothing else, so **tapp
 notification always lands on a scoreboard labelled "Home – Opponent"**. The same handler sends
 pre-practice notifications straight to the practice card, which is the M3 screen.
 
+**Scores are unaffected** — re-checked on device: the deep-linked scoreboard reads 0 – 3, identical
+to the in-app-navigated view. Only the two names degrade.
+
 **Why it is Medium, not Severe:** `teamName` / `opponentName` are display-only — screen title,
 scoreboard labels, batting-order headings, the "Add X batter" modal. They are never written into an
 event payload, so no wrong record is produced. Scores and all game state remain correct.
@@ -536,7 +552,7 @@ commit, except where noted.
 |---|------|----------|-----|----------------------|
 | ~~**W1**~~ | ~~Reject duplicate defensive positions~~ **DONE** `690df56` | H5 | wrong record | `packages/shared/src/rules/fielding-positions.ts` |
 | ~~**W2**~~ | ~~Schedule + Practices error state + offline games~~ **DONE** `441ca2f` | H4 | misleads | `schedule.tsx`, `practices/index.tsx`, `features/schedule/schedule-data.ts` |
-| **W3** | Unique play-feed header keys | H1 | misleads | `PlayFeed.tsx` |
+| ~~**W3**~~ | ~~Unique play-feed header keys~~ **DONE** `e2a617b` | H1 | misleads | `PlayFeed.tsx` |
 | **W4** | Propagate server-side deletions to the device | H3 | misleads | `sync-engine.ts` |
 | **W5** | Derive team names from the game record, not route params | M6 | misleads | `score.tsx` → extract `use-game-identity` |
 | **W6** | Practice card: hoist title, fix coach copy | M3 | misleads | `practices/[practiceId]/card.tsx` |
