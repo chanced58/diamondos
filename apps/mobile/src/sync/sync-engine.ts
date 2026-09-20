@@ -2,15 +2,25 @@ import { Q } from '@nozbe/watermelondb';
 import { synchronize, type SyncPullArgs, type SyncPushArgs } from '@nozbe/watermelondb/sync';
 import { computeLineupDeletes, PlayerPosition } from '@baseball/shared';
 import { database } from '../db';
+import type { Channel } from '../db/models/Channel';
+import type { Game } from '../db/models/Game';
 import type { GameEvent } from '../db/models/GameEvent';
 import type { GameLineup } from '../db/models/GameLineup';
+import { leaguePlayerRecordId, type LeaguePlayer } from '../db/models/LeaguePlayer';
+import type { Message } from '../db/models/Message';
 import type { OpponentGameLineup } from '../db/models/OpponentGameLineup';
+import type { OpponentPlayer } from '../db/models/OpponentPlayer';
+import type { Player } from '../db/models/Player';
 import { getSupabaseClient } from '../lib/supabase';
 import {
   applyServerLineupSnapshot,
   getDirtyLineupState,
   pushLineupsForGame,
 } from './lineup-sync';
+import {
+  computeCascadeDeletions,
+  reconcileIfFetchSucceeded,
+} from './reconcile-deletions';
 
 
 /**
@@ -74,6 +84,238 @@ async function quarantineEventIds(ids: string[]): Promise<void> {
     console.warn('sync: could not persist quarantined event ids', err);
   }
 }
+
+// ─── deletion reconciliation (H3) ───────────────────────────────────────────
+//
+// The pull below is a set of incremental queries (`gte(updated_at, since)`
+// and friends) for games, players, channels, messages, league_players, and
+// opponent_players. An incremental delta cannot tell "unchanged since last
+// sync, so absent from this window" apart from "deleted, or moved out of
+// this device's RLS scope" — there is no id set to diff against. The only
+// fix is a separate id-only fetch of the whole table (in the same scope the
+// main pull uses) and diffing that against local ids, the same technique the
+// game_lineups / opponent_game_lineups diff above already uses on a mutable
+// table. See `./reconcile-deletions.ts` for the pure diff and its safety
+// rule: a row is only ever deleted if it was already synced at least once.
+//
+// game_events and messages are excluded from the id fetch — both grow
+// without bound over a season, and fetching every id every cycle would be
+// the "obvious fix" the design brief explicitly rejects. Instead they are
+// cascaded from their parent's deletion (games → game_events, channels →
+// messages), mirroring the server's own FK cascade. This is exact for
+// game_events (append-only, only ever removed via the game cascade) and for
+// messages EXCEPT for the case of a single message deleted server-side while
+// its channel survives — there is no such feature today, so that case is out
+// of scope; covering it would require the unbounded id fetch this design
+// exists to avoid.
+//
+// Deletions are rare and a stale row lingering locally for a few minutes is
+// harmless, so this does not run every sync cycle — only every
+// DELETION_RECONCILE_INTERVAL_MS, tracked the same in-memory way this file
+// already tracks `lifecycleReconciledGames` / `pendingSnapshotGames`. Losing
+// the timestamp on an app restart just means the next cycle reconciles
+// again immediately, which is the safe direction to fail in.
+//
+// The clock compared against this gate is the SERVER clock (`pullTimestamp`,
+// already captured per cycle for the `since` checkpoint below) rather than
+// the device clock, for the same reason the checkpoint itself uses it: a
+// fast device clock must not make the gate open more or less often than
+// intended.
+const DELETION_RECONCILE_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+let lastDeletionReconcileAt = 0;
+
+/** Exported for tests; the cadence gate itself is pure. */
+export function shouldReconcileDeletions(
+  now: number,
+  lastRunAt: number,
+  intervalMs: number = DELETION_RECONCILE_INTERVAL_MS,
+): boolean {
+  return now - lastRunAt >= intervalMs;
+}
+
+const EPOCH_ISO = new Date(0).toISOString();
+
+type IdSetResult = { ok: true; ids: Set<string> } | { ok: false };
+
+/**
+ * Fetches an id-only column for one table and turns any failure (thrown
+ * error or a Postgrest `error` field) into `{ ok: false }` rather than
+ * letting it propagate. The second safety rule from the brief lives here:
+ * a failed fetch must read as "no information" to the caller, never as "the
+ * server has zero rows" — `{ ok: false }` and `{ ok: true, ids: new Set() }`
+ * are deliberately distinct shapes so they can't be confused downstream.
+ */
+async function fetchIdSet(
+  label: string,
+  query: PromiseLike<{
+    data: Array<Record<string, unknown>> | null;
+    error: { message: string } | null;
+  }>,
+  pickId: (row: Record<string, unknown>) => string,
+): Promise<IdSetResult> {
+  try {
+    const { data, error } = await query;
+    if (error) {
+      console.warn(
+        `sync: ${label} id fetch failed; reconciling nothing for ${label} this cycle`,
+        error,
+      );
+      return { ok: false };
+    }
+    return { ok: true, ids: new Set((data ?? []).map(pickId)) };
+  } catch (err) {
+    console.warn(
+      `sync: ${label} id fetch threw; reconciling nothing for ${label} this cycle`,
+      err,
+    );
+    return { ok: false };
+  }
+}
+
+/**
+ * `players` is special: the local table mirrors two different server
+ * sources merged together (see the `playerRowsById` merge in pullChanges) —
+ * the coach's own roster via a bare `players` SELECT (RLS-scoped to their
+ * team), and every OTHER team's/league's guest & free-agent identities via
+ * the PII-free `league_player_identities()` RPC (there is no broad `players`
+ * SELECT policy for those — see supabase/migrations/20260702000001).
+ *
+ * A bare `select('id')` on `players` alone would only return the coach's own
+ * team, so every cross-team identity mirrored locally for the guest picker
+ * would look "deleted" and get wiped on every reconciliation pass. The id
+ * fetch must union both sources, exactly mirroring that merge.
+ */
+async function fetchPlayerIdSet(
+  supabase: ReturnType<typeof getSupabaseClient>,
+): Promise<IdSetResult> {
+  try {
+    const [ownTeam, leagueIdentities] = await Promise.all([
+      supabase.from('players').select('id'),
+      supabase.rpc('league_player_identities', { p_since: EPOCH_ISO }),
+    ]);
+    if (ownTeam.error) throw ownTeam.error;
+    if (leagueIdentities.error) throw leagueIdentities.error;
+    const ids = new Set<string>();
+    for (const row of (ownTeam.data ?? []) as Array<{ id: string }>) ids.add(row.id);
+    for (const row of (leagueIdentities.data ?? []) as Array<{ id: string }>) ids.add(row.id);
+    return { ok: true, ids };
+  } catch (err) {
+    console.warn('sync: players id fetch failed; reconciling nothing for players this cycle', err);
+    return { ok: false };
+  }
+}
+
+interface DeletionResult {
+  games: string[];
+  players: string[];
+  channels: string[];
+  leaguePlayers: string[];
+  opponentPlayers: string[];
+  gameEvents: string[];
+  messages: string[];
+}
+
+/**
+ * Fetches id sets for the five small, bounded parent tables (in parallel,
+ * each isolated so one table's failure doesn't block the others), diffs
+ * each against its local rows, then derives the two unbounded child tables
+ * by cascading from the games/channels actually deleted this cycle.
+ */
+async function reconcileServerDeletions(
+  supabase: ReturnType<typeof getSupabaseClient>,
+  userId: string,
+): Promise<DeletionResult> {
+  const [gamesIdSet, playersIdSet, channelsIdSet, leaguePlayersIdSet, oppPlayersIdSet] =
+    await Promise.all([
+      fetchIdSet('games', supabase.from('games').select('id'), (r) => r.id as string),
+      fetchPlayerIdSet(supabase),
+      fetchIdSet(
+        'channels',
+        supabase
+          .from('channels')
+          .select('id, channel_members!inner(user_id, can_post)')
+          .eq('channel_members.user_id', userId),
+        (r) => r.id as string,
+      ),
+      fetchIdSet(
+        'league_players',
+        supabase.from('league_players').select('league_id, player_id'),
+        (r) => leaguePlayerRecordId(r.league_id as string, r.player_id as string),
+      ),
+      fetchIdSet(
+        'opponent_players',
+        supabase.from('opponent_players').select('id'),
+        (r) => r.id as string,
+      ),
+    ]);
+
+  const [gameRows, playerRows, channelRows, leaguePlayerRows, oppPlayerRows] = await Promise.all([
+    database.get<Game>('games').query().fetch(),
+    database.get<Player>('players').query().fetch(),
+    database.get<Channel>('channels').query().fetch(),
+    database.get<LeaguePlayer>('league_players').query().fetch(),
+    database.get<OpponentPlayer>('opponent_players').query().fetch(),
+  ]);
+
+  const games = reconcileIfFetchSucceeded(
+    gamesIdSet.ok ? gamesIdSet.ids : null,
+    gameRows.map((r) => ({ id: r.id, syncedAt: r.syncedAt })),
+  );
+  const players = reconcileIfFetchSucceeded(
+    playersIdSet.ok ? playersIdSet.ids : null,
+    playerRows.map((r) => ({ id: r.id, syncedAt: r.syncedAt })),
+  );
+  const channels = reconcileIfFetchSucceeded(
+    channelsIdSet.ok ? channelsIdSet.ids : null,
+    channelRows.map((r) => ({ id: r.id, syncedAt: r.syncedAt })),
+  );
+  const leaguePlayers = reconcileIfFetchSucceeded(
+    leaguePlayersIdSet.ok ? leaguePlayersIdSet.ids : null,
+    leaguePlayerRows.map((r) => ({ id: r.id, syncedAt: r.syncedAt })),
+  );
+  const opponentPlayers = reconcileIfFetchSucceeded(
+    oppPlayersIdSet.ok ? oppPlayersIdSet.ids : null,
+    oppPlayerRows.map((r) => ({ id: r.id, syncedAt: r.syncedAt })),
+  );
+
+  // Cascades run off THIS cycle's confirmed parent deletions only — if the
+  // games fetch failed, `games` is [] and no event is ever cascaded from it
+  // this cycle, which is the correct, conservative outcome.
+  const [eventRows, messageRows] = await Promise.all([
+    games.length > 0
+      ? database
+          .get<GameEvent>('game_events')
+          .query(Q.where('game_remote_id', Q.oneOf(games)))
+          .fetch()
+      : Promise.resolve([] as GameEvent[]),
+    channels.length > 0
+      ? database
+          .get<Message>('messages')
+          .query(Q.where('channel_remote_id', Q.oneOf(channels)))
+          .fetch()
+      : Promise.resolve([] as Message[]),
+  ]);
+  const gameEvents = computeCascadeDeletions(
+    games,
+    eventRows.map((r) => ({ id: r.id, parentId: r.gameRemoteId })),
+  );
+  const messages = computeCascadeDeletions(
+    channels,
+    messageRows.map((r) => ({ id: r.id, parentId: r.channelRemoteId })),
+  );
+
+  return { games, players, channels, leaguePlayers, opponentPlayers, gameEvents, messages };
+}
+
+const EMPTY_DELETIONS: DeletionResult = {
+  games: [],
+  players: [],
+  channels: [],
+  leaguePlayers: [],
+  opponentPlayers: [],
+  gameEvents: [],
+  messages: [],
+};
 
 /**
  * After a sequence-number collision (pg error 23505 on the game_events
@@ -339,6 +581,17 @@ export async function syncWithSupabase(): Promise<void> {
         );
       }
 
+      // Server-side deletions (H3) — gated behind a cadence, not run every
+      // cycle (see DELETION_RECONCILE_INTERVAL_MS above). `pullTimestamp` is
+      // the server clock already captured above; using it here (rather than
+      // the device clock) keeps the cadence consistent with the rest of this
+      // pull even if the device clock is off.
+      let deletions = EMPTY_DELETIONS;
+      if (shouldReconcileDeletions(pullTimestamp, lastDeletionReconcileAt)) {
+        lastDeletionReconcileAt = pullTimestamp;
+        deletions = await reconcileServerDeletions(supabase, userId);
+      }
+
       // Every pulled row goes in `updated`, never `created`.
       //
       // The pull is a timestamp window (`gte(updated_at, since)`) — it cannot
@@ -356,27 +609,27 @@ export async function syncWithSupabase(): Promise<void> {
           games: {
             created: [],
             updated: (gamesResult.data ?? []).map(mapGame),
-            deleted: [],
+            deleted: deletions.games,
           },
           game_events: {
             created: [],
             updated: (eventsResult.data ?? []).map(mapGameEvent),
-            deleted: [],
+            deleted: deletions.gameEvents,
           },
           players: {
             created: [],
             updated: [...playerRowsById.values()].map(mapPlayer),
-            deleted: [],
+            deleted: deletions.players,
           },
           channels: {
             created: [],
             updated: (channelsResult.data ?? []).map(mapChannel),
-            deleted: [],
+            deleted: deletions.channels,
           },
           messages: {
             created: [],
             updated: (messagesResult.data ?? []).map(mapMessage),
-            deleted: [],
+            deleted: deletions.messages,
           },
           game_lineups: {
             created: [],
@@ -386,12 +639,12 @@ export async function syncWithSupabase(): Promise<void> {
           league_players: {
             created: [],
             updated: (leaguePlayersResult.data ?? []).map(mapLeaguePlayer),
-            deleted: [],
+            deleted: deletions.leaguePlayers,
           },
           opponent_players: {
             created: [],
             updated: (oppPlayersResult.data ?? []).map(mapOpponentPlayer),
-            deleted: [],
+            deleted: deletions.opponentPlayers,
           },
           opponent_game_lineups: {
             created: [],
