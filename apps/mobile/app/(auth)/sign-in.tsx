@@ -8,6 +8,7 @@ import { getSupabaseClient } from '../../src/lib/supabase';
 const GOOGLE_REDIRECT_URI = 'baseballcoaches://auth-callback';
 const GOOGLE_NOT_INVITED_MESSAGE =
   "That Google account isn't associated with an invite. Contact your coach, or sign in with the email your invite was sent to.";
+const GOOGLE_SIGNIN_FAILED_MESSAGE = 'Google sign-in failed. Please try again.';
 
 export default function SignInScreen() {
   const [email, setEmail] = useState('');
@@ -64,7 +65,7 @@ export default function SignInScreen() {
     const { queryParams } = Linking.parse(result.url);
 
     if (queryParams?.error) {
-      setError(GOOGLE_NOT_INVITED_MESSAGE);
+      setError(queryParams.error === 'server_error' ? GOOGLE_NOT_INVITED_MESSAGE : GOOGLE_SIGNIN_FAILED_MESSAGE);
       setGoogleLoading(false);
       return;
     }
@@ -73,6 +74,8 @@ export default function SignInScreen() {
     if (typeof code === 'string') {
       const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
       if (exchangeError) setError(exchangeError.message);
+    } else {
+      setError('Something went wrong signing in with Google. Please try again.');
     }
     setGoogleLoading(false);
   }
