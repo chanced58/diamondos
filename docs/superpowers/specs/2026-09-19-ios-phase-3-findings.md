@@ -227,7 +227,7 @@ want "Unnamed runner" treated as a defect anyway, say so and it goes back in as 
 ---
 
 ### M1. "Use a different email" has a ~20pt tap target, roughly half the 44pt minimum
-**Route:** `(auth)/sign-in`  **Severity:** M  **Status:** open
+**Route:** `(auth)/sign-in`  **Severity:** M  **Status:** fixed (W7, commit `f9f288c`)
 **Repro:**
 1. Launch signed out, enter an email, tap "Send magic link".
 2. On the "Check your email" screen, try to tap "Use a different email".
@@ -243,6 +243,12 @@ want "Unnamed runner" treated as a defect anyway, say so and it goes back in as 
 mistypes their address is stranded on a screen whose sole exit is the hardest thing on it to hit.
 
 **Note:** measured from source rather than the accessibility tree, per harness note 1.
+
+**Fixed in W7 (`f9f288c`).** The control gained `py-3` plus a hitSlop of 8. Verified arithmetic:
+`spacing.3` is 0.75rem and `fontSize.sm`'s line-height is 1.25rem at a 16px rem base (this
+project's `global.css` sets no root override), so 12 + 20 + 12 = **exactly 44px**, with the hitSlop
+taking the effective touch region to roughly 60pt. It stays visually subordinate — only the target
+grew.
 
 ---
 
@@ -467,7 +473,7 @@ still loading.
 ---
 
 ### M5. The sign-in screen has no scroll container, so large text can strand it
-**Route:** `(auth)/sign-in`  **Severity:** M  **Status:** open — **structural finding, not yet reproduced**
+**Route:** `(auth)/sign-in`  **Severity:** M  **Status:** fixed (W7, commit `f9f288c`) — fixed structurally; never reproduced live
 **Observed:** `sign-in.tsx` is the only top-level screen with no scroll container. Its root is
 `KeyboardAvoidingView > View className="flex-1 items-center justify-center"`; every other surveyed
 screen (dashboard, roster, messages, games, schedule, practices) wraps content in a `ScrollView` or
@@ -591,7 +597,7 @@ commit, except where noted.
 | ~~**W4**~~ | ~~Propagate server-side deletions~~ **DONE** `4ed8bff` | H3 | misleads | `sync-engine.ts`, `sync/reconcile-deletions.ts` |
 | ~~**W5**~~ | ~~Derive team names from the game record~~ **DONE** `c8374d4` | M6 | misleads | `features/scoring/game-identity.ts` |
 | ~~**W6**~~ | ~~Practice card title + coach copy~~ **DONE** `2102dd3` | M3 | misleads | `practices/[practiceId]/{card,attendance}.tsx` |
-| **W7** | Sign-in: 44pt escape hatch + scroll container | M1, M5 | blocks | `(auth)/sign-in.tsx` |
+| ~~**W7**~~ | ~~Sign-in escape hatch + scroll container~~ **DONE** `f9f288c` | M1, M5 | blocks | `(auth)/sign-in.tsx` |
 | **W8** | Games list newest-first | M2 | blocks | `games/index.tsx` |
 | **W9** | Empty-state for an empty channel | M4 | misleads | `messages/[channelId].tsx` |
 | **W10** | Name the direct-message counterparty | M7 | blocks | `messages/index.tsx` |
