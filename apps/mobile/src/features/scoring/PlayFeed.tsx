@@ -16,14 +16,19 @@ function halfLabel(inning: number, isTopOfInning: boolean): string {
  * Groups newest-first rows into their half-inning headers for the FlatList.
  * `rows` is already newest-first, so a header is inserted whenever the
  * (inning, isTopOfInning) pair changes from the previous row.
+ *
+ * Headers are keyed by their ordinal position in the emitted items list to
+ * ensure uniqueness even when the same half-inning appears non-contiguously
+ * (e.g., a coach reverts and resumes a half-inning). Row items key on
+ * `eventId` to maintain identity across updates.
  */
-function toFeedItems(rows: PlayFeedRow[]): FeedItem[] {
+export function toFeedItems(rows: PlayFeedRow[]): FeedItem[] {
   const items: FeedItem[] = [];
   let lastHalf: string | null = null;
   for (const row of rows) {
     const half = `${row.inning}-${row.isTopOfInning}`;
     if (half !== lastHalf) {
-      items.push({ kind: 'header', key: `header-${half}`, label: halfLabel(row.inning, row.isTopOfInning) });
+      items.push({ kind: 'header', key: `header-${items.length}`, label: halfLabel(row.inning, row.isTopOfInning) });
       lastHalf = half;
     }
     items.push({ kind: 'row', key: row.eventId, row });
