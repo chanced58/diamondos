@@ -50,7 +50,7 @@ const mockMessage = {
 jest.mock('expo-router', () => ({
   __esModule: true,
   Stack: {
-    Screen: ({ options }: { options: unknown }) => null,
+    Screen: ({ options: _options }: { options: unknown }) => null,
   },
   useLocalSearchParams: () => ({ channelId: 'channel-123' }),
 }));
@@ -80,7 +80,7 @@ jest.mock('../../../../src/db', () => ({
       create: jest.fn().mockResolvedValue(undefined),
       query: jest.fn(() => ({
         observe: jest.fn(() => ({
-          pipe: jest.fn((fn) => ({
+          pipe: jest.fn((_fn) => ({
             subscribe: jest.fn(),
           })),
         })),
@@ -93,10 +93,14 @@ jest.mock('../../../../src/db', () => ({
 let mockMessages: Message[] = [];
 let mockChannelData: Channel | undefined = mockChannel;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 jest.mock('@nozbe/with-observables', () => {
-  return (observableKeys: string[], observableProducer: (props: any) => any) =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (_observableKeys: string[], _observableProducer: (props: any) => any) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (Component: React.ComponentType<any>) => {
-      return (props: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (_props: any) => {
         // Provide mock observables so EnhancedMessageThread passes props to MessageThread
         // Use the current mockMessages and mockChannelData values
         const observables = {
@@ -108,7 +112,8 @@ jest.mock('@nozbe/with-observables', () => {
     };
 });
 
-// Import after all mocks are set up
+// Require must come after jest.mock() calls to ensure mocks are set up before the module loads
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 const ChannelScreen = require('../[channelId]').default;
 
 describe('MessageThread — ListEmptyComponent (W9)', () => {
