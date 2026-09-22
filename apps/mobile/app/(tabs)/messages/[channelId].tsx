@@ -1,6 +1,6 @@
 import { View, Text, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { randomUUID } from 'expo-crypto';
 import { map } from 'rxjs';
 import { Q } from '@nozbe/watermelondb';
@@ -22,13 +22,8 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
-  const [dataReceived, setDataReceived] = useState(false);
 
   const canPost = channel?.canPost ?? false;
-
-  useEffect(() => {
-    setDataReceived(true);
-  }, []);
 
   async function handleSend() {
     const body = text.trim();
@@ -92,11 +87,9 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
         inverted
         contentContainerStyle={{ padding: 16 }}
         ListEmptyComponent={
-          dataReceived ? (
-            <View style={{ transform: [{ scaleY: -1 }] }}>
-              <Text className="py-10 text-center text-gray-500">No messages yet.</Text>
-            </View>
-          ) : null
+          <View style={{ transform: [{ scaleY: -1 }] }}>
+            <Text className="py-10 text-center text-gray-500">No messages yet.</Text>
+          </View>
         }
         renderItem={({ item: message }) => {
           const isOwn = message.senderId === user?.id;
