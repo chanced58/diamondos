@@ -182,13 +182,24 @@ matching the event log exactly.
 
 ---
 
-### QUESTION-1. A single game holds two `game_start` events
-Not a finding yet — an open question raised by H1's evidence. The Timberlake log has `game_start`
-at seq 1 **and** seq 48. Determine during Task 7 how `deriveGameState` treats a second
-`game_start`: whether it re-initialises (discarding earlier state), is ignored, or produces
-undefined behaviour. If a restart-after-void is a supported coach action, the state machine's
-handling of it needs a test; if it is not supported, the UI should not permit it. Resolve before
-the phase closes rather than leaving it latent.
+### QUESTION-1. A single game holds two `game_start` events — **RESOLVED**
+Raised by H1's evidence: the Timberlake log has `game_start` at seq 1 **and** seq 48.
+
+**Resolved by reading the state machine.** `deriveGameState`'s `GAME_START` case
+(`packages/shared/src/utils/game-state.ts:96-117`) assigns exactly three things — `currentPitcherId`
+from the payload, the two leadoff-batter caches, and `currentBatterId` from whichever leadoff
+matches the half-inning. It touches **nothing** accumulated: not score, not outs, not inning, not
+baserunners (verified — no reference to any of them appears in the case block).
+
+So a second `game_start` is **well-defined and benign**. It re-points the current pitcher and batter
+to the lineup's leadoff and leaves the replayed game state intact. For the observed case — a coach
+voiding fifteen events back to the first inning and resuming — that is the desired behaviour, not a
+corruption.
+
+The one latent sharp edge: a second `game_start` recorded *without* a preceding revert would
+silently reset the current batter and pitcher mid-plate-appearance. That requires the UI to offer
+"start game" on an already-started game, which it does not. No fix needed; recorded so the next
+person to see two `game_start` rows does not re-investigate.
 
 ---
 
