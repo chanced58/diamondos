@@ -467,7 +467,7 @@ Handling it on the destination screen works regardless of when role resolves.
 ---
 
 ### M4. An empty message channel renders a blank void with no empty state
-**Route:** `(tabs)/messages/[channelId]`  **Severity:** M  **Status:** open
+**Route:** `(tabs)/messages/[channelId]`  **Severity:** M  **Status:** fixed (W9, commit `d08546e`)
 **Repro:** open a channel that has no messages (observed on "General").
 
 **Observed:** the entire message area is blank. No "No messages yet", no illustration, nothing —
@@ -477,6 +477,17 @@ only the composer at the bottom.
 
 **Defect bar:** misleads — an empty channel is indistinguishable from one that failed to load or is
 still loading.
+
+**Fixed in W9 (`d08546e`), after one fix round.** The `FlatList` now has a `ListEmptyComponent`
+reading "No messages yet.", matching the app's existing "No … yet." convention and the
+`py-10 text-center text-gray-500` styling used by the other empty states.
+
+Two non-obvious details. The list is `inverted`, so the empty component needed a `scaleY: -1`
+counter-transform or the text would have rendered upside-down — invisible to any unit test. And the
+first attempt added a "flash guard" (`useState` + `useEffect` gating the empty state) that was
+removed in review: `withObservables` returns `null` while `isFetching`, so the component never
+mounts before data has emitted and no flash was reachable. The guard protected nothing and
+introduced a one-frame blank on genuinely empty channels — the same defect W9 exists to fix.
 
 ---
 
@@ -607,7 +618,7 @@ commit, except where noted.
 | ~~**W6**~~ | ~~Practice card title + coach copy~~ **DONE** `2102dd3` | M3 | misleads | `practices/[practiceId]/{card,attendance}.tsx` |
 | ~~**W7**~~ | ~~Sign-in escape hatch + scroll container~~ **DONE** `f9f288c` | M1, M5 | blocks | `(auth)/sign-in.tsx` |
 | ~~**W8**~~ | ~~Games list: live games first~~ **DONE** `371ac1c` | M2 | blocks | `games/index.tsx`, `features/games/sort-games-for-list.ts` |
-| **W9** | Empty-state for an empty channel | M4 | misleads | `messages/[channelId].tsx` |
+| ~~**W9**~~ | ~~Empty-state for an empty channel~~ **DONE** `d08546e` | M4 | misleads | `messages/[channelId].tsx` |
 | **W10** | Name the direct-message counterparty | M7 | blocks | `messages/index.tsx` |
 
 ### Ordering rationale
