@@ -67,7 +67,7 @@ Conditions that shape how findings were gathered. Recorded so the evidence's lim
 | Game id | opponent_name | Created | Torn down |
 |---------|---------------|---------|-----------|
 | `842151c0-…eab3b82` | SHAKEDOWN phase2 - do not use | 2026-09-10 (phase 2) | 2026-09-19, owner-authorised |
-| `f47a3db4-5820-4587-a6c7-6fea2edebdcd` | SHAKEDOWN 2026-09-21 regression | 2026-09-21, phase 3 Task 11 | _pending_ |
+| `f47a3db4-5820-4587-a6c7-6fea2edebdcd` | SHAKEDOWN 2026-09-21 regression | 2026-09-21, phase 3 Task 11 | 2026-09-21, verified clean |
 
 **Pre-flight census was NOT clean.** Task 2 found phase 2 residue live in prod:
 `842151c0-b385-4ae6-adc5-d297aeab3b82` — "SHAKEDOWN phase2 - do not use", `in_progress`,
@@ -693,6 +693,29 @@ scoreboard.
 - **Q1 is not in this list.** Whether `deriveGameState` handles a second `game_start` is an open
   question for Task 7's Pass B, not a fix.
 
+
+## Task 11 — regression shakedown (composed verification)
+
+Run after all ten fixes landed, to prove they compose rather than only work in isolation. Created
+`f47a3db4-5820-4587-a6c7-6fea2edebdcd` ("SHAKEDOWN 2026-09-21 regression") via SQL, because mobile
+has no game-creation UI — the disclosed limitation carried from phase 2.
+
+What the pass exercised, and what held:
+
+| Behaviour | Result |
+|---|---|
+| W4 reconciliation leaves a newly-created in-scope game alone | the game synced and was not deleted |
+| W1 valid alignment feeds the fielding UI | the hit-location diagram rendered all nine positions **including CF** |
+| Phase 2 H1 — wizard reads the real lineup | step 2 pre-populated slots 1–9 from `game_lineups` |
+| W5 deep-link identity | header and scoreboard read "Huskies 0 – 0 SHAKEDOWN 2026-09-21 regression", not "Home – Opponent" |
+| W3 play feed | rendered newest-first with no duplicate-key warning |
+| Phase 2 S1 — in-play ball is a pitch | pitch count went 2 P/1 S → **3 P/2 S**, and `seq 4` is `pitch_thrown` with `outcome: in_play`, **ordered before** the `hit` at `seq 5` |
+| HitLocation payload | the `hit` row carries spray coordinates and `fieldingSequence [7]` — left field, matching the tap |
+| Phase 2 S2 — finalize | End Game drove `status = completed` with `completed_at` set |
+
+Teardown followed the runbook: both non-cascading edges checked (no paired game, no linked
+practice), deleted by primary key, then verified — **0 remaining `SHAKEDOWN%` games, 0 orphan
+events, 0 orphan lineups, 0 guest-only players, and the Huskies back to their pre-pass 24 games.**
 
 ## Portrait pass — result
 
