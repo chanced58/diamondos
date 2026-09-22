@@ -582,7 +582,7 @@ renders "vs Timberlake", "Huskies 0 – 3 Timberlake" and "No Timberlake order s
 ---
 
 ### M7. Direct-message channels show no counterparty
-**Route:** `(tabs)/messages/index`  **Severity:** M  **Status:** open
+**Route:** `(tabs)/messages/index`  **Severity:** M  **Status:** fixed (W10, commit `6dd9e47`)
 **Observed:** the team's direct channel renders as the literal string "Direct Message", with no
 participant name and no subtitle, while topic and announcement channels show a name and description.
 **Expected:** the other participant's name.
@@ -594,6 +594,25 @@ prod), and nothing resolves the counterparty from channel membership.
 **Defect bar:** blocks task — with one DM it is merely unhelpful; with two or more, every row reads
 "Direct Message" and the coach cannot tell the conversations apart or pick the right one. Logged now
 because the cause is structural rather than data-dependent.
+
+**Fixed in W10 (`6dd9e47`), and the route mattered.** There is no local membership data to look the
+counterparty up from: the pull filters `channel_members` to the current user and `mapChannel` keeps
+only `can_post`. Both obvious fixes were closed off — storing members locally needs a schema bump
+plus a migration (a bump without one wipes every device's unsynced offline events), and an online
+lookup would reintroduce precisely the online-only failure mode W2 removed from Schedule and
+Practices.
+
+The offline route uses `messages.sender_name`, which is already denormalised into WatermelonDB and
+commented "Denormalized for offline display". `resolveChannelLabel` returns an explicit channel name
+if present, else — for a direct channel — the `senderName` of the most recent message whose sender
+is not the current user, selected by comparing `createdAt` rather than trusting array order.
+
+It also fixes a quieter second bug: an unnamed *topic* channel previously rendered "Direct Message"
+as well. It now reads "Channel".
+
+**Known limitation, stated rather than hidden:** a DM with no messages, or one where only the
+current user has written, still reads "Direct Message" — there is no counterparty message to derive
+a name from offline. Documented in a comment at the top of `channel-label.ts`.
 
 
 ---
@@ -619,7 +638,7 @@ commit, except where noted.
 | ~~**W7**~~ | ~~Sign-in escape hatch + scroll container~~ **DONE** `f9f288c` | M1, M5 | blocks | `(auth)/sign-in.tsx` |
 | ~~**W8**~~ | ~~Games list: live games first~~ **DONE** `371ac1c` | M2 | blocks | `games/index.tsx`, `features/games/sort-games-for-list.ts` |
 | ~~**W9**~~ | ~~Empty-state for an empty channel~~ **DONE** `d08546e` | M4 | misleads | `messages/[channelId].tsx` |
-| **W10** | Name the direct-message counterparty | M7 | blocks | `messages/index.tsx` |
+| ~~**W10**~~ | ~~Name the direct-message counterparty~~ **DONE** `6dd9e47` | M7 | blocks | `messages/index.tsx`, `features/messaging/channel-label.ts` |
 
 ### Ordering rationale
 
