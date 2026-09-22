@@ -67,6 +67,7 @@ Conditions that shape how findings were gathered. Recorded so the evidence's lim
 | Game id | opponent_name | Created | Torn down |
 |---------|---------------|---------|-----------|
 | `842151c0-…eab3b82` | SHAKEDOWN phase2 - do not use | 2026-09-10 (phase 2) | 2026-09-19, owner-authorised |
+| `f47a3db4-5820-4587-a6c7-6fea2edebdcd` | SHAKEDOWN 2026-09-21 regression | 2026-09-21, phase 3 Task 11 | _pending_ |
 
 **Pre-flight census was NOT clean.** Task 2 found phase 2 residue live in prod:
 `842151c0-b385-4ae6-adc5-d297aeab3b82` — "SHAKEDOWN phase2 - do not use", `in_progress`,
