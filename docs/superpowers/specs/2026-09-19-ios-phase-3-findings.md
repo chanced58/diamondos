@@ -400,7 +400,7 @@ right outcome, but it is a behaviour change on existing bad data and the owner s
 ---
 
 ### M2. The games list is sorted oldest-first, so live games are last
-**Route:** `(tabs)/games/index`  **Severity:** M  **Status:** open
+**Route:** `(tabs)/games/index`  **Severity:** M  **Status:** fixed (W8, commit `371ac1c`)
 **Repro:** open Games on a team with a full season of history.
 
 **Observed:** the list opens on March games from six months ago; the three in-progress games sit at
@@ -411,6 +411,14 @@ the bottom of a 24-game list.
 `Q.sortBy('scheduled_at', Q.asc)`.
 
 **Defect bar:** blocks task — on game day, reaching the live game is the screen's whole purpose.
+
+**Fixed in W8 (`371ac1c`) — but not by the obvious one-liner.** Flipping `Q.asc` to `Q.desc` only
+half-works: sorting purely by date surfaces the most recently *scheduled* game, which is not the
+game being played. On the current data one in-progress game would rise to the top while the other
+stayed buried among completed games. So the query flipped to descending *and* a stable partition
+(`sortGamesForList`) pins `in_progress` rows to the front, preserving date order within each group.
+No other status is special-cased — pinning `scheduled` too was considered and rejected, since a
+season of future fixtures would push the live game back down and recreate the bug.
 
 ---
 
@@ -598,7 +606,7 @@ commit, except where noted.
 | ~~**W5**~~ | ~~Derive team names from the game record~~ **DONE** `c8374d4` | M6 | misleads | `features/scoring/game-identity.ts` |
 | ~~**W6**~~ | ~~Practice card title + coach copy~~ **DONE** `2102dd3` | M3 | misleads | `practices/[practiceId]/{card,attendance}.tsx` |
 | ~~**W7**~~ | ~~Sign-in escape hatch + scroll container~~ **DONE** `f9f288c` | M1, M5 | blocks | `(auth)/sign-in.tsx` |
-| **W8** | Games list newest-first | M2 | blocks | `games/index.tsx` |
+| ~~**W8**~~ | ~~Games list: live games first~~ **DONE** `371ac1c` | M2 | blocks | `games/index.tsx`, `features/games/sort-games-for-list.ts` |
 | **W9** | Empty-state for an empty channel | M4 | misleads | `messages/[channelId].tsx` |
 | **W10** | Name the direct-message counterparty | M7 | blocks | `messages/index.tsx` |
 
