@@ -246,11 +246,13 @@ describe('computeTableDeletion', () => {
   });
 
   it('reports blast-radius-guarded and deletes nothing when the diff is disproportionate', () => {
-    // 150 synced rows, all deleted: well past minSyncedForFraction (8) so the
+    // 150 synced rows, all deleted: well past minCountForFraction (3) so the
     // fraction check is live (100% far exceeds 25%), and also past the
-    // absolute floor (100) independently — guarded either way. (A 4-row
-    // table at 100% is deliberately NOT guarded post-round-2 — see the
-    // dedicated N2 tests in the applyBlastRadiusGuard suite above.)
+    // absolute floor (100) independently — guarded either way. Under the
+    // shipped expression a much smaller table wiped at 100% is guarded too
+    // (e.g. a 4-row table: count 4 >= 3 and 4 > 0.25*4) — see the
+    // minCountForFraction boundary tests in the applyBlastRadiusGuard suite
+    // above (:164-171).
     const localRows = Array.from({ length: 150 }, (_, i) => ({ id: `id-${i}`, syncedAt: 100 }));
     expect(computeTableDeletion(new Set(), localRows)).toEqual({
       ids: [],
