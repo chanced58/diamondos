@@ -3,11 +3,13 @@ import { View, Text, FlatList, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Q } from '@nozbe/watermelondb';
 import withObservables from '@nozbe/with-observables';
+import { map } from 'rxjs';
 import { database } from '../../../src/db';
 import type { Game } from '../../../src/db/models/Game';
 import { formatDate, formatTime, type GameRsvpStatus } from '@baseball/shared';
 import { useRole } from '../../../src/providers/RoleProvider';
 import { useGameRsvps } from '../../../src/features/rsvp/useGameRsvps';
+import { sortGamesForList } from '../../../src/features/games/sort-games-for-list';
 
 interface GamesListProps {
   games: Game[];
@@ -202,8 +204,9 @@ function StatusBadge({ status }: { status: string }) {
 const GamesListEnhanced = withObservables([], () => ({
   games: database
     .get<Game>('games')
-    .query(Q.sortBy('scheduled_at', Q.asc))
-    .observe(),
+    .query(Q.sortBy('scheduled_at', Q.desc))
+    .observe()
+    .pipe(map(sortGamesForList)),
 }))((GamesListobs: { games: Game[] }) => <GamesList games={GamesListobs.games} />);
 
 export default function GamesScreen() {
