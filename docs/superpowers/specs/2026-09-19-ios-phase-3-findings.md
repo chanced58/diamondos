@@ -694,6 +694,20 @@ scoreboard.
   question for Task 7's Pass B, not a fix.
 
 
+## CodeRabbit review — still outstanding
+
+CLAUDE.md requires a CodeRabbit review after implementing a feature, and the design spec makes it
+exit criterion 6. It has **not** run on this branch.
+
+The CLI is not installed, and its only documented install path pipes a remote script to a shell,
+which was not run. I then assumed opening the PR would trigger CodeRabbit's GitHub app, because it
+had genuinely reviewed PR #207 ("Actionable comments posted: 13", with no human trigger comment).
+That assumption was wrong: on PR #209 CodeRabbit replied that the repository "does not receive
+automatic reviews because it has fewer than 10 stars," and offered a manual trigger instead.
+
+So this criterion is open, not met. It is being triggered manually. Recording it here rather than
+leaving the earlier, incorrect claim standing.
+
 ## Task 11 — regression shakedown (composed verification)
 
 Run after all ten fixes landed, to prove they compose rather than only work in isolation. Created
