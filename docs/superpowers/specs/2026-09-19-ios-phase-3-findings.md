@@ -517,9 +517,9 @@ input, button and footer can exceed the viewport with no way to reach the button
 email" branch is worse — it carries an extra input and the extra link.
 
 **Not yet reproduced** because confirming it requires signing out, and authenticating is the owner's
-action, not mine. Confirm by signing out with accessibility text enabled and checking the
-"Send magic link" button is still reachable with the keyboard up. If it is reachable, close as
-`not reproducible`.
+action, not mine. **This was never done** — see the fix note below. Anyone with a real device can
+still confirm it by signing out with accessibility text enabled and checking the "Send magic link"
+button stays reachable with the keyboard up.
 
 **Defect bar:** blocks task — if it reproduces, a low-vision coach cannot sign in at all.
 
@@ -689,8 +689,10 @@ path is unreachable today, so the deep link is the actual live path this fixes, 
   make "which position assignments are legal" a league rule. A null `starting_position` is
   legitimate (batting slot 10 in the observed game) and must stay allowed.
 - **W7 carries an unconfirmed half.** M1 is confirmed from source; M5 needs a sign-out with
-  accessibility text to reproduce. Reproduce M5 first; if it does not, fix M1 alone and close M5 as
-  not reproducible.
+  accessibility text to reproduce. **Outcome:** both were fixed. M1 was confirmed from source and
+  fixed; M5 was fixed structurally and **never reproduced live**, because reaching sign-in requires
+  a sign-out and this project's magic-link auth left no way back into the session. That remains an
+  open verification gap, not a closed finding.
 - **Q1 is not in this list.** Whether `deriveGameState` handles a second `game_start` is an open
   question for Task 7's Pass B, not a fix.
 

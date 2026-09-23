@@ -36,7 +36,15 @@ The instrument is different from phase 2. Phase 2 was two code audits plus one c
 
 - games carry an `opponent_name` beginning with `SHAKEDOWN`
 - the game id is recorded before any event is scored
-- teardown deletes the created game and its `game_events`, and nothing else
+- teardown deletes the created game, which cascades to `game_events` and the other 12 dependent
+  tables
+- **guest players created during the hot walk do not cascade.** `createLocalGuest` writes to
+  `players` and `league_players`, neither of which has a foreign key to `games`, so deleting the
+  game leaves them behind. Their ids are recorded at creation and deleted explicitly by that
+  recorded id list — never by a predicate, and never by diffing against a pre-sweep snapshot, which
+  would also catch guests somebody else created during the pass.
+- two edges are `ON DELETE SET NULL` rather than cascade — `games.paired_game_id` and
+  `practices.linked_game_id` — and are checked before the delete
 - **no row the pass did not create is modified or deleted**
 
 `game_events` is append-only by design, so corrections during the sweep are made by voiding and re-recording, never by mutation — the same discipline the app itself enforces.
@@ -153,7 +161,17 @@ Gates that must be green before the PR: `pnpm test`, `pnpm type-check`, `pnpm li
 ## Exit criteria
 
 1. All 13 routes swept in both orientations, ledger complete.
-2. Every ledger finding at `fixed` — or, for anything judged out of bounds after the fact, explicitly renegotiated with the owner rather than silently dropped.
+2. Every ledger finding at a terminal status. The terminal statuses are:
+   - **`fixed`** — changed, tested, and verified.
+   - **`not reproducible`** — the repro steps were followed on the target device and the symptom did
+     not occur. Requires recording what was observed instead; a finding may not be closed this way
+     merely because reproducing it was inconvenient or blocked.
+   - **`closed, not a defect`** — re-tested against the defect bar and it meets none of the three
+     tests. Requires the reasoning, not just the verdict.
+   - **out of bounds** — explicitly renegotiated with the owner rather than silently dropped.
+
+   A finding whose repro could not be attempted at all is **not** terminal: it stays open with the
+   blocker recorded.
 3. A clean full shakedown game: created, scored both ways, a play voided and re-recorded, ended, `games.status = completed` with `completed_at` set, and the line score matching what was tapped.
 4. All synthetic prod rows deleted; a query confirming zero remaining `SHAKEDOWN%` games.
 5. `pnpm test`, `pnpm type-check`, `pnpm lint` green.
