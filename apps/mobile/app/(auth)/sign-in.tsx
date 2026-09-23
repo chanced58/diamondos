@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
+} from 'react-native';
 import { router } from 'expo-router';
 import { getSupabaseClient } from '../../src/lib/supabase';
 
@@ -13,6 +21,22 @@ import { getSupabaseClient } from '../../src/lib/supabase';
  */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OTP_PATTERN = /^\d+$/;
+
+/**
+ * Shared by both branches of this screen so the form stays vertically
+ * centred on devices where it fits (the current, screenshotted look) while
+ * still allowing the ScrollView to grow and scroll past the viewport when
+ * accessibility text sizing or a landscape keyboard pushes it past the fold
+ * (finding M5). `flexGrow: 1` is what lets the content container be *at
+ * least* the visible height (so centring has room to work) without
+ * preventing it from growing taller than that when content overflows.
+ */
+const CENTERED_SCROLL_CONTENT = {
+  flexGrow: 1,
+  alignItems: 'center' as const,
+  justifyContent: 'center' as const,
+  paddingHorizontal: 24,
+};
 
 export default function SignInScreen() {
   const [email, setEmail] = useState('');
@@ -84,7 +108,12 @@ export default function SignInScreen() {
         className="flex-1 bg-brand-900"
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View className="flex-1 items-center justify-center px-6">
+        <ScrollView
+          testID="sign-in-scroll-sent"
+          className="flex-1"
+          contentContainerStyle={CENTERED_SCROLL_CONTENT}
+          keyboardShouldPersistTaps="handled"
+        >
           <Text className="text-5xl mb-4">📧</Text>
           <Text className="text-white text-2xl font-bold mb-2">Check your email</Text>
           <Text className="text-blue-300 text-center mb-8">
@@ -111,6 +140,7 @@ export default function SignInScreen() {
           )}
 
           <TouchableOpacity
+            testID="verify-code-button"
             className={`w-full bg-white rounded-xl py-3.5 items-center mb-4 ${
               verifying || !code.trim() ? 'opacity-50' : ''
             }`}
@@ -123,6 +153,9 @@ export default function SignInScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
+            testID="use-different-email-button"
+            className="py-3"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             onPress={() => {
               setSent(false);
               setCode('');
@@ -131,7 +164,7 @@ export default function SignInScreen() {
           >
             <Text className="text-blue-300 underline text-sm">Use a different email</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     );
   }
@@ -141,7 +174,12 @@ export default function SignInScreen() {
       className="flex-1 bg-brand-900"
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View className="flex-1 items-center justify-center px-6">
+      <ScrollView
+        testID="sign-in-scroll-form"
+        className="flex-1"
+        contentContainerStyle={CENTERED_SCROLL_CONTENT}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text className="text-white text-3xl font-bold mb-2">DiamondOS</Text>
         <Text className="text-blue-300 mb-10">Sign in to your account</Text>
 
@@ -166,6 +204,7 @@ export default function SignInScreen() {
         )}
 
         <TouchableOpacity
+          testID="send-magic-link-button"
           className={`w-full bg-white rounded-xl py-3.5 items-center ${
             loading || !email ? 'opacity-50' : ''
           }`}
@@ -180,7 +219,7 @@ export default function SignInScreen() {
         <Text className="text-blue-400 text-xs text-center mt-6">
           No password needed. We'll email you a link and a code.
         </Text>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }

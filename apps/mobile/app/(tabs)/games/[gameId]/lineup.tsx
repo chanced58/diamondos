@@ -8,6 +8,8 @@ import {
   POSITION_TO_DB,
   getLineupSlotCap,
   getMaxBattingOrder,
+  validateFieldingPositions,
+  type PlayerPosition,
 } from '@baseball/shared';
 import { LoadingSpinner } from '@baseball/ui';
 import { database } from '../../../../src/db';
@@ -211,6 +213,18 @@ export default function LineupScreen() {
     const guestCollision = orders.find((o) => guestSlots.has(o));
     if (guestCollision !== undefined) {
       setError(`Slot ${guestCollision} is taken by a guest. Remove the guest or pick another slot.`);
+      return;
+    }
+    const fieldingValidity = validateFieldingPositions(
+      entries.map((e) => ({
+        battingOrder: e.order,
+        position: e.positionDb as PlayerPosition | null,
+      })),
+    );
+    if (!fieldingValidity.valid) {
+      const conflict = fieldingValidity.conflicts[0];
+      const label = DB_TO_POSITION[conflict.position] ?? conflict.position;
+      setError(`Two players are assigned to ${label}. Each fielding position can only be assigned once.`);
       return;
     }
 

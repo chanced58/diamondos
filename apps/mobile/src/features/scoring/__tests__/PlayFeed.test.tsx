@@ -1,6 +1,6 @@
 import { Alert } from 'react-native';
 import { render, fireEvent, screen } from '@testing-library/react-native';
-import { PlayFeed } from '../PlayFeed';
+import { PlayFeed, toFeedItems } from '../PlayFeed';
 import type { PlayFeedRow } from '../use-play-feed';
 
 /**
@@ -112,7 +112,7 @@ describe('PlayFeed long-press void interaction', () => {
     expect(alertSpy).not.toHaveBeenCalled();
   });
 
-  it('confirms with each row’s own eventId when multiple actionable rows are present', () => {
+  it('confirms with each row\'s own eventId when multiple actionable rows are present', () => {
     const alertSpy = mockAlertPressing('Void');
     const onVoid = jest.fn();
     const rows = [
@@ -129,5 +129,110 @@ describe('PlayFeed long-press void interaction', () => {
 
     expect(onVoid).toHaveBeenCalledTimes(2);
     expect(alertSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('PlayFeed grouping and key uniqueness', () => {
+  it('production case: Top 1 -> Top 2 -> Bot 1 -> Top 1 produces four headers with all distinct keys', () => {
+    // Reproduces the real game scenario from the finding: the coach voided
+    // events and resumed, causing Top 1 to appear twice non-contiguously.
+    const rows = [
+      // Newest first, so the second Top 1 appears first
+      actionableRow({ eventId: 'evt-54', description: 'Charlie — out', inning: 1, isTopOfInning: true }),
+      actionableRow({ eventId: 'evt-53', description: 'Alice — single', inning: 1, isTopOfInning: true }),
+      // Then Bot 1
+      actionableRow({ eventId: 'evt-30', description: 'Dave — double', inning: 1, isTopOfInning: false }),
+      // Then Top 2
+      actionableRow({ eventId: 'evt-28', description: 'Eve — home run', inning: 2, isTopOfInning: true }),
+      // Finally the first Top 1 (oldest)
+      actionableRow({ eventId: 'evt-10', description: 'Bob — walk', inning: 1, isTopOfInning: true }),
+    ];
+
+    const items = toFeedItems(rows);
+
+    // Count headers
+    const headers = items.filter((item) => item.kind === 'header');
+    expect(headers).toHaveLength(4);
+
+    // Verify all keys are distinct
+    const allKeys = items.map((item) => item.key);
+    const uniqueKeys = new Set(allKeys);
+    expect(uniqueKeys.size).toBe(allKeys.length);
+    expect(uniqueKeys.size).toBe(9); // 4 headers + 5 rows
+  });
+
+  it('simple contiguous case: Top 1 then Bot 1 produces two headers with distinct keys', () => {
+    const rows = [
+      actionableRow({ eventId: 'evt-2', description: 'Alice — single', inning: 1, isTopOfInning: false }),
+      actionableRow({ eventId: 'evt-1', description: 'Bob — walk', inning: 1, isTopOfInning: true }),
+    ];
+
+    const items = toFeedItems(rows);
+
+    const headers = items.filter((item) => item.kind === 'header');
+    expect(headers).toHaveLength(2);
+    expect(headers[0].label).toBe('Bot 1');
+    expect(headers[1].label).toBe('Top 1');
+
+    // All keys distinct
+    const allKeys = items.map((item) => item.key);
+    const uniqueKeys = new Set(allKeys);
+    expect(uniqueKeys.size).toBe(allKeys.length);
+  });
+
+  it('row items still key on eventId', () => {
+    const rows = [
+      actionableRow({ eventId: 'evt-100', description: 'Alice — out', inning: 1, isTopOfInning: true }),
+      actionableRow({ eventId: 'evt-99', description: 'Bob — double', inning: 1, isTopOfInning: true }),
+    ];
+
+    const items = toFeedItems(rows);
+
+    const rowItems = items.filter((item) => item.kind === 'row');
+    expect(rowItems).toHaveLength(2);
+    expect(rowItems[0].key).toBe('evt-100');
+    expect(rowItems[1].key).toBe('evt-99');
+  });
+
+  it('all keys in the emitted list are unique regardless of half-inning repeats', () => {
+    // Extended case with multiple repeats
+    const rows = [
+      actionableRow({ eventId: 'e1', description: 'Play 1', inning: 1, isTopOfInning: true }),
+      actionableRow({ eventId: 'e2', description: 'Play 2', inning: 2, isTopOfInning: true }),
+      actionableRow({ eventId: 'e3', description: 'Play 3', inning: 1, isTopOfInning: false }),
+      actionableRow({ eventId: 'e4', description: 'Play 4', inning: 1, isTopOfInning: true }),
+      actionableRow({ eventId: 'e5', description: 'Play 5', inning: 2, isTopOfInning: false }),
+      actionableRow({ eventId: 'e6', description: 'Play 6', inning: 1, isTopOfInning: true }),
+    ];
+
+    const items = toFeedItems(rows);
+    const allKeys = items.map((item) => item.key);
+    const uniqueKeys = new Set(allKeys);
+
+    // Should have no duplicates
+    expect(uniqueKeys.size).toBe(allKeys.length);
+  });
+
+  it('header and its first row do not share the same key despite using the same eventId', () => {
+    const rows = [
+      actionableRow({ eventId: 'evt-100', description: 'Alice — out', inning: 1, isTopOfInning: true }),
+      actionableRow({ eventId: 'evt-99', description: 'Bob — double', inning: 1, isTopOfInning: false }),
+    ];
+
+    const items = toFeedItems(rows);
+
+    // First item should be a header for Top 1
+    expect(items[0]).toEqual(expect.objectContaining({ kind: 'header' }));
+    const firstHeader = items[0];
+
+    // Second item should be the first row (evt-100)
+    expect(items[1]).toEqual(expect.objectContaining({ kind: 'row' }));
+    const firstRow = items[1];
+
+    // Header is keyed on the first row's eventId (with 'header-' prefix),
+    // row is keyed directly on eventId; they must not collide
+    expect(firstHeader.key).toBe('header-evt-100');
+    expect(firstRow.key).toBe('evt-100');
+    expect(firstHeader.key).not.toBe(firstRow.key);
   });
 });

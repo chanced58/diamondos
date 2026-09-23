@@ -86,6 +86,11 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
         keyExtractor={(m) => m.id}
         inverted
         contentContainerStyle={{ padding: 16 }}
+        ListEmptyComponent={
+          <View style={{ transform: [{ scaleY: -1 }] }}>
+            <Text className="py-10 text-center text-gray-500">No messages yet.</Text>
+          </View>
+        }
         renderItem={({ item: message }) => {
           const isOwn = message.senderId === user?.id;
           return (

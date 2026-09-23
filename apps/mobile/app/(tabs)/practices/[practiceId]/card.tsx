@@ -1,6 +1,6 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { buildPlayerRotationView, type PlayerRotationStep } from '@baseball/shared';
 import { getPracticeWithBlocks } from '@baseball/database';
 import { getSupabaseClient } from '../../../../src/lib/supabase';
@@ -12,6 +12,7 @@ function formatTime(iso: string) {
 
 export default function PlayerCardScreen() {
   const { practiceId } = useLocalSearchParams<{ practiceId: string }>();
+  const router = useRouter();
   const { activeTeam, loading: roleLoading } = useRole();
   const [steps, setSteps] = useState<PlayerRotationStep[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,19 +53,49 @@ export default function PlayerCardScreen() {
 
   if (roleLoading || loading) {
     return (
-      <View className="flex-1 items-center justify-center bg-gray-50">
-        <ActivityIndicator />
-      </View>
+      <>
+        <Stack.Screen options={{ title: 'My Practice' }} />
+        <View className="flex-1 items-center justify-center bg-gray-50">
+          <ActivityIndicator />
+        </View>
+      </>
     );
   }
 
   if (!activeTeam?.playerId) {
+    if (activeTeam?.isCoach) {
+      return (
+        <>
+          <Stack.Screen options={{ title: 'My Practice' }} />
+          <View className="flex-1 items-center justify-center bg-gray-50 p-4">
+            <Text className="text-gray-600 text-center mb-4">
+              This is the player's practice card. As a coach, open attendance instead.
+            </Text>
+            <TouchableOpacity
+              className="px-4 py-2 rounded-lg bg-brand-700"
+              onPress={() =>
+                router.replace({
+                  pathname: '/(tabs)/practices/[practiceId]/attendance',
+                  params: { practiceId },
+                })
+              }
+            >
+              <Text className="text-sm font-semibold text-white">Open attendance</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      );
+    }
+
     return (
-      <View className="flex-1 items-center justify-center bg-gray-50 p-4">
-        <Text className="text-gray-600 text-center">
-          You are not on this team's roster, so there's nothing to show here.
-        </Text>
-      </View>
+      <>
+        <Stack.Screen options={{ title: 'My Practice' }} />
+        <View className="flex-1 items-center justify-center bg-gray-50 p-4">
+          <Text className="text-gray-600 text-center">
+            You are not on this team's roster, so there's nothing to show here.
+          </Text>
+        </View>
+      </>
     );
   }
 

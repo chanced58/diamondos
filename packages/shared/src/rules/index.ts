@@ -3,3 +3,4 @@ export * from './pitch-events';
 export * from './multiple-out';
 export * from './hit-runner-outcomes';
 export * from './batted-ball';
+export * from './fielding-positions';
