@@ -112,14 +112,25 @@ async function quarantineEventIds(ids: string[]): Promise<void> {
 // cascade) and for messages EXCEPT for the case of a single message deleted
 // server-side while its channel survives — there is no such feature today,
 // so that case is out of scope; covering it would require the unbounded id
-// fetch this design exists to avoid.
+// fetch this design exists to avoid. game_lineups gets the same treatment
+// for its dirty-row gap (see below) — cascaded from `games`, not id-fetched.
 //
-// game_lineups also cascades from games.id server-side but is deliberately
-// NOT included here: it already has its own reconciliation path
-// (`lineup-sync.ts`), and a game deleted server-side is treated there as
-// server-wins — the per-game snapshot pull clears the local rows itself, so
-// an orphaned local lineup self-heals on its own next sync without needing
-// this id-cascade mechanism.
+// game_lineups also cascades from games.id server-side, and is PARTIALLY
+// handled by its own reconciliation path (`lineup-sync.ts`): a game deleted
+// server-side pulls an empty snapshot, and `applyServerLineupSnapshot`
+// deletes local rows not present in it — but only rows already
+// `syncStatus === 'synced'` (line ~205 there: "dirty mid-cycle edit — keep").
+// That guard is correct for an in-flight edit mid-cycle, but once the parent
+// game is confirmed gone, it has no cycle left to converge on: the snapshot
+// is empty every time, so a dirty lineup row survives indefinitely instead of
+// self-healing. This id-cascade below closes that gap — it derives
+// game_lineups deletions from `games` confirmed deleted THIS cycle, exactly
+// like the game_events cascade, and (like that cascade) carries no syncedAt
+// guard, so dirty rows are included deliberately: the parent no longer
+// exists server-side, so those edits can never be pushed anywhere. Lineup
+// rows of a game that is merely touched (not deleted) still go through the
+// existing per-game id-diff further down in pullChanges; this cascade only
+// adds to that bucket, it does not replace it.
 //
 // Deletions are rare and a stale row lingering locally for a few minutes is
 // harmless, so this does not run every sync cycle — only every
@@ -340,6 +351,7 @@ interface DeletionResult {
   opponentPlayers: string[];
   gameEvents: string[];
   messages: string[];
+  gameLineups: string[];
 }
 
 /**
@@ -489,9 +501,9 @@ async function reconcileServerDeletions(
 
   // Cascades run off THIS cycle's confirmed parent deletions only — if the
   // games fetch failed (or was blast-radius-guarded), `games` is [] and no
-  // event is ever cascaded from it this cycle, which is the correct,
+  // event/lineup is ever cascaded from it this cycle, which is the correct,
   // conservative outcome.
-  const [eventRows, messageRows] = await Promise.all([
+  const [eventRows, messageRows, lineupRows] = await Promise.all([
     games.length > 0
       ? database
           .get<GameEvent>('game_events')
@@ -504,6 +516,12 @@ async function reconcileServerDeletions(
           .query(Q.where('channel_remote_id', Q.oneOf(channels)))
           .fetch()
       : Promise.resolve([] as Message[]),
+    games.length > 0
+      ? database
+          .get<GameLineup>('game_lineups')
+          .query(Q.where('game_remote_id', Q.oneOf(games)))
+          .fetch()
+      : Promise.resolve([] as GameLineup[]),
   ]);
   const gameEvents = computeCascadeDeletions(
     games,
@@ -512,6 +530,18 @@ async function reconcileServerDeletions(
   const messages = computeCascadeDeletions(
     channels,
     messageRows.map((r) => ({ id: r.id, parentId: r.channelRemoteId })),
+  );
+  // Deliberately no syncedAt guard, same as the two cascades above — see the
+  // header comment block for why a dirty (unsynced) lineup row must be
+  // included: the parent game is confirmed gone, so that edit can never be
+  // pushed anywhere, and `applyServerLineupSnapshot` will otherwise preserve
+  // it forever (it protects an in-flight edit mid-cycle, not a permanently
+  // orphaned one). `computeCascadeDeletions` already fits this exactly: it
+  // takes whatever rows the query fetches (WatermelonDB returns dirty rows
+  // like any other live row) and cascades all of them, synced or not.
+  const gameLineups = computeCascadeDeletions(
+    games,
+    lineupRows.map((r) => ({ id: r.id, parentId: r.gameRemoteId })),
   );
 
   // Deletion audit log (round-1 review, "also required"): the only logging
@@ -528,15 +558,28 @@ async function reconcileServerDeletions(
     leaguePlayers.length +
     opponentPlayers.length +
     gameEvents.length +
-    messages.length;
+    messages.length +
+    gameLineups.length;
   if (totalDeletions > 0) {
     const gameEventIds = new Set(gameEvents);
     const messageIds = new Set(messages);
+    const gameLineupIds = new Set(gameLineups);
     const unsyncedGameEventsDeleted = eventRows.filter(
       (r) => gameEventIds.has(r.id) && r.syncedAt == null,
     ).length;
     const unsyncedMessagesDeleted = messageRows.filter(
       (r) => messageIds.has(r.id) && r.syncedAt == null,
+    ).length;
+    // "Dirty" here means `syncStatus !== 'synced'` (created/updated, not yet
+    // pushed), not `syncedAt == null` as used above for game_events/messages
+    // — those are append-only, so "never synced" and "dirty" coincide for
+    // them. game_lineups is mutable: a row can have a `syncedAt` from a prior
+    // sync yet be dirty right now (a local edit since). This count is the
+    // one the brief calls "the whole point" — it's the edits that would have
+    // been silently stranded forever by `applyServerLineupSnapshot`'s
+    // dirty-row guard had this cascade not existed.
+    const dirtyLineupsCascaded = lineupRows.filter(
+      (r) => gameLineupIds.has(r.id) && r.syncStatus !== 'synced',
     ).length;
     console.warn('sync: deletion reconciliation removing local rows this cycle', {
       games: games.length,
@@ -548,10 +591,21 @@ async function reconcileServerDeletions(
       unsyncedGameEventsDeleted,
       messages: messages.length,
       unsyncedMessagesDeleted,
+      gameLineups: gameLineups.length,
+      dirtyLineupsCascaded,
     });
   }
 
-  return { games, players, channels, leaguePlayers, opponentPlayers, gameEvents, messages };
+  return {
+    games,
+    players,
+    channels,
+    leaguePlayers,
+    opponentPlayers,
+    gameEvents,
+    messages,
+    gameLineups,
+  };
 }
 
 const EMPTY_DELETIONS: DeletionResult = {
@@ -562,6 +616,7 @@ const EMPTY_DELETIONS: DeletionResult = {
   opponentPlayers: [],
   gameEvents: [],
   messages: [],
+  gameLineups: [],
 };
 
 /**
@@ -897,7 +952,14 @@ export async function syncWithSupabase(): Promise<void> {
           game_lineups: {
             created: [],
             updated: pulledLineups.map(mapGameLineup),
-            deleted: deletedLineupIds,
+            // Two independent sources, unioned: `deletedLineupIds` (the
+            // per-touched-game id-diff, above) and `deletions.gameLineups`
+            // (the cascade off games confirmed deleted THIS cycle, including
+            // dirty rows — see reconcileServerDeletions). They should never
+            // overlap in practice — a deleted game is absent from this
+            // cycle's games/lineups pulls, so it can never become "touched"
+            // — but a Set dedupes defensively rather than relying on that.
+            deleted: [...new Set([...deletedLineupIds, ...deletions.gameLineups])],
           },
           league_players: {
             created: [],

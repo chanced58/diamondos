@@ -108,6 +108,57 @@ describe('computeCascadeDeletions', () => {
   });
 });
 
+describe('computeCascadeDeletions for game_lineups (cascade-lineups follow-up)', () => {
+  // sync-engine.ts reuses the exact same function for game_lineups, keyed by
+  // gameRemoteId as the parentId, so these exercise the same generic
+  // function — the scenarios below are the four the brief calls out
+  // specifically, phrased in lineup terms rather than game_events' terms.
+
+  it('1. a game deleted this cycle yields its local lineup rows in the deletion set', () => {
+    const deletedGameIds = ['game-1'];
+    const localLineups = [
+      { id: 'lineup-1', parentId: 'game-1' },
+      { id: 'lineup-2', parentId: 'game-1' },
+      { id: 'lineup-3', parentId: 'game-2' },
+    ];
+    expect(computeCascadeDeletions(deletedGameIds, localLineups).sort()).toEqual([
+      'lineup-1',
+      'lineup-2',
+    ]);
+  });
+
+  it('2. a DIRTY lineup row belonging to a deleted game is included — the case that motivated this change', () => {
+    // This is the whole point of the brief: applyServerLineupSnapshot in
+    // lineup-sync.ts deliberately preserves a row whose syncStatus !==
+    // 'synced' ("dirty mid-cycle edit — keep"), which is correct for an
+    // in-flight edit but wrong once the parent game is confirmed gone —
+    // the empty server snapshot never changes, so that guard would keep the
+    // row forever. computeCascadeDeletions carries no such guard, so a dirty
+    // (never-synced-or-edited-since) row is cascaded exactly like a synced
+    // one.
+    const deletedGameIds = ['game-1'];
+    const localLineups = [{ id: 'dirty-lineup-row', parentId: 'game-1' }];
+    expect(computeCascadeDeletions(deletedGameIds, localLineups)).toEqual(['dirty-lineup-row']);
+  });
+
+  it('3. lineup rows of a surviving game are untouched', () => {
+    const deletedGameIds = ['game-1'];
+    const localLineups = [
+      { id: 'lineup-3', parentId: 'game-2' },
+      { id: 'lineup-4', parentId: 'game-3' },
+    ];
+    expect(computeCascadeDeletions(deletedGameIds, localLineups)).toEqual([]);
+  });
+
+  it('4. an empty deleted-games list cascades no lineup rows', () => {
+    const localLineups = [
+      { id: 'lineup-1', parentId: 'game-1' },
+      { id: 'lineup-2', parentId: 'game-2' },
+    ];
+    expect(computeCascadeDeletions([], localLineups)).toEqual([]);
+  });
+});
+
 describe('applyBlastRadiusGuard', () => {
   it('passes through an empty deletion list untouched', () => {
     expect(applyBlastRadiusGuard([], 100)).toEqual({ ids: [], guarded: false, attemptedCount: 0 });
