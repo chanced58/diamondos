@@ -1,13 +1,15 @@
 import { useMemo } from 'react';
-import { View, Text, FlatList, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, View, Text, FlatList, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Q } from '@nozbe/watermelondb';
 import withObservables from '@nozbe/with-observables';
+import { map } from 'rxjs';
 import { database } from '../../../src/db';
 import type { Game } from '../../../src/db/models/Game';
 import { formatDate, formatTime, type GameRsvpStatus } from '@baseball/shared';
 import { useRole } from '../../../src/providers/RoleProvider';
 import { useGameRsvps } from '../../../src/features/rsvp/useGameRsvps';
+import { sortGamesForList } from '../../../src/features/games/sort-games-for-list';
 
 interface GamesListProps {
   games: Game[];
@@ -198,18 +200,37 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-// Connect to WatermelonDB observable
-const GamesListEnhanced = withObservables([], () => ({
+// Connect to WatermelonDB observable, scoped to the active team. There is no
+// `TO` clause on `public_view_in_progress_games` (20260220000010:186-189),
+// so an unscoped query mirrors every in-progress game platform-wide — W8's
+// pin-to-top then promotes a foreign team's live game to the top of the
+// list. Same fact `schedule.tsx`'s local games read and `game-identity.ts`
+// already handle; this applies the same team-id scoping here.
+const GamesListEnhanced = withObservables(['teamId'], ({ teamId }: { teamId: string }) => ({
   games: database
     .get<Game>('games')
-    .query(Q.sortBy('scheduled_at', Q.asc))
-    .observe(),
+    .query(Q.where('team_id', teamId), Q.sortBy('scheduled_at', Q.desc))
+    .observe()
+    .pipe(map(sortGamesForList)),
 }))((GamesListobs: { games: Game[] }) => <GamesList games={GamesListobs.games} />);
 
 export default function GamesScreen() {
+  const { activeTeam, loading: roleLoading } = useRole();
+
+  if (roleLoading) {
+    return (
+      <View className="flex-1 items-center justify-center bg-gray-50">
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1 bg-gray-50">
-      <GamesListEnhanced />
+      {/* No active team (still resolving membership, or none) — render the
+          empty state rather than falling back to an unscoped, all-teams
+          query. */}
+      {activeTeam ? <GamesListEnhanced teamId={activeTeam.teamId} /> : <GamesList games={[]} />}
     </View>
   );
 }
