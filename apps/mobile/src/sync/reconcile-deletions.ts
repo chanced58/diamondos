@@ -201,8 +201,12 @@ export interface LocalChildRow {
 
 /**
  * Derives deletions for an unbounded child table (game_events, messages)
- * from the parent ids already confirmed deleted this cycle, mirroring the
- * server's own FK cascade instead of id-fetching the child table directly.
+ * from the parent ids already confirmed deleted this cycle — a local
+ * re-derivation of the corresponding server-side FK cascade, not an
+ * id-fetch of the child table directly. This does not cover every table the
+ * server cascades from games.id/channels.id (game_lineups notably has its
+ * own reconciliation path in `lineup-sync.ts` instead — see the sync engine
+ * for why), only the two unbounded tables this function is used for.
  *
  * This is exact, not an approximation, for tables that are only ever
  * removed server-side via their parent's cascade (game_events is

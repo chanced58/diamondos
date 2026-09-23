@@ -21,9 +21,10 @@ export default function ScheduleScreen() {
   const [items, setItems] = useState<ScheduleItem[]>([]);
   const [fullPageError, setFullPageError] = useState<string | null>(null);
   const [partialError, setPartialError] = useState<string | null>(null);
-  const unmountedRef = useRef(false);
+  const requestIdRef = useRef(0);
 
   const load = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     if (!activeTeam) {
       setItems([]);
       setFullPageError(null);
@@ -101,28 +102,27 @@ export default function ScheduleScreen() {
       };
 
       const state = buildScheduleState({ games, practices, events });
-      if (unmountedRef.current) return;
+      if (requestId !== requestIdRef.current) return;
       setItems(state.items);
       setFullPageError(state.fullPageError);
       setPartialError(state.partialError);
     } catch (error) {
       console.warn('schedule fetch failed', error);
-      if (unmountedRef.current) return;
+      if (requestId !== requestIdRef.current) return;
       setItems([]);
       setFullPageError(SCHEDULE_FULL_PAGE_ERROR);
       setPartialError(null);
     } finally {
-      if (!unmountedRef.current) {
+      if (requestId === requestIdRef.current) {
         setLoading(false);
       }
     }
   }, [activeTeam?.teamId]);
 
   useEffect(() => {
-    unmountedRef.current = false;
     load();
     return () => {
-      unmountedRef.current = true;
+      requestIdRef.current += 1;
     };
   }, [load]);
 

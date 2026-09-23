@@ -133,7 +133,33 @@ export interface ScheduleState {
 }
 
 export const SCHEDULE_FULL_PAGE_ERROR = "Couldn't load your schedule.";
-export const SCHEDULE_PARTIAL_ERROR = "Practices and events couldn't be loaded.";
+
+/** Names of the three schedule sources, in the order the partial-error
+ * banner lists them when more than one fails. */
+type ScheduleSourceName = 'games' | 'practices' | 'events';
+
+const SCHEDULE_SOURCE_LABELS: Record<ScheduleSourceName, string> = {
+  games: 'Games',
+  practices: 'Practices',
+  events: 'Events',
+};
+
+function joinWithAnd(labels: string[]): string {
+  if (labels.length <= 1) return labels.join('');
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`;
+}
+
+/**
+ * Builds the inline partial-failure banner copy from the sources that
+ * actually failed, instead of a fixed "Practices and events couldn't be
+ * loaded." string that was wrong whenever games failed alone, or only one
+ * of practices/events failed.
+ */
+export function buildSchedulePartialError(failedSources: ScheduleSourceName[]): string {
+  const labels = failedSources.map((source) => SCHEDULE_SOURCE_LABELS[source]);
+  return `${joinWithAnd(labels)} couldn't be loaded.`;
+}
 
 export function buildScheduleState({
   games,
@@ -144,14 +170,18 @@ export function buildScheduleState({
     ...games.data.map(mapGameToScheduleItem),
     ...practices.data.map(mapPracticeToScheduleItem),
     ...events.data.map(mapEventToScheduleItem),
-  ].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  ].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
 
-  const anyFailed = games.failed || practices.failed || events.failed;
-  if (!anyFailed) {
+  const failedSources: ScheduleSourceName[] = [];
+  if (games.failed) failedSources.push('games');
+  if (practices.failed) failedSources.push('practices');
+  if (events.failed) failedSources.push('events');
+
+  if (failedSources.length === 0) {
     return { items, fullPageError: null, partialError: null };
   }
   if (items.length === 0) {
     return { items, fullPageError: SCHEDULE_FULL_PAGE_ERROR, partialError: null };
   }
-  return { items, fullPageError: null, partialError: SCHEDULE_PARTIAL_ERROR };
+  return { items, fullPageError: null, partialError: buildSchedulePartialError(failedSources) };
 }

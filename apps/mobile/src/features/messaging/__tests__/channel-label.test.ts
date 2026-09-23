@@ -104,6 +104,24 @@ describe('resolveChannelLabel', () => {
     expect(label).toBe('Jamie Rivera');
   });
 
+  it('F2: falls back to "Direct Message" rather than the current user\'s own name when currentUserId is null', () => {
+    // Real bug: `m.senderId !== currentUserId` is true for every message
+    // when `currentUserId` is null (falsy), so a DM containing only the
+    // current user's own messages would render the current user's own name
+    // as the counterparty.
+    const label = resolveChannelLabel(
+      mkInput({
+        currentUserId: null,
+        messages: [
+          { senderId: 'whoever-i-actually-am', senderName: 'Me', createdAt: 100 },
+        ],
+      }),
+    );
+
+    expect(label).toBe('Direct Message');
+    expect(label).not.toBe('Me');
+  });
+
   it('skips a counterparty message with a null senderName rather than returning an empty label', () => {
     const label = resolveChannelLabel(
       mkInput({

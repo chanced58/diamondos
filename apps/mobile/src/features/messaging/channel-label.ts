@@ -62,6 +62,14 @@ export function resolveChannelLabel(input: ResolveChannelLabelInput): string {
     return CHANNEL_FALLBACK;
   }
 
+  // Without a known current user, `m.senderId !== currentUserId` is true for
+  // every message — including the current user's own — so a DM containing
+  // only the current user's own messages would render their own name as the
+  // counterparty. Bail out to the fallback before the filter runs.
+  if (!currentUserId) {
+    return DIRECT_MESSAGE_FALLBACK;
+  }
+
   const counterpartyMessages = messages
     .filter((m) => m.senderId !== currentUserId && nonEmpty(m.senderName))
     .sort((a, b) => b.createdAt - a.createdAt);

@@ -30,7 +30,14 @@ export function useGameIdentity(gameId: string): GameIdentity & { game: Game | n
   } = useLocalSearchParams<{ teamId: string; teamName: string; opponentName: string }>();
   const { activeTeam } = useRole();
 
+  // `game` alone isn't enough to know whether it reflects the *current*
+  // `gameId`: when `gameId` changes, the previous row would otherwise stay
+  // in state until the new lookup resolves — or forever, if it fails —
+  // letting the scoring screen use the wrong roster, league rules, and
+  // `isHome`. `resolvedGameId` records which `gameId` `game` was fetched
+  // for, so it's only exposed when the two still match.
   const [game, setGame] = useState<Game | null>(null);
+  const [resolvedGameId, setResolvedGameId] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -39,7 +46,9 @@ export function useGameIdentity(gameId: string): GameIdentity & { game: Game | n
           .get<Game>('games')
           .query(Q.where('remote_id', gameId))
           .fetch();
-        if (!cancelled) setGame(matches[0] ?? null);
+        if (cancelled) return;
+        setGame(matches[0] ?? null);
+        setResolvedGameId(gameId);
       } catch (err) {
         console.warn(`Score game lookup failed game=${gameId}:`, err);
       }
@@ -49,13 +58,15 @@ export function useGameIdentity(gameId: string): GameIdentity & { game: Game | n
     };
   }, [gameId]);
 
+  const currentGame = resolvedGameId === gameId ? game : null;
+
   const identity = resolveGameIdentity({
-    game: game
+    game: currentGame
       ? {
-          teamId: game.teamId,
-          opponentName: game.opponentName,
-          locationType: game.locationType,
-          neutralHomeTeam: game.neutralHomeTeam ?? null,
+          teamId: currentGame.teamId,
+          opponentName: currentGame.opponentName,
+          locationType: currentGame.locationType,
+          neutralHomeTeam: currentGame.neutralHomeTeam ?? null,
         }
       : null,
     params: {
@@ -66,5 +77,5 @@ export function useGameIdentity(gameId: string): GameIdentity & { game: Game | n
     activeTeam: activeTeam ? { teamId: activeTeam.teamId, teamName: activeTeam.teamName } : null,
   });
 
-  return { game, ...identity };
+  return { game: currentGame, ...identity };
 }

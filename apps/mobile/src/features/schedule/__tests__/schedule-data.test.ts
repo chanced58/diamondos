@@ -1,8 +1,8 @@
 import {
   buildScheduleState,
+  buildSchedulePartialError,
   mapGameToScheduleItem,
   SCHEDULE_FULL_PAGE_ERROR,
-  SCHEDULE_PARTIAL_ERROR,
   type ScheduleEventRow,
   type ScheduleFetchOutcome,
   type ScheduleGameRow,
@@ -114,7 +114,7 @@ describe('buildScheduleState', () => {
       events: ok([]),
     });
     expect(state.fullPageError).toBeNull();
-    expect(state.partialError).toBe(SCHEDULE_PARTIAL_ERROR);
+    expect(state.partialError).toBe(buildSchedulePartialError(['practices']));
     expect(state.items).toHaveLength(1);
     expect(state.items[0].kind).toBe('game');
   });
@@ -128,6 +128,21 @@ describe('buildScheduleState', () => {
     expect(state.items.map((i) => i.kind)).toEqual(['practice', 'event', 'game']);
   });
 
+  it('sorts by actual instant, not lexical string order, across differing UTC offsets', () => {
+    // Games are normalised via toISOString() (always "...Z"), but practices
+    // and events keep whatever PostgREST returns, which can carry a
+    // non-"Z" offset. A game at 20:00 UTC and an event at 18:00 in UTC-08:00
+    // (== 02:00 UTC the next day) sort backwards under `localeCompare`
+    // (the "T20" event string is lexically greater than "T18") but must sort
+    // forward — game first — once compared by actual instant.
+    const state = buildScheduleState({
+      games: ok([mkGame({ scheduledAt: Date.UTC(2026, 8, 20, 20, 0, 0) })]),
+      practices: ok([]),
+      events: ok([mkEvent({ id: 'event-offset', starts_at: '2026-09-20T18:00:00-08:00' })]),
+    });
+    expect(state.items.map((i) => i.kind)).toEqual(['game', 'event']);
+  });
+
   it('everything failing with nothing loaded is still the full-page error, not the partial banner', () => {
     const state = buildScheduleState({
       games: fail(),
@@ -136,5 +151,51 @@ describe('buildScheduleState', () => {
     });
     expect(state.fullPageError).toBe(SCHEDULE_FULL_PAGE_ERROR);
     expect(state.partialError).toBeNull();
+  });
+
+  it('mentions only the sources that actually failed, singular', () => {
+    const state = buildScheduleState({
+      games: ok([]),
+      practices: ok([mkPractice()]),
+      events: fail(),
+    });
+    expect(state.partialError).toBe("Events couldn't be loaded.");
+  });
+
+  it('mentions only games when only the local games read fails', () => {
+    const state = buildScheduleState({
+      games: fail(),
+      practices: ok([mkPractice()]),
+      events: ok([]),
+    });
+    expect(state.partialError).toBe("Games couldn't be loaded.");
+  });
+
+  it('mentions both failed sources with "and" when games and practices fail but an event loads', () => {
+    const state = buildScheduleState({
+      games: fail(),
+      practices: fail(),
+      events: ok([mkEvent()]),
+    });
+    expect(state.partialError).toBe(buildSchedulePartialError(['games', 'practices']));
+    expect(state.partialError).toBe("Games and Practices couldn't be loaded.");
+  });
+});
+
+describe('buildSchedulePartialError', () => {
+  it('formats a single failed source without a conjunction', () => {
+    expect(buildSchedulePartialError(['practices'])).toBe("Practices couldn't be loaded.");
+  });
+
+  it('formats two failed sources with "and"', () => {
+    expect(buildSchedulePartialError(['practices', 'events'])).toBe(
+      "Practices and Events couldn't be loaded.",
+    );
+  });
+
+  it('formats three failed sources with an Oxford comma', () => {
+    expect(buildSchedulePartialError(['games', 'practices', 'events'])).toBe(
+      "Games, Practices, and Events couldn't be loaded.",
+    );
   });
 });

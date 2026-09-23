@@ -7,7 +7,6 @@ import type { Channel } from '../../../src/db/models/Channel';
 import type { Message } from '../../../src/db/models/Message';
 import { useAuth } from '../../../src/providers/AuthProvider';
 import { resolveChannelLabel } from '../../../src/features/messaging/channel-label';
-import { formatTime } from '@baseball/shared';
 
 interface ChannelWithMessages {
   channel: Channel;

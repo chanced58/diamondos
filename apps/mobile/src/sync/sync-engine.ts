@@ -106,12 +106,20 @@ async function quarantineEventIds(ids: string[]): Promise<void> {
 // without bound over a season, and fetching every id every cycle would be
 // the "obvious fix" the design brief explicitly rejects. Instead they are
 // cascaded from their parent's deletion (games → game_events, channels →
-// messages), mirroring the server's own FK cascade. This is exact for
-// game_events (append-only, only ever removed via the game cascade) and for
-// messages EXCEPT for the case of a single message deleted server-side while
-// its channel survives — there is no such feature today, so that case is out
-// of scope; covering it would require the unbounded id fetch this design
-// exists to avoid.
+// messages) — a local re-derivation of two of the server's FK cascades from
+// games.id / channels.id, not a mirror of the server's cascade as a whole.
+// This is exact for game_events (append-only, only ever removed via the game
+// cascade) and for messages EXCEPT for the case of a single message deleted
+// server-side while its channel survives — there is no such feature today,
+// so that case is out of scope; covering it would require the unbounded id
+// fetch this design exists to avoid.
+//
+// game_lineups also cascades from games.id server-side but is deliberately
+// NOT included here: it already has its own reconciliation path
+// (`lineup-sync.ts`), and a game deleted server-side is treated there as
+// server-wins — the per-game snapshot pull clears the local rows itself, so
+// an orphaned local lineup self-heals on its own next sync without needing
+// this id-cascade mechanism.
 //
 // Deletions are rare and a stale row lingering locally for a few minutes is
 // harmless, so this does not run every sync cycle — only every

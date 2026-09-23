@@ -18,9 +18,10 @@ export default function PracticesIndex() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<PracticeRow[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const unmountedRef = useRef(false);
+  const requestIdRef = useRef(0);
 
   const load = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     if (!activeTeam) {
       setRows([]);
       setError(null);
@@ -36,7 +37,7 @@ export default function PracticesIndex() {
         .eq('team_id', activeTeam.teamId)
         .gte('scheduled_at', new Date(Date.now() - 24 * 3600 * 1000).toISOString())
         .order('scheduled_at', { ascending: true });
-      if (unmountedRef.current) return;
+      if (requestId !== requestIdRef.current) return;
       if (fetchError) {
         console.warn('practices fetch failed', fetchError);
         setRows([]);
@@ -47,22 +48,21 @@ export default function PracticesIndex() {
       }
     } catch (err) {
       console.warn('practices fetch failed', err);
-      if (!unmountedRef.current) {
+      if (requestId === requestIdRef.current) {
         setRows([]);
         setError(PRACTICES_FETCH_ERROR);
       }
     } finally {
-      if (!unmountedRef.current) {
+      if (requestId === requestIdRef.current) {
         setLoading(false);
       }
     }
   }, [activeTeam?.teamId]);
 
   useEffect(() => {
-    unmountedRef.current = false;
     load();
     return () => {
-      unmountedRef.current = true;
+      requestIdRef.current += 1;
     };
   }, [load]);
 
