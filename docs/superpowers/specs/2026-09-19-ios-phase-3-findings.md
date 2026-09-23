@@ -674,8 +674,9 @@ never occurs. Also settle, while here, whether events orphaned against a deleted
 wedge the whole `synchronize()` cycle — a wedged cycle would make this Severe.
 
 **W5–W10** are independent and can run in any order; listed by blast radius. W5 is worth doing
-early among the Mediums because every game push notification currently lands on a "Home – Opponent"
-scoreboard.
+early among the Mediums because a plain deep link into the scoring screen currently lands on a
+"Home – Opponent" scoreboard — per M6's reachability correction, the `kind: 'game'` push-notification
+path is unreachable today, so the deep link is the actual live path this fixes, not push notifications.
 
 ### Notes carried into Task 10
 

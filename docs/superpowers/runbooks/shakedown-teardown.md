@@ -49,12 +49,40 @@ order by created_at desc;
 > Measured 2026-09-19: **zero rows.** This gives a clean invariant — after a sweep,
 > every `is_guest_only = true` row is one the sweep created and is safe to remove.
 > Re-run this query before each pass; if it is ever non-empty, record the ids here as
-> a do-not-delete list and delete only by id difference.
+> a do-not-delete list.
+>
+> **Do not derive the delete list by diffing this pre-sweep snapshot against a
+> post-sweep read of the same query.** Another user (or another concurrent session)
+> can create their own guest during the audit window; it wasn't in the pre-sweep
+> snapshot either, so a diff would sweep it up too. Instead, record the exact guest
+> id(s) at the moment each is created during this sweep (from the app UI or the sync
+> log) and delete only that recorded set in step 4 — never a set derived after the
+> fact.
+
+## 2b. Pre-existing practice-link snapshot
+
+`practices.linked_game_id` can point at a real practice's game. If the sweep's game
+gets linked to an existing practice (e.g. by scoring flows that attach the most
+recent game), that practice's *original* `linked_game_id` is only recoverable if it
+was recorded **before** the sweep ran. Reading it right before teardown is too late —
+by then the column already holds the synthetic game's id, not the original value.
+
+```sql
+select id, title, linked_game_id
+from practices
+where linked_game_id is not null
+order by created_at desc;
+```
+
+Record this result before creating the synthetic game. Step 3 restores from this
+snapshot, not from whatever the column holds at teardown time.
 
 ## 3. Ordered delete
 
-Every foreign key pointing at `games.id` is `ON DELETE CASCADE` — verified against
-`information_schema` on 2026-09-19. Thirteen dependent tables clean themselves up:
+Every foreign key from the thirteen dependent tables listed below to `games.id` is
+`ON DELETE CASCADE` — verified against `information_schema` on 2026-09-19. (This
+does not describe every FK in the schema that references `games.id` — see the two
+`SET NULL` edges called out after the list.) Those thirteen clean themselves up:
 
 `catcher_innings`, `game_coach_notes`, `game_events`, `game_lineups`, `game_notes`,
 `game_player_notes`, `game_reconciliations` (both `home_game_id` and `away_game_id`),
@@ -89,18 +117,31 @@ delete from games where id = '<recorded-uuid>';
   where linked_game_id = '<recorded-uuid>';
   ```
 
-  If any row comes back, the sweep linked a real practice to a synthetic game. Record
-  the original value before deleting so the link can be restored.
+  If any row comes back, the sweep linked a real practice to a synthetic game.
+  Restore it from the **step 2b pre-sweep snapshot**, not from a value read here —
+  by teardown time this column already holds the synthetic game's id, not the
+  practice's original link, so a "record it now" capture cannot recover the
+  original:
+
+  ```sql
+  update practices set linked_game_id = '<value-from-step-2b-snapshot>'
+  where id = '<practice-id>';
+  ```
+
+  If step 2b's snapshot doesn't cover this practice (i.e. it was unlinked before
+  the sweep), the restored value is `null`.
 
 ## 4. Guest cleanup
 
-By explicit id list only, never by predicate:
+By explicit id list only, never by predicate, and never by diffing the section-2
+snapshot against a post-sweep read (see the note in section 2 — a concurrent
+user's own guest would get swept up too):
 
 ```sql
 delete from players where id in ('<guest-uuid-1>', '<guest-uuid-2>');
 ```
 
-Derive that list by diffing the section-2 query against its pre-sweep result.
+Use only the id(s) recorded at creation time during this sweep.
 
 ## 5. Post-teardown verification
 
