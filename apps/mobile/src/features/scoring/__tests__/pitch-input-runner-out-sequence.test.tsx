@@ -140,6 +140,20 @@ describe('PitchInput — putout order for a runner thrown out on a hit', () => {
     ]);
   });
 
+  it('should record no sequence when the scorer just taps Done on the prefilled fielder', () => {
+    const onRecordHitWithRunnerOutcomes = jest.fn();
+    render(<PitchInput {...baseProps({ runnersOnBase: ON_FIRST, onRecordHitWithRunnerOutcomes })} />);
+
+    doubleFieldedAtShort();
+    press(screen.getByText('Thrown out'));
+    press(screen.getByText('Confirm Double'));
+    press(screen.getByTestId('throw-done'));
+
+    expect(onRecordHitWithRunnerOutcomes).toHaveBeenCalledWith(HitType.DOUBLE, [
+      { runnerId: 'r1', fromBase: 1, kind: 'thrown_out' },
+    ]);
+  });
+
   it('should record the out without a sequence when the scorer clears it and taps Done', () => {
     const onRecordHitWithRunnerOutcomes = jest.fn();
     render(<PitchInput {...baseProps({ runnersOnBase: ON_FIRST, onRecordHitWithRunnerOutcomes })} />);

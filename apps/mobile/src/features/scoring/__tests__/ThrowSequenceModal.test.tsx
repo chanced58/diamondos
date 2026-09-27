@@ -73,4 +73,28 @@ describe('ThrowSequenceModal', () => {
     fireEvent.press(screen.getByTestId('throw-done'));
     expect(onDone).toHaveBeenCalledWith([9, 2]);
   });
+
+  it('should treat an untouched first-fielder guess as nothing entered when it is not locked', () => {
+    const onDone = jest.fn();
+    render(<ThrowSequenceModal visible firstFielder={6} lockFirstFielder={false} onDone={onDone} />);
+    fireEvent.press(screen.getByTestId('throw-done'));
+    expect(onDone).toHaveBeenCalledWith([]);
+  });
+
+  it('should keep the first-fielder guess once the scorer builds on it', () => {
+    const onDone = jest.fn();
+    render(<ThrowSequenceModal visible firstFielder={6} lockFirstFielder={false} onDone={onDone} />);
+    fireEvent.press(screen.getByTestId('throw-position-2'));
+    fireEvent.press(screen.getByTestId('throw-done'));
+    expect(onDone).toHaveBeenCalledWith([6, 2]);
+  });
+
+  it('should allow an unassisted putout by the guessed fielder when chosen explicitly', () => {
+    const onDone = jest.fn();
+    render(<ThrowSequenceModal visible firstFielder={6} lockFirstFielder={false} onDone={onDone} />);
+    fireEvent.press(screen.getByTestId('throw-undo'));
+    fireEvent.press(screen.getByTestId('throw-position-6'));
+    fireEvent.press(screen.getByTestId('throw-done'));
+    expect(onDone).toHaveBeenCalledWith([6]);
+  });
 });

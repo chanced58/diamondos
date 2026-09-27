@@ -57,6 +57,11 @@ its Undo never removes the first fielder, which came from the field pop-up.
 The runner-out step passes `lockFirstFielder={false}` because its first
 fielder is only a guess from the batted ball (or absent) — without this the
 prefill, or the scorer's own first tap, could not be undone.
+An unlocked prefill is a *suggestion*, shown gray: it is returned only once
+the scorer taps a fielder or Undo. Done on an untouched suggestion returns
+`[]`, so skipping never credits the fielder of the hit with an unassisted
+putout (CodeRabbit finding). An unassisted tag by that fielder is still one
+Undo + tap away.
 
 ### 2. Hit with a runner thrown out (`PitchInput`)
 
@@ -125,7 +130,7 @@ prefill, or the scorer's own first tap, could not be undone.
 | Two runners thrown out on one hit | Two popups, lead runner first; one write after both |
 | Hit location skipped / tracking off | Popup opens empty (no prefill) |
 | Prefilled fielder is wrong | Undo clears it (unlocked first fielder); tap the real chain |
-| Scorer taps Done immediately | Out recorded with no `fieldingSequence` |
+| Scorer taps Done immediately (even with a prefill) | Out recorded with no `fieldingSequence` |
 | Undo (void) of the hit afterward | Unchanged — linked outs are already voided with the parent (`void-event.ts`) |
 | We are batting (opponent fielding) | Sequence recorded; fielding-stats ignores it (not our defensive half) |
 | Home run | No runner prompt today, so no popup |

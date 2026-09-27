@@ -1581,7 +1581,7 @@ export function PitchInput({
             ? `Runner on ${baseLabel(putoutStep.fromBase)} thrown out — who made the play?`
             : undefined
         }
-        subtitle="Tap each fielder in order. Not sure? Just tap Done."
+        subtitle="Tap each fielder in order. A gray number is a guess until you tap. Not sure? Just tap Done."
         lockFirstFielder={false}
         onDone={(sequence) => {
           const step = putoutStep;
