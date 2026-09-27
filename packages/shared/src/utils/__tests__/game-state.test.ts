@@ -981,3 +981,28 @@ describe('deriveGameState — last batter to complete a PA', () => {
     expect(deriveGameState(GAME, events, HOME_TEAM).lastCompletedTopHalfBatterId).toBe('a1');
   });
 });
+
+describe('deriveGameState — runner held at his own base on a hit', () => {
+  beforeEach(resetSeq);
+
+  it('should leave the runner on 2nd and put the batter on 1st', () => {
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, { awayLeadoffBatterId: 'a1', homeLeadoffBatterId: 'h1' }),
+      ...batterHit('a1', HitType.DOUBLE),
+    ];
+    const hit = batterHit('a2', HitType.SINGLE);
+    events.push(
+      ...hit,
+      e(EventType.BASERUNNER_ADVANCE, {
+        runnerId: 'a1',
+        fromBase: 2,
+        toBase: 2,
+        reason: 'on_play',
+        relatedEventId: hit[1].id,
+      }),
+    );
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    expect(state.runnersOnBase).toEqual({ first: 'a2', second: 'a1', third: null });
+    expect(state.awayScore).toBe(0);
+  });
+});

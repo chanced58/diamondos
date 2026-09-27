@@ -19,6 +19,12 @@ export interface HitRunnerOptions {
   heldBase: 3 | null;
   /** Every base beyond the standard advance the runner can take, lowest first. */
   advancedBases: Array<3 | 4>;
+  /**
+   * The runner's own base when nothing forces him off it, so he can hold
+   * there; null when he is forced, or when the caller did not say which bases
+   * were occupied (the conservative, pre-existing behavior).
+   */
+  stayBase: 2 | 3 | null;
 }
 
 export interface HitRunnerEvaluation {
@@ -52,12 +58,17 @@ const BASE_NAME: Record<FinishBase, string> = { 2: '2B', 3: '3B', 4: 'home' };
  * Advanced: the runner takes more than the standard advance — a runner from
  * second scoring on a single, a runner from first scoring on a double.
  *
+ * Stay: a runner nothing forces off his base can hold right there — a runner
+ * on second with first open on a single. Needs `occupiedBases` (every base
+ * occupied when the ball was hit); see forcedBases.
+ *
  * Returns null for other hits: a home run clears the bases, and the per-runner
  * prompt is not shown for it.
  */
 export function hitRunnerOptions(
   fromBase: OccupiedBase,
   hitType: HitType,
+  occupiedBases?: ReadonlyArray<OccupiedBase>,
 ): HitRunnerOptions | null {
   const batterBase = BATTER_BASE[hitType];
   if (batterBase === undefined) return null;
@@ -69,7 +80,33 @@ export function hitRunnerOptions(
   const advancedBases: Array<3 | 4> = [];
   for (let base = standardBase + 1; base <= 4; base++) advancedBases.push(base as 3 | 4);
 
-  return { standardBase, heldBase, advancedBases };
+  const stayBase =
+    occupiedBases && !forcedBases(batterBase, occupiedBases).has(fromBase)
+      ? (fromBase as 2 | 3)
+      : null;
+
+  return { standardBase, heldBase, advancedBases, stayBase };
+}
+
+/**
+ * The bases whose runners are forced to move on a hit. Walk up from the
+ * batter: each runner at or below the highest base already claimed behind
+ * him must move to the next base, which claims that one in turn. A runner
+ * above it may stay — and then claims nothing new for the runners ahead.
+ * Runners on 1st and 3rd on a single: 1st is forced to 2nd; 3rd is not.
+ * On a double the batter claims 2nd, so the runner from 1st needs 3rd and
+ * the runner on 3rd is forced too.
+ */
+function forcedBases(batterBase: 1 | 2 | 3, occupiedBases: ReadonlyArray<OccupiedBase>): Set<OccupiedBase> {
+  const forced = new Set<OccupiedBase>();
+  let claimed: number = batterBase;
+  for (const base of [...occupiedBases].sort((a, b) => a - b)) {
+    if (base <= claimed) {
+      forced.add(base);
+      claimed += 1;
+    }
+  }
+  return forced;
 }
 
 /**
@@ -90,9 +127,10 @@ export function evaluateHitRunnerOutcomes(
   runners: ReadonlyArray<{ fromBase: OccupiedBase; choice: HitRunnerChoice }>,
 ): HitRunnerEvaluation {
   const finishes: Array<{ fromBase: OccupiedBase; finish: FinishBase }> = [];
+  const occupiedBases = runners.map((r) => r.fromBase);
 
   for (const { fromBase, choice } of runners) {
-    const options = hitRunnerOptions(fromBase, hitType);
+    const options = hitRunnerOptions(fromBase, hitType, occupiedBases);
     if (!options) return { error: 'Runner outcomes only apply to a single, double or triple.', rbis: 0 };
     if (choice.kind === 'thrown_out') continue;
 
@@ -100,7 +138,7 @@ export function evaluateHitRunnerOutcomes(
     if (choice.kind === 'auto') {
       finish = options.standardBase;
     } else if (choice.kind === 'held') {
-      if (choice.toBase !== options.heldBase) {
+      if (choice.toBase !== options.heldBase && choice.toBase !== options.stayBase) {
         return { error: `A runner from ${fromBase}B can't be held at ${BASE_NAME[choice.toBase]} on this hit.`, rbis: 0 };
       }
       finish = choice.toBase;

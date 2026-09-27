@@ -579,7 +579,7 @@ export function PitchInput({
   function setRunnerChoice(
     runnerId: string,
     fromBase: Base,
-    choice: { kind: 'auto' } | { kind: 'held'; toBase: 3 } | { kind: 'advanced'; toBase: 3 | 4 } | { kind: 'thrown_out' },
+    choice: { kind: 'auto' } | { kind: 'held'; toBase: 2 | 3 } | { kind: 'advanced'; toBase: 3 | 4 } | { kind: 'thrown_out' },
   ) {
     setRunnerOutcomeChoices((prev) => ({ ...prev, [fromBase]: { runnerId, fromBase, ...choice } }));
   }
@@ -1482,10 +1482,15 @@ export function PitchInput({
                 // Standard, the one hold (if any), and each base beyond the
                 // standard advance — all from hitRunnerOptions. The batter
                 // takes a base too, so none of this is simply fromBase + n.
+                // Occupancy decides who is forced: an unforced runner may
+                // also hold right where he is (stayBase).
                 const options = pendingHitWithRunners
-                  ? hitRunnerOptions(base, pendingHitWithRunners)
+                  ? hitRunnerOptions(base, pendingHitWithRunners, runnersOnBase.map((r) => r.base))
                   : null;
-                const heldBase = options?.heldBase ?? null;
+                const holdBases = [options?.stayBase ?? null, options?.heldBase ?? null].filter(
+                  (b): b is 2 | 3 => b !== null,
+                );
+                const heldToBase = choice?.kind === 'held' ? choice.toBase : null;
                 const advancedToBase = choice?.kind === 'advanced' ? choice.toBase : null;
                 return (
                   <View key={base} className="mb-4 border border-gray-200 rounded-xl p-3">
@@ -1501,16 +1506,17 @@ export function PitchInput({
                           Standard: {options ? (options.standardBase === 4 ? 'scores' : finishLabel(options.standardBase)) : '—'}
                         </Text>
                       </TouchableOpacity>
-                      {heldBase !== null && (
+                      {holdBases.map((toBase) => (
                         <TouchableOpacity
-                          className={`px-3 py-2 rounded-lg ${kind === 'held' ? 'bg-amber-600' : 'bg-slate-100'}`}
-                          onPress={() => setRunnerChoice(runnerId, base, { kind: 'held', toBase: heldBase })}
+                          key={`held-${toBase}`}
+                          className={`px-3 py-2 rounded-lg ${heldToBase === toBase ? 'bg-amber-600' : 'bg-slate-100'}`}
+                          onPress={() => setRunnerChoice(runnerId, base, { kind: 'held', toBase })}
                         >
-                          <Text className={kind === 'held' ? 'text-white font-semibold' : 'text-gray-700'}>
-                            Held at {heldBase}B
+                          <Text className={heldToBase === toBase ? 'text-white font-semibold' : 'text-gray-700'}>
+                            Held at {toBase}B
                           </Text>
                         </TouchableOpacity>
-                      )}
+                      ))}
                       {options?.advancedBases.map((toBase) => (
                         <TouchableOpacity
                           key={toBase}

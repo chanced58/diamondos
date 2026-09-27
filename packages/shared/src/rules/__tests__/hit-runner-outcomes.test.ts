@@ -4,35 +4,35 @@ import { evaluateHitRunnerOutcomes, hitRunnerOptions } from '../hit-runner-outco
 describe('hitRunnerOptions', () => {
   describe('on a single', () => {
     it('should move a runner from first to second, with third or home as advances', () => {
-      expect(hitRunnerOptions(1, HitType.SINGLE)).toEqual({ standardBase: 2, heldBase: null, advancedBases: [3, 4] });
+      expect(hitRunnerOptions(1, HitType.SINGLE)).toEqual({ standardBase: 2, heldBase: null, advancedBases: [3, 4], stayBase: null });
     });
 
     it('should move a runner from second to third, with home as the advance', () => {
-      expect(hitRunnerOptions(2, HitType.SINGLE)).toEqual({ standardBase: 3, heldBase: null, advancedBases: [4] });
+      expect(hitRunnerOptions(2, HitType.SINGLE)).toEqual({ standardBase: 3, heldBase: null, advancedBases: [4], stayBase: null });
     });
 
     it('should score a runner from third with nothing beyond it', () => {
-      expect(hitRunnerOptions(3, HitType.SINGLE)).toEqual({ standardBase: 4, heldBase: null, advancedBases: [] });
+      expect(hitRunnerOptions(3, HitType.SINGLE)).toEqual({ standardBase: 4, heldBase: null, advancedBases: [], stayBase: null });
     });
   });
 
   describe('on a double', () => {
     it('should send a runner from first to third with no hold, because the batter takes second', () => {
-      expect(hitRunnerOptions(1, HitType.DOUBLE)).toEqual({ standardBase: 3, heldBase: null, advancedBases: [4] });
+      expect(hitRunnerOptions(1, HitType.DOUBLE)).toEqual({ standardBase: 3, heldBase: null, advancedBases: [4], stayBase: null });
     });
 
     it('should score a runner from second, who can be held at third', () => {
-      expect(hitRunnerOptions(2, HitType.DOUBLE)).toEqual({ standardBase: 4, heldBase: 3, advancedBases: [] });
+      expect(hitRunnerOptions(2, HitType.DOUBLE)).toEqual({ standardBase: 4, heldBase: 3, advancedBases: [], stayBase: null });
     });
 
     it('should score a runner from third with no hold', () => {
-      expect(hitRunnerOptions(3, HitType.DOUBLE)).toEqual({ standardBase: 4, heldBase: null, advancedBases: [] });
+      expect(hitRunnerOptions(3, HitType.DOUBLE)).toEqual({ standardBase: 4, heldBase: null, advancedBases: [], stayBase: null });
     });
   });
 
   describe('on a triple', () => {
     it.each([1, 2, 3] as const)('should score a runner from base %i with no hold, because the batter takes third', (fromBase) => {
-      expect(hitRunnerOptions(fromBase, HitType.TRIPLE)).toEqual({ standardBase: 4, heldBase: null, advancedBases: [] });
+      expect(hitRunnerOptions(fromBase, HitType.TRIPLE)).toEqual({ standardBase: 4, heldBase: null, advancedBases: [], stayBase: null });
     });
   });
 
@@ -120,5 +120,57 @@ describe('evaluateHitRunnerOutcomes', () => {
   it('should reject an advance that is not beyond the standard one', () => {
     const result = evaluateHitRunnerOutcomes(HitType.DOUBLE, [{ fromBase: 1, choice: { kind: 'advanced', toBase: 3 } }]);
     expect(result.error).toMatch(/can't advance to 3B/);
+  });
+});
+
+describe('holding an unforced runner at his own base', () => {
+  it('should let a runner on 2nd with 1st open stay at 2nd on a single', () => {
+    expect(hitRunnerOptions(2, HitType.SINGLE, [2])?.stayBase).toBe(2);
+  });
+
+  it('should not let a runner on 2nd stay when a runner on 1st forces him', () => {
+    expect(hitRunnerOptions(2, HitType.SINGLE, [1, 2])?.stayBase).toBeNull();
+  });
+
+  it('should let a runner on 3rd stay on a single unless 1st and 2nd are both occupied', () => {
+    expect(hitRunnerOptions(3, HitType.SINGLE, [3])?.stayBase).toBe(3);
+    expect(hitRunnerOptions(3, HitType.SINGLE, [1, 3])?.stayBase).toBe(3);
+    expect(hitRunnerOptions(3, HitType.SINGLE, [2, 3])?.stayBase).toBe(3);
+    expect(hitRunnerOptions(3, HitType.SINGLE, [1, 2, 3])?.stayBase).toBeNull();
+  });
+
+  it('should let a runner on 3rd stay on a double only when no trailing runner needs 3rd', () => {
+    expect(hitRunnerOptions(3, HitType.DOUBLE, [3])?.stayBase).toBe(3);
+    expect(hitRunnerOptions(3, HitType.DOUBLE, [1, 3])?.stayBase).toBeNull();
+    expect(hitRunnerOptions(3, HitType.DOUBLE, [2, 3])?.stayBase).toBeNull();
+  });
+
+  it('should never let a runner on 1st stay, or anyone the batter passes', () => {
+    expect(hitRunnerOptions(1, HitType.SINGLE, [1])?.stayBase).toBeNull();
+    expect(hitRunnerOptions(2, HitType.DOUBLE, [2])?.stayBase).toBeNull();
+    expect(hitRunnerOptions(3, HitType.TRIPLE, [3])?.stayBase).toBeNull();
+  });
+
+  it('should accept an unforced runner held at his own base', () => {
+    const result = evaluateHitRunnerOutcomes(HitType.SINGLE, [
+      { fromBase: 2, choice: { kind: 'held', toBase: 2 } },
+    ]);
+    expect(result).toEqual({ error: null, rbis: 0 });
+  });
+
+  it('should refuse holding a forced runner at his own base', () => {
+    const result = evaluateHitRunnerOutcomes(HitType.SINGLE, [
+      { fromBase: 1, choice: { kind: 'auto' } },
+      { fromBase: 2, choice: { kind: 'held', toBase: 2 } },
+    ]);
+    expect(result.error).not.toBeNull();
+  });
+
+  it('should refuse a hold that leaves two runners on one base', () => {
+    const result = evaluateHitRunnerOutcomes(HitType.SINGLE, [
+      { fromBase: 2, choice: { kind: 'auto' } },
+      { fromBase: 3, choice: { kind: 'held', toBase: 3 } },
+    ]);
+    expect(result.error).toBe("Two runners can't both finish on 3B.");
   });
 });
