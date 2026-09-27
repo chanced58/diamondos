@@ -192,3 +192,37 @@ export function attributePlayersForHalf(args: {
 
   return result;
 }
+
+/** An order shorter than this is treated as still being built as batters come up. */
+export const COMPLETE_BATTING_ORDER_LENGTH = 9;
+
+export type DueBatterResolution =
+  | { kind: 'due'; playerId: string; battingOrder: number; index: number }
+  /** The scorer must say who is up: add the next new batter, or go back to
+   *  `topOfOrder` (null when the order is empty). */
+  | { kind: 'ask'; topOfOrder: BattingSlot | null };
+
+/**
+ * deriveDueBatter, plus the cases where the app must not guess who is up:
+ *
+ * - The order is empty — no one has been entered yet.
+ * - The order is still being built (fewer than
+ *   COMPLETE_BATTING_ORDER_LENGTH batters) and its last batter has just
+ *   batted. The next man up is either a new batter the scorer adds or the
+ *   top of the order; only the scorer knows which. A complete order wraps to
+ *   the top on its own.
+ */
+export function resolveDueBatter(
+  slots: BattingSlot[],
+  completedTeamPAs: number,
+  lastBatterOrder?: number | null,
+): DueBatterResolution {
+  const due = deriveDueBatter(slots, completedTeamPAs, lastBatterOrder);
+  if (!due) return { kind: 'ask', topOfOrder: null };
+
+  const turnedOver = due.index === 0 && completedTeamPAs > 0;
+  if (turnedOver && slots.length < COMPLETE_BATTING_ORDER_LENGTH) {
+    return { kind: 'ask', topOfOrder: { playerId: due.playerId, battingOrder: due.battingOrder } };
+  }
+  return { kind: 'due', ...due };
+}

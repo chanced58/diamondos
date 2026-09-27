@@ -2,6 +2,7 @@ import {
   applyLineupSubstitutions,
   deriveDueBatter,
   battingOrderHistory,
+  resolveDueBatter,
   attributePlayersForHalf,
   type BattingSlot,
 } from '../due-batter';
@@ -316,5 +317,43 @@ describe('battingOrderHistory', () => {
     ];
     expect(battingOrderHistory(nineMan(), events).has('opp-sub')).toBe(false);
     expect(battingOrderHistory(nineMan(), events, { forOpponent: true }).get('opp-sub')).toBe(2);
+  });
+});
+
+describe('resolveDueBatter — when to ask "Who\'s up?"', () => {
+  /** p1..pN in batting order 1..N. */
+  function order(n: number): BattingSlot[] {
+    return Array.from({ length: n }, (_, i) => ({ playerId: `p${i + 1}`, battingOrder: i + 1 }));
+  }
+
+  it('should ask when nobody is in the order yet', () => {
+    expect(resolveDueBatter([], 0, null)).toEqual({ kind: 'ask', topOfOrder: null });
+    expect(resolveDueBatter([], 3, null)).toEqual({ kind: 'ask', topOfOrder: null });
+  });
+
+  it('should bring up the next batter while a partial order still has batters left', () => {
+    expect(resolveDueBatter(order(3), 0, null)).toEqual({ kind: 'due', playerId: 'p1', battingOrder: 1, index: 0 });
+    expect(resolveDueBatter(order(3), 2, 2)).toMatchObject({ kind: 'due', playerId: 'p3' });
+  });
+
+  it('should ask, offering the top of the order, once the last batter of a partial order has batted', () => {
+    expect(resolveDueBatter(order(5), 5, 5)).toEqual({
+      kind: 'ask',
+      topOfOrder: { playerId: 'p1', battingOrder: 1 },
+    });
+  });
+
+  it('should ask after a partial order turns over even when the last batter has no slot', () => {
+    // Fallback to the PA count: 5 PAs through a 5-man order lands on the top.
+    expect(resolveDueBatter(order(5), 5, null)).toMatchObject({ kind: 'ask' });
+  });
+
+  it('should bring up a batter added after the last slot instead of asking', () => {
+    expect(resolveDueBatter(order(6), 5, 5)).toMatchObject({ kind: 'due', playerId: 'p6' });
+  });
+
+  it('should wrap a complete nine-man order to the top without asking', () => {
+    expect(resolveDueBatter(order(9), 9, 9)).toMatchObject({ kind: 'due', playerId: 'p1' });
+    expect(resolveDueBatter(order(10), 10, 10)).toMatchObject({ kind: 'due', playerId: 'p1' });
   });
 });

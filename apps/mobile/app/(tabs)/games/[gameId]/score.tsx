@@ -27,7 +27,7 @@ import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../src/feat
 import { createBattedBallSlot } from '../../../../src/features/scoring/batted-ball-fields';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, battingOrderHistory, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, battingOrderHistory, deriveDueBatter, resolveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
@@ -231,11 +231,14 @@ export default function ScoringScreen() {
   const ourLastBatterId = gameState
     ? (isHome ? gameState.lastCompletedBottomHalfBatterId : gameState.lastCompletedTopHalfBatterId)
     : null;
-  const dueBatter = deriveDueBatter(
+  // 'ask' when no one is entered yet, or a partial order's last batter has
+  // just batted — the scorer says who is up rather than the app guessing.
+  const ourResolution = resolveDueBatter(
     battingSlots,
     ourTeamPAs,
     ourLastBatterId ? ourBattingOrderHistory.get(ourLastBatterId) : null,
   );
+  const dueBatter = ourResolution.kind === 'due' ? ourResolution : null;
 
   // Per-PA manual override — the scorer can point the rotation at a
   // different batter (lineup drifted, skipped batter). Cleared when the PA
@@ -253,7 +256,7 @@ export default function ScoringScreen() {
   // other team's book keeps working with no signal. Without this every
   // opponent plate appearance is anonymous: nothing to attribute a hit to,
   // and nothing to show the coach about who is coming up.
-  const { roster: opponentRoster, slots: opponentSlots } = useOpponentLineup(
+  const { roster: opponentRoster, slots: opponentSlots, loaded: opponentLineupLoaded } = useOpponentLineup(
     gameId,
     game?.opponentTeamId,
   );
@@ -272,17 +275,28 @@ export default function ScoringScreen() {
   const opponentLastBatterId = gameState
     ? (isHome ? gameState.lastCompletedTopHalfBatterId : gameState.lastCompletedBottomHalfBatterId)
     : null;
-  const opponentDueBatter = deriveDueBatter(
+  const opponentResolution = resolveDueBatter(
     opponentBattingSlots,
     opponentPAs,
     opponentLastBatterId ? opponentBattingOrderHistory.get(opponentLastBatterId) : null,
   );
+  const opponentDueBatter = opponentResolution.kind === 'due' ? opponentResolution : null;
   const [opponentBatterOverrideId, setOpponentBatterOverrideId] = useState<string | null>(null);
   useEffect(() => {
     setOpponentBatterOverrideId(null);
   }, [opponentPAs]);
+  // Opponent batters can only be named when the game has an opponent team on
+  // file; without one their half stays anonymous (engine state), as before.
+  const canNameOpponentBatters = !!game?.opponentTeamId;
+  const opponentNeedsBatter =
+    canNameOpponentBatters &&
+    opponentLineupLoaded &&
+    !opponentBatterOverrideId &&
+    opponentResolution.kind === 'ask';
   const opponentBatterId =
-    opponentBatterOverrideId ?? opponentDueBatter?.playerId ?? gameState?.currentBatterId ?? null;
+    opponentBatterOverrideId ??
+    opponentDueBatter?.playerId ??
+    (canNameOpponentBatters ? null : gameState?.currentBatterId ?? null);
   const opponentNameById = useMemo(
     () => new Map(opponentSlots.map((s) => [s.playerId, s.name])),
     [opponentSlots],
@@ -403,8 +417,12 @@ export default function ScoringScreen() {
   const nextBatterName = (playerId: string) =>
     opponentNameById.get(playerId) ?? batterName(playerId);
   // Effective batter for our offensive half: manual override → lineup-derived
-  // due batter → engine state (GAME_START leadoff when no lineup is set).
-  const ourBatterId = batterOverrideId ?? dueBatter?.playerId ?? gameState?.currentBatterId ?? null;
+  // due batter. Engine state is only a stand-in while the lineup is still
+  // loading; once it has, an unknown batter is asked for ("Who's up?"), never
+  // guessed — the engine's current batter is just whoever batted last.
+  const ourBatterId =
+    batterOverrideId ?? dueBatter?.playerId ?? (lineupLoaded ? null : gameState?.currentBatterId ?? null);
+  const ourNeedsBatter = lineupLoaded && !batterOverrideId && ourResolution.kind === 'ask';
   /** Whoever is actually at the plate right now, either side. */
   const currentPlateBatterId = weBat ? ourBatterId : opponentBatterId;
   const battingOrderTitle = weBat
@@ -602,6 +620,17 @@ export default function ScoringScreen() {
     () => events.some((e) => e.eventType === EventType.GAME_START),
     [events],
   );
+
+  // The batting side has no one due (order empty, or a partial order's last
+  // batter just batted): the pad is replaced by "Who's up?" and the prompt
+  // opens on its own, once per plate appearance.
+  const sideNeedsBatter =
+    gameStarted && !gameState?.isFinal && (weBat ? ourNeedsBatter : opponentNeedsBatter);
+  useEffect(() => {
+    if (!sideNeedsBatter) return;
+    if (weBat) setShowAddOurBatter(true);
+    else setShowAddOpponentBatter(true);
+  }, [sideNeedsBatter, weBat, ourTeamPAs, opponentPAs]);
 
   // What this game is tracking, chosen by the scorer at start and carried on
   // the GAME_START payload. Same keys and `!== false` defaulting as the web
@@ -2081,7 +2110,19 @@ export default function ScoringScreen() {
 
       <AddBatterModal
         visible={showAddOpponentBatter}
-        title={`Add ${opponentName} batter`}
+        title={opponentNeedsBatter ? `Who's up for ${opponentName}?` : `Add ${opponentName} batter`}
+        topOfOrder={
+          opponentNeedsBatter && opponentResolution.kind === 'ask' && opponentResolution.topOfOrder
+            ? {
+                name: opponentNameById.get(opponentResolution.topOfOrder.playerId) ?? 'Unknown batter',
+                onPick: () => {
+                  if (opponentResolution.kind !== 'ask' || !opponentResolution.topOfOrder) return;
+                  setOpponentBatterOverrideId(opponentResolution.topOfOrder.playerId);
+                  setShowAddOpponentBatter(false);
+                },
+              }
+            : null
+        }
         rosterLabel="ON THEIR ROSTER"
         roster={opponentRoster
           .filter((p) => !opponentNameById.has(p.remoteId))
@@ -2106,7 +2147,19 @@ export default function ScoringScreen() {
 
       <AddBatterModal
         visible={showAddOurBatter}
-        title="Add batter"
+        title={ourNeedsBatter ? "Who's up?" : 'Add batter'}
+        topOfOrder={
+          ourNeedsBatter && ourResolution.kind === 'ask' && ourResolution.topOfOrder
+            ? {
+                name: batterName(ourResolution.topOfOrder.playerId),
+                onPick: () => {
+                  if (ourResolution.kind !== 'ask' || !ourResolution.topOfOrder) return;
+                  setBatterOverrideId(ourResolution.topOfOrder.playerId);
+                  setShowAddOurBatter(false);
+                },
+              }
+            : null
+        }
         rosterLabel="ON YOUR ROSTER"
         roster={roster
           .filter((p) => !battingSlots.some((slot) => slot.playerId === p.id))
@@ -2212,6 +2265,22 @@ export default function ScoringScreen() {
               </TouchableOpacity>
             </>
           )}
+          <TouchableOpacity onPress={() => { handleUndo().catch(console.warn); }} className="mt-2 px-4 py-2">
+            <Text className="text-gray-500 text-sm">Undo last event</Text>
+          </TouchableOpacity>
+        </View>
+      ) : sideNeedsBatter ? (
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-2xl font-bold text-gray-900 mb-1">Who&apos;s up?</Text>
+          <Text className="text-sm text-gray-500 mb-5 text-center">
+            {weBat ? teamName : opponentName} — pick the batter coming up, or add a new one.
+          </Text>
+          <TouchableOpacity
+            onPress={() => (weBat ? setShowAddOurBatter(true) : setShowAddOpponentBatter(true))}
+            className="w-full bg-slate-800 rounded-2xl py-4 items-center"
+          >
+            <Text className="text-white text-lg font-bold">Choose batter</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => { handleUndo().catch(console.warn); }} className="mt-2 px-4 py-2">
             <Text className="text-gray-500 text-sm">Undo last event</Text>
           </TouchableOpacity>
@@ -3007,6 +3076,7 @@ function AddBatterModal({
   title,
   rosterLabel,
   roster,
+  topOfOrder = null,
   onSubmit,
   onCancel,
 }: {
@@ -3014,6 +3084,9 @@ function AddBatterModal({
   title: string;
   rosterLabel: string;
   roster: Array<{ id: string; name: string }>;
+  /** "Who's up?" after a partial order's last batter: the order turning over
+   *  is offered first, ahead of adding someone new. */
+  topOfOrder?: { name: string; onPick: () => void } | null;
   onSubmit: (
     input:
       | { kind: 'roster'; opponentPlayerId: string }
@@ -3074,6 +3147,19 @@ function AddBatterModal({
           )}
 
           <ScrollView className="max-h-96">
+            {topOfOrder && (
+              <>
+                <Text className="text-xs font-semibold text-gray-500 mb-2">BACK TO THE TOP</Text>
+                <TouchableOpacity
+                  disabled={busy}
+                  onPress={topOfOrder.onPick}
+                  className="rounded-xl px-4 py-3 mb-6 bg-sky-50 border border-sky-300"
+                >
+                  <Text className="text-sky-900 font-semibold text-base">{topOfOrder.name}</Text>
+                  <Text className="text-xs text-sky-700">Leads off the order again</Text>
+                </TouchableOpacity>
+              </>
+            )}
             <Text className="text-xs font-semibold text-gray-500 mb-2">NEW BATTER</Text>
             <View className="flex-row gap-2">
               <TextInput
