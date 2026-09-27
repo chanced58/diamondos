@@ -1,6 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, Alert } from 'react-native';
 import type { PlayFeedRow } from './use-play-feed';
+
+/** Collapsed: the latest few plays, so the bases and batter keep the room. */
+export const PLAY_FEED_COLLAPSED_HEIGHT = 112;
+/** Expanded on demand for reading back through the inning. */
+export const PLAY_FEED_EXPANDED_HEIGHT = 320;
 
 type FeedItem =
   | { kind: 'header'; key: string; label: string }
@@ -63,7 +68,9 @@ export function toFeedItems(rows: PlayFeedRow[]): FeedItem[] {
  * same-orientation ScrollView is invalid: windowing breaks, the two fight
  * over gestures, and React Native logs an error on every render. The
  * bounded height below keeps the feed a fixed band at the bottom of the
- * book rather than flex-filling it.
+ * book rather than flex-filling it — small by default (a scroll of the last
+ * few plays) so it never crowds the bases and batter, expandable from its
+ * header.
  */
 export function PlayFeed({
   rows,
@@ -73,6 +80,7 @@ export function PlayFeed({
   onVoid?: (eventId: string) => void;
 }) {
   const items = useMemo(() => toFeedItems(rows), [rows]);
+  const [expanded, setExpanded] = useState(false);
 
   function confirmVoid(row: PlayFeedRow) {
     if (!onVoid || row.isVoided || row.isCorrectionMarker) return;
@@ -96,8 +104,21 @@ export function PlayFeed({
   }
 
   return (
-    <View className="border-t border-gray-100" style={{ height: 260 }}>
-      <Text className="px-4 pt-2 pb-1 text-[11px] font-semibold text-gray-500">PLAY-BY-PLAY</Text>
+    <View
+      testID="play-feed"
+      className="border-t border-gray-100"
+      style={{ height: expanded ? PLAY_FEED_EXPANDED_HEIGHT : PLAY_FEED_COLLAPSED_HEIGHT }}
+    >
+      <View className="flex-row items-center justify-between px-4 pt-1">
+        <Text className="text-[11px] font-semibold text-gray-500">PLAY-BY-PLAY</Text>
+        <TouchableOpacity
+          onPress={() => setExpanded((open) => !open)}
+          hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+          className="py-1"
+        >
+          <Text className="text-[11px] font-semibold text-sky-700">{expanded ? 'Collapse' : 'Expand'}</Text>
+        </TouchableOpacity>
+      </View>
       <FlatList
         data={items}
         keyExtractor={(item) => item.key}
