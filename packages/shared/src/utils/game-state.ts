@@ -600,6 +600,11 @@ function advanceRunners(
   return result;
 }
 
+/**
+ * Whether a runner's default placement on this play is replaced by a linked
+ * outcome — matched by starting base when the linked event named one, by id
+ * for older events.
+ */
 function isRunnerOverridden(
   runnerId: string,
   base: 1 | 2 | 3,
@@ -613,6 +618,11 @@ function isRunnerOverridden(
   );
 }
 
+/**
+ * The hit's default advance for every runner without a linked outcome, plus
+ * the batter on his base. Overridden runners are left off: their linked
+ * BASERUNNER_OUT / BASERUNNER_ADVANCE places (or removes) them.
+ */
 function advanceRunnersWithOverrides(
   runners: LiveGameState['runnersOnBase'],
   batterId: string | null,
@@ -646,6 +656,7 @@ function advanceRunnersWithOverrides(
   return result;
 }
 
+/** Groups linked runner outcomes by their parent play (relatedEventId). */
 function buildRunnerOverrideMap(events: GameEvent[]): Map<string, RunnerOverrides> {
   const map = new Map<string, RunnerOverrides>();
   for (const event of events) {
@@ -696,6 +707,10 @@ function forceAdvanceRunners(
   return updated;
 }
 
+/**
+ * Counts a completed plate appearance for the half now batting and records
+ * who completed it — the anchor deriveDueBatter rotates from.
+ */
 function incrementPA(state: LiveGameState, event: GameEvent): void {
   const p = event.payload as { batterId?: string; opponentBatterId?: string };
   const batterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId;

@@ -521,6 +521,7 @@ export function PitchInput({
     commitInPlay(EventType.HIT, () => onRecordFieldersChoice(runnerId, fromBase));
   }
 
+  /** Runner Out sheet → the putout-order step for that runner → record. */
   function handleRunnerOutPick(runnerId: string, fromBase: Base) {
     setShowRunnerOutModal(false);
     // No batted ball belongs to this out, so there is no fielder to start from.
@@ -557,6 +558,11 @@ export function PitchInput({
     });
   }
 
+  /**
+   * A single, double or triple. With runners on, opens the per-runner outcome
+   * prompt (every runner seeded to the standard advance); otherwise records
+   * the hit straight through.
+   */
   function handleHitTap(hitType: HitType) {
     const supportsOutcomes = !!onRecordHitWithRunnerOutcomes;
     const needsPrompt =
@@ -576,6 +582,7 @@ export function PitchInput({
     setPendingHitWithRunners(hitType);
   }
 
+  /** Sets one runner's outcome in the prompt, keyed by base (ids can repeat). */
   function setRunnerChoice(
     runnerId: string,
     fromBase: Base,
@@ -598,6 +605,10 @@ export function PitchInput({
       )
     : null;
 
+  /**
+   * Confirm on the runner-outcome prompt: asks the putout order for each
+   * thrown-out runner, then records the hit with every outcome at once.
+   */
   function confirmHitWithRunners() {
     if (runnerEvaluation?.error) return;
     if (!pendingHitWithRunners || !onRecordHitWithRunnerOutcomes) {

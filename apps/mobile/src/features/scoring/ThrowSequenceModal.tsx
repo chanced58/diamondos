@@ -48,8 +48,10 @@ export function ThrowSequenceModal({
 
   const full = sequence.length >= MAX_FIELDING_SEQUENCE;
   const isUnconfirmedGuess = !lockFirstFielder && !edited;
+  /** Done / close: an untouched unlocked guess is returned as nothing entered. */
   const finish = () => onDone(isUnconfirmedGuess ? [] : sequence);
 
+  /** Any tap or Undo — marks the sequence as the scorer's own. */
   function edit(change: (current: number[]) => number[]) {
     setEdited(true);
     setSequence(change);

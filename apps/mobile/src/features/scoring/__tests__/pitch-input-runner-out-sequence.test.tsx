@@ -5,6 +5,7 @@ import { PitchInput } from '../PitchInput';
 jest.mock('react-native-svg', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   const { View } = jest.requireActual<typeof import('react-native')>('react-native');
+  /** Renders children only — react-native-svg has no test renderer. */
   const Stub = (props: { children?: import('react').ReactNode }) => React.createElement(View, null, props.children);
   return { __esModule: true, default: Stub, Rect: Stub, Path: Stub, Circle: Stub, Polygon: Stub, Line: Stub };
 });
@@ -38,6 +39,7 @@ function press(element: unknown, ...data: unknown[]) {
   });
 }
 
+/** A handler the test does not observe. */
 function noop() {}
 
 /** Bases empty, nobody out: no sacrifice is possible, so an Out records straight through. */
@@ -88,6 +90,7 @@ function placeAtShortAndContinue() {
   press(screen.getByText('Next'));
 }
 
+/** The throw-sequence popup's current readout text. */
 function readout() {
   return screen.getByTestId('throw-sequence-readout').props.children;
 }

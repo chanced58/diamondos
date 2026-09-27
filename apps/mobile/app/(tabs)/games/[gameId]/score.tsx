@@ -785,10 +785,13 @@ export default function ScoringScreen() {
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, payload);
   }
 
-  // Records the HIT plus any linked BASERUNNER_OUT / BASERUNNER_ADVANCE
-  // events (via relatedEventId) so the engine + stats correctly suppress
-  // default scoring for held or thrown-out runners and so the play feed
-  // shows e.g. "Double (Runner thrown out at 3B)".
+  /**
+   * Records the HIT plus any linked BASERUNNER_OUT / BASERUNNER_ADVANCE
+   * events (via relatedEventId) so the engine + stats correctly suppress
+   * default scoring for held or thrown-out runners and so the play feed
+   * shows e.g. "Double (Runner thrown out at 3B)". A thrown-out runner's
+   * putout order rides on its BASERUNNER_OUT when the scorer entered one.
+   */
   async function handleHitWithRunnerOutcomes(hitType: HitType, outcomes: RunnerOutcome[]) {
     if (!gameState) return;
     // The prompt refuses to confirm an impossible combination, so this is a
@@ -1056,11 +1059,13 @@ export default function ScoringScreen() {
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, hitPayload);
   }
 
-  // Runner thrown out advancing during a play (e.g., on a hit, sac fly,
-  // wild pitch). Standalone BASERUNNER_OUT — the play itself is recorded
-  // separately. game-state.ts removes the runner from the base and
-  // increments outs; stats modules count it as an out without crediting CS,
-  // and fielding-stats credits the putout order when the scorer entered one.
+  /**
+   * Runner thrown out advancing during a play (e.g., on a hit, sac fly,
+   * wild pitch). Standalone BASERUNNER_OUT — the play itself is recorded
+   * separately. game-state.ts removes the runner from the base and
+   * increments outs; stats modules count it as an out without crediting CS,
+   * and fielding-stats credits the putout order when the scorer entered one.
+   */
   async function handleRunnerOut(runnerId: string, fromBase: 1 | 2 | 3, fieldingSequence: number[]) {
     if (!gameState) return;
     await recordEvent(EventType.BASERUNNER_OUT, gameState.inning, gameState.isTopOfInning, {

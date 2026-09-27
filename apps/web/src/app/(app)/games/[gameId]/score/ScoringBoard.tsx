@@ -527,6 +527,7 @@ function runnerChoicesFor(
   return runners.map((r) => ({ fromBase: r.fromBase, choice: choices[r.runnerId] ?? { kind: 'auto' as const } }));
 }
 
+/** The web live-scoring board: pitch/play entry, lineups, and game state. */
 export function ScoringBoard({
   game,
   lineup,
@@ -948,6 +949,7 @@ export function ScoringBoard({
   // starters, so non-contiguous batting orders (e.g. slots 1,2,3,5,…,9 when
   // slot 4 was removed) and "everyone bats" rosters (slot 10+) still walk
   // every batter.
+  /** A lineup entry reduced to the id + slot the shared due-batter rules use. */
   const toSlot = (s: LineupEntry) => ({ playerId: s.playerId, battingOrder: s.battingOrder });
 
   const completedTeamPAs = opponentBatsInTop

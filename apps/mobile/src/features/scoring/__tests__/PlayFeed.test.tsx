@@ -238,6 +238,7 @@ describe('PlayFeed grouping and key uniqueness', () => {
 });
 
 describe('PlayFeed size', () => {
+  /** The feed's current rendered height. */
   function feedHeight() {
     const style = screen.getByTestId('play-feed').props.style as { height: number };
     return style.height;
