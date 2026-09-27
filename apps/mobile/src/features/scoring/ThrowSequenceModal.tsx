@@ -12,14 +12,26 @@ import {
  * already in the sequence, and the scorer taps where it was thrown (6 → 4 → 3).
  * A caught fly is just Done. fielding-stats credits the last position with the
  * putout and the rest with assists, which is why this exists at all.
+ *
+ * Also the putout-order step for a runner thrown out on a play, where the
+ * first fielder is only a guess from the batted ball (or absent): that
+ * caller passes its own title and `lockFirstFielder={false}` so Undo can
+ * clear it.
  */
 export function ThrowSequenceModal({
   visible,
   firstFielder,
+  title = 'Where was it thrown?',
+  subtitle = 'Tap each fielder in order. Caught on the fly? Just tap Done.',
+  lockFirstFielder = true,
   onDone,
 }: {
   visible: boolean;
   firstFielder: number | null;
+  title?: string;
+  subtitle?: string;
+  /** When true (the batted-out throw step), Undo never removes the first fielder. */
+  lockFirstFielder?: boolean;
   onDone: (sequence: number[]) => void;
 }) {
   const [sequence, setSequence] = useState<number[]>(firstFielder !== null ? [firstFielder] : []);
@@ -40,10 +52,8 @@ export function ThrowSequenceModal({
     >
       <View className="flex-1 justify-end bg-black/50">
         <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
-          <Text className="text-lg font-bold text-gray-900 mb-1">Where was it thrown?</Text>
-          <Text className="text-sm text-gray-500 mb-3">
-            Tap each fielder in order. Caught on the fly? Just tap Done.
-          </Text>
+          <Text className="text-lg font-bold text-gray-900 mb-1">{title}</Text>
+          <Text className="text-sm text-gray-500 mb-3">{subtitle}</Text>
           <Text testID="throw-sequence-readout" className="text-2xl font-bold text-slate-900 mb-4">
             {sequence.join(' → ')}
           </Text>
@@ -66,7 +76,9 @@ export function ThrowSequenceModal({
             <TouchableOpacity
               testID="throw-undo"
               className="flex-1 py-3 rounded-xl border border-slate-300 items-center"
-              onPress={() => setSequence((current) => undoThrow(current))}
+              onPress={() =>
+                setSequence((current) => (lockFirstFielder ? undoThrow(current) : current.slice(0, -1)))
+              }
             >
               <Text className="text-slate-700 font-semibold">Undo</Text>
             </TouchableOpacity>

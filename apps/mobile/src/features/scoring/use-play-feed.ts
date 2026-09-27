@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import {
   EventType,
   formatEventDescription,
+  formatFieldingSequence,
   hitRunnerOptions,
   type GameEvent,
   type BaserunnerMovePayload,
@@ -85,7 +86,9 @@ function describeLinkedOutcome(
     return `${name}'s call reversed`;
   }
   if (event.eventType === EventType.BASERUNNER_OUT) {
-    return `${name} thrown out advancing`;
+    return p.fieldingSequence?.length
+      ? `${name} thrown out advancing, ${formatFieldingSequence(p.fieldingSequence)}`
+      : `${name} thrown out advancing`;
   }
   const base = p.toBase != null ? (BASE_LABELS[p.toBase] ?? `base ${p.toBase}`) : 'base';
   // On a hit, a linked advance is either a hold (short of the standard

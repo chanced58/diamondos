@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-27
 **Branch:** `claude/ipad-scorekeeping-testing-3c4ca9`
-**Status:** Approved approach (A); awaiting spec review
+**Status:** Implemented
 
 ## Problem
 
@@ -49,12 +49,14 @@ runner is indicated as thrown out on a ball in play.
 
 ## Design
 
-### 1. `ThrowSequenceModal` — optional title and subtitle
+### 1. `ThrowSequenceModal` — optional title, subtitle, unlocked first fielder
 
-Add optional `title` and `subtitle` props. Defaults are today's strings, so
-the existing batted-out throw step is unchanged. No other behavior change:
-`firstFielder` seeds the sequence, Undo pops, Done returns the sequence
-(possibly empty).
+Add optional `title` and `subtitle` props (defaults are today's strings) and
+`lockFirstFielder` (default `true`). The batted-out throw step is unchanged:
+its Undo never removes the first fielder, which came from the field pop-up.
+The runner-out step passes `lockFirstFielder={false}` because its first
+fielder is only a guess from the batted ball (or absent) — without this the
+prefill, or the scorer's own first tap, could not be undone.
 
 ### 2. Hit with a runner thrown out (`PitchInput`)
 
@@ -63,9 +65,9 @@ the existing batted-out throw step is unchanged. No other behavior change:
 - `confirmHitWithRunners`, instead of recording immediately when any runner
   is `thrown_out`, builds a queue of those runners (in base order, lead
   runner first) and opens `ThrowSequenceModal` for the head of the queue:
-  - Title: "{Runner name} thrown out — who made the play?"
-    ("Runner thrown out — …" when the name is unknown).
-  - Subtitle: "Tap each fielder in order. Skip? Just tap Done."
+  - Title: "Runner on {1st|2nd|3rd} thrown out — who made the play?" (the
+    runner prompt identifies runners by base; `PitchInput` has no names).
+  - Subtitle: "Tap each fielder in order. Not sure? Just tap Done."
   - `firstFielder`: the batted ball's `firstFielder` from `battedBallRef`
     (e.g. the CF who fielded the double → sequence opens at `8`); `null` when
     hit location was skipped or disabled.
@@ -122,7 +124,7 @@ the existing batted-out throw step is unchanged. No other behavior change:
 |---|---|
 | Two runners thrown out on one hit | Two popups, lead runner first; one write after both |
 | Hit location skipped / tracking off | Popup opens empty (no prefill) |
-| Prefilled fielder is wrong | Undo clears it; tap the real chain |
+| Prefilled fielder is wrong | Undo clears it (unlocked first fielder); tap the real chain |
 | Scorer taps Done immediately | Out recorded with no `fieldingSequence` |
 | Undo (void) of the hit afterward | Unchanged — linked outs are already voided with the parent (`void-event.ts`) |
 | We are batting (opponent fielding) | Sequence recorded; fielding-stats ignores it (not our defensive half) |

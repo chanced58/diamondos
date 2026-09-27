@@ -795,6 +795,7 @@ export default function ScoringScreen() {
           ...pitcherAttribution,
           relatedEventId: hitId,
           reason: AdvanceReason.ON_PLAY,
+          ...(outcome.fieldingSequence?.length ? { fieldingSequence: outcome.fieldingSequence } : {}),
         });
       } else {
         // 'held' stops short of the default advance; 'advanced' goes beyond
@@ -1025,13 +1026,16 @@ export default function ScoringScreen() {
   // Runner thrown out advancing during a play (e.g., on a hit, sac fly,
   // wild pitch). Standalone BASERUNNER_OUT — the play itself is recorded
   // separately. game-state.ts removes the runner from the base and
-  // increments outs; stats modules count it as an out without crediting CS.
-  async function handleRunnerOut(runnerId: string, fromBase: 1 | 2 | 3) {
+  // increments outs; stats modules count it as an out without crediting CS,
+  // and fielding-stats credits the putout order when the scorer entered one.
+  async function handleRunnerOut(runnerId: string, fromBase: 1 | 2 | 3, fieldingSequence: number[]) {
     if (!gameState) return;
     await recordEvent(EventType.BASERUNNER_OUT, gameState.inning, gameState.isTopOfInning, {
       runnerId,
       fromBase,
       ...pitcherAttribution,
+      // Omitted rather than sent empty when skipped: absent means "not recorded".
+      ...(fieldingSequence.length > 0 ? { fieldingSequence } : {}),
     });
   }
 

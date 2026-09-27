@@ -40,4 +40,37 @@ describe('ThrowSequenceModal', () => {
     fireEvent.press(screen.getByTestId('throw-done'));
     expect(onDone).toHaveBeenCalledWith([8]);
   });
+
+  it('should show the throw-step title by default', () => {
+    render(<ThrowSequenceModal visible firstFielder={6} onDone={jest.fn()} />);
+    expect(screen.getByText('Where was it thrown?')).toBeTruthy();
+  });
+
+  it('should show a custom title and subtitle when given', () => {
+    render(
+      <ThrowSequenceModal
+        visible
+        firstFielder={null}
+        title="Bob thrown out — who made the play?"
+        subtitle="Tap each fielder in order."
+        onDone={jest.fn()}
+      />,
+    );
+    expect(screen.getByText('Bob thrown out — who made the play?')).toBeTruthy();
+    expect(screen.getByText('Tap each fielder in order.')).toBeTruthy();
+    expect(screen.queryByText('Where was it thrown?')).toBeNull();
+  });
+
+  it('should let Undo clear the first fielder when it is not locked', () => {
+    const onDone = jest.fn();
+    render(
+      <ThrowSequenceModal visible firstFielder={8} lockFirstFielder={false} onDone={onDone} />,
+    );
+    fireEvent.press(screen.getByTestId('throw-undo'));
+    expect(readout()).toBe('');
+    fireEvent.press(screen.getByTestId('throw-position-9'));
+    fireEvent.press(screen.getByTestId('throw-position-2'));
+    fireEvent.press(screen.getByTestId('throw-done'));
+    expect(onDone).toHaveBeenCalledWith([9, 2]);
+  });
 });

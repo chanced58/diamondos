@@ -67,7 +67,9 @@ export type RosterPlayer = {
  *                Recorded as a linked BASERUNNER_ADVANCE, plus a SCORE when
  *                they reach home — the advance never credits the run itself.
  * - `thrown_out` — runner is thrown out advancing. Recorded as a
- *                BASERUNNER_OUT event linked via relatedEventId.
+ *                BASERUNNER_OUT event linked via relatedEventId, carrying
+ *                the putout order (e.g. [8, 6, 2]) when the scorer entered
+ *                one; absent when skipped.
  */
 export type RunnerOutcome = {
   runnerId: string;
@@ -76,7 +78,7 @@ export type RunnerOutcome = {
   | { kind: 'auto' }
   | { kind: 'held'; toBase: 2 | 3 }
   | { kind: 'advanced'; toBase: 3 | 4 }
-  | { kind: 'thrown_out' }
+  | { kind: 'thrown_out'; fieldingSequence?: number[] }
 );
 
 interface PitchInputProps {
@@ -146,8 +148,9 @@ interface PitchInputProps {
   onRecordSacBuntFromOut?: (outType: BattedOutType) => void;
   onRecordFieldersChoice: (runnerId: string, fromBase: Base) => void;
   /** Runner thrown out advancing during a play (e.g., on a hit, sac fly,
-   *  wild pitch). Records BASERUNNER_OUT for the chosen runner. */
-  onRecordRunnerOut: (runnerId: string, fromBase: Base) => void;
+   *  wild pitch). Records BASERUNNER_OUT for the chosen runner, with the
+   *  putout order the scorer entered (empty when skipped). */
+  onRecordRunnerOut: (runnerId: string, fromBase: Base, fieldingSequence: number[]) => void;
   onRecordWildPitch: () => void;
   onRecordPassedBall: () => void;
   onRecordBalk: () => void;
@@ -365,6 +368,14 @@ export function PitchInput({
     firstFielder: number;
     finish: (throws: number[]) => void;
   }>(null);
+  // The putout-order step for a runner thrown out on a play — one runner at a
+  // time; `finish` moves on to the next runner or records the play.
+  const [putoutStep, setPutoutStep] = useState<null | {
+    runnerId: string;
+    fromBase: Base;
+    firstFielder: number | null;
+    finish: (sequence: number[]) => void;
+  }>(null);
   const [showRunnersSheet, setShowRunnersSheet] = useState(false);
   const [showSubsSheet, setShowSubsSheet] = useState(false);
   const fcEligible = runnersOnBase.length > 0;
@@ -510,7 +521,38 @@ export function PitchInput({
 
   function handleRunnerOutPick(runnerId: string, fromBase: Base) {
     setShowRunnerOutModal(false);
-    onRecordRunnerOut(runnerId, fromBase);
+    // No batted ball belongs to this out, so there is no fielder to start from.
+    setPutoutStep({
+      runnerId,
+      fromBase,
+      firstFielder: null,
+      finish: (sequence) => onRecordRunnerOut(runnerId, fromBase, sequence),
+    });
+  }
+
+  /**
+   * Ask for the putout order of each thrown-out runner in turn, lead runner
+   * first, then hand back every sequence at once so the play is recorded in
+   * one go. The batted ball's first fielder seeds each sequence — the relay
+   * almost always starts with whoever fielded the hit.
+   */
+  function askPutoutOrder(
+    runners: { runnerId: string; fromBase: Base }[],
+    firstFielder: number | null,
+    done: (sequences: Map<string, number[]>) => void,
+    collected: Map<string, number[]> = new Map(),
+  ) {
+    const [next, ...rest] = runners;
+    if (!next) {
+      done(collected);
+      return;
+    }
+    setPutoutStep({
+      ...next,
+      firstFielder,
+      finish: (sequence) =>
+        askPutoutOrder(rest, firstFielder, done, new Map(collected).set(next.runnerId, sequence)),
+    });
   }
 
   function handleHitTap(hitType: HitType) {
@@ -563,9 +605,22 @@ export function PitchInput({
     const outcomes = Object.values(runnerOutcomeChoices);
     const hitType = pendingHitWithRunners;
     const recordWithOutcomes = onRecordHitWithRunnerOutcomes;
-    commitInPlay(EventType.HIT, () => recordWithOutcomes(hitType, outcomes));
     setPendingHitWithRunners(null);
     setRunnerOutcomeChoices({});
+
+    const thrownOut = outcomes
+      .filter((o) => o.kind === 'thrown_out')
+      .sort((a, b) => b.fromBase - a.fromBase)
+      .map(({ runnerId, fromBase }) => ({ runnerId, fromBase }));
+    askPutoutOrder(thrownOut, battedBallRef.current?.firstFielder ?? null, (sequences) => {
+      const withSequences = outcomes.map((o) => {
+        const sequence = sequences.get(o.runnerId);
+        return o.kind === 'thrown_out' && sequence && sequence.length > 0
+          ? { ...o, fieldingSequence: sequence }
+          : o;
+      });
+      commitInPlay(EventType.HIT, () => recordWithOutcomes(hitType, withSequences));
+    });
   }
 
   function cancelHitWithRunners() {
@@ -1513,6 +1568,25 @@ export function PitchInput({
           const pending = pendingThrow;
           setPendingThrow(null);
           pending?.finish(throws);
+        }}
+      />
+
+      {/* Keyed per runner so two thrown-out runners on one hit each start fresh. */}
+      <ThrowSequenceModal
+        key={`putout-${putoutStep?.runnerId ?? 'none'}`}
+        visible={putoutStep !== null}
+        firstFielder={putoutStep?.firstFielder ?? null}
+        title={
+          putoutStep
+            ? `Runner on ${baseLabel(putoutStep.fromBase)} thrown out — who made the play?`
+            : undefined
+        }
+        subtitle="Tap each fielder in order. Not sure? Just tap Done."
+        lockFirstFielder={false}
+        onDone={(sequence) => {
+          const step = putoutStep;
+          setPutoutStep(null);
+          step?.finish(sequence);
         }}
       />
     </View>
