@@ -79,6 +79,8 @@ export function deriveGameState(
     currentPitcherPitchCount: 0,
     completedTopHalfPAs: 0,
     completedBottomHalfPAs: 0,
+    lastCompletedTopHalfBatterId: null,
+    lastCompletedBottomHalfBatterId: null,
     homeLeadoffBatterId: null,
     awayLeadoffBatterId: null,
     isFinal: false,
@@ -184,7 +186,7 @@ export function deriveGameState(
         if (walkBasesLoaded) addRuns(state, 1, state.isTopOfInning);
         state.balls = 0;
         state.strikes = 0;
-        incrementPA(state);
+        incrementPA(state, event);
         break;
       }
 
@@ -234,7 +236,7 @@ export function deriveGameState(
         }
         state.balls = 0;
         state.strikes = 0;
-        incrementPA(state);
+        incrementPA(state, event);
         break;
       }
 
@@ -263,7 +265,7 @@ export function deriveGameState(
         if (errorBasesLoaded) addRuns(state, 1, state.isTopOfInning);
         state.balls = 0;
         state.strikes = 0;
-        incrementPA(state);
+        incrementPA(state, event);
         break;
       }
 
@@ -272,7 +274,7 @@ export function deriveGameState(
         state.outs++;
         state.balls = 0;
         state.strikes = 0;
-        incrementPA(state);
+        incrementPA(state, event);
         break;
       }
 
@@ -293,7 +295,7 @@ export function deriveGameState(
         }
         state.balls = 0;
         state.strikes = 0;
-        incrementPA(state);
+        incrementPA(state, event);
         break;
       }
 
@@ -314,7 +316,7 @@ export function deriveGameState(
         };
         state.balls = 0;
         state.strikes = 0;
-        incrementPA(state);
+        incrementPA(state, event);
         break;
       }
 
@@ -327,7 +329,7 @@ export function deriveGameState(
         }
         state.balls = 0;
         state.strikes = 0;
-        incrementPA(state);
+        incrementPA(state, event);
         break;
       }
 
@@ -344,7 +346,7 @@ export function deriveGameState(
         else if (p.runnerOutBase === 3) state.runnersOnBase = { ...state.runnersOnBase, third: null };
         state.balls = 0;
         state.strikes = 0;
-        incrementPA(state);
+        incrementPA(state, event);
         break;
       }
 
@@ -352,7 +354,7 @@ export function deriveGameState(
         state.outs = Math.min(state.outs + 3, OUTS_PER_INNING);
         state.balls = 0;
         state.strikes = 0;
-        incrementPA(state);
+        incrementPA(state, event);
         break;
       }
 
@@ -663,11 +665,15 @@ function forceAdvanceRunners(
   return updated;
 }
 
-function incrementPA(state: LiveGameState): void {
+function incrementPA(state: LiveGameState, event: GameEvent): void {
+  const p = event.payload as { batterId?: string; opponentBatterId?: string };
+  const batterId = p.batterId ?? p.opponentBatterId ?? state.currentBatterId;
   if (state.isTopOfInning) {
     state.completedTopHalfPAs++;
+    state.lastCompletedTopHalfBatterId = batterId;
   } else {
     state.completedBottomHalfPAs++;
+    state.lastCompletedBottomHalfBatterId = batterId;
   }
 }
 

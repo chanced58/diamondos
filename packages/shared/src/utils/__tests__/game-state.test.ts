@@ -952,3 +952,32 @@ describe('runner advancing beyond the standard base on a hit — engine and stat
     expect(state.awayScore).toBe(0);
   });
 });
+
+describe('deriveGameState — last batter to complete a PA', () => {
+  beforeEach(resetSeq);
+
+  it('should record the most recent completed-PA batter separately for each half', () => {
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, { awayLeadoffBatterId: 'a1', homeLeadoffBatterId: 'h1' }),
+      ...batterHit('a1', HitType.SINGLE),
+      ...batterOut('a2'),
+    ];
+    const afterTop = deriveGameState(GAME, events, HOME_TEAM);
+    expect(afterTop.lastCompletedTopHalfBatterId).toBe('a2');
+    expect(afterTop.lastCompletedBottomHalfBatterId).toBe(null);
+
+    events.push(advanceInning(), ...batterOut('h1'));
+    const afterBottom = deriveGameState(GAME, events, HOME_TEAM);
+    expect(afterBottom.lastCompletedTopHalfBatterId).toBe('a2');
+    expect(afterBottom.lastCompletedBottomHalfBatterId).toBe('h1');
+  });
+
+  it('should not count a batter whose PA is still in progress', () => {
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, { awayLeadoffBatterId: 'a1', homeLeadoffBatterId: 'h1' }),
+      ...batterOut('a1'),
+      e(EventType.PITCH_THROWN, { batterId: 'a2', outcome: PitchOutcome.BALL }),
+    ];
+    expect(deriveGameState(GAME, events, HOME_TEAM).lastCompletedTopHalfBatterId).toBe('a1');
+  });
+});

@@ -27,7 +27,7 @@ import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../src/feat
 import { createBattedBallSlot } from '../../../../src/features/scoring/batted-ball-fields';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, battingOrderHistory, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
@@ -207,22 +207,35 @@ export default function ScoringScreen() {
 
   // ─── Due batter ──────────────────────────────────────────────────────────
   // Our batting order with in-game SUBSTITUTION events (pinch hitters,
-  // lineup extensions) folded in, cycled by our team's completed PAs — the
-  // same index-based derivation the web ScoringBoard uses.
-  const battingSlots = useMemo<BattingSlot[]>(
+  // lineup extensions) folded in. The due batter is the slot after whoever
+  // completed our last PA, so a batter added or removed mid-game doesn't
+  // shift the rotation — the same derivation the web ScoringBoard uses.
+  const baseBattingSlots = useMemo<BattingSlot[]>(
     () =>
-      applyLineupSubstitutions(
-        observedLineupRows
-          .filter((row) => row.battingOrder != null)
-          .map((row) => ({ playerId: row.playerRemoteId, battingOrder: row.battingOrder! })),
-        events,
-      ),
-    [observedLineupRows, events],
+      observedLineupRows
+        .filter((row) => row.battingOrder != null)
+        .map((row) => ({ playerId: row.playerRemoteId, battingOrder: row.battingOrder! })),
+    [observedLineupRows],
+  );
+  const battingSlots = useMemo(
+    () => applyLineupSubstitutions(baseBattingSlots, events),
+    [baseBattingSlots, events],
+  );
+  const ourBattingOrderHistory = useMemo(
+    () => battingOrderHistory(baseBattingSlots, events),
+    [baseBattingSlots, events],
   );
   const ourTeamPAs = gameState
     ? (isHome ? gameState.completedBottomHalfPAs : gameState.completedTopHalfPAs)
     : 0;
-  const dueBatter = deriveDueBatter(battingSlots, ourTeamPAs);
+  const ourLastBatterId = gameState
+    ? (isHome ? gameState.lastCompletedBottomHalfBatterId : gameState.lastCompletedTopHalfBatterId)
+    : null;
+  const dueBatter = deriveDueBatter(
+    battingSlots,
+    ourTeamPAs,
+    ourLastBatterId ? ourBattingOrderHistory.get(ourLastBatterId) : null,
+  );
 
   // Per-PA manual override — the scorer can point the rotation at a
   // different batter (lineup drifted, skipped batter). Cleared when the PA
@@ -248,9 +261,21 @@ export default function ScoringScreen() {
   const opponentPAs = gameState
     ? (isHome ? gameState.completedTopHalfPAs : gameState.completedBottomHalfPAs)
     : 0;
+  const opponentBattingSlots = useMemo<BattingSlot[]>(
+    () => opponentSlots.map((s) => ({ playerId: s.playerId, battingOrder: s.battingOrder })),
+    [opponentSlots],
+  );
+  const opponentBattingOrderHistory = useMemo(
+    () => battingOrderHistory(opponentBattingSlots, events, { forOpponent: true }),
+    [opponentBattingSlots, events],
+  );
+  const opponentLastBatterId = gameState
+    ? (isHome ? gameState.lastCompletedTopHalfBatterId : gameState.lastCompletedBottomHalfBatterId)
+    : null;
   const opponentDueBatter = deriveDueBatter(
-    opponentSlots.map((s) => ({ playerId: s.playerId, battingOrder: s.battingOrder })),
+    opponentBattingSlots,
     opponentPAs,
+    opponentLastBatterId ? opponentBattingOrderHistory.get(opponentLastBatterId) : null,
   );
   const [opponentBatterOverrideId, setOpponentBatterOverrideId] = useState<string | null>(null);
   useEffect(() => {

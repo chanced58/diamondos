@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome, computeLineScore, evaluateGameEnd, shouldEndHalfForRunCap, isDroppedThirdStrikeAllowed, ghostRunnerBaseForHalf, defaultLeagueScoringSettings, sacrificeEligibility, hitRunnerOptions, evaluateHitRunnerOutcomes, HitType, HitTrajectory, type LeagueScoringSettings } from '@baseball/shared';
+import { deriveDefensiveLineup, deriveGameState, battingOrderHistory, deriveDueBatter, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome, computeLineScore, evaluateGameEnd, shouldEndHalfForRunCap, isDroppedThirdStrikeAllowed, ghostRunnerBaseForHalf, defaultLeagueScoringSettings, sacrificeEligibility, hitRunnerOptions, evaluateHitRunnerOutcomes, HitType, HitTrajectory, type LeagueScoringSettings } from '@baseball/shared';
 import type { GameEvent } from '@baseball/shared';
 import { endGameAction } from '../actions';
 import { DefensiveDiamond } from './DefensiveDiamond';
@@ -942,26 +942,44 @@ export function ScoringBoard({
   const effectiveStarters         = applySubstitutions(starters,         teamRoster,     false);
   const effectiveOpponentStarters = applySubstitutions(opponentStarters, opponentRoster, true);
 
+  // The due batter is the slot after whoever completed that team's last PA
+  // (deriveDueBatter), so a batter added or removed mid-game doesn't shift
+  // the rotation. Before the first PA it cycles by index against the sorted
+  // starters, so non-contiguous batting orders (e.g. slots 1,2,3,5,…,9 when
+  // slot 4 was removed) and "everyone bats" rosters (slot 10+) still walk
+  // every batter.
+  const toSlot = (s: LineupEntry) => ({ playerId: s.playerId, battingOrder: s.battingOrder });
+
   const completedTeamPAs = opponentBatsInTop
     ? gameState.completedBottomHalfPAs
     : gameState.completedTopHalfPAs;
-  const currentBatterIdx = effectiveStarters.length > 0 ? completedTeamPAs % effectiveStarters.length : 0;
+  const teamLastBatterId = opponentBatsInTop
+    ? gameState.lastCompletedBottomHalfBatterId
+    : gameState.lastCompletedTopHalfBatterId;
+  const teamLastBatterOrder = teamLastBatterId
+    ? battingOrderHistory(starters.map(toSlot), events).get(teamLastBatterId)
+    : null;
+  const currentBatterIdx =
+    deriveDueBatter(effectiveStarters.map(toSlot), completedTeamPAs, teamLastBatterOrder)?.index ?? 0;
   const currentBatter = effectiveStarters[currentBatterIdx] ?? effectiveStarters[0];
 
   const completedOpponentPAs = opponentBatsInTop
     ? gameState.completedTopHalfPAs
     : gameState.completedBottomHalfPAs;
-  // Cycle through the actual opponent lineup length so "everyone bats" rosters
-  // walk slot 10+ before wrapping. Use index-based lookup against the sorted
-  // starter array so non-contiguous batting orders (e.g. slots 1,2,3,5,6,7,8,9
-  // when slot 4 was removed) still cycle every batter — the prior approach of
-  // computing `(PAs % count) + 1` and matching by exact battingOrder would
-  // return null when the expected slot number didn't exist in the lineup.
-  const opponentSlotCount = effectiveOpponentStarters.length;
+  const opponentLastBatterId = opponentBatsInTop
+    ? gameState.lastCompletedTopHalfBatterId
+    : gameState.lastCompletedBottomHalfBatterId;
+  const opponentLastBatterOrder = opponentLastBatterId
+    ? battingOrderHistory(opponentStarters.map(toSlot), events, { forOpponent: true })
+        .get(opponentLastBatterId)
+    : null;
+  const opponentDueIdx = deriveDueBatter(
+    effectiveOpponentStarters.map(toSlot),
+    completedOpponentPAs,
+    opponentLastBatterOrder,
+  )?.index;
   const currentOpponentBatter =
-    opponentSlotCount > 0
-      ? effectiveOpponentStarters[completedOpponentPAs % opponentSlotCount]
-      : null;
+    opponentDueIdx !== undefined ? effectiveOpponentStarters[opponentDueIdx] : null;
   const expectedOpponentSlot = currentOpponentBatter?.battingOrder ?? 1;
 
   // Clear skipped-slot dismissals when the active slot changes (skip is per-PA only)
