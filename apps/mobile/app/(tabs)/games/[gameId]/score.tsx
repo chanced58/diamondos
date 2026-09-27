@@ -623,9 +623,13 @@ export default function ScoringScreen() {
 
   // The batting side has no one due (order empty, or a partial order's last
   // batter just batted): the pad is replaced by "Who's up?" and the prompt
-  // opens on its own, once per plate appearance.
+  // opens on its own, once per plate appearance — never over the "3 outs"
+  // screen, where no one is coming up until the half changes.
   const sideNeedsBatter =
-    gameStarted && !gameState?.isFinal && (weBat ? ourNeedsBatter : opponentNeedsBatter);
+    gameStarted &&
+    !gameState?.isFinal &&
+    (gameState?.outs ?? 0) < OUTS_PER_INNING &&
+    (weBat ? ourNeedsBatter : opponentNeedsBatter);
   useEffect(() => {
     if (!sideNeedsBatter) return;
     if (weBat) setShowAddOurBatter(true);
