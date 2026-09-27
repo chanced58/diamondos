@@ -216,6 +216,39 @@ describe('PitchInput — putout order for a runner thrown out on a hit', () => {
     );
   });
 
+  it('should mark only the runner whose Thrown out was pressed, even when two runners share an id', () => {
+    // With no batting order the engine can credit consecutive hits to one
+    // batter, so both runners on base carry the same id.
+    const onRecordHitWithRunnerOutcomes = jest.fn();
+    render(
+      <PitchInput
+        {...baseProps({
+          runnersOnBase: [{ base: 1, runnerId: 'same' }, { base: 2, runnerId: 'same' }],
+          onRecordHitWithRunnerOutcomes,
+        })}
+      />,
+    );
+
+    doubleFieldedAtShort();
+    press(screen.getAllByText('Thrown out')[0]);
+    press(screen.getByText('Confirm Double'));
+
+    expect(screen.getByText('Runner on 1st thrown out — who made the play?')).toBeTruthy();
+    press(screen.getByTestId('throw-position-2'));
+    press(screen.getByTestId('throw-done'));
+
+    expect(screen.queryByText('Runner on 2nd thrown out — who made the play?')).toBeNull();
+    expect(onRecordHitWithRunnerOutcomes).toHaveBeenCalledTimes(1);
+    const [, outcomes] = onRecordHitWithRunnerOutcomes.mock.calls[0];
+    expect(outcomes).toHaveLength(2);
+    expect(outcomes).toEqual(
+      expect.arrayContaining([
+        { runnerId: 'same', fromBase: 1, kind: 'thrown_out', fieldingSequence: [6, 2] },
+        { runnerId: 'same', fromBase: 2, kind: 'auto' },
+      ]),
+    );
+  });
+
   it('should not ask anything when no runner was thrown out', () => {
     const onRecordHitWithRunnerOutcomes = jest.fn();
     render(<PitchInput {...baseProps({ runnersOnBase: ON_FIRST, onRecordHitWithRunnerOutcomes })} />);
