@@ -220,7 +220,13 @@ export function resolveDueBatter(
   const due = deriveDueBatter(slots, completedTeamPAs, lastBatterOrder);
   if (!due) return { kind: 'ask', topOfOrder: null };
 
-  const turnedOver = due.index === 0 && completedTeamPAs > 0;
+  // With an anchor, the order has turned over only when no slot comes after
+  // the last batter — an anchor below every slot (slot 1 removed after he
+  // batted) just means the first remaining slot is due.
+  const turnedOver =
+    lastBatterOrder == null
+      ? due.index === 0 && completedTeamPAs > 0
+      : !slots.some((s) => s.battingOrder > lastBatterOrder);
   if (turnedOver && slots.length < COMPLETE_BATTING_ORDER_LENGTH) {
     return { kind: 'ask', topOfOrder: { playerId: due.playerId, battingOrder: due.battingOrder } };
   }

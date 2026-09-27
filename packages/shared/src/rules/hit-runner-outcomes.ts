@@ -127,7 +127,9 @@ export function evaluateHitRunnerOutcomes(
   runners: ReadonlyArray<{ fromBase: OccupiedBase; choice: HitRunnerChoice }>,
 ): HitRunnerEvaluation {
   const finishes: Array<{ fromBase: OccupiedBase; finish: FinishBase }> = [];
-  const occupiedBases = runners.map((r) => r.fromBase);
+  // A runner thrown out on the play no longer forces anyone: once the runner
+  // from first is forced out, the runner from second may hold (OBR 5.09(b)(6)).
+  const occupiedBases = runners.filter((r) => r.choice.kind !== 'thrown_out').map((r) => r.fromBase);
 
   for (const { fromBase, choice } of runners) {
     const options = hitRunnerOptions(fromBase, hitType, occupiedBases);

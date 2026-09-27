@@ -1006,3 +1006,47 @@ describe('deriveGameState — runner held at his own base on a hit', () => {
     expect(state.awayScore).toBe(0);
   });
 });
+
+describe('deriveGameState — two runners sharing an id', () => {
+  beforeEach(resetSeq);
+
+  /** 'dup' on 1st and on 2nd (e.g. hits credited to one batter with no order). */
+  function dupOnFirstAndSecond(): GameEvent[] {
+    return [
+      e(EventType.GAME_START, { awayLeadoffBatterId: 'dup', homeLeadoffBatterId: 'h1' }),
+      ...batterHit('dup', HitType.SINGLE),
+      ...batterHit('dup', HitType.SINGLE),
+    ];
+  }
+
+  it('should apply a linked out only to the runner on its fromBase', () => {
+    const events = dupOnFirstAndSecond();
+    const hit = batterHit('b3', HitType.SINGLE);
+    events.push(
+      ...hit,
+      e(EventType.BASERUNNER_OUT, { runnerId: 'dup', fromBase: 1, relatedEventId: hit[1].id, reason: 'on_play' }),
+    );
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    // Runner from 2nd takes the standard advance to 3rd; runner from 1st is out.
+    expect(state.runnersOnBase).toEqual({ first: 'b3', second: null, third: 'dup' });
+    expect(state.outs).toBe(1);
+  });
+
+  it('should still clear the runner when fromBase is where he was put out (web "Out at")', () => {
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, { awayLeadoffBatterId: 'a1', homeLeadoffBatterId: 'h1' }),
+      ...batterHit('a1', HitType.SINGLE),
+      e(EventType.BASERUNNER_OUT, { runnerId: 'a1', fromBase: 2 }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    expect(state.runnersOnBase).toEqual({ first: null, second: null, third: null });
+    expect(state.outs).toBe(1);
+  });
+
+  it('should remove a standalone runner out from its fromBase', () => {
+    const events = dupOnFirstAndSecond();
+    events.push(e(EventType.BASERUNNER_OUT, { runnerId: 'dup', fromBase: 2 }));
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    expect(state.runnersOnBase).toEqual({ first: 'dup', second: null, third: null });
+  });
+});

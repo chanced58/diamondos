@@ -1483,9 +1483,17 @@ export function PitchInput({
                 // standard advance — all from hitRunnerOptions. The batter
                 // takes a base too, so none of this is simply fromBase + n.
                 // Occupancy decides who is forced: an unforced runner may
-                // also hold right where he is (stayBase).
+                // also hold right where he is (stayBase). A runner already
+                // marked thrown out forces no one (OBR 5.09(b)(6)) — the same
+                // occupancy evaluateHitRunnerOutcomes uses.
                 const options = pendingHitWithRunners
-                  ? hitRunnerOptions(base, pendingHitWithRunners, runnersOnBase.map((r) => r.base))
+                  ? hitRunnerOptions(
+                      base,
+                      pendingHitWithRunners,
+                      runnersOnBase
+                        .filter((r) => runnerOutcomeChoices[r.base]?.kind !== 'thrown_out')
+                        .map((r) => r.base),
+                    )
                   : null;
                 const holdBases = [options?.stayBase ?? null, options?.heldBase ?? null].filter(
                   (b): b is 2 | 3 => b !== null,

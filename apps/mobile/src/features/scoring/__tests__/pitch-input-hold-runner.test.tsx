@@ -126,4 +126,31 @@ describe('PitchInput — holding an unforced runner at his base', () => {
     singleToPrompt();
     expect(screen.getByText('Held at 3B')).toBeTruthy();
   });
+
+  it('should offer the runner from 2nd a hold at 2B once the runner from 1st is thrown out', () => {
+    const onRecordHitWithRunnerOutcomes = jest.fn();
+    render(
+      <PitchInput
+        {...baseProps({
+          runnersOnBase: [{ base: 1, runnerId: 'r1' }, { base: 2, runnerId: 'r2' }],
+          onRecordHitWithRunnerOutcomes,
+        })}
+      />,
+    );
+
+    singleToPrompt();
+    expect(screen.queryByText('Held at 2B')).toBeNull();
+    press(screen.getAllByText('Thrown out')[0]);
+    press(screen.getByText('Held at 2B'));
+    press(screen.getByText('Confirm Single'));
+    press(screen.getByTestId('throw-done'));
+
+    expect(onRecordHitWithRunnerOutcomes).toHaveBeenCalledWith(
+      HitType.SINGLE,
+      expect.arrayContaining([
+        { runnerId: 'r1', fromBase: 1, kind: 'thrown_out' },
+        { runnerId: 'r2', fromBase: 2, kind: 'held', toBase: 2 },
+      ]),
+    );
+  });
 });

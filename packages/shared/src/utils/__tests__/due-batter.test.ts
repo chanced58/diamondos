@@ -357,3 +357,10 @@ describe('resolveDueBatter — when to ask "Who\'s up?"', () => {
     expect(resolveDueBatter(order(10), 10, 10)).toMatchObject({ kind: 'due', playerId: 'p1' });
   });
 });
+
+describe('resolveDueBatter — anchor below every remaining slot', () => {
+  it('should bring up the first remaining slot, not ask, when slot 1 was removed after batting', () => {
+    const slots = [2, 3, 4, 5].map((n) => ({ playerId: `p${n}`, battingOrder: n }));
+    expect(resolveDueBatter(slots, 1, 1)).toMatchObject({ kind: 'due', playerId: 'p2' });
+  });
+});

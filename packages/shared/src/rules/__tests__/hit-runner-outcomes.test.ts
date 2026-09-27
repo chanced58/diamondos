@@ -174,3 +174,13 @@ describe('holding an unforced runner at his own base', () => {
     expect(result.error).toBe("Two runners can't both finish on 3B.");
   });
 });
+
+describe('holding after a trailing force out (OBR 5.09(b)(6))', () => {
+  it('should let the runner from 2nd hold at 2nd once the runner from 1st is thrown out', () => {
+    const result = evaluateHitRunnerOutcomes(HitType.SINGLE, [
+      { fromBase: 1, choice: { kind: 'thrown_out' } },
+      { fromBase: 2, choice: { kind: 'held', toBase: 2 } },
+    ]);
+    expect(result).toEqual({ error: null, rbis: 0 });
+  });
+});
