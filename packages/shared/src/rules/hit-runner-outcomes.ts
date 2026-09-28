@@ -181,7 +181,7 @@ export function evaluatePlayRunnerOutcomes(
 
   for (const { fromBase, choice } of runners) {
     const options = playRunnerOptions(fromBase, play, occupiedBases);
-    if (!options) return { error: 'Runner outcomes only apply to a single, double or triple.', rbis: 0 };
+    if (!options) return { error: 'Runner outcomes only apply to a single, double, triple, sac fly or sac bunt.', rbis: 0 };
     if (choice.kind === 'thrown_out') continue;
 
     let finish: 1 | FinishBase;
@@ -189,12 +189,12 @@ export function evaluatePlayRunnerOutcomes(
       finish = options.standardBase;
     } else if (choice.kind === 'held') {
       if (choice.toBase !== options.heldBase && choice.toBase !== options.stayBase) {
-        return { error: `A runner from ${fromBase}B can't be held at ${BASE_NAME[choice.toBase]} on this hit.`, rbis: 0 };
+        return { error: `A runner from ${fromBase}B can't be held at ${BASE_NAME[choice.toBase]} on this play.`, rbis: 0 };
       }
       finish = choice.toBase;
     } else {
       if (!options.advancedBases.includes(choice.toBase as 3 | 4)) {
-        return { error: `A runner from ${fromBase}B can't advance to ${BASE_NAME[choice.toBase]} beyond the standard advance on this hit.`, rbis: 0 };
+        return { error: `A runner from ${fromBase}B can't advance to ${BASE_NAME[choice.toBase]} beyond the standard advance on this play.`, rbis: 0 };
       }
       finish = choice.toBase;
     }

@@ -114,7 +114,7 @@ describe('evaluateHitRunnerOutcomes', () => {
 
   it('should reject a hold the hit does not allow', () => {
     const result = evaluateHitRunnerOutcomes(HitType.DOUBLE, [{ fromBase: 1, choice: { kind: 'held', toBase: 2 } }]);
-    expect(result.error).toBe("A runner from 1B can't be held at 2B on this hit.");
+    expect(result.error).toBe("A runner from 1B can't be held at 2B on this play.");
   });
 
   it('should reject an advance that is not beyond the standard one', () => {
