@@ -12,6 +12,13 @@
 
 import { UNKNOWN_BATTER_STUB } from './batting-stats';
 import { OUTS_PER_INNING } from '../constants/baseball';
+import {
+  applyLinkedAdvance,
+  applyPlayToRunners,
+  applyRunnerOut,
+  collectLinkedRunnerOutcomes,
+  type Bases,
+} from '../rules/play-runners';
 
 export type OppBattingRow = {
   playerId: string;
@@ -73,6 +80,13 @@ export function computeOpponentBatting(
     let outsThisInning = 0;
 
     function clearBases() { r1 = null; r2 = null; r3 = null; }
+
+    // A hit's linked runner outcomes, and the shared rule that applies them
+    // (rules/play-runners — the one deriveGameState uses).
+    const linkedOutcomes = collectLinkedRunnerOutcomes(gameEvents as { event_type?: string; payload?: unknown }[]);
+    const runnerIdOf = (runner: string) => runner;
+    const currentBases = (): Bases<string> => ({ first: r1, second: r2, third: r3 });
+    const setBases = (next: Bases<string>) => { r1 = next.first; r2 = next.second; r3 = next.third; };
 
     function scoreRunner(runnerId: string | null) {
       if (runnerId && oppPlayerNameMap.has(runnerId)) {
@@ -146,25 +160,15 @@ export function computeOpponentBatting(
           // Precedes a HIT(fieldersChoice:true); remove the runner from
           // base state and count the out so the HIT handler below can
           // short-circuit run attribution on a 3rd-out fielder's choice.
-          const runnerId = payload.runnerId as string | undefined;
-          if (runnerId) {
-            if (r1 === runnerId) r1 = null;
-            else if (r2 === runnerId) r2 = null;
-            else if (r3 === runnerId) r3 = null;
-          }
+          if (typeof payload.runnerId === 'string') setBases(applyRunnerOut(currentBases(), payload, runnerIdOf));
           outsThisInning++;
         }
         if (etype === 'baserunner_advance') {
           const runnerId = payload.runnerId as string | undefined;
           const toBase = payload.toBase as number | undefined;
           if (runnerId && oppPlayerNameMap.has(runnerId) && toBase) {
-            if (r1 === runnerId) r1 = null;
-            else if (r2 === runnerId) r2 = null;
-            else if (r3 === runnerId) r3 = null;
-            // toBase 4 = scored; run credited by SCORE event
-            if (toBase === 3) r3 = runnerId;
-            else if (toBase === 2) r2 = runnerId;
-            else if (toBase === 1) r1 = runnerId;
+            // toBase 4 places nothing — the SCORE event credits the run.
+            setBases(applyLinkedAdvance(currentBases(), payload, runnerId, runnerIdOf));
           }
         }
         if (etype === 'substitution') {
@@ -210,28 +214,18 @@ export function computeOpponentBatting(
             : hitType === 'double' ? 2
             : 1;
 
-          // Count runs scored on this hit for auto-derived RBI (OBR 9.04).
-          let runsScored = 0;
-          if (bases === 4) {
-            if (r3) runsScored++;
-            if (r2) runsScored++;
-            if (r1) runsScored++;
-            runsScored++;
-            scoreRunner(r3); scoreRunner(r2); scoreRunner(r1);
-            scoreRunner(batterId);
-            clearBases();
-          } else {
-            if (r3) { scoreRunner(r3); runsScored++; }
-            if (r2 && 2 + bases >= 4) { scoreRunner(r2); runsScored++; }
-            if (r1 && 1 + bases >= 4) { scoreRunner(r1); runsScored++; }
-            if (bases === 1) {
-              r3 = r2 ?? null; r2 = r1; r1 = batterId;
-            } else if (bases === 2) {
-              r3 = r1 ?? null; r2 = batterId; r1 = null;
-            } else if (bases === 3) {
-              r3 = batterId; r2 = null; r1 = null;
-            }
-          }
+          // Runners scoring on this hit's default advance give the derived
+          // RBI (OBR 9.04); a runner with a linked outcome is left to it.
+          const played = applyPlayToRunners(
+            currentBases(),
+            { kind: 'hit', bases: bases as 1 | 2 | 3 | 4 },
+            batterId,
+            linkedOutcomes.get(event.id as string),
+            runnerIdOf,
+          );
+          for (const runner of played.scoring) scoreRunner(runner);
+          const runsScored = played.runs;
+          setBases(played.runners);
           const explicitRbis = payload.rbis as number | undefined;
           s.rbi += explicitRbis !== undefined ? explicitRbis : runsScored;
         }
