@@ -135,6 +135,19 @@ const SCENARIOS: Scenario[] = [
     runsBy: { a1: 0, a2: 0 },
     rbiBy: { a1: 0, a2: 0 },
   },
+  {
+    name: 'D: two runners share an id; the one from 1st is thrown out, the one from 2nd scores later',
+    build: (b) => {
+      b.hit('a1', 'single');
+      b.hit('a1', 'single'); // no batting order: the same batter credited twice
+      const hit = b.hit('a2', 'single');
+      b.linked('baserunner_out', hit, { runnerId: 'a1', fromBase: 1 });
+      b.hit('a3', 'single');
+    },
+    runs: 1,
+    runsBy: { a1: 1, a2: 0, a3: 0 },
+    rbiBy: { a1: 0, a2: 0, a3: 1 },
+  },
 ];
 
 const PLAYERS = ['a1', 'a2', 'a3', 'p1'].map((id) => ({ id, firstName: id, lastName: 'X' }));
