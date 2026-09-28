@@ -13,6 +13,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   link_wrong_browser:
     'It looks like you opened the sign-in link in a different browser or app. Please request a new link below.',
   session_expired: 'Your session has expired. Please sign in again.',
+  google_not_invited:
+    "That Google account isn't associated with an invite. Contact your coach, or sign in with the email your invite was sent to.",
 };
 
 export default async function LoginPage({
