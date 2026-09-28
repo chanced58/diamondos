@@ -10,6 +10,7 @@ import {
   type PitchingChangePayload,
   type ScorePayload,
 } from '../types/game-event';
+import { formatFieldingSequence } from '../constants/baseball';
 
 /**
  * Minimal shape formatEventDescription needs from an event — deliberately
@@ -125,7 +126,8 @@ export function formatEventDescription(
     case EventType.BASERUNNER_OUT: {
       const p = payload as BaserunnerMovePayload;
       const who = runnerName(resolveName, p);
-      return who === '—' ? 'Runner out' : `${who} out on the basepaths`;
+      const text = who === '—' ? 'Runner out' : `${who} out on the basepaths`;
+      return p.fieldingSequence?.length ? `${text} (${formatFieldingSequence(p.fieldingSequence)})` : text;
     }
     case EventType.PICKOFF_ATTEMPT: {
       const p = payload as { runnerId: string; outcome?: 'safe' | 'out'; base: number };

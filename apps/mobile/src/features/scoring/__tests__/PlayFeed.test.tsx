@@ -1,6 +1,6 @@
 import { Alert } from 'react-native';
 import { render, fireEvent, screen } from '@testing-library/react-native';
-import { PlayFeed, toFeedItems } from '../PlayFeed';
+import { PlayFeed, toFeedItems, PLAY_FEED_COLLAPSED_HEIGHT, PLAY_FEED_EXPANDED_HEIGHT } from '../PlayFeed';
 import type { PlayFeedRow } from '../use-play-feed';
 
 /**
@@ -234,5 +234,31 @@ describe('PlayFeed grouping and key uniqueness', () => {
     expect(firstHeader.key).toBe('header-evt-100');
     expect(firstRow.key).toBe('evt-100');
     expect(firstHeader.key).not.toBe(firstRow.key);
+  });
+});
+
+describe('PlayFeed size', () => {
+  /** The feed's current rendered height. */
+  function feedHeight() {
+    const style = screen.getByTestId('play-feed').props.style as { height: number };
+    return style.height;
+  }
+
+  it('should start as a small band so the bases and batter stay in view', () => {
+    render(<PlayFeed rows={[actionableRow()]} />);
+    expect(feedHeight()).toBe(PLAY_FEED_COLLAPSED_HEIGHT);
+    expect(screen.getByText('Expand')).toBeTruthy();
+  });
+
+  it('should expand and collapse from its header', () => {
+    render(<PlayFeed rows={[actionableRow()]} />);
+    fireEvent.press(screen.getByText('Expand'));
+    expect(feedHeight()).toBe(PLAY_FEED_EXPANDED_HEIGHT);
+    fireEvent.press(screen.getByText('Collapse'));
+    expect(feedHeight()).toBe(PLAY_FEED_COLLAPSED_HEIGHT);
+  });
+
+  it('should be much smaller collapsed than expanded', () => {
+    expect(PLAY_FEED_COLLAPSED_HEIGHT * 2).toBeLessThan(PLAY_FEED_EXPANDED_HEIGHT);
   });
 });

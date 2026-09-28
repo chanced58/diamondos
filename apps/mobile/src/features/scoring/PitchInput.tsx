@@ -67,7 +67,9 @@ export type RosterPlayer = {
  *                Recorded as a linked BASERUNNER_ADVANCE, plus a SCORE when
  *                they reach home — the advance never credits the run itself.
  * - `thrown_out` — runner is thrown out advancing. Recorded as a
- *                BASERUNNER_OUT event linked via relatedEventId.
+ *                BASERUNNER_OUT event linked via relatedEventId, carrying
+ *                the putout order (e.g. [8, 6, 2]) when the scorer entered
+ *                one; absent when skipped.
  */
 export type RunnerOutcome = {
   runnerId: string;
@@ -76,7 +78,7 @@ export type RunnerOutcome = {
   | { kind: 'auto' }
   | { kind: 'held'; toBase: 2 | 3 }
   | { kind: 'advanced'; toBase: 3 | 4 }
-  | { kind: 'thrown_out' }
+  | { kind: 'thrown_out'; fieldingSequence?: number[] }
 );
 
 interface PitchInputProps {
@@ -146,8 +148,9 @@ interface PitchInputProps {
   onRecordSacBuntFromOut?: (outType: BattedOutType) => void;
   onRecordFieldersChoice: (runnerId: string, fromBase: Base) => void;
   /** Runner thrown out advancing during a play (e.g., on a hit, sac fly,
-   *  wild pitch). Records BASERUNNER_OUT for the chosen runner. */
-  onRecordRunnerOut: (runnerId: string, fromBase: Base) => void;
+   *  wild pitch). Records BASERUNNER_OUT for the chosen runner, with the
+   *  putout order the scorer entered (empty when skipped). */
+  onRecordRunnerOut: (runnerId: string, fromBase: Base, fieldingSequence: number[]) => void;
   onRecordWildPitch: () => void;
   onRecordPassedBall: () => void;
   onRecordBalk: () => void;
@@ -325,10 +328,12 @@ export function PitchInput({
   const [showRunnerOutModal, setShowRunnerOutModal] = useState(false);
   // Pending HIT awaiting per-runner outcome confirmation (2B/3B with
   // runners on). null = modal closed; non-null = modal open for that hit
-  // type. The choices map is keyed by runnerId.
+  // type. The choices map is keyed by the runner's base, not runnerId: two
+  // runners can share an id (e.g. hits credited to one batter when no batting
+  // order is set), but never a base.
   const [pendingHitWithRunners, setPendingHitWithRunners] = useState<HitType | null>(null);
   const [runnerOutcomeChoices, setRunnerOutcomeChoices] = useState<
-    Record<string, RunnerOutcome>
+    Partial<Record<Base, RunnerOutcome>>
   >({});
   const [showOutModal, setShowOutModal] = useState(false);
   // Two-step Out modal: step 1 picks trajectory, step 2 asks "was this a sac?".
@@ -364,6 +369,14 @@ export function PitchInput({
   const [pendingThrow, setPendingThrow] = useState<null | {
     firstFielder: number;
     finish: (throws: number[]) => void;
+  }>(null);
+  // The putout-order step for a runner thrown out on a play — one runner at a
+  // time; `finish` moves on to the next runner or records the play.
+  const [putoutStep, setPutoutStep] = useState<null | {
+    runnerId: string;
+    fromBase: Base;
+    firstFielder: number | null;
+    finish: (sequence: number[]) => void;
   }>(null);
   const [showRunnersSheet, setShowRunnersSheet] = useState(false);
   const [showSubsSheet, setShowSubsSheet] = useState(false);
@@ -508,11 +521,48 @@ export function PitchInput({
     commitInPlay(EventType.HIT, () => onRecordFieldersChoice(runnerId, fromBase));
   }
 
+  /** Runner Out sheet → the putout-order step for that runner → record. */
   function handleRunnerOutPick(runnerId: string, fromBase: Base) {
     setShowRunnerOutModal(false);
-    onRecordRunnerOut(runnerId, fromBase);
+    // No batted ball belongs to this out, so there is no fielder to start from.
+    setPutoutStep({
+      runnerId,
+      fromBase,
+      firstFielder: null,
+      finish: (sequence) => onRecordRunnerOut(runnerId, fromBase, sequence),
+    });
   }
 
+  /**
+   * Ask for the putout order of each thrown-out runner in turn, lead runner
+   * first, then hand back every sequence at once so the play is recorded in
+   * one go. The batted ball's first fielder seeds each sequence — the relay
+   * almost always starts with whoever fielded the hit.
+   */
+  function askPutoutOrder(
+    runners: { runnerId: string; fromBase: Base }[],
+    firstFielder: number | null,
+    done: (sequencesByBase: Map<Base, number[]>) => void,
+    collected: Map<Base, number[]> = new Map(),
+  ) {
+    const [next, ...rest] = runners;
+    if (!next) {
+      done(collected);
+      return;
+    }
+    setPutoutStep({
+      ...next,
+      firstFielder,
+      finish: (sequence) =>
+        askPutoutOrder(rest, firstFielder, done, new Map(collected).set(next.fromBase, sequence)),
+    });
+  }
+
+  /**
+   * A single, double or triple. With runners on, opens the per-runner outcome
+   * prompt (every runner seeded to the standard advance); otherwise records
+   * the hit straight through.
+   */
   function handleHitTap(hitType: HitType) {
     const supportsOutcomes = !!onRecordHitWithRunnerOutcomes;
     const needsPrompt =
@@ -524,20 +574,21 @@ export function PitchInput({
       return;
     }
     // Seed every runner with the default "auto" choice.
-    const seed: Record<string, RunnerOutcome> = {};
+    const seed: Partial<Record<Base, RunnerOutcome>> = {};
     for (const r of runnersOnBase) {
-      seed[r.runnerId] = { runnerId: r.runnerId, fromBase: r.base, kind: 'auto' };
+      seed[r.base] = { runnerId: r.runnerId, fromBase: r.base, kind: 'auto' };
     }
     setRunnerOutcomeChoices(seed);
     setPendingHitWithRunners(hitType);
   }
 
+  /** Sets one runner's outcome in the prompt, keyed by base (ids can repeat). */
   function setRunnerChoice(
     runnerId: string,
     fromBase: Base,
-    choice: { kind: 'auto' } | { kind: 'held'; toBase: 3 } | { kind: 'advanced'; toBase: 3 | 4 } | { kind: 'thrown_out' },
+    choice: { kind: 'auto' } | { kind: 'held'; toBase: 2 | 3 } | { kind: 'advanced'; toBase: 3 | 4 } | { kind: 'thrown_out' },
   ) {
-    setRunnerOutcomeChoices((prev) => ({ ...prev, [runnerId]: { runnerId, fromBase, ...choice } }));
+    setRunnerOutcomeChoices((prev) => ({ ...prev, [fromBase]: { runnerId, fromBase, ...choice } }));
   }
 
   // Whether the choices on screen can all be true on one play. Recomputed
@@ -547,25 +598,44 @@ export function PitchInput({
   const runnerEvaluation = pendingHitWithRunners
     ? evaluateHitRunnerOutcomes(
         pendingHitWithRunners,
-        runnersOnBase.map(({ base, runnerId }) => ({
+        runnersOnBase.map(({ base }) => ({
           fromBase: base,
-          choice: runnerOutcomeChoices[runnerId] ?? { kind: 'auto' as const },
+          choice: runnerOutcomeChoices[base] ?? { kind: 'auto' as const },
         })),
       )
     : null;
 
+  /**
+   * Confirm on the runner-outcome prompt: asks the putout order for each
+   * thrown-out runner, then records the hit with every outcome at once.
+   */
   function confirmHitWithRunners() {
     if (runnerEvaluation?.error) return;
     if (!pendingHitWithRunners || !onRecordHitWithRunnerOutcomes) {
       setPendingHitWithRunners(null);
       return;
     }
-    const outcomes = Object.values(runnerOutcomeChoices);
+    const outcomes = Object.values(runnerOutcomeChoices).filter(
+      (o): o is RunnerOutcome => o !== undefined,
+    );
     const hitType = pendingHitWithRunners;
     const recordWithOutcomes = onRecordHitWithRunnerOutcomes;
-    commitInPlay(EventType.HIT, () => recordWithOutcomes(hitType, outcomes));
     setPendingHitWithRunners(null);
     setRunnerOutcomeChoices({});
+
+    const thrownOut = outcomes
+      .filter((o) => o.kind === 'thrown_out')
+      .sort((a, b) => b.fromBase - a.fromBase)
+      .map(({ runnerId, fromBase }) => ({ runnerId, fromBase }));
+    askPutoutOrder(thrownOut, battedBallRef.current?.firstFielder ?? null, (sequences) => {
+      const withSequences = outcomes.map((o) => {
+        const sequence = sequences.get(o.fromBase);
+        return o.kind === 'thrown_out' && sequence && sequence.length > 0
+          ? { ...o, fieldingSequence: sequence }
+          : o;
+      });
+      commitInPlay(EventType.HIT, () => recordWithOutcomes(hitType, withSequences));
+    });
   }
 
   function cancelHitWithRunners() {
@@ -1418,18 +1488,31 @@ export function PitchInput({
 
             <ScrollView className="max-h-96">
               {runnersOnBase.map(({ base, runnerId }) => {
-                const choice = runnerOutcomeChoices[runnerId];
+                const choice = runnerOutcomeChoices[base];
                 const kind = choice?.kind ?? 'auto';
                 // Standard, the one hold (if any), and each base beyond the
                 // standard advance — all from hitRunnerOptions. The batter
                 // takes a base too, so none of this is simply fromBase + n.
+                // Occupancy decides who is forced: an unforced runner may
+                // also hold right where he is (stayBase). A runner already
+                // marked thrown out forces no one (OBR 5.09(b)(6)) — the same
+                // occupancy evaluateHitRunnerOutcomes uses.
                 const options = pendingHitWithRunners
-                  ? hitRunnerOptions(base, pendingHitWithRunners)
+                  ? hitRunnerOptions(
+                      base,
+                      pendingHitWithRunners,
+                      runnersOnBase
+                        .filter((r) => runnerOutcomeChoices[r.base]?.kind !== 'thrown_out')
+                        .map((r) => r.base),
+                    )
                   : null;
-                const heldBase = options?.heldBase ?? null;
+                const holdBases = [options?.stayBase ?? null, options?.heldBase ?? null].filter(
+                  (b): b is 2 | 3 => b !== null,
+                );
+                const heldToBase = choice?.kind === 'held' ? choice.toBase : null;
                 const advancedToBase = choice?.kind === 'advanced' ? choice.toBase : null;
                 return (
-                  <View key={runnerId} className="mb-4 border border-gray-200 rounded-xl p-3">
+                  <View key={base} className="mb-4 border border-gray-200 rounded-xl p-3">
                     <Text className="text-sm font-semibold text-gray-700 mb-2">
                       Runner on {baseLabel(base)}
                     </Text>
@@ -1442,16 +1525,17 @@ export function PitchInput({
                           Standard: {options ? (options.standardBase === 4 ? 'scores' : finishLabel(options.standardBase)) : '—'}
                         </Text>
                       </TouchableOpacity>
-                      {heldBase !== null && (
+                      {holdBases.map((toBase) => (
                         <TouchableOpacity
-                          className={`px-3 py-2 rounded-lg ${kind === 'held' ? 'bg-amber-600' : 'bg-slate-100'}`}
-                          onPress={() => setRunnerChoice(runnerId, base, { kind: 'held', toBase: heldBase })}
+                          key={`held-${toBase}`}
+                          className={`px-3 py-2 rounded-lg ${heldToBase === toBase ? 'bg-amber-600' : 'bg-slate-100'}`}
+                          onPress={() => setRunnerChoice(runnerId, base, { kind: 'held', toBase })}
                         >
-                          <Text className={kind === 'held' ? 'text-white font-semibold' : 'text-gray-700'}>
-                            Held at {heldBase}B
+                          <Text className={heldToBase === toBase ? 'text-white font-semibold' : 'text-gray-700'}>
+                            Held at {toBase}B
                           </Text>
                         </TouchableOpacity>
-                      )}
+                      ))}
                       {options?.advancedBases.map((toBase) => (
                         <TouchableOpacity
                           key={toBase}
@@ -1513,6 +1597,25 @@ export function PitchInput({
           const pending = pendingThrow;
           setPendingThrow(null);
           pending?.finish(throws);
+        }}
+      />
+
+      {/* Keyed per runner so two thrown-out runners on one hit each start fresh. */}
+      <ThrowSequenceModal
+        key={`putout-${putoutStep?.fromBase ?? 'none'}`}
+        visible={putoutStep !== null}
+        firstFielder={putoutStep?.firstFielder ?? null}
+        title={
+          putoutStep
+            ? `Runner on ${baseLabel(putoutStep.fromBase)} thrown out — who made the play?`
+            : undefined
+        }
+        subtitle="Tap each fielder in order. A gray number is a guess until you tap. Not sure? Just tap Done."
+        lockFirstFielder={false}
+        onDone={(sequence) => {
+          const step = putoutStep;
+          setPutoutStep(null);
+          step?.finish(sequence);
         }}
       />
     </View>

@@ -84,8 +84,10 @@ function makeEmpty(playerId: string, playerName: string): FieldingStats {
  * schema stores one `fieldingSequence` per out event, so we infer multi-out
  * credit from event type + sequence length):
  *
- *   - OUT / DROPPED_THIRD_STRIKE (thrown_out) / CAUGHT_STEALING: last position
- *     in fieldingSequence is a putout; every preceding position is an assist.
+ *   - OUT / DROPPED_THIRD_STRIKE (thrown_out) / CAUGHT_STEALING /
+ *     BASERUNNER_OUT (runner thrown out on a play): last position in
+ *     fieldingSequence is a putout; every preceding position is an assist.
+ *     With no sequence recorded, no one is credited.
  *   - DOUBLE_PLAY: 2 outs. The last two positions in fieldingSequence get a
  *     putout each (the middle fielder records the force out at 2nd in the
  *     classic 6-4-3 case). All non-last positions also get an assist because
@@ -309,7 +311,7 @@ export function deriveFieldingStats(
         continue;
       }
 
-      if (etype === 'caught_stealing') {
+      if (etype === 'caught_stealing' || etype === EventType.BASERUNNER_OUT) {
         creditFieldingSequence(fieldingSequence, 1);
         continue;
       }

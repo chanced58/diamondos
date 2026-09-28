@@ -27,7 +27,7 @@ import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../src/feat
 import { createBattedBallSlot } from '../../../../src/features/scoring/batted-ball-fields';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, deriveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, battingOrderHistory, deriveDueBatter, resolveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
@@ -207,22 +207,38 @@ export default function ScoringScreen() {
 
   // ─── Due batter ──────────────────────────────────────────────────────────
   // Our batting order with in-game SUBSTITUTION events (pinch hitters,
-  // lineup extensions) folded in, cycled by our team's completed PAs — the
-  // same index-based derivation the web ScoringBoard uses.
-  const battingSlots = useMemo<BattingSlot[]>(
+  // lineup extensions) folded in. The due batter is the slot after whoever
+  // completed our last PA, so a batter added or removed mid-game doesn't
+  // shift the rotation — the same derivation the web ScoringBoard uses.
+  const baseBattingSlots = useMemo<BattingSlot[]>(
     () =>
-      applyLineupSubstitutions(
-        observedLineupRows
-          .filter((row) => row.battingOrder != null)
-          .map((row) => ({ playerId: row.playerRemoteId, battingOrder: row.battingOrder! })),
-        events,
-      ),
-    [observedLineupRows, events],
+      observedLineupRows
+        .filter((row) => row.battingOrder != null)
+        .map((row) => ({ playerId: row.playerRemoteId, battingOrder: row.battingOrder! })),
+    [observedLineupRows],
+  );
+  const battingSlots = useMemo(
+    () => applyLineupSubstitutions(baseBattingSlots, events),
+    [baseBattingSlots, events],
+  );
+  const ourBattingOrderHistory = useMemo(
+    () => battingOrderHistory(baseBattingSlots, events),
+    [baseBattingSlots, events],
   );
   const ourTeamPAs = gameState
     ? (isHome ? gameState.completedBottomHalfPAs : gameState.completedTopHalfPAs)
     : 0;
-  const dueBatter = deriveDueBatter(battingSlots, ourTeamPAs);
+  const ourLastBatterId = gameState
+    ? (isHome ? gameState.lastCompletedBottomHalfBatterId : gameState.lastCompletedTopHalfBatterId)
+    : null;
+  // 'ask' when no one is entered yet, or a partial order's last batter has
+  // just batted — the scorer says who is up rather than the app guessing.
+  const ourResolution = resolveDueBatter(
+    battingSlots,
+    ourTeamPAs,
+    ourLastBatterId ? ourBattingOrderHistory.get(ourLastBatterId) : null,
+  );
+  const dueBatter = ourResolution.kind === 'due' ? ourResolution : null;
 
   // Per-PA manual override — the scorer can point the rotation at a
   // different batter (lineup drifted, skipped batter). Cleared when the PA
@@ -240,7 +256,7 @@ export default function ScoringScreen() {
   // other team's book keeps working with no signal. Without this every
   // opponent plate appearance is anonymous: nothing to attribute a hit to,
   // and nothing to show the coach about who is coming up.
-  const { roster: opponentRoster, slots: opponentSlots } = useOpponentLineup(
+  const { roster: opponentRoster, slots: opponentSlots, loaded: opponentLineupLoaded } = useOpponentLineup(
     gameId,
     game?.opponentTeamId,
   );
@@ -248,16 +264,39 @@ export default function ScoringScreen() {
   const opponentPAs = gameState
     ? (isHome ? gameState.completedTopHalfPAs : gameState.completedBottomHalfPAs)
     : 0;
-  const opponentDueBatter = deriveDueBatter(
-    opponentSlots.map((s) => ({ playerId: s.playerId, battingOrder: s.battingOrder })),
-    opponentPAs,
+  const opponentBattingSlots = useMemo<BattingSlot[]>(
+    () => opponentSlots.map((s) => ({ playerId: s.playerId, battingOrder: s.battingOrder })),
+    [opponentSlots],
   );
+  const opponentBattingOrderHistory = useMemo(
+    () => battingOrderHistory(opponentBattingSlots, events, { forOpponent: true }),
+    [opponentBattingSlots, events],
+  );
+  const opponentLastBatterId = gameState
+    ? (isHome ? gameState.lastCompletedTopHalfBatterId : gameState.lastCompletedBottomHalfBatterId)
+    : null;
+  const opponentResolution = resolveDueBatter(
+    opponentBattingSlots,
+    opponentPAs,
+    opponentLastBatterId ? opponentBattingOrderHistory.get(opponentLastBatterId) : null,
+  );
+  const opponentDueBatter = opponentResolution.kind === 'due' ? opponentResolution : null;
   const [opponentBatterOverrideId, setOpponentBatterOverrideId] = useState<string | null>(null);
   useEffect(() => {
     setOpponentBatterOverrideId(null);
   }, [opponentPAs]);
+  // Opponent batters can only be named when the game has an opponent team on
+  // file; without one their half stays anonymous (engine state), as before.
+  const canNameOpponentBatters = !!game?.opponentTeamId;
+  const opponentNeedsBatter =
+    canNameOpponentBatters &&
+    opponentLineupLoaded &&
+    !opponentBatterOverrideId &&
+    opponentResolution.kind === 'ask';
   const opponentBatterId =
-    opponentBatterOverrideId ?? opponentDueBatter?.playerId ?? gameState?.currentBatterId ?? null;
+    opponentBatterOverrideId ??
+    opponentDueBatter?.playerId ??
+    (canNameOpponentBatters ? null : gameState?.currentBatterId ?? null);
   const opponentNameById = useMemo(
     () => new Map(opponentSlots.map((s) => [s.playerId, s.name])),
     [opponentSlots],
@@ -378,8 +417,12 @@ export default function ScoringScreen() {
   const nextBatterName = (playerId: string) =>
     opponentNameById.get(playerId) ?? batterName(playerId);
   // Effective batter for our offensive half: manual override → lineup-derived
-  // due batter → engine state (GAME_START leadoff when no lineup is set).
-  const ourBatterId = batterOverrideId ?? dueBatter?.playerId ?? gameState?.currentBatterId ?? null;
+  // due batter. Engine state is only a stand-in while the lineup is still
+  // loading; once it has, an unknown batter is asked for ("Who's up?"), never
+  // guessed — the engine's current batter is just whoever batted last.
+  const ourBatterId =
+    batterOverrideId ?? dueBatter?.playerId ?? (lineupLoaded ? null : gameState?.currentBatterId ?? null);
+  const ourNeedsBatter = lineupLoaded && !batterOverrideId && ourResolution.kind === 'ask';
   /** Whoever is actually at the plate right now, either side. */
   const currentPlateBatterId = weBat ? ourBatterId : opponentBatterId;
   const battingOrderTitle = weBat
@@ -578,6 +621,21 @@ export default function ScoringScreen() {
     [events],
   );
 
+  // The batting side has no one due (order empty, or a partial order's last
+  // batter just batted): the pad is replaced by "Who's up?" and the prompt
+  // opens on its own, once per plate appearance — never over the "3 outs"
+  // screen, where no one is coming up until the half changes.
+  const sideNeedsBatter =
+    gameStarted &&
+    !gameState?.isFinal &&
+    (gameState?.outs ?? 0) < OUTS_PER_INNING &&
+    (weBat ? ourNeedsBatter : opponentNeedsBatter);
+  useEffect(() => {
+    if (!sideNeedsBatter) return;
+    if (weBat) setShowAddOurBatter(true);
+    else setShowAddOpponentBatter(true);
+  }, [sideNeedsBatter, weBat, ourTeamPAs, opponentPAs]);
+
   // What this game is tracking, chosen by the scorer at start and carried on
   // the GAME_START payload. Same keys and `!== false` defaulting as the web
   // scorer (see score/page.tsx) so a game started on either client reads the
@@ -727,10 +785,13 @@ export default function ScoringScreen() {
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, payload);
   }
 
-  // Records the HIT plus any linked BASERUNNER_OUT / BASERUNNER_ADVANCE
-  // events (via relatedEventId) so the engine + stats correctly suppress
-  // default scoring for held or thrown-out runners and so the play feed
-  // shows e.g. "Double (Runner thrown out at 3B)".
+  /**
+   * Records the HIT plus any linked BASERUNNER_OUT / BASERUNNER_ADVANCE
+   * events (via relatedEventId) so the engine + stats correctly suppress
+   * default scoring for held or thrown-out runners and so the play feed
+   * shows e.g. "Double (Runner thrown out at 3B)". A thrown-out runner's
+   * putout order rides on its BASERUNNER_OUT when the scorer entered one.
+   */
   async function handleHitWithRunnerOutcomes(hitType: HitType, outcomes: RunnerOutcome[]) {
     if (!gameState) return;
     // The prompt refuses to confirm an impossible combination, so this is a
@@ -770,6 +831,7 @@ export default function ScoringScreen() {
           ...pitcherAttribution,
           relatedEventId: hitId,
           reason: AdvanceReason.ON_PLAY,
+          ...(outcome.fieldingSequence?.length ? { fieldingSequence: outcome.fieldingSequence } : {}),
         });
       } else {
         // 'held' stops short of the default advance; 'advanced' goes beyond
@@ -997,16 +1059,21 @@ export default function ScoringScreen() {
     await recordEvent(EventType.HIT, gameState.inning, gameState.isTopOfInning, hitPayload);
   }
 
-  // Runner thrown out advancing during a play (e.g., on a hit, sac fly,
-  // wild pitch). Standalone BASERUNNER_OUT — the play itself is recorded
-  // separately. game-state.ts removes the runner from the base and
-  // increments outs; stats modules count it as an out without crediting CS.
-  async function handleRunnerOut(runnerId: string, fromBase: 1 | 2 | 3) {
+  /**
+   * Runner thrown out advancing during a play (e.g., on a hit, sac fly,
+   * wild pitch). Standalone BASERUNNER_OUT — the play itself is recorded
+   * separately. game-state.ts removes the runner from the base and
+   * increments outs; stats modules count it as an out without crediting CS,
+   * and fielding-stats credits the putout order when the scorer entered one.
+   */
+  async function handleRunnerOut(runnerId: string, fromBase: 1 | 2 | 3, fieldingSequence: number[]) {
     if (!gameState) return;
     await recordEvent(EventType.BASERUNNER_OUT, gameState.inning, gameState.isTopOfInning, {
       runnerId,
       fromBase,
       ...pitcherAttribution,
+      // Omitted rather than sent empty when skipped: absent means "not recorded".
+      ...(fieldingSequence.length > 0 ? { fieldingSequence } : {}),
     });
   }
 
@@ -2052,7 +2119,19 @@ export default function ScoringScreen() {
 
       <AddBatterModal
         visible={showAddOpponentBatter}
-        title={`Add ${opponentName} batter`}
+        title={opponentNeedsBatter ? `Who's up for ${opponentName}?` : `Add ${opponentName} batter`}
+        topOfOrder={
+          opponentNeedsBatter && opponentResolution.kind === 'ask' && opponentResolution.topOfOrder
+            ? {
+                name: opponentNameById.get(opponentResolution.topOfOrder.playerId) ?? 'Unknown batter',
+                onPick: () => {
+                  if (opponentResolution.kind !== 'ask' || !opponentResolution.topOfOrder) return;
+                  setOpponentBatterOverrideId(opponentResolution.topOfOrder.playerId);
+                  setShowAddOpponentBatter(false);
+                },
+              }
+            : null
+        }
         rosterLabel="ON THEIR ROSTER"
         roster={opponentRoster
           .filter((p) => !opponentNameById.has(p.remoteId))
@@ -2077,7 +2156,19 @@ export default function ScoringScreen() {
 
       <AddBatterModal
         visible={showAddOurBatter}
-        title="Add batter"
+        title={ourNeedsBatter ? "Who's up?" : 'Add batter'}
+        topOfOrder={
+          ourNeedsBatter && ourResolution.kind === 'ask' && ourResolution.topOfOrder
+            ? {
+                name: batterName(ourResolution.topOfOrder.playerId),
+                onPick: () => {
+                  if (ourResolution.kind !== 'ask' || !ourResolution.topOfOrder) return;
+                  setBatterOverrideId(ourResolution.topOfOrder.playerId);
+                  setShowAddOurBatter(false);
+                },
+              }
+            : null
+        }
         rosterLabel="ON YOUR ROSTER"
         roster={roster
           .filter((p) => !battingSlots.some((slot) => slot.playerId === p.id))
@@ -2183,6 +2274,22 @@ export default function ScoringScreen() {
               </TouchableOpacity>
             </>
           )}
+          <TouchableOpacity onPress={() => { handleUndo().catch(console.warn); }} className="mt-2 px-4 py-2">
+            <Text className="text-gray-500 text-sm">Undo last event</Text>
+          </TouchableOpacity>
+        </View>
+      ) : sideNeedsBatter ? (
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-2xl font-bold text-gray-900 mb-1">Who&apos;s up?</Text>
+          <Text className="text-sm text-gray-500 mb-5 text-center">
+            {weBat ? teamName : opponentName} — pick the batter coming up, or add a new one.
+          </Text>
+          <TouchableOpacity
+            onPress={() => (weBat ? setShowAddOurBatter(true) : setShowAddOpponentBatter(true))}
+            className="w-full bg-slate-800 rounded-2xl py-4 items-center"
+          >
+            <Text className="text-white text-lg font-bold">Choose batter</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => { handleUndo().catch(console.warn); }} className="mt-2 px-4 py-2">
             <Text className="text-gray-500 text-sm">Undo last event</Text>
           </TouchableOpacity>
@@ -2978,6 +3085,7 @@ function AddBatterModal({
   title,
   rosterLabel,
   roster,
+  topOfOrder = null,
   onSubmit,
   onCancel,
 }: {
@@ -2985,6 +3093,9 @@ function AddBatterModal({
   title: string;
   rosterLabel: string;
   roster: Array<{ id: string; name: string }>;
+  /** "Who's up?" after a partial order's last batter: the order turning over
+   *  is offered first, ahead of adding someone new. */
+  topOfOrder?: { name: string; onPick: () => void } | null;
   onSubmit: (
     input:
       | { kind: 'roster'; opponentPlayerId: string }
@@ -3045,6 +3156,19 @@ function AddBatterModal({
           )}
 
           <ScrollView className="max-h-96">
+            {topOfOrder && (
+              <>
+                <Text className="text-xs font-semibold text-gray-500 mb-2">BACK TO THE TOP</Text>
+                <TouchableOpacity
+                  disabled={busy}
+                  onPress={topOfOrder.onPick}
+                  className="rounded-xl px-4 py-3 mb-6 bg-sky-50 border border-sky-300"
+                >
+                  <Text className="text-sky-900 font-semibold text-base">{topOfOrder.name}</Text>
+                  <Text className="text-xs text-sky-700">Leads off the order again</Text>
+                </TouchableOpacity>
+              </>
+            )}
             <Text className="text-xs font-semibold text-gray-500 mb-2">NEW BATTER</Text>
             <View className="flex-row gap-2">
               <TextInput

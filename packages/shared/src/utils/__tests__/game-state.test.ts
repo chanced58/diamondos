@@ -952,3 +952,101 @@ describe('runner advancing beyond the standard base on a hit — engine and stat
     expect(state.awayScore).toBe(0);
   });
 });
+
+describe('deriveGameState — last batter to complete a PA', () => {
+  beforeEach(resetSeq);
+
+  it('should record the most recent completed-PA batter separately for each half', () => {
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, { awayLeadoffBatterId: 'a1', homeLeadoffBatterId: 'h1' }),
+      ...batterHit('a1', HitType.SINGLE),
+      ...batterOut('a2'),
+    ];
+    const afterTop = deriveGameState(GAME, events, HOME_TEAM);
+    expect(afterTop.lastCompletedTopHalfBatterId).toBe('a2');
+    expect(afterTop.lastCompletedBottomHalfBatterId).toBe(null);
+
+    events.push(advanceInning(), ...batterOut('h1'));
+    const afterBottom = deriveGameState(GAME, events, HOME_TEAM);
+    expect(afterBottom.lastCompletedTopHalfBatterId).toBe('a2');
+    expect(afterBottom.lastCompletedBottomHalfBatterId).toBe('h1');
+  });
+
+  it('should not count a batter whose PA is still in progress', () => {
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, { awayLeadoffBatterId: 'a1', homeLeadoffBatterId: 'h1' }),
+      ...batterOut('a1'),
+      e(EventType.PITCH_THROWN, { batterId: 'a2', outcome: PitchOutcome.BALL }),
+    ];
+    expect(deriveGameState(GAME, events, HOME_TEAM).lastCompletedTopHalfBatterId).toBe('a1');
+  });
+});
+
+describe('deriveGameState — runner held at his own base on a hit', () => {
+  beforeEach(resetSeq);
+
+  it('should leave the runner on 2nd and put the batter on 1st', () => {
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, { awayLeadoffBatterId: 'a1', homeLeadoffBatterId: 'h1' }),
+      ...batterHit('a1', HitType.DOUBLE),
+    ];
+    const hit = batterHit('a2', HitType.SINGLE);
+    events.push(
+      ...hit,
+      e(EventType.BASERUNNER_ADVANCE, {
+        runnerId: 'a1',
+        fromBase: 2,
+        toBase: 2,
+        reason: 'on_play',
+        relatedEventId: hit[1].id,
+      }),
+    );
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    expect(state.runnersOnBase).toEqual({ first: 'a2', second: 'a1', third: null });
+    expect(state.awayScore).toBe(0);
+  });
+});
+
+describe('deriveGameState — two runners sharing an id', () => {
+  beforeEach(resetSeq);
+
+  /** 'dup' on 1st and on 2nd (e.g. hits credited to one batter with no order). */
+  function dupOnFirstAndSecond(): GameEvent[] {
+    return [
+      e(EventType.GAME_START, { awayLeadoffBatterId: 'dup', homeLeadoffBatterId: 'h1' }),
+      ...batterHit('dup', HitType.SINGLE),
+      ...batterHit('dup', HitType.SINGLE),
+    ];
+  }
+
+  it('should apply a linked out only to the runner on its fromBase', () => {
+    const events = dupOnFirstAndSecond();
+    const hit = batterHit('b3', HitType.SINGLE);
+    events.push(
+      ...hit,
+      e(EventType.BASERUNNER_OUT, { runnerId: 'dup', fromBase: 1, relatedEventId: hit[1].id, reason: 'on_play' }),
+    );
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    // Runner from 2nd takes the standard advance to 3rd; runner from 1st is out.
+    expect(state.runnersOnBase).toEqual({ first: 'b3', second: null, third: 'dup' });
+    expect(state.outs).toBe(1);
+  });
+
+  it('should still clear the runner when fromBase is where he was put out (web "Out at")', () => {
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, { awayLeadoffBatterId: 'a1', homeLeadoffBatterId: 'h1' }),
+      ...batterHit('a1', HitType.SINGLE),
+      e(EventType.BASERUNNER_OUT, { runnerId: 'a1', fromBase: 2 }),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    expect(state.runnersOnBase).toEqual({ first: null, second: null, third: null });
+    expect(state.outs).toBe(1);
+  });
+
+  it('should remove a standalone runner out from its fromBase', () => {
+    const events = dupOnFirstAndSecond();
+    events.push(e(EventType.BASERUNNER_OUT, { runnerId: 'dup', fromBase: 2 }));
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    expect(state.runnersOnBase).toEqual({ first: 'dup', second: null, third: null });
+  });
+});

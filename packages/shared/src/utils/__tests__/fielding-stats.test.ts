@@ -424,3 +424,35 @@ describe('deriveFieldingStats — first fielder recorded on a hit', () => {
     expect(stats.get('p-cf')?.assists ?? 0).toBe(0);
   });
 });
+
+describe('deriveFieldingStats — BASERUNNER_OUT (runner thrown out on a play)', () => {
+  beforeEach(resetSeq);
+
+  it('should credit the relay: putout to the last fielder, assists to the rest', () => {
+    const events: Evt[] = [
+      e(EventType.BASERUNNER_OUT, { runnerId: 'runner1', fromBase: 1, fieldingSequence: [8, 6, 2] }, true),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveFieldingStats(events as any, players, ctxMap());
+    expect(stats.get('p-c')?.putouts).toBe(1);
+    expect(stats.get('p-cf')?.assists).toBe(1);
+    expect(stats.get('p-ss')?.assists).toBe(1);
+  });
+
+  it('should credit no one when the scorer skipped the sequence', () => {
+    const events: Evt[] = [e(EventType.BASERUNNER_OUT, { runnerId: 'runner1', fromBase: 1 }, true)];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveFieldingStats(events as any, players, ctxMap());
+    const total = [...stats.values()].reduce((n, s) => n + s.putouts + s.assists, 0);
+    expect(total).toBe(0);
+  });
+
+  it('should not credit our fielders for a runner out while we are batting', () => {
+    const events: Evt[] = [
+      e(EventType.BASERUNNER_OUT, { runnerId: 'p-lf', fromBase: 1, fieldingSequence: [8, 6, 2] }, false),
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveFieldingStats(events as any, players, ctxMap());
+    expect(stats.get('p-c')?.putouts ?? 0).toBe(0);
+  });
+});
