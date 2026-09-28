@@ -140,9 +140,15 @@ The same linked events as hits:
 - `SCORE { rbis: 0 }` for an advance home.
 
 All carry `relatedEventId` → the `SACRIFICE_FLY` / `SACRIFICE_BUNT`.
-`applyPlayToRunners` handles the sac kinds, so every consumer from PR A
-supports sacrifices with no further changes. Web's own sac events still have
-no linked outcomes and replay as before.
+`applyPlayToRunners` gains the sac kinds. PR A left each consumer's
+`SACRIFICE_FLY` / `SACRIFICE_BUNT` handler applying its own default advance,
+so PR B routes each of them through `applyPlayToRunners` with the play's
+linked outcomes, the same way PR A did for hits: game-state, batting-stats,
+line-score, pitching-stats, opponent-batting, the MaxPreps copy, and
+game-history. game-history's `isLinkedWithBase` handling then holds for sac
+children too, because the sac play (like a hit) leaves those runners off.
+Web's own sac events still have no linked outcomes and replay as before;
+the consistency test gains the sac scenarios.
 
 ### iPad flow
 
