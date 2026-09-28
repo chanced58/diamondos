@@ -73,6 +73,11 @@ function builder(side: Side) {
     linked(type: 'baserunner_out' | 'baserunner_advance', parentId: string, payload: Record<string, unknown>) {
       add(type, { ...payload, [pitcherKey]: 'p1', relatedEventId: parentId, reason: 'on_play' });
     },
+    /** A pitch in play, then a sacrifice (the batter is out); returns its event id. */
+    sac(batter: string, kind: 'sacrifice_fly' | 'sacrifice_bunt', extra: Record<string, unknown> = {}) {
+      add('pitch_thrown', { [batterKey]: batter, [pitcherKey]: 'p1', outcome: 'in_play' });
+      return add(kind, { [batterKey]: batter, [pitcherKey]: 'p1', ...extra });
+    },
     /** The SCORE that accompanies a linked advance home. */
     score(runnerId: string, parentId: string) {
       add('score', { scoringPlayerId: runnerId, rbis: 0, relatedEventId: parentId });
@@ -148,10 +153,51 @@ const SCENARIOS: Scenario[] = [
     runsBy: { a1: 1, a2: 0, a3: 0 },
     rbiBy: { a1: 0, a2: 0, a3: 1 },
   },
+  {
+    name: 'E: sac bunt — runner from 1st holds, runner from 2nd moves up; a single then scores him',
+    build: (b) => {
+      b.hit('a1', 'single');
+      b.hit('a2', 'single'); // a1 → 2nd, a2 on 1st
+      const bunt = b.sac('a3', 'sacrifice_bunt');
+      b.linked('baserunner_advance', bunt, { runnerId: 'a2', fromBase: 1, toBase: 1 });
+      b.hit('a4', 'single'); // a1 scores from 3rd; a2 → 2nd
+      b.hit('a5', 'double'); // a2 scores once (a stray copy of him would score twice)
+    },
+    runs: 2,
+    runsBy: { a1: 1, a2: 1, a3: 0, a4: 0, a5: 0 },
+    rbiBy: { a1: 0, a2: 0, a3: 0, a4: 1, a5: 1 },
+  },
+  {
+    name: 'G: sac bunt — runner from 3rd holds (no squeeze) while the runner from 1st moves up',
+    build: (b) => {
+      b.hit('a1', 'double');
+      b.hit('a2', 'single'); // a1 → 3rd, a2 on 1st
+      const bunt = b.sac('a3', 'sacrifice_bunt');
+      b.linked('baserunner_advance', bunt, { runnerId: 'a1', fromBase: 3, toBase: 3 });
+      b.hit('a4', 'single'); // a1 scores now
+    },
+    runs: 1,
+    runsBy: { a1: 1, a2: 0, a3: 0, a4: 0 },
+    rbiBy: { a1: 0, a2: 0, a3: 0, a4: 1 },
+  },
+  {
+    name: 'F: sac fly — runner from 3rd scores and the runner from 2nd tags to 3rd; a single scores him',
+    build: (b) => {
+      b.hit('a1', 'double');
+      const hit = b.hit('a2', 'double');
+      b.linked('baserunner_advance', hit, { runnerId: 'a1', fromBase: 2, toBase: 3 }); // a1 3rd, a2 2nd
+      const fly = b.sac('a3', 'sacrifice_fly', { rbis: 1 });
+      b.linked('baserunner_advance', fly, { runnerId: 'a2', fromBase: 2, toBase: 3 });
+      b.hit('a4', 'single'); // a2 scores from 3rd
+    },
+    runs: 2,
+    runsBy: { a1: 1, a2: 1, a3: 0, a4: 0 },
+    rbiBy: { a1: 0, a2: 0, a3: 1, a4: 1 },
+  },
 ];
 
-const PLAYERS = ['a1', 'a2', 'a3', 'p1'].map((id) => ({ id, firstName: id, lastName: 'X' }));
-const OPP_NAMES = new Map(['a1', 'a2', 'a3'].map((id) => [id, id]));
+const PLAYERS = ['a1', 'a2', 'a3', 'a4', 'a5', 'p1'].map((id) => ({ id, firstName: id, lastName: 'X' }));
+const OPP_NAMES = new Map(['a1', 'a2', 'a3', 'a4', 'a5'].map((id) => [id, id]));
 
 describe.each(SCENARIOS)('runner outcomes stay consistent — $name', ({ build, runs, runsBy, rbiBy }) => {
   const ours = builder('ours');

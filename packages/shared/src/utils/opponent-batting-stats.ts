@@ -283,23 +283,23 @@ export function computeOpponentBatting(
       } else if (etype === 'sacrifice_fly') {
         const s = get(batterId);
         s.pa++; s.sf++;
-        // OBR 9.04(a)(1): sacrifice fly scoring a runner credits 1 RBI.
-        const runScored = !!r3;
-        if (r3) { scoreRunner(r3); r3 = null; }
+        // OBR 9.04(a)(1): an RBI for each run the sac fly scores (by default
+        // the runner from 3rd); runners with a linked outcome are left to it.
+        const played = applyPlayToRunners(currentBases(), { kind: 'sac_fly' }, null, linkedOutcomes.get(event.id as string), runnerIdOf);
+        for (const runner of played.scoring) scoreRunner(runner);
+        setBases(played.runners);
         const explicitRbis = payload.rbis as number | undefined;
-        s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
+        s.rbi += explicitRbis !== undefined ? explicitRbis : played.runs;
         outsThisInning++;
       } else if (etype === 'sacrifice_bunt') {
         // OBR 9.08(a): advances runners one base; squeeze scores r3 for 1 RBI.
         const s = get(batterId);
         s.pa++; s.sh++;
-        const runScored = !!r3;
-        if (r3) scoreRunner(r3);
-        r3 = r2 ?? null;
-        r2 = r1;
-        r1 = null;
+        const played = applyPlayToRunners(currentBases(), { kind: 'sac_bunt' }, null, linkedOutcomes.get(event.id as string), runnerIdOf);
+        for (const runner of played.scoring) scoreRunner(runner);
+        setBases(played.runners);
         const explicitRbis = payload.rbis as number | undefined;
-        s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
+        s.rbi += explicitRbis !== undefined ? explicitRbis : played.runs;
         outsThisInning++;
       } else if (etype === 'dropped_third_strike') {
         const s = get(batterId);

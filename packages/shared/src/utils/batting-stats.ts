@@ -606,12 +606,14 @@ export function deriveBattingStats(
         s.sacrificeFlies += 1;
         s.battedBalls += 1;
         creditQAB(batterId);
-        // Per OBR 9.04(a)(1): a sacrifice fly that scores the runner from
-        // third credits the batter with 1 RBI.
-        const runScored = !!r3;
-        if (r3) { scoreRunner(r3); r3 = null; }
+        // Per OBR 9.04(a)(1): a sacrifice fly credits an RBI for each run it
+        // scores — by default the runner from third. Runners with a linked
+        // outcome (tagged up, held, thrown out) are left to it.
+        const played = applyPlayToRunners(currentBases(), { kind: 'sac_fly' }, null, linkedOutcomes.get(event.id), runnerIdOf);
+        for (const runner of played.scoring) scoreRunner(runner);
+        setBases(played.runners);
         const explicitRbis = payload?.rbis as number | undefined;
-        s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
+        s.rbi += explicitRbis !== undefined ? explicitRbis : played.runs;
         outsThisInning += 1;
         resetPAState(batterId);
         continue;
@@ -630,15 +632,14 @@ export function deriveBattingStats(
         s.sacrificeHits += 1;
         s.battedBalls += 1;
         creditQAB(batterId);
-        // OBR 9.08(a): sac bunt advances runners one base; squeeze scores
-        // the runner from third and credits the batter with 1 RBI.
-        const runScored = !!r3;
-        if (r3) scoreRunner(r3);
-        r3 = r2 ?? null;
-        r2 = r1;
-        r1 = null;
+        // OBR 9.08(a): sac bunt advances runners one base; a squeeze scores
+        // the runner from third and credits the batter with the RBI. Runners
+        // with a linked outcome (held, took more, thrown out) are left to it.
+        const played = applyPlayToRunners(currentBases(), { kind: 'sac_bunt' }, null, linkedOutcomes.get(event.id), runnerIdOf);
+        for (const runner of played.scoring) scoreRunner(runner);
+        setBases(played.runners);
         const explicitRbis = payload?.rbis as number | undefined;
-        s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
+        s.rbi += explicitRbis !== undefined ? explicitRbis : played.runs;
         outsThisInning += 1;
         resetPAState(batterId);
         continue;

@@ -163,15 +163,18 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
       if (outs < 3) scoreRun(1);
     } else if (etype === 'sacrifice_fly' || etype === 'sacrifice_bunt') {
       outs++;
-      if (etype === 'sacrifice_fly' && third && outs < 3) {
-        scoreRun(1);
-        third = null;
-      } else if (etype === 'sacrifice_bunt') {
-        // OBR 9.08(a): sac bunt advances runners one base.
-        if (third && outs < 3) scoreRun(1);
-        third = second;
-        second = first;
-        first = null;
+      // OBR 9.08: sac bunt moves everyone up one (squeeze scores); sac fly
+      // scores the runner from 3rd. Runners with a linked outcome are left to it.
+      const played = applyPlayToRunners(
+        currentBases(),
+        { kind: etype === 'sacrifice_fly' ? 'sac_fly' : 'sac_bunt' },
+        null,
+        linkedOutcomes.get(event.id as string),
+        runnerId,
+      );
+      if (outs < 3) {
+        scoreRun(played.runs);
+        setBases(played.runners);
       }
     } else if (etype === 'stolen_base') {
       const toBase = payload.toBase as number | undefined;
