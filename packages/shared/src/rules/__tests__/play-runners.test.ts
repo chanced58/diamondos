@@ -148,3 +148,21 @@ describe('applyRunnerOut', () => {
     expect(applyRunnerOut(bases(null, 'r2', null), { runnerId: 'r2' }, id)).toEqual(bases(null, null, null));
   });
 });
+
+describe('older runner moves with no runner id', () => {
+  it('should clear the named base on a standalone advance and place the stand-in given', () => {
+    expect(applyLinkedAdvance(bases('x', null, null), { fromBase: 1, toBase: 2 }, 'stand-in', id)).toEqual(
+      bases(null, 'stand-in', null),
+    );
+  });
+
+  it('should clear the named base on a standalone out', () => {
+    expect(applyRunnerOut(bases(null, 'x', null), { fromBase: 2 }, id)).toEqual(bases(null, null, null));
+  });
+
+  it('should leave the bases alone for a linked move with no runner id', () => {
+    expect(applyRunnerOut(bases('b', null, null), { fromBase: 1, relatedEventId: 'hit' }, id)).toEqual(
+      bases('b', null, null),
+    );
+  });
+});

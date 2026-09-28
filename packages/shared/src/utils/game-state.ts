@@ -403,7 +403,14 @@ export function deriveGameState(
         // A linked outcome after a HIT names the runner's pre-play base; the
         // HIT already dropped him, so only the placement applies (toBase 4
         // places nothing — the SCORE event adds the run). See play-runners.
-        state.runnersOnBase = applyLinkedAdvance(state.runnersOnBase, p, p.runnerId, (runnerId) => runnerId);
+        // An older move with no runner id still moves someone: the event id
+        // stands in for him, as baserunnerIdentity does for batters.
+        state.runnersOnBase = applyLinkedAdvance(
+          state.runnersOnBase,
+          p,
+          p.runnerId ?? event.id,
+          (runnerId) => runnerId,
+        );
         break;
       }
 

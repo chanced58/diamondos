@@ -38,7 +38,7 @@ Sacrifice outcomes would hit the same consumers, so the shared rule comes first.
 | Question | Decision |
 |---|---|
 | Split | **Two PRs.** A: one shared runner-advancement rule, adopted by every consumer (fixes the hit bug). B: sacrifice runner outcomes on top of it. |
-| Sacrifice validity | **Enforce OBR 9.08.** A sac fly needs at least one run to score; a sac bunt needs at least one runner to advance. Otherwise the prompt says to record a regular out instead. |
+| Sacrifice validity | **Enforce OBR 9.08.** A sac fly needs at least one run to score. A sac bunt needs at least one runner to advance, and no runner put out on the play (the event doesn't record which base a runner was out at, so any runner out counts as one trying to advance one base). Otherwise the prompt says to record it as an out instead, which charges the batter a time at bat. |
 | Web scoring UI | Unchanged. Web keeps recording what it records today; the shared consumers read either client's events. |
 
 ## PR A — one shared runner-advancement rule
@@ -67,6 +67,10 @@ correct (including the #210 base-matching fixes):
   - An out clears the named base. A linked out whose runner the parent play
     already dropped clears nothing. Otherwise an out falls back to the first
     base holding the runner's id (older events, and web's "Out at" editor).
+  - An older move with **no runner id** can only be matched by base. A
+    standalone one clears its `fromBase`; a linked one clears nothing. The
+    caller places a stand-in: `deriveGameState` uses the event id, as it
+    already does for a batter with no id.
 
 Runner values are generic `T`, and `idOf` reads the id. Pitching stats'
 `{ id, reachedOnError }` rides through unchanged. A runner a hit leaves to
@@ -123,6 +127,12 @@ apply the same collision and no-passing checks as hits.
   it as a fly out instead."
 - A sac bunt with no runner advancing returns the error "No runner advanced —
   record it as an out instead."
+- A sac bunt with a runner put out returns the error "A runner was put out
+  advancing — record it as an out instead." Per OBR 9.08(a), this isn't a
+  sacrifice, and the batter is charged a time at bat. The event doesn't record
+  which base the runner was out at, so any runner out counts, including the
+  rare runner out trying for an extra base. That play can still be recorded as
+  an out plus a runner out.
 - Confirm stays disabled while an error shows (same as hits). The existing
   eligibility gates (fewer than 2 outs, and a runner on 3rd for a sac fly)
   are unchanged.
