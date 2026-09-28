@@ -166,7 +166,9 @@ export function computeOpponentBatting(
         if (etype === 'baserunner_advance') {
           const runnerId = payload.runnerId as string | undefined;
           const toBase = payload.toBase as number | undefined;
-          if (runnerId && oppPlayerNameMap.has(runnerId) && toBase) {
+          if (runnerId && toBase) {
+            // Every runner moves, named or not — base state drives other
+            // batters' RBI. Crediting a run still requires a name (scoreRunner).
             // toBase 4 places nothing — the SCORE event credits the run.
             setBases(applyLinkedAdvance(currentBases(), payload, runnerId, runnerIdOf));
           }

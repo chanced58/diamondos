@@ -192,3 +192,15 @@ describe.each(SCENARIOS)('runner outcomes stay consistent — $name', ({ build, 
     for (const [id, rbi] of Object.entries(rbiBy)) expect([id, stats.get(id)?.rbi ?? 0]).toEqual([id, rbi]);
   });
 });
+
+describe('computeOpponentBatting — a held runner missing from the name map', () => {
+  it('should keep him on base so the next batter is credited when he scores', () => {
+    const b = builder('theirs');
+    b.hit('ghost', 'double'); // a runner the opponent roster doesn't name
+    const hit = b.hit('a2', 'double');
+    b.linked('baserunner_advance', hit, { runnerId: 'ghost', fromBase: 2, toBase: 3 });
+    b.hit('a3', 'single');
+    const rows = computeOpponentBatting(b.rows as unknown as Record<string, unknown>[], OPP_NAMES);
+    expect(rows.find((row) => row.playerId === 'a3')?.rbi).toBe(1);
+  });
+});

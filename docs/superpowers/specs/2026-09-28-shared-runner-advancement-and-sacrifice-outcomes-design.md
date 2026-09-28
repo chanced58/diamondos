@@ -52,13 +52,14 @@ correct (including the #210 base-matching fixes):
   `BASERUNNER_OUT` / `BASERUNNER_ADVANCE` events by `relatedEventId`. Matching
   is by **starting base** when the event carries `fromBase`, and by runner id
   for older events. (This is today's `buildRunnerOverrideMap`.)
-- **`applyPlayToRunners(runners, play, batterId, overrides)`** →
-  `{ runners, scoringRunnerIds }`. `play` is `{ kind: 'hit', bases: 1|2|3|4 }`
+- **`applyPlayToRunners(runners, play, batter, overrides, idOf)`** →
+  `{ runners, scoring, runs }`. `play` is `{ kind: 'hit', bases: 1|2|3|4 }`
   in PR A. It applies the default advance to every runner without a linked
-  outcome, places the batter, and lists who scores by default. Runners with a
-  linked outcome are left off; their linked events place or remove them.
-  (This is today's `advanceRunnersWithOverrides` plus the run counting in the
-  HIT case.)
+  outcome and places the batter. `scoring` lists who crossed the plate, lead
+  runner first, with the batter last on a home run. `runs` counts them,
+  including a home-run batter with no id. Runners with a linked outcome are
+  left off; their linked events place or remove them. (This is today's
+  `advanceRunnersWithOverrides` plus the run counting in the HIT case.)
 - **`applyLinkedAdvance(runners, payload)`** and
   **`applyRunnerOut(runners, payload)`**: today's `deriveGameState` semantics.
   - A runner is cleared from `fromBase` only if he is still on it. An advance
@@ -67,8 +68,10 @@ correct (including the #210 base-matching fixes):
     already dropped clears nothing. Otherwise an out falls back to the first
     base holding the runner's id (older events, and web's "Out at" editor).
 
-Runner values are opaque, so pitching-stats' `{ id, reachedOnError }` rides
-through unchanged, via a generic `T` with an id accessor.
+Runner values are generic `T`, and `idOf` reads the id. Pitching stats'
+`{ id, reachedOnError }` rides through unchanged. A runner a hit leaves to
+his linked outcome is kept under `<hit id>:<starting base>`, so his
+reached-on-error flag survives when the linked advance puts him back on base.
 
 ### Consumers adopt it
 
@@ -78,9 +81,9 @@ through unchanged, via a generic `T` with an id accessor.
 | `batting-stats.ts` | Uses `collectLinkedRunnerOutcomes`, so matching is by base, not id only. Uses `applyPlayToRunners` for HIT runs and placement. Linked ADVANCE/OUT use the shared helpers. |
 | `line-score.ts` | HIT, BASERUNNER_ADVANCE and BASERUNNER_OUT go through the shared rule. **Fixes A/B/C.** |
 | `pitching-stats.ts` | The same, keeping its `reachedOnError` earned-run logic. **Fixes A/C runs and earned runs.** Inherited-runner responsibility stays out of scope (there's none today). |
-| `opponent-batting-stats.ts` | The same. RBI = `payload.rbis ?? scoringRunnerIds.length`. **Fixes A/C.** |
+| `opponent-batting-stats.ts` | The same. RBI = `payload.rbis` when present, else `played.runs`. A linked advance moves every runner, named or not, because base state drives other batters' RBI; crediting a run still requires a name. **Fixes A/C.** |
 | `game-history.ts` | Running base state uses the shared helpers. The linked-advance label says "took X" / "scored" beyond the standard base, matching the mobile play feed (`hitRunnerOptions.standardBase`). Also fixes its sac bunt handling: today it neither advances runners nor scores a squeeze run, assuming a separate `SCORE` event that neither client writes (web records only the `sacrifice_bunt` event, `ScoringBoard.tsx:1458`). Every other consumer already applies the default. |
-| `supabase/functions/maxpreps-export/stats.ts` | Deno can't import `@baseball/shared` (documented at `stats.ts:5-7`). It gets a **copy** of `play-runners.ts` in `maxpreps-export/play-runners.ts`, with a parity test in `packages/shared` that runs the same scenario table against both copies. The copy has no Deno-only imports, so jest can load it. |
+| `supabase/functions/maxpreps-export/stats.ts` | Deno can't import `@baseball/shared` (documented at the top of `stats.ts`). `stats.ts` carries a **verbatim copy** of `play-runners.ts` between `BEGIN`/`END` marker comments. It isn't a separate file because Deno needs `.ts` import extensions, and ts-jest rejects those. `rules/__tests__/play-runners-copy.test.ts` fails unless the block matches the original byte for byte, and `runner-outcomes-consistency.test.ts` runs every scenario through `aggregateStats`. |
 
 ### Behavior preservation
 
@@ -93,10 +96,13 @@ no-linked-outcomes case in the new scenario table.
 - **`play-runners` unit tests:** scenarios A, B and C; runners sharing an id;
   a void of the linked child (voided events are filtered before any
   consumer); an older linked event with no `fromBase`.
-- **One cross-consumer table test:** for each scenario A, B, C, and a
-  no-outcome control, compare runs per half, runs and RBI per batter, and
-  pitcher R/ER across game-state, line-score, batting-stats, opponent-batting,
-  pitching-stats and the maxpreps copy.
+- **One cross-consumer table test** (`runner-outcomes-consistency.test.ts`):
+  scenarios A, B, C, D (two runners sharing an id), and a no-outcome
+  control. Compares runs per half, runs and RBI per batter, and pitcher runs
+  allowed across game-state, line-score, batting-stats, opponent-batting,
+  pitching-stats and the MaxPreps `aggregateStats`.
+- **game-history:** running score after a held runner and after an advance
+  home (no ghost); "took"/"scored" labels; sac bunt squeeze.
 
 ## PR B — sacrifice runner outcomes
 
