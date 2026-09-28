@@ -104,6 +104,7 @@ describe('IN_PLAY_HANDLER_TERMINALS', () => {
       onRecordSacBunt: EventType.SACRIFICE_BUNT,
       onRecordSacFlyFromOut: EventType.SACRIFICE_FLY,
       onRecordSacBuntFromOut: EventType.SACRIFICE_BUNT,
+      onRecordSacrificeWithRunnerOutcomes: EventType.SACRIFICE_FLY,
       onRecordFieldersChoice: EventType.OUT,
       onRecordDoublePlay: EventType.DOUBLE_PLAY,
       onRecordTriplePlay: EventType.TRIPLE_PLAY,

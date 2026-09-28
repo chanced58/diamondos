@@ -27,7 +27,7 @@ import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../src/feat
 import { createBattedBallSlot } from '../../../../src/features/scoring/batted-ball-fields';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, battingOrderHistory, deriveDueBatter, resolveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, battingOrderHistory, deriveDueBatter, resolveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes, evaluatePlayRunnerOutcomes } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
@@ -520,6 +520,7 @@ export default function ScoringScreen() {
       wrapInPlayHandlers(withInPlayPitch, {
         onRecordHit: handleHit,
         onRecordHitWithRunnerOutcomes: handleHitWithRunnerOutcomes,
+        onRecordSacrificeWithRunnerOutcomes: handleSacrificeWithRunnerOutcomes,
         onRecordOut: handleOut,
         onRecordError: handleError,
         onRecordSacFly: handleSacrificeFly,
@@ -822,6 +823,18 @@ export default function ScoringScreen() {
       gameState.isTopOfInning,
       payload,
     );
+    await recordLinkedRunnerOutcomes(hitId, outcomes);
+  }
+
+  /**
+   * Records each runner's linked outcome on a play (hit or sacrifice), with
+   * `relatedEventId` → the play: BASERUNNER_OUT (with the putout order when
+   * entered) for a thrown-out runner, BASERUNNER_ADVANCE for a hold or an
+   * extra base, and a SCORE (0 RBI — the play carries the RBI) for an advance
+   * home. The standard outcome ('auto') needs no event.
+   */
+  async function recordLinkedRunnerOutcomes(playId: string, outcomes: RunnerOutcome[]) {
+    if (!gameState) return;
     for (const outcome of outcomes) {
       if (outcome.kind === 'auto') continue;
       if (outcome.kind === 'thrown_out') {
@@ -829,7 +842,7 @@ export default function ScoringScreen() {
           runnerId: outcome.runnerId,
           fromBase: outcome.fromBase,
           ...pitcherAttribution,
-          relatedEventId: hitId,
+          relatedEventId: playId,
           reason: AdvanceReason.ON_PLAY,
           ...(outcome.fieldingSequence?.length ? { fieldingSequence: outcome.fieldingSequence } : {}),
         });
@@ -841,22 +854,59 @@ export default function ScoringScreen() {
           fromBase: outcome.fromBase,
           toBase: outcome.toBase,
           reason: AdvanceReason.ON_PLAY,
-          relatedEventId: hitId,
+          relatedEventId: playId,
         });
         // An advance to home clears the base but never credits the run — the
-        // SCORE does, same as a stolen base of home. RBI already rode on the
-        // HIT above, so this carries none. Linked to the hit so voiding the
-        // hit also voids the run (void-event.ts).
+        // SCORE does, same as a stolen base of home. RBI rides on the play
+        // itself, so this carries none. Linked to the play so voiding the
+        // play also voids the run (void-event.ts).
         if (outcome.kind === 'advanced' && outcome.toBase === 4) {
           const scorePayload: ScorePayload = {
             scoringPlayerId: outcome.runnerId,
             rbis: 0,
-            relatedEventId: hitId,
+            relatedEventId: playId,
           };
           await recordEvent(EventType.SCORE, gameState.inning, gameState.isTopOfInning, scorePayload);
         }
       }
     }
+  }
+
+  /**
+   * A sac fly or sac bunt with per-runner outcomes (OBR 9.08 checked again
+   * here; the prompt already refuses an invalid set). RBI rides on the
+   * sacrifice explicitly when any runner has a linked outcome — derivation
+   * from the default would miss a runner who tagged home, or credit one who
+   * held — and is left to derivation otherwise.
+   */
+  async function handleSacrificeWithRunnerOutcomes(
+    kind: 'sac_fly' | 'sac_bunt',
+    outcomes: RunnerOutcome[],
+    outType: BattedOutType | null,
+  ) {
+    if (!gameState) return;
+    const evaluation = evaluatePlayRunnerOutcomes(
+      { kind },
+      outcomes.map(({ fromBase, runnerId: _runnerId, ...choice }) => ({ fromBase, choice })),
+    );
+    if (evaluation.error) {
+      console.warn(`handleSacrificeWithRunnerOutcomes: refused game=${gameId}: ${evaluation.error}`);
+      return;
+    }
+    const trajectory = outType ? trajectoryForOutType(outType) : undefined;
+    const anyLinked = outcomes.some((o) => o.kind !== 'auto');
+    const sacId = await recordEvent(
+      kind === 'sac_fly' ? EventType.SACRIFICE_FLY : EventType.SACRIFICE_BUNT,
+      gameState.inning,
+      gameState.isTopOfInning,
+      {
+        ...halfAttribution,
+        ...battedBallSlot.take(),
+        ...(trajectory ? { trajectory } : {}),
+        ...(anyLinked ? { rbis: evaluation.rbis } : {}),
+      },
+    );
+    await recordLinkedRunnerOutcomes(sacId, outcomes);
   }
 
   async function handleOut(outType: BattedOutType) {

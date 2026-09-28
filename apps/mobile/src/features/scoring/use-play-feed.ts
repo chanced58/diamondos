@@ -3,7 +3,8 @@ import {
   EventType,
   formatEventDescription,
   formatFieldingSequence,
-  hitRunnerOptions,
+  playRunnerOptions,
+  type RunnerOutcomePlay,
   type GameEvent,
   type BaserunnerMovePayload,
   type HitPayload,
@@ -56,7 +57,7 @@ function isLinkedRunnerOutcome(event: GameEvent): boolean {
 }
 
 // toBase is typed 2 | 3 | 4 (BaserunnerMovePayload) — there is no base-1 advance.
-const BASE_LABELS: Record<number, string> = { 2: '2B', 3: '3B', 4: 'home' };
+const BASE_LABELS: Record<number, string> = { 1: '1B', 2: '2B', 3: '3B', 4: 'home' };
 
 function capitalize(text: string): string {
   return text.length === 0 ? text : text.charAt(0).toUpperCase() + text.slice(1);
@@ -91,12 +92,12 @@ function describeLinkedOutcome(
       : `${name} thrown out advancing`;
   }
   const base = p.toBase != null ? (BASE_LABELS[p.toBase] ?? `base ${p.toBase}`) : 'base';
-  // On a hit, a linked advance is either a hold (short of the standard
-  // advance) or an extra base (beyond it) — "held at home" would be nonsense
-  // for a runner who scored from second on a single.
-  if (parent.eventType === EventType.HIT && p.fromBase != null && p.toBase != null) {
-    const hitType = (parent.payload as Partial<HitPayload>).hitType;
-    const options = hitType ? hitRunnerOptions(p.fromBase as 1 | 2 | 3, hitType) : null;
+  // On a hit or sacrifice, a linked advance is either a hold (short of the
+  // standard advance) or an extra base (beyond it) — "held at home" would be
+  // nonsense for a runner who scored from second on a single.
+  const play = runnerOutcomePlayOf(parent);
+  if (play && p.fromBase != null && p.toBase != null) {
+    const options = playRunnerOptions(p.fromBase as 1 | 2 | 3, play);
     if (options && p.toBase > options.standardBase) {
       return p.toBase === 4 ? `${name} scored` : `${name} took ${base}`;
     }
@@ -105,6 +106,15 @@ function describeLinkedOutcome(
   // Off a non-hit parent (e.g. a throwing error on a pickoff) there is no
   // standard advance to fall short of: the runner simply advanced.
   return `${name} advanced to ${base}`;
+}
+
+/** The play a linked runner outcome hangs off, when it has a standard advance. */
+function runnerOutcomePlayOf(parent: GameEvent): RunnerOutcomePlay | null {
+  if (parent.eventType === EventType.SACRIFICE_FLY) return { kind: 'sac_fly' };
+  if (parent.eventType === EventType.SACRIFICE_BUNT) return { kind: 'sac_bunt' };
+  if (parent.eventType !== EventType.HIT) return null;
+  const hitType = (parent.payload as Partial<HitPayload>).hitType;
+  return hitType ? { kind: 'hit', hitType } : null;
 }
 
 interface PartitionResult {

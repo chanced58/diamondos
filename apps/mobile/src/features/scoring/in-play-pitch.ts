@@ -52,6 +52,9 @@ export const IN_PLAY_HANDLER_TERMINALS = {
   onRecordSacBunt: EventType.SACRIFICE_BUNT,
   onRecordSacFlyFromOut: EventType.SACRIFICE_FLY,
   onRecordSacBuntFromOut: EventType.SACRIFICE_BUNT,
+  // Sac fly or sac bunt with runner outcomes. The terminal here only decides
+  // that an in-play pitch is recorded first — true for both sacrifices.
+  onRecordSacrificeWithRunnerOutcomes: EventType.SACRIFICE_FLY,
   onRecordFieldersChoice: EventType.OUT,
   onRecordDoublePlay: EventType.DOUBLE_PLAY,
   onRecordTriplePlay: EventType.TRIPLE_PLAY,
