@@ -1050,3 +1050,22 @@ describe('deriveGameState — two runners sharing an id', () => {
     expect(state.runnersOnBase).toEqual({ first: 'dup', second: null, third: null });
   });
 });
+
+describe('deriveGameState — older runner advance with no runner id', () => {
+  beforeEach(resetSeq);
+
+  it('should move the runner off his base instead of leaving a copy behind', () => {
+    const events: GameEvent[] = [
+      e(EventType.GAME_START, { awayLeadoffBatterId: 'a1', homeLeadoffBatterId: 'h1' }),
+      ...batterHit('a1', HitType.SINGLE),
+      e(EventType.BASERUNNER_ADVANCE, { fromBase: 1, toBase: 2 }),
+      ...batterHit('a2', HitType.SINGLE),
+    ];
+    const state = deriveGameState(GAME, events, HOME_TEAM);
+    // The runner went 1st → 2nd → 3rd on the single; a2 is on 1st. No run.
+    expect(state.runnersOnBase.first).toBe('a2');
+    expect(state.runnersOnBase.second).toBeNull();
+    expect(state.runnersOnBase.third).not.toBeNull();
+    expect(state.awayScore).toBe(0);
+  });
+});

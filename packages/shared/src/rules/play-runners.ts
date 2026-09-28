@@ -157,11 +157,17 @@ export function applyPlayToRunners<T>(
  * Takes the runner off his base: the named `fromBase` when he is on it; for a
  * linked outcome whose runner the play already dropped, nothing; otherwise
  * the first base holding his id (older events without `fromBase`, and web's
- * history editor, which stores the "Out at" base there).
+ * history editor, which stores the "Out at" base there). An older move with
+ * no runner id can only be matched by base: a standalone one clears its
+ * `fromBase`; a linked one clears nothing.
  */
 function removeRunner<T>(runners: Bases<T>, move: RunnerMove, idOf: (runner: T) => string): Bases<T> {
   const result = { ...runners };
   const from = move.fromBase;
+  if (move.runnerId === undefined) {
+    if (isRunnerBase(from) && !move.relatedEventId) result[KEY[from]] = null;
+    return result;
+  }
   if (isRunnerBase(from)) {
     const onBase = result[KEY[from]];
     if (onBase !== null && idOf(onBase) === move.runnerId) {
@@ -183,7 +189,8 @@ function removeRunner<T>(runners: Bases<T>, move: RunnerMove, idOf: (runner: T) 
 /**
  * A BASERUNNER_ADVANCE: the runner leaves his base (see removeRunner) and is
  * placed on `toBase` as `runnerValue`. An advance home places nothing — the
- * accompanying SCORE event carries the run.
+ * accompanying SCORE event carries the run. A caller replaying a move with no
+ * runner id passes a stand-in value so the runner is not lost.
  */
 export function applyLinkedAdvance<T>(
   runners: Bases<T>,
