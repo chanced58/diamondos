@@ -168,7 +168,8 @@ export function evaluateHitRunnerOutcomes(
 /**
  * evaluateHitRunnerOutcomes for any RunnerOutcomePlay. On top of the per-
  * runner, collision and passing checks, a sacrifice must be one (OBR 9.08):
- * a sac fly needs a run to score, a sac bunt needs a runner to advance.
+ * a sac fly needs a run to score; a sac bunt needs a runner to advance and
+ * none put out.
  */
 export function evaluatePlayRunnerOutcomes(
   play: RunnerOutcomePlay,
@@ -221,6 +222,12 @@ export function evaluatePlayRunnerOutcomes(
 
   if (play.kind === 'sac_fly' && !finishes.some((f) => f.finish === 4)) {
     return { error: 'No run scored — record it as a fly out instead.', rbis: 0 };
+  }
+  // OBR 9.08(a): a runner put out attempting to advance one base on the bunt
+  // makes it no sacrifice — the batter is charged a time at bat. Which base
+  // the runner was out at isn't recorded, so any runner out counts.
+  if (play.kind === 'sac_bunt' && runners.some((r) => r.choice.kind === 'thrown_out')) {
+    return { error: 'A runner was put out advancing — record it as an out instead.', rbis: 0 };
   }
   if (play.kind === 'sac_bunt' && !finishes.some((f) => f.finish > f.fromBase)) {
     return { error: 'No runner advanced — record it as an out instead.', rbis: 0 };

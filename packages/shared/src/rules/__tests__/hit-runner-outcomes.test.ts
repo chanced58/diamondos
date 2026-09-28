@@ -256,3 +256,22 @@ describe('evaluatePlayRunnerOutcomes — sacrifices (OBR 9.08)', () => {
     expect(result.error).toBe("Two runners can't both finish on 2B.");
   });
 });
+
+describe('sac bunt with a runner put out (OBR 9.08(a))', () => {
+  it('should refuse a sac bunt when a runner is put out, even if another runner advances', () => {
+    const result = evaluatePlayRunnerOutcomes({ kind: 'sac_bunt' }, [
+      { fromBase: 1, choice: { kind: 'thrown_out' } },
+      { fromBase: 2, choice: { kind: 'auto' } },
+    ]);
+    expect(result.error).toBe('A runner was put out advancing — record it as an out instead.');
+  });
+
+  it('should still allow a runner thrown out on a sac fly when a run scores', () => {
+    expect(
+      evaluatePlayRunnerOutcomes({ kind: 'sac_fly' }, [
+        { fromBase: 2, choice: { kind: 'thrown_out' } },
+        { fromBase: 3, choice: { kind: 'auto' } },
+      ]),
+    ).toEqual({ error: null, rbis: 1 });
+  });
+});

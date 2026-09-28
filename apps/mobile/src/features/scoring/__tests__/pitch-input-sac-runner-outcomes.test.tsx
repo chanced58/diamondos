@@ -167,23 +167,44 @@ describe('PitchInput — runner outcomes on a sacrifice', () => {
     );
   });
 
-  it('should ask the putout order for a runner thrown out on a sacrifice', () => {
+  it('should ask the putout order for a runner thrown out tagging on a sac fly', () => {
     const onRecordSacrificeWithRunnerOutcomes = jest.fn();
-    render(<PitchInput {...sacProps({ runnersOnBase: FIRST_AND_SECOND, onRecordSacrificeWithRunnerOutcomes })} />);
+    render(
+      <PitchInput
+        {...sacProps({
+          runnersOnBase: [{ base: 2, runnerId: 'r2' }, { base: 3, runnerId: 'r3' }],
+          onRecordSacrificeWithRunnerOutcomes,
+        })}
+      />,
+    );
 
-    sacToPrompt('Sac Bunt');
-    press(screen.getAllByText('Thrown out')[1]); // runner from 2nd, out at 3rd
-    press(screen.getByText('Confirm Sac Bunt'));
+    sacToPrompt('Sac Fly');
+    press(screen.getAllByText('Thrown out')[0]); // runner from 2nd, out tagging to 3rd
+    press(screen.getByText('Confirm Sac Fly'));
     expect(screen.getByText('Runner on 2nd thrown out — who made the play?')).toBeTruthy();
-    press(screen.getByTestId('throw-position-1'));
+    press(screen.getByTestId('throw-position-8'));
     press(screen.getByTestId('throw-position-5'));
     press(screen.getByTestId('throw-done'));
 
     expect(onRecordSacrificeWithRunnerOutcomes).toHaveBeenCalledWith(
-      'sac_bunt',
-      expect.arrayContaining([{ runnerId: 'r2', fromBase: 2, kind: 'thrown_out', fieldingSequence: [1, 5] }]),
+      'sac_fly',
+      expect.arrayContaining([
+        { runnerId: 'r2', fromBase: 2, kind: 'thrown_out', fieldingSequence: [8, 5] },
+        { runnerId: 'r3', fromBase: 3, kind: 'auto' },
+      ]),
       null,
     );
+  });
+
+  it('should refuse a sac bunt on which a runner is put out (OBR 9.08(a))', () => {
+    const onRecordSacrificeWithRunnerOutcomes = jest.fn();
+    render(<PitchInput {...sacProps({ runnersOnBase: FIRST_AND_SECOND, onRecordSacrificeWithRunnerOutcomes })} />);
+
+    sacToPrompt('Sac Bunt');
+    press(screen.getAllByText('Thrown out')[0]); // runner from 1st
+    expect(screen.getByText('A runner was put out advancing — record it as an out instead.')).toBeTruthy();
+    press(screen.getByText('Confirm Sac Bunt'));
+    expect(onRecordSacrificeWithRunnerOutcomes).not.toHaveBeenCalled();
   });
 
   it('should carry the out type through from the Out → "was it a sacrifice?" path', () => {
