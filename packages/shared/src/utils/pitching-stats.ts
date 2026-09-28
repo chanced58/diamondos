@@ -9,6 +9,14 @@ import {
 } from '../types/game-event';
 import { OUTS_PER_INNING } from '../constants/baseball';
 import type { CountStat, PitchingStats } from '../types/pitching';
+import {
+  applyLinkedAdvance,
+  applyPlayToRunners,
+  applyRunnerOut,
+  collectLinkedRunnerOutcomes,
+  isRunnerOverridden,
+  type Bases,
+} from '../rules/play-runners';
 
 // All 12 valid ball-strike counts
 const ALL_COUNTS = [
@@ -181,8 +189,20 @@ export function derivePitchingStats(
     // ── Base-runner tracking for run attribution to pitchers ────────────────
     // Track runner ID + whether they reached on error for earned run distinction
     type RunnerState = { id: string; reachedOnError: boolean } | null;
+    type Runner = NonNullable<RunnerState>;
     let r1: RunnerState = null, r2: RunnerState = null, r3: RunnerState = null;
     function clearRunners() { r1 = null; r2 = null; r3 = null; }
+
+    // A hit's linked runner outcomes, and the shared rule that applies them
+    // (rules/play-runners — the one deriveGameState uses).
+    const linkedOutcomes = collectLinkedRunnerOutcomes(gameEvents as { event_type?: string; payload?: unknown }[]);
+    const runnerIdOf = (runner: Runner) => runner.id;
+    const currentBases = (): Bases<Runner> => ({ first: r1, second: r2, third: r3 });
+    const setBases = (next: Bases<Runner>) => { r1 = next.first; r2 = next.second; r3 = next.third; };
+    // Runners a hit left off the bases because a linked outcome records their
+    // fate, keyed "<hit id>:<starting base>" — so a linked advance puts the
+    // same runner (with his reached-on-error flag) back on base.
+    const detachedByPlay = new Map<string, Runner>();
 
     // Per-half-inning out count (reset on INNING_CHANGE). Distinct from
     // the cumulative `inningsPitchedOuts` stat; used locally to guard the
@@ -449,21 +469,22 @@ export function derivePitchingStats(
             : p.hitType === 'triple' ? 3
             : p.hitType === 'double' ? 2
             : 1;
-          if (bases === 4) {
-            // Home run: all runners + batter score
-            if (r3) scoreRun(r3);
-            if (r2) scoreRun(r2);
-            if (r1) scoreRun(r1);
-            scoreRun(batterRunner);
-            clearRunners();
-          } else {
-            if (r3) scoreRun(r3);
-            if (r2 && 2 + bases >= 4) scoreRun(r2);
-            if (r1 && 1 + bases >= 4) scoreRun(r1);
-            if (bases === 1) { r3 = (r2 && 2 + bases < 4) ? r2 : null; r2 = (r1 && 1 + bases < 4) ? r1 : null; r1 = batterRunner; }
-            else if (bases === 2) { r3 = (r1 && 1 + bases < 4) ? r1 : null; r2 = batterRunner; r1 = null; }
-            else if (bases === 3) { r3 = batterRunner; r2 = null; r1 = null; }
+          const overrides = linkedOutcomes.get((event as { id?: string }).id ?? '');
+          const before = currentBases();
+          for (const [base, runner] of [[1, before.first], [2, before.second], [3, before.third]] as const) {
+            if (runner && isRunnerOverridden(runner, base, overrides, runnerIdOf)) {
+              detachedByPlay.set(`${(event as { id?: string }).id}:${base}`, runner);
+            }
           }
+          const played = applyPlayToRunners(
+            before,
+            { kind: 'hit', bases: bases as 1 | 2 | 3 | 4 },
+            batterRunner as Runner,
+            overrides,
+            runnerIdOf,
+          );
+          for (const runner of played.scoring) scoreRun(runner);
+          setBases(played.runners);
         }
       }
 
@@ -700,16 +721,24 @@ export function derivePitchingStats(
         const toBase: number | undefined = payload?.toBase;
         const fromBase: number | undefined = payload?.fromBase;
         const runnerId: string | undefined = payload?.runnerId;
-        // Capture runner's error flag before clearing their old base
-        const prev: RunnerState = fromBase === 1 ? r1 : fromBase === 2 ? r2 : fromBase === 3 ? r3 : null;
-        if (fromBase === 1) r1 = null;
-        else if (fromBase === 2) r2 = null;
-        else if (fromBase === 3) r3 = null;
-        // Score handled by SCORE event above; just track base state
-        const state: RunnerState = { id: runnerId ?? prev?.id ?? 'unknown', reachedOnError: prev?.reachedOnError ?? false };
-        if (toBase === 3) r3 = state;
-        else if (toBase === 2) r2 = state;
-        else if (toBase === 1) r1 = state;
+        // The runner keeps his reached-on-error flag: from his base, or — for
+        // a linked outcome on a hit — from the runner the hit left off.
+        const prev: RunnerState =
+          (payload?.relatedEventId ? detachedByPlay.get(`${payload.relatedEventId}:${fromBase}`) : undefined) ??
+          (fromBase === 1 ? r1 : fromBase === 2 ? r2 : fromBase === 3 ? r3 : null);
+        const state: Runner = { id: runnerId ?? prev?.id ?? 'unknown', reachedOnError: prev?.reachedOnError ?? false };
+        if (runnerId) {
+          // Score handled by SCORE event above; just track base state.
+          setBases(applyLinkedAdvance(currentBases(), payload, state, runnerIdOf));
+        } else {
+          // Legacy event with no runner id: clear the named base, place a stand-in.
+          if (fromBase === 1) r1 = null;
+          else if (fromBase === 2) r2 = null;
+          else if (fromBase === 3) r3 = null;
+          if (toBase === 3) r3 = state;
+          else if (toBase === 2) r2 = state;
+          else if (toBase === 1) r1 = state;
+        }
       }
 
       // ── CAUGHT_STEALING → remove runner ────────────────────────────────
@@ -723,12 +752,7 @@ export function derivePitchingStats(
 
       // ── BASERUNNER_OUT → runner called out (fielder's choice) ──────────
       if (etype === 'baserunner_out') {
-        const runnerId: string | undefined = payload?.runnerId;
-        if (runnerId) {
-          if (r1?.id === runnerId) r1 = null;
-          else if (r2?.id === runnerId) r2 = null;
-          else if (r3?.id === runnerId) r3 = null;
-        }
+        if (typeof payload?.runnerId === 'string') setBases(applyRunnerOut(currentBases(), payload, runnerIdOf));
         outsThisInning += 1;
       }
 

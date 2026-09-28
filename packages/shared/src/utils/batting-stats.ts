@@ -1,6 +1,13 @@
 import { EventType, HitType, HitTrajectory, type GameEvent, type HitPayload, type OutPayload } from '../types/game-event';
 import { OUTS_PER_INNING } from '../constants/baseball';
 import type { BattingStats } from '../types/batting';
+import {
+  applyLinkedAdvance,
+  applyPlayToRunners,
+  applyRunnerOut,
+  collectLinkedRunnerOutcomes,
+  type Bases,
+} from '../rules/play-runners';
 
 /**
  * A batted ball is a "Hard Hit Ball" when:
@@ -298,32 +305,13 @@ export function deriveBattingStats(
       r1 = batterId;
     }
 
-    // Pre-pass: map any BASERUNNER_OUT / BASERUNNER_ADVANCE events with
-    // `relatedEventId` to their parent play. The HIT branch below consults
-    // this to skip default run-scoring and base placement for any runner
-    // whose outcome on the play is captured by a linked outcome event.
-    const overridesByParentId = new Map<string, { outIds: Set<string>; advIds: Set<string> }>();
-    for (const ev of gameEvents) {
-      const etype = (ev as any).event_type ?? ev.eventType;
-      if (etype !== 'baserunner_out' && etype !== 'baserunner_advance') continue;
-      const p = ev.payload as any;
-      const parentId: string | undefined = p?.relatedEventId;
-      const runnerId: string | undefined = p?.runnerId;
-      if (!parentId || !runnerId) continue;
-      let entry = overridesByParentId.get(parentId);
-      if (!entry) {
-        entry = { outIds: new Set(), advIds: new Set() };
-        overridesByParentId.set(parentId, entry);
-      }
-      if (etype === 'baserunner_out') entry.outIds.add(runnerId);
-      else entry.advIds.add(runnerId);
-    }
-    const isOverriddenRunner = (runnerId: string | null, parentId: string): boolean => {
-      if (!runnerId) return false;
-      const o = overridesByParentId.get(parentId);
-      if (!o) return false;
-      return o.outIds.has(runnerId) || o.advIds.has(runnerId);
-    };
+    // A hit's linked runner outcomes (BASERUNNER_OUT / BASERUNNER_ADVANCE with
+    // relatedEventId), matched by starting base when recorded, and the shared
+    // rule that applies them (rules/play-runners — the one deriveGameState uses).
+    const linkedOutcomes = collectLinkedRunnerOutcomes(gameEvents as { eventType?: string; event_type?: string; payload?: unknown }[]);
+    const runnerIdOf = (runner: string) => runner;
+    const currentBases = (): Bases<string> => ({ first: r1, second: r2, third: r3 });
+    const setBases = (next: Bases<string>) => { r1 = next.first; r2 = next.second; r3 = next.third; };
 
     for (const event of gameEvents) {
       const etype: string = (event as any).event_type ?? event.eventType;
@@ -411,54 +399,19 @@ export function deriveBattingStats(
             : hitType === 'double' ? 2
             : 1;
 
-          // Runners with a linked BASERUNNER_OUT / BASERUNNER_ADVANCE (same
-          // parent id) are excluded from default scoring and base placement;
-          // the linked event handles them. Lets the scorer record "R2 held
-          // at 3B on a double" or "R1 thrown out at 3B advancing" without
-          // double-counting runs.
-          const parentId = event.id;
-          const r1Override = isOverriddenRunner(r1, parentId);
-          const r2Override = isOverriddenRunner(r2, parentId);
-          const r3Override = isOverriddenRunner(r3, parentId);
-
-          let runsScored = 0;
-          if (bases === 4) {
-            if (r3 && !r3Override) { scoreRunner(r3); runsScored += 1; }
-            if (r2 && !r2Override) { scoreRunner(r2); runsScored += 1; }
-            if (r1 && !r1Override) { scoreRunner(r1); runsScored += 1; }
-            scoreRunner(batterId);
-            runsScored += 1;
-            // Clear bases; the linked BASERUNNER_OUT will no-op against an
-            // empty slot (still increments outs); BASERUNNER_ADVANCE places
-            // the runner on toBase.
-            clearBases();
-          } else {
-            // Determine which runners score
-            if (r3 && !r3Override)                    { scoreRunner(r3); runsScored += 1; }
-            if (r2 && 2 + bases >= 4 && !r2Override)  { scoreRunner(r2); runsScored += 1; }
-            if (r1 && 1 + bases >= 4 && !r1Override)  { scoreRunner(r1); runsScored += 1; }
-
-            // Snapshot runners we'd otherwise place by default, then skip
-            // overridden ones so the linked event can place them correctly.
-            // (Overridden R3 was suppressed from scoring above and is being
-            // overwritten by the auto-advance assignment below; the linked
-            // BASERUNNER_ADVANCE — if any — runs after this HIT and places
-            // the runner at their actual end base.)
-            const prevR1 = r1, prevR2 = r2;
-            if (bases === 1) {
-              r3 = r2 && !r2Override ? prevR2 : null;
-              r2 = r1 && !r1Override ? prevR1 : null;
-              r1 = batterId;
-            } else if (bases === 2) {
-              r3 = r1 && !r1Override ? prevR1 : null;
-              r2 = batterId;
-              r1 = null;
-            } else if (bases === 3) {
-              r3 = batterId;
-              r2 = null;
-              r1 = null;
-            }
-          }
+          // Runners with a linked outcome are left to it: no default run or
+          // base. Lets the scorer record "R2 held at 3B on a double" or "R1
+          // thrown out at 3B advancing" without double-counting runs.
+          const played = applyPlayToRunners(
+            currentBases(),
+            { kind: 'hit', bases: bases as 1 | 2 | 3 | 4 },
+            batterId,
+            linkedOutcomes.get(event.id),
+            runnerIdOf,
+          );
+          for (const runner of played.scoring) scoreRunner(runner);
+          const runsScored = played.runs;
+          setBases(played.runners);
 
           // Explicit payload.rbis (including 0) overrides derivation — scorer
           // may use this for OBR 9.04(b)(3) judgment calls where a run scored
@@ -477,8 +430,8 @@ export function deriveBattingStats(
 
         // Capture pre-PA state for productive-out detection before we mutate.
         const preOuts = outsThisInning;
-        const preR2 = r2;
-        const preR3 = r3;
+        const preR2: string | null = r2;
+        const preR3: string | null = r3;
 
         productiveOutPending = null;
         qabCreditedThisPA = false;
@@ -824,10 +777,7 @@ export function deriveBattingStats(
       // retired first). Track the out locally so the HIT handler above can
       // short-circuit run attribution when this was the 3rd out.
       if (etype === 'baserunner_out') {
-        const runnerId: string | undefined = payload?.runnerId;
-        if (r1 === runnerId) r1 = null;
-        else if (r2 === runnerId) r2 = null;
-        else if (r3 === runnerId) r3 = null;
+        if (typeof payload?.runnerId === 'string') setBases(applyRunnerOut(currentBases(), payload, runnerIdOf));
         outsThisInning += 1;
         continue;
       }
@@ -852,13 +802,8 @@ export function deriveBattingStats(
         ) {
           creditQAB(productiveOutPending.batterId);
         }
-        if (r1 === runnerId) r1 = null;
-        else if (r2 === runnerId) r2 = null;
-        else if (r3 === runnerId) r3 = null;
-        // toBase 4 = scored; run credited by SCORE event
-        if (toBase === 3) r3 = runnerId;
-        else if (toBase === 2) r2 = runnerId;
-        else if (toBase === 1) r1 = runnerId;
+        // toBase 4 places nothing — the SCORE event credits the run.
+        setBases(applyLinkedAdvance(currentBases(), payload, runnerId, runnerIdOf));
         continue;
       }
 
