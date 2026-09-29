@@ -385,3 +385,37 @@ describe('buildGameHistoryTree — running score with linked runner outcomes', (
     expect(tree.innings[0].top!.awayScore).toBe(1);
   });
 });
+
+describe('buildGameHistoryTree — sacrifices with linked runner outcomes', () => {
+  beforeEach(resetSeq);
+
+  /** A pitch in play then a hit; returns [pitch, hit]. */
+  function hitBy(batterId: string, hitType: HitType): GameEvent[] {
+    return [
+      mkEvent(EventType.PITCH_THROWN, { batterId, pitcherId: 'pit1', outcome: PitchOutcome.IN_PLAY }),
+      mkEvent(EventType.HIT, { batterId, pitcherId: 'pit1', hitType }),
+    ];
+  }
+
+  it('should not score a runner from 3rd who holds on a sac bunt — until a later hit brings him in', () => {
+    const events = [...hitBy('p1', HitType.DOUBLE), ...hitBy('p2', HitType.SINGLE)]; // p1 3rd, p2 1st
+    const bunt = mkEvent(EventType.SACRIFICE_BUNT, { batterId: 'p3', pitcherId: 'pit1' });
+    const held = mkEvent(EventType.BASERUNNER_ADVANCE, { runnerId: 'p1', fromBase: 3, toBase: 3, reason: 'on_play', relatedEventId: bunt.id });
+    const afterBunt = buildGameHistoryTree([...events, bunt, held], players);
+    expect(afterBunt.innings[0].top!.awayScore).toBe(0);
+
+    const single = hitBy('p4', HitType.SINGLE);
+    const tree = buildGameHistoryTree([...events, bunt, held, ...single], players);
+    // p1 scores from 3rd; p2 (moved to 2nd by the bunt) reaches 3rd — one run, not two.
+    expect(tree.innings[0].top!.awayScore).toBe(1);
+  });
+
+  it('should keep one copy of a runner held at 1st on a sac bunt', () => {
+    const events = [...hitBy('p1', HitType.SINGLE), ...hitBy('p2', HitType.SINGLE)]; // p1 2nd, p2 1st
+    const bunt = mkEvent(EventType.SACRIFICE_BUNT, { batterId: 'p3', pitcherId: 'pit1' });
+    const held = mkEvent(EventType.BASERUNNER_ADVANCE, { runnerId: 'p2', fromBase: 1, toBase: 1, reason: 'on_play', relatedEventId: bunt.id });
+    const tree = buildGameHistoryTree([...events, bunt, held, ...hitBy('p4', HitType.TRIPLE)], players);
+    // Triple scores p1 (3rd) and p2 (1st): two runs. A stray copy of p2 on 2nd would make it three.
+    expect(tree.innings[0].top!.awayScore).toBe(2);
+  });
+});

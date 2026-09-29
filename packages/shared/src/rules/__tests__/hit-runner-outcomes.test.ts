@@ -1,5 +1,5 @@
 import { HitType } from '../../types/game-event';
-import { evaluateHitRunnerOutcomes, hitRunnerOptions } from '../hit-runner-outcomes';
+import { evaluateHitRunnerOutcomes, evaluatePlayRunnerOutcomes, hitRunnerOptions, playRunnerOptions } from '../hit-runner-outcomes';
 
 describe('hitRunnerOptions', () => {
   describe('on a single', () => {
@@ -114,7 +114,7 @@ describe('evaluateHitRunnerOutcomes', () => {
 
   it('should reject a hold the hit does not allow', () => {
     const result = evaluateHitRunnerOutcomes(HitType.DOUBLE, [{ fromBase: 1, choice: { kind: 'held', toBase: 2 } }]);
-    expect(result.error).toBe("A runner from 1B can't be held at 2B on this hit.");
+    expect(result.error).toBe("A runner from 1B can't be held at 2B on this play.");
   });
 
   it('should reject an advance that is not beyond the standard one', () => {
@@ -182,5 +182,96 @@ describe('holding after a trailing force out (OBR 5.09(b)(6))', () => {
       { fromBase: 2, choice: { kind: 'held', toBase: 2 } },
     ]);
     expect(result).toEqual({ error: null, rbis: 0 });
+  });
+});
+
+describe('sacrifice runner options', () => {
+  it('should move runners up one base on a sac bunt, with a hold at their own base', () => {
+    expect(playRunnerOptions(1, { kind: 'sac_bunt' }, [1])).toEqual({
+      standardBase: 2, heldBase: null, advancedBases: [3, 4], stayBase: 1,
+    });
+    expect(playRunnerOptions(3, { kind: 'sac_bunt' }, [3])).toEqual({
+      standardBase: 4, heldBase: null, advancedBases: [], stayBase: 3,
+    });
+  });
+
+  it('should score the runner from 3rd on a sac fly and hold everyone else by default', () => {
+    expect(playRunnerOptions(3, { kind: 'sac_fly' }, [3])).toEqual({
+      standardBase: 4, heldBase: null, advancedBases: [], stayBase: 3,
+    });
+    expect(playRunnerOptions(2, { kind: 'sac_fly' }, [2, 3])).toEqual({
+      standardBase: 2, heldBase: null, advancedBases: [3, 4], stayBase: null,
+    });
+  });
+
+  it('should delegate hits to the hit rules', () => {
+    expect(playRunnerOptions(2, { kind: 'hit', hitType: HitType.SINGLE }, [2])).toEqual(
+      hitRunnerOptions(2, HitType.SINGLE, [2]),
+    );
+  });
+});
+
+describe('evaluatePlayRunnerOutcomes — sacrifices (OBR 9.08)', () => {
+  it('should accept a sac fly that scores the runner from 3rd, with one RBI', () => {
+    expect(evaluatePlayRunnerOutcomes({ kind: 'sac_fly' }, [{ fromBase: 3, choice: { kind: 'auto' } }])).toEqual({
+      error: null,
+      rbis: 1,
+    });
+  });
+
+  it('should refuse a sac fly on which no run scores', () => {
+    const result = evaluatePlayRunnerOutcomes({ kind: 'sac_fly' }, [{ fromBase: 3, choice: { kind: 'thrown_out' } }]);
+    expect(result.error).toBe('No run scored — record it as a fly out instead.');
+  });
+
+  it('should accept a sac fly where the runner from 2nd tags to 3rd as the runner from 3rd scores', () => {
+    expect(
+      evaluatePlayRunnerOutcomes({ kind: 'sac_fly' }, [
+        { fromBase: 2, choice: { kind: 'advanced', toBase: 3 } },
+        { fromBase: 3, choice: { kind: 'auto' } },
+      ]),
+    ).toEqual({ error: null, rbis: 1 });
+  });
+
+  it('should accept a sac bunt that advances only the runner from 2nd while the runner from 1st holds', () => {
+    // Runner from 1st holds; runner from 2nd moves to 3rd.
+    expect(
+      evaluatePlayRunnerOutcomes({ kind: 'sac_bunt' }, [
+        { fromBase: 1, choice: { kind: 'held', toBase: 1 } },
+        { fromBase: 2, choice: { kind: 'auto' } },
+      ]),
+    ).toEqual({ error: null, rbis: 0 });
+  });
+
+  it('should refuse a sac bunt on which no runner advances', () => {
+    const result = evaluatePlayRunnerOutcomes({ kind: 'sac_bunt' }, [{ fromBase: 1, choice: { kind: 'held', toBase: 1 } }]);
+    expect(result.error).toBe('No runner advanced — record it as an out instead.');
+  });
+
+  it('should still refuse two runners on one base', () => {
+    const result = evaluatePlayRunnerOutcomes({ kind: 'sac_bunt' }, [
+      { fromBase: 1, choice: { kind: 'auto' } },
+      { fromBase: 2, choice: { kind: 'held', toBase: 2 } },
+    ]);
+    expect(result.error).toBe("Two runners can't both finish on 2B.");
+  });
+});
+
+describe('sac bunt with a runner put out (OBR 9.08(a))', () => {
+  it('should refuse a sac bunt when a runner is put out, even if another runner advances', () => {
+    const result = evaluatePlayRunnerOutcomes({ kind: 'sac_bunt' }, [
+      { fromBase: 1, choice: { kind: 'thrown_out' } },
+      { fromBase: 2, choice: { kind: 'auto' } },
+    ]);
+    expect(result.error).toBe('A runner was put out advancing — record it as an out instead.');
+  });
+
+  it('should still allow a runner thrown out on a sac fly when a run scores', () => {
+    expect(
+      evaluatePlayRunnerOutcomes({ kind: 'sac_fly' }, [
+        { fromBase: 2, choice: { kind: 'thrown_out' } },
+        { fromBase: 3, choice: { kind: 'auto' } },
+      ]),
+    ).toEqual({ error: null, rbis: 1 });
   });
 });

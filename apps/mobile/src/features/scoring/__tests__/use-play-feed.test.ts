@@ -153,6 +153,22 @@ describe('usePlayFeed', () => {
     expect(result.current[0].description).toBe('Alice — double (Bob thrown out advancing, 8-6-2)');
   });
 
+  it('should describe runner outcomes on a sacrifice: held at 1B, took a base', () => {
+    const bunt = mkEvent(EventType.SACRIFICE_BUNT, { batterId: 'alice' });
+    const held = mkEvent(EventType.BASERUNNER_ADVANCE, {
+      runnerId: 'bob', fromBase: 1, toBase: 1, relatedEventId: bunt.id, reason: AdvanceReason.ON_PLAY,
+    });
+    const { result } = renderHook(() => usePlayFeed([bunt, held], names));
+    expect(result.current[0].description).toContain('(Bob held at 1B)');
+
+    const fly = mkEvent(EventType.SACRIFICE_FLY, { batterId: 'alice' });
+    const tagged = mkEvent(EventType.BASERUNNER_ADVANCE, {
+      runnerId: 'bob', fromBase: 2, toBase: 3, relatedEventId: fly.id, reason: AdvanceReason.ON_PLAY,
+    });
+    const feed = renderHook(() => usePlayFeed([fly, tagged], names));
+    expect(feed.result.current[0].description).toContain('(Bob took 3B)');
+  });
+
   it('CRITICAL 1: reflects a voided linked runner-outcome in the parent row instead of showing stale text', () => {
     const hit = mkEvent(EventType.HIT, { batterId: 'alice', hitType: HitType.DOUBLE });
     const outcome = mkEvent(EventType.BASERUNNER_OUT, {

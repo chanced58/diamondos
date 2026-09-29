@@ -31,6 +31,10 @@ export type OppBattingRow = {
   avg: number; obp: number; slg: number; ops: number;
 };
 
+/**
+ * One batting row per opponent batter (see the module header for how an
+ * opponent batter is resolved), single-game or season, in sequence order.
+ */
 export function computeOpponentBatting(
   events: Record<string, unknown>[],
   oppPlayerNameMap: Map<string, string>,
@@ -127,7 +131,8 @@ export function computeOpponentBatting(
         if (etype === 'score') {
           const scoringId = payload.scoringPlayerId as string | undefined;
           if (scoringId && oppPlayerNameMap.has(scoringId)) {
-            scoreRunner(scoringId);
+            // No run scores after the 3rd out (deriveGameState rules the same).
+            if (outsThisInning < OUTS_PER_INNING) scoreRunner(scoringId);
             if (r3 === scoringId) r3 = null;
             else if (r2 === scoringId) r2 = null;
             else if (r1 === scoringId) r1 = null;
@@ -283,24 +288,32 @@ export function computeOpponentBatting(
       } else if (etype === 'sacrifice_fly') {
         const s = get(batterId);
         s.pa++; s.sf++;
-        // OBR 9.04(a)(1): sacrifice fly scoring a runner credits 1 RBI.
-        const runScored = !!r3;
-        if (r3) { scoreRunner(r3); r3 = null; }
-        const explicitRbis = payload.rbis as number | undefined;
-        s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
+        // OBR 9.04(a)(1): an RBI for each run the sac fly scores (by default
+        // the runner from 3rd); runners with a linked outcome are left to it.
+        // The batter's out first: a sacrifice that ends the inning moves no
+        // runner and scores no run (as deriveGameState rules).
         outsThisInning++;
+        if (outsThisInning < OUTS_PER_INNING) {
+          const played = applyPlayToRunners(currentBases(), { kind: 'sac_fly' }, null, linkedOutcomes.get(event.id as string), runnerIdOf);
+          for (const runner of played.scoring) scoreRunner(runner);
+          setBases(played.runners);
+          const explicitRbis = payload.rbis as number | undefined;
+          s.rbi += explicitRbis !== undefined ? explicitRbis : played.runs;
+        }
       } else if (etype === 'sacrifice_bunt') {
         // OBR 9.08(a): advances runners one base; squeeze scores r3 for 1 RBI.
         const s = get(batterId);
         s.pa++; s.sh++;
-        const runScored = !!r3;
-        if (r3) scoreRunner(r3);
-        r3 = r2 ?? null;
-        r2 = r1;
-        r1 = null;
-        const explicitRbis = payload.rbis as number | undefined;
-        s.rbi += explicitRbis !== undefined ? explicitRbis : (runScored ? 1 : 0);
+        // The batter's out first: a sacrifice that ends the inning moves no
+        // runner and scores no run (as deriveGameState rules).
         outsThisInning++;
+        if (outsThisInning < OUTS_PER_INNING) {
+          const played = applyPlayToRunners(currentBases(), { kind: 'sac_bunt' }, null, linkedOutcomes.get(event.id as string), runnerIdOf);
+          for (const runner of played.scoring) scoreRunner(runner);
+          setBases(played.runners);
+          const explicitRbis = payload.rbis as number | undefined;
+          s.rbi += explicitRbis !== undefined ? explicitRbis : played.runs;
+        }
       } else if (etype === 'dropped_third_strike') {
         const s = get(batterId);
         s.pa++; s.ab++; s.k++;

@@ -13,7 +13,7 @@ import {
   type DroppedThirdStrikePayload,
   PitchOutcome,
 } from '../types/game-event';
-import { applyPlayToRunners, collectLinkedRunnerOutcomes, type Bases } from '../rules/play-runners';
+import { applyPlayToRunners, collectLinkedRunnerOutcomes, type RunnerPlay } from '../rules/play-runners';
 import { hitRunnerOptions } from '../rules/hit-runner-outcomes';
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -519,6 +519,11 @@ function applyInsertionOrder(events: GameEvent[]): GameEvent[] {
   return result;
 }
 
+/**
+ * Builds the inning → half-inning → at-bat tree the game history view renders,
+ * with a running score (runner movement per rules/play-runners) and the play
+ * labels, including each play's linked runner outcomes.
+ */
 export function buildGameHistoryTree(
   events: GameEvent[],
   playerNameMap: Map<string, string>,
@@ -640,6 +645,29 @@ export function buildGameHistoryTree(
       homeScore: 0,
       awayScore: 0,
     };
+  }
+
+  /**
+   * A play's default runner movement through the shared rule, with the
+   * booleans standing in as base-named runners. Linked outcomes that name a
+   * starting base leave those runners to their events.
+   */
+  function moveRunnersByPlay(play: RunnerPlay, playId: string) {
+    const played = applyPlayToRunners(
+      {
+        first: runnerFirst ? 'first' : null,
+        second: runnerSecond ? 'second' : null,
+        third: runnerThird ? 'third' : null,
+      },
+      play,
+      'batter',
+      linkedOutcomes.get(playId),
+      (runner) => runner,
+    );
+    addRuns(played.runs);
+    runnerFirst = played.runners.first !== null;
+    runnerSecond = played.runners.second !== null;
+    runnerThird = played.runners.third !== null;
   }
 
   /** A linked runner outcome that names its starting base (how both clients record them). */
@@ -791,22 +819,7 @@ export function buildGameHistoryTree(
           if (!legacyIdOnly) {
             // Runners with a linked outcome are left to it (their linked
             // event places them); everyone else takes the default advance.
-            const before: Bases<string> = {
-              first: runnerFirst ? 'first' : null,
-              second: runnerSecond ? 'second' : null,
-              third: runnerThird ? 'third' : null,
-            };
-            const played = applyPlayToRunners(
-              before,
-              { kind: 'hit', bases: bases as 1 | 2 | 3 | 4 },
-              'batter',
-              overrides,
-              (runner) => runner,
-            );
-            addRuns(played.runs);
-            runnerFirst = played.runners.first !== null;
-            runnerSecond = played.runners.second !== null;
-            runnerThird = played.runners.third !== null;
+            moveRunnersByPlay({ kind: 'hit', bases: bases as 1 | 2 | 3 | 4 }, event.id);
           } else if (bases === 4) {
             // Older linked events carry no starting base: subtract the runs
             // they suppressed from the default advance instead.
@@ -833,19 +846,18 @@ export function buildGameHistoryTree(
           forceAdvance();
         } else if (event.eventType === EventType.FIELD_ERROR) {
           forceAdvance();
-        } else if (event.eventType === EventType.SACRIFICE_FLY) {
-          if (runnerThird) {
-            addRuns(1);
-            runnerThird = false;
-          }
-        } else if (event.eventType === EventType.SACRIFICE_BUNT) {
-          // OBR 9.08(a), as deriveGameState and every stats consumer apply
-          // it: runners move up one base; a squeeze scores the runner from
-          // 3rd. Neither client records a separate SCORE for it.
-          if (runnerThird) addRuns(1);
-          runnerThird = runnerSecond;
-          runnerSecond = runnerFirst;
-          runnerFirst = false;
+        } else if (
+          event.eventType === EventType.SACRIFICE_FLY ||
+          event.eventType === EventType.SACRIFICE_BUNT
+        ) {
+          // OBR 9.08, as deriveGameState and every stats consumer apply it:
+          // sac bunt moves everyone up one (a squeeze scores — neither client
+          // writes a separate SCORE for it); sac fly scores the runner from
+          // 3rd. Runners with a linked outcome are left to it.
+          moveRunnersByPlay(
+            { kind: event.eventType === EventType.SACRIFICE_FLY ? 'sac_fly' : 'sac_bunt' },
+            event.id,
+          );
         } else if (event.eventType === EventType.CATCHER_INTERFERENCE) {
           // CI awards the batter first base like a walk/HBP: runners forced
           // to advance only when blocked (OBR 6.01(c) — catcher's
@@ -914,7 +926,8 @@ export function buildGameHistoryTree(
           // A hit's linked outcome: the hit already left this runner off his
           // base, so only the placement applies (toBase 4 → the SCORE event).
           const bp = event.payload as BaserunnerMovePayload;
-          if (bp.toBase === 2) runnerSecond = true;
+          if (bp.toBase === 1) runnerFirst = true; // held at 1st on a sac bunt
+          else if (bp.toBase === 2) runnerSecond = true;
           else if (bp.toBase === 3) runnerThird = true;
         } else if (event.eventType === EventType.BASERUNNER_OUT && isLinkedWithBase(event)) {
           // A hit's linked out: the hit already left this runner off his base.

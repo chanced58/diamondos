@@ -149,6 +149,41 @@ describe('applyRunnerOut', () => {
   });
 });
 
+describe('applyPlayToRunners — sacrifices (the batter is out, never placed)', () => {
+  it('should move every runner up one base on a sac bunt and score a squeeze', () => {
+    expect(applyPlayToRunners(bases('r1', 'r2', 'r3'), { kind: 'sac_bunt' }, 'b', undefined, id)).toEqual({
+      runners: bases(null, 'r1', 'r2'),
+      scoring: ['r3'],
+      runs: 1,
+    });
+  });
+
+  it('should score only the runner from 3rd on a sac fly', () => {
+    expect(applyPlayToRunners(bases('r1', 'r2', 'r3'), { kind: 'sac_fly' }, 'b', undefined, id)).toEqual({
+      runners: bases('r1', 'r2', null),
+      scoring: ['r3'],
+      runs: 1,
+    });
+  });
+
+  it('should leave a runner with a linked outcome to it on a sacrifice', () => {
+    const overrides = collectLinkedRunnerOutcomes([linked('baserunner_advance', { runnerId: 'r1', fromBase: 1, toBase: 1 })]);
+    expect(applyPlayToRunners(bases('r1', 'r2', null), { kind: 'sac_bunt' }, 'b', overrides.get('hit'), id)).toEqual({
+      runners: bases(null, null, 'r2'),
+      scoring: [],
+      runs: 0,
+    });
+  });
+});
+
+describe('applyLinkedAdvance — holding at 1st', () => {
+  it('should put a runner held at 1st back on 1st', () => {
+    expect(applyLinkedAdvance(bases(null, null, 'r2'), { runnerId: 'r1', fromBase: 1, toBase: 1, relatedEventId: 'sac' }, 'r1', id)).toEqual(
+      bases('r1', null, 'r2'),
+    );
+  });
+});
+
 describe('older runner moves with no runner id', () => {
   it('should clear the named base on a standalone advance and place the stand-in given', () => {
     expect(applyLinkedAdvance(bases('x', null, null), { fromBase: 1, toBase: 2 }, 'stand-in', id)).toEqual(

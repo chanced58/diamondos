@@ -6,6 +6,7 @@ import {
   applyPlayToRunners,
   applyRunnerOut,
   collectLinkedRunnerOutcomes,
+  type LinkedRunnerOutcomes,
 } from '../rules/play-runners';
 
 /**
@@ -286,14 +287,7 @@ export function deriveGameState(
         // from third). Uncommon double-advances require manual
         // BASERUNNER_ADVANCE events.
         state.outs++;
-        if (state.runnersOnBase.third && state.outs < OUTS_PER_INNING) {
-          addRuns(state, 1, state.isTopOfInning);
-        }
-        state.runnersOnBase = {
-          third: state.runnersOnBase.second,
-          second: state.runnersOnBase.first,
-          first: null,
-        };
+        applySacrificeRunners(state, { kind: 'sac_bunt' }, runnerOverridesByParentId.get(event.id));
         state.balls = 0;
         state.strikes = 0;
         incrementPA(state, event);
@@ -302,11 +296,7 @@ export function deriveGameState(
 
       case EventType.SACRIFICE_FLY: {
         state.outs++;
-        // Runner on 3rd scores on sac fly (if fewer than 3 outs)
-        if (state.runnersOnBase.third && state.outs < OUTS_PER_INNING) {
-          addRuns(state, 1, state.isTopOfInning);
-          state.runnersOnBase = { ...state.runnersOnBase, third: null };
-        }
+        applySacrificeRunners(state, { kind: 'sac_fly' }, runnerOverridesByParentId.get(event.id));
         state.balls = 0;
         state.strikes = 0;
         incrementPA(state, event);
@@ -556,6 +546,23 @@ function forceAdvanceRunners(
     updated.first = batterId;
   }
   return updated;
+}
+
+/**
+ * A sacrifice's runner movement (the batter's out already counted): the
+ * shared default — sac bunt: everyone up one, squeeze scores; sac fly: the
+ * runner from 3rd scores — for every runner without a linked outcome. Runs
+ * count only while the inning is still alive.
+ */
+function applySacrificeRunners(
+  state: LiveGameState,
+  play: { kind: 'sac_bunt' } | { kind: 'sac_fly' },
+  overrides: LinkedRunnerOutcomes | undefined,
+): void {
+  const played = applyPlayToRunners(state.runnersOnBase, play, null, overrides, (runnerId) => runnerId);
+  if (state.outs >= OUTS_PER_INNING) return;
+  addRuns(state, played.runs, state.isTopOfInning);
+  state.runnersOnBase = played.runners;
 }
 
 /**

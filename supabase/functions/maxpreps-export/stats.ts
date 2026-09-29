@@ -37,8 +37,23 @@ export interface Bases<T> {
   third: T | null;
 }
 
-/** A play that moves runners by a default rule. */
-export type RunnerPlay = { kind: 'hit'; bases: 1 | 2 | 3 | 4 };
+/**
+ * A play that moves runners by a default rule. On a sacrifice the batter is
+ * out and never placed: a sac bunt moves every runner up one base (a squeeze
+ * scores the runner from 3rd); a sac fly scores the runner from 3rd and
+ * holds everyone else (OBR 9.08).
+ */
+export type RunnerPlay =
+  | { kind: 'hit'; bases: 1 | 2 | 3 | 4 }
+  | { kind: 'sac_bunt' }
+  | { kind: 'sac_fly' };
+
+/** Bases a runner moves on the play's default: the batter's bases on a hit, one on a sac bunt, and on a sac fly only the runner from 3rd. */
+function defaultAdvance(play: RunnerPlay, base: RunnerBase): number {
+  if (play.kind === 'hit') return play.bases;
+  if (play.kind === 'sac_bunt') return 1;
+  return base === 3 ? 1 : 0;
+}
 
 /** The runners on one play whose outcome a linked event records. */
 export interface LinkedRunnerOutcomes {
@@ -111,7 +126,8 @@ export function isRunnerOverridden<T>(
 
 /**
  * The play's default advance: every runner without a linked outcome moves
- * up by the bases the batter took (scoring at 4+), and the batter is placed.
+ * up by the play's default (see RunnerPlay), scoring at 4+, and on a hit
+ * the batter is placed.
  * `scoring` lists who crossed the plate, lead runner first, the batter last
  * on a home run; `runs` counts them (including a home-run batter with no id).
  * Runners with a linked outcome are left off — their linked events place or
@@ -131,7 +147,7 @@ export function applyPlayToRunners<T>(
   for (const base of [3, 2, 1] as const) {
     const runner = runners[KEY[base]];
     if (runner === null || isRunnerOverridden(runner, base, overrides, idOf)) continue;
-    const destination = base + play.bases;
+    const destination = base + defaultAdvance(play, base);
     if (destination >= 4) {
       scoring.push(runner);
       runs += 1;
@@ -140,7 +156,9 @@ export function applyPlayToRunners<T>(
     }
   }
 
-  if (play.bases === 4) {
+  if (play.kind !== 'hit') {
+    // A sacrifice retires the batter — nobody to place.
+  } else if (play.bases === 4) {
     if (batter !== null) scoring.push(batter);
     runs += 1;
   } else {
@@ -255,6 +273,11 @@ export function applyCorrections(events: RawEvent[]): RawEvent[] {
   return result;
 }
 
+/**
+ * Per-batter MaxPreps totals (AB, R, H, 2B, 3B, HR, RBI, BB, SO) from a
+ * corrected event log — mirrors batting-stats, with runner movement from the
+ * verbatim play-runners copy above.
+ */
 export function aggregateStats(events: RawEvent[]): Map<string, PlayerStats> {
   const stats = new Map<string, PlayerStats>();
 
@@ -374,21 +397,22 @@ export function aggregateStats(events: RawEvent[]): Map<string, PlayerStats> {
     if (etype === 'sacrifice_fly') {
       if (!batterId) continue;
       const s = get(batterId);
-      const runScored = !!r3;
-      if (r3) { scoreRunner(r3); r3 = null; }
-      creditRbi(s, p, runScored ? 1 : 0);
+      // An RBI for each run the sac fly scores; linked outcomes are left to their events.
+      const played = applyPlayToRunners(currentBases(), { kind: 'sac_fly' }, null, linkedOutcomes.get(event.id ?? ''), runnerIdOf);
+      for (const runner of played.scoring) scoreRunner(runner);
+      setBases(played.runners);
+      creditRbi(s, p, played.runs);
       continue;
     }
 
     if (etype === 'sacrifice_bunt') {
       if (!batterId) continue;
       const s = get(batterId);
-      const runScored = !!r3;
-      if (r3) scoreRunner(r3);
-      r3 = r2 ?? null;
-      r2 = r1;
-      r1 = null;
-      creditRbi(s, p, runScored ? 1 : 0);
+      // Everyone up one, a squeeze scores; linked outcomes are left to their events.
+      const played = applyPlayToRunners(currentBases(), { kind: 'sac_bunt' }, null, linkedOutcomes.get(event.id ?? ''), runnerIdOf);
+      for (const runner of played.scoring) scoreRunner(runner);
+      setBases(played.runners);
+      creditRbi(s, p, played.runs);
       continue;
     }
 

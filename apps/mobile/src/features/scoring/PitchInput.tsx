@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
-import { HitType, PitchOutcome, PitchType, HitTrajectory, hitRunnerOptions, evaluateHitRunnerOutcomes, EventType, requiresThrowStep } from '@baseball/shared';
-import type { DefensiveLineup, DroppedThirdStrikeOutcome, SacrificeEligibility, BattedBall } from '@baseball/shared';
+import { HitType, PitchOutcome, PitchType, HitTrajectory, playRunnerOptions, evaluatePlayRunnerOutcomes, EventType, requiresThrowStep } from '@baseball/shared';
+import type { DefensiveLineup, DroppedThirdStrikeOutcome, SacrificeEligibility, BattedBall, RunnerOutcomePlay } from '@baseball/shared';
 import { DefensiveDiamond } from './DefensiveDiamond';
 import { FieldLocationModal } from './FieldLocationModal';
 import { ThrowSequenceModal } from './ThrowSequenceModal';
@@ -76,7 +76,7 @@ export type RunnerOutcome = {
   fromBase: Base;
 } & (
   | { kind: 'auto' }
-  | { kind: 'held'; toBase: 2 | 3 }
+  | { kind: 'held'; toBase: 1 | 2 | 3 }
   | { kind: 'advanced'; toBase: 3 | 4 }
   | { kind: 'thrown_out'; fieldingSequence?: number[] }
 );
@@ -109,6 +109,19 @@ interface PitchInputProps {
    * onRecordHit when omitted or when no runners are on base (one-tap path).
    */
   onRecordHitWithRunnerOutcomes?: (hitType: HitType, outcomes: RunnerOutcome[]) => void;
+  /**
+   * Optional: when present, a sac fly or sac bunt with runners on opens the
+   * same runner-outcome prompt (OBR 9.08 enforced — a sac fly needs a run, a
+   * sac bunt a runner advancing) and the parent records the sacrifice plus
+   * linked runner events. `outType` is the trajectory from the Out →
+   * "was it a sacrifice?" path, null from the Sac buttons. Falls back to
+   * onRecordSacFly / onRecordSacBunt (and their FromOut variants) when omitted.
+   */
+  onRecordSacrificeWithRunnerOutcomes?: (
+    kind: 'sac_fly' | 'sac_bunt',
+    outcomes: RunnerOutcome[],
+    outType: BattedOutType | null,
+  ) => void;
   onRecordOut: (outType: BattedOutType) => void;
   // Walk and Strikeout no longer have manual buttons — auto-completion lives
   // in the parent's pitch handler. handleStrikeout is still passed because the
@@ -269,6 +282,7 @@ export function PitchInput({
   onBattedBall,
   onRecordHit,
   onRecordHitWithRunnerOutcomes,
+  onRecordSacrificeWithRunnerOutcomes,
   onRecordOut,
   onRecordStrikeout,
   onRecordError,
@@ -326,12 +340,21 @@ export function PitchInput({
   }
   const [showFCModal, setShowFCModal] = useState(false);
   const [showRunnerOutModal, setShowRunnerOutModal] = useState(false);
-  // Pending HIT awaiting per-runner outcome confirmation (2B/3B with
-  // runners on). null = modal closed; non-null = modal open for that hit
-  // type. The choices map is keyed by the runner's base, not runnerId: two
+  // A play awaiting per-runner outcome confirmation — a hit, or a sacrifice
+  // (with the out type when it came through the Out modal). null = prompt
+  // closed. The choices map is keyed by the runner's base, not runnerId: two
   // runners can share an id (e.g. hits credited to one batter when no batting
   // order is set), but never a base.
-  const [pendingHitWithRunners, setPendingHitWithRunners] = useState<HitType | null>(null);
+  const [pendingRunnerPlay, setPendingRunnerPlay] = useState<
+    | { kind: 'hit'; hitType: HitType }
+    | { kind: 'sac_fly' | 'sac_bunt'; outType: BattedOutType | null }
+    | null
+  >(null);
+  const outcomePlay: RunnerOutcomePlay | null = pendingRunnerPlay
+    ? pendingRunnerPlay.kind === 'hit'
+      ? { kind: 'hit', hitType: pendingRunnerPlay.hitType }
+      : { kind: pendingRunnerPlay.kind }
+    : null;
   const [runnerOutcomeChoices, setRunnerOutcomeChoices] = useState<
     Partial<Record<Base, RunnerOutcome>>
   >({});
@@ -573,20 +596,38 @@ export function PitchInput({
       commitInPlay(EventType.HIT, () => onRecordHit(hitType));
       return;
     }
-    // Seed every runner with the default "auto" choice.
+    seedRunnerChoices();
+    setPendingRunnerPlay({ kind: 'hit', hitType });
+  }
+
+  /** Every runner starts on the play's standard outcome. */
+  function seedRunnerChoices() {
     const seed: Partial<Record<Base, RunnerOutcome>> = {};
     for (const r of runnersOnBase) {
       seed[r.base] = { runnerId: r.runnerId, fromBase: r.base, kind: 'auto' };
     }
     setRunnerOutcomeChoices(seed);
-    setPendingHitWithRunners(hitType);
+  }
+
+  /**
+   * A sac fly or sac bunt (after the field step): with runners on and a
+   * caller that takes runner outcomes, open the prompt; otherwise record it
+   * straight through with `recordPlain`.
+   */
+  function startSacrifice(kind: 'sac_fly' | 'sac_bunt', outType: BattedOutType | null, recordPlain: () => void) {
+    if (!onRecordSacrificeWithRunnerOutcomes || runnersOnBase.length === 0) {
+      commitInPlay(kind === 'sac_fly' ? EventType.SACRIFICE_FLY : EventType.SACRIFICE_BUNT, recordPlain);
+      return;
+    }
+    seedRunnerChoices();
+    setPendingRunnerPlay({ kind, outType });
   }
 
   /** Sets one runner's outcome in the prompt, keyed by base (ids can repeat). */
   function setRunnerChoice(
     runnerId: string,
     fromBase: Base,
-    choice: { kind: 'auto' } | { kind: 'held'; toBase: 2 | 3 } | { kind: 'advanced'; toBase: 3 | 4 } | { kind: 'thrown_out' },
+    choice: { kind: 'auto' } | { kind: 'held'; toBase: 1 | 2 | 3 } | { kind: 'advanced'; toBase: 3 | 4 } | { kind: 'thrown_out' },
   ) {
     setRunnerOutcomeChoices((prev) => ({ ...prev, [fromBase]: { runnerId, fromBase, ...choice } }));
   }
@@ -595,9 +636,9 @@ export function PitchInput({
   // each render: a choice for one runner can make another's impossible (a
   // runner from second held at third on a double leaves the runner from
   // first nowhere to finish), which no per-runner option list can show.
-  const runnerEvaluation = pendingHitWithRunners
-    ? evaluateHitRunnerOutcomes(
-        pendingHitWithRunners,
+  const runnerEvaluation = outcomePlay
+    ? evaluatePlayRunnerOutcomes(
+        outcomePlay,
         runnersOnBase.map(({ base }) => ({
           fromBase: base,
           choice: runnerOutcomeChoices[base] ?? { kind: 'auto' as const },
@@ -607,21 +648,17 @@ export function PitchInput({
 
   /**
    * Confirm on the runner-outcome prompt: asks the putout order for each
-   * thrown-out runner, then records the hit with every outcome at once.
+   * thrown-out runner, then records the play with every outcome at once.
    */
-  function confirmHitWithRunners() {
+  function confirmRunnerPlay() {
     if (runnerEvaluation?.error) return;
-    if (!pendingHitWithRunners || !onRecordHitWithRunnerOutcomes) {
-      setPendingHitWithRunners(null);
-      return;
-    }
+    const pending = pendingRunnerPlay;
     const outcomes = Object.values(runnerOutcomeChoices).filter(
       (o): o is RunnerOutcome => o !== undefined,
     );
-    const hitType = pendingHitWithRunners;
-    const recordWithOutcomes = onRecordHitWithRunnerOutcomes;
-    setPendingHitWithRunners(null);
+    setPendingRunnerPlay(null);
     setRunnerOutcomeChoices({});
+    if (!pending) return;
 
     const thrownOut = outcomes
       .filter((o) => o.kind === 'thrown_out')
@@ -634,12 +671,23 @@ export function PitchInput({
           ? { ...o, fieldingSequence: sequence }
           : o;
       });
-      commitInPlay(EventType.HIT, () => recordWithOutcomes(hitType, withSequences));
+      if (pending.kind === 'hit') {
+        const record = onRecordHitWithRunnerOutcomes;
+        if (record) commitInPlay(EventType.HIT, () => record(pending.hitType, withSequences));
+        return;
+      }
+      const record = onRecordSacrificeWithRunnerOutcomes;
+      if (!record) return;
+      commitInPlay(
+        pending.kind === 'sac_fly' ? EventType.SACRIFICE_FLY : EventType.SACRIFICE_BUNT,
+        () => record(pending.kind, withSequences, pending.outType),
+      );
     });
   }
 
-  function cancelHitWithRunners() {
-    setPendingHitWithRunners(null);
+  /** Cancel on the runner-outcome prompt: nothing is recorded. */
+  function cancelRunnerPlay() {
+    setPendingRunnerPlay(null);
     setRunnerOutcomeChoices({});
   }
 
@@ -667,21 +715,27 @@ export function PitchInput({
     commitInPlay(EventType.OUT, () => onRecordOut(t));
   }
 
-  // Step 2 (sac fly path): record SACRIFICE_FLY, carrying the trajectory
-  // the scorer just picked as additional payload context.
+  /**
+   * Step 2 (sac fly path): record SACRIFICE_FLY, carrying the trajectory the
+   * scorer just picked as payload context — via the runner-outcome prompt
+   * when runners are on (startSacrifice).
+   */
   function confirmSacFlyFromOut() {
     if (!pendingOutType) return;
     const t = pendingOutType;
     closeOutModal();
-    commitInPlay(EventType.SACRIFICE_FLY, () => (onRecordSacFlyFromOut ? onRecordSacFlyFromOut(t) : onRecordSacFly()));
+    startSacrifice('sac_fly', t, () => (onRecordSacFlyFromOut ? onRecordSacFlyFromOut(t) : onRecordSacFly()));
   }
 
-  // Step 2 (sac bunt path): record SACRIFICE_BUNT with trajectory context.
+  /**
+   * Step 2 (sac bunt path): record SACRIFICE_BUNT with trajectory context —
+   * via the runner-outcome prompt when runners are on (startSacrifice).
+   */
   function confirmSacBuntFromOut() {
     if (!pendingOutType) return;
     const t = pendingOutType;
     closeOutModal();
-    commitInPlay(EventType.SACRIFICE_BUNT, () => (onRecordSacBuntFromOut ? onRecordSacBuntFromOut(t) : onRecordSacBunt()));
+    startSacrifice('sac_bunt', t, () => (onRecordSacBuntFromOut ? onRecordSacBuntFromOut(t) : onRecordSacBunt()));
   }
 
   function closeOutModal() {
@@ -873,10 +927,10 @@ export function PitchInput({
           <View className="flex-row flex-wrap gap-2">
             <OutcomeButton label="Out" emoji="✋" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => setShowOutModal(true)))} color="bg-gray-600" />
             {sacFlyEligible && (
-              <OutcomeButton label="Sac Fly" emoji="SF" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => commitInPlay(EventType.SACRIFICE_FLY, onRecordSacFly)))} color="bg-teal-600" />
+              <OutcomeButton label="Sac Fly" emoji="SF" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => startSacrifice('sac_fly', null, onRecordSacFly)))} color="bg-teal-600" />
             )}
             {sacBuntEligible && (
-              <OutcomeButton label="Sac Bunt" emoji="SH" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => commitInPlay(EventType.SACRIFICE_BUNT, onRecordSacBunt)))} color="bg-teal-700" />
+              <OutcomeButton label="Sac Bunt" emoji="SH" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(() => startSacrifice('sac_bunt', null, onRecordSacBunt)))} color="bg-teal-700" />
             )}
             {doublePlayEligible && (
               <OutcomeButton label="Double Play" emoji="DP" onPress={() => runFromSheet(setShowInPlaySheet, () => chooseBattedBall(handleDPTap))} color="bg-zinc-700" />
@@ -1466,20 +1520,20 @@ export function PitchInput({
         </View>
       </Modal>
 
-      {/* Per-runner outcomes prompt for a single, double or triple with runners on base.
-       *  Records the HIT plus any linked BASERUNNER_OUT / BASERUNNER_ADVANCE
-       *  events (via relatedEventId) so the platform shows e.g.
-       *  "Double (Runner from 2nd held at 3B)" in the play feed. */}
+      {/* Per-runner outcomes prompt for a single, double, triple, sac fly or
+       *  sac bunt with runners on base. Records the play plus any linked
+       *  BASERUNNER_OUT / BASERUNNER_ADVANCE events (via relatedEventId) so
+       *  the platform shows e.g. "Double (Runner from 2nd held at 3B)". */}
       <Modal
-        visible={pendingHitWithRunners !== null}
+        visible={pendingRunnerPlay !== null}
         transparent
         animationType="slide"
-        onRequestClose={cancelHitWithRunners}
+        onRequestClose={cancelRunnerPlay}
       >
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
             <Text className="text-lg font-bold text-gray-900 mb-1">
-              {hitName(pendingHitWithRunners)} — Runner Outcomes
+              {playName(pendingRunnerPlay)} — Runner Outcomes
             </Text>
             <Text className="text-sm text-gray-500 mb-4">
               For each runner on base, choose what happened. Default is the
@@ -1497,17 +1551,17 @@ export function PitchInput({
                 // also hold right where he is (stayBase). A runner already
                 // marked thrown out forces no one (OBR 5.09(b)(6)) — the same
                 // occupancy evaluateHitRunnerOutcomes uses.
-                const options = pendingHitWithRunners
-                  ? hitRunnerOptions(
+                const options = outcomePlay
+                  ? playRunnerOptions(
                       base,
-                      pendingHitWithRunners,
+                      outcomePlay,
                       runnersOnBase
                         .filter((r) => runnerOutcomeChoices[r.base]?.kind !== 'thrown_out')
                         .map((r) => r.base),
                     )
                   : null;
                 const holdBases = [options?.stayBase ?? null, options?.heldBase ?? null].filter(
-                  (b): b is 2 | 3 => b !== null,
+                  (b): b is 1 | 2 | 3 => b !== null,
                 );
                 const heldToBase = choice?.kind === 'held' ? choice.toBase : null;
                 const advancedToBase = choice?.kind === 'advanced' ? choice.toBase : null;
@@ -1522,7 +1576,7 @@ export function PitchInput({
                         onPress={() => setRunnerChoice(runnerId, base, { kind: 'auto' })}
                       >
                         <Text className={kind === 'auto' ? 'text-white font-semibold' : 'text-gray-700'}>
-                          Standard: {options ? (options.standardBase === 4 ? 'scores' : finishLabel(options.standardBase)) : '—'}
+                          Standard: {!options ? '—' : options.standardBase === 4 ? 'scores' : options.standardBase === base ? 'stays' : finishLabel(options.standardBase)}
                         </Text>
                       </TouchableOpacity>
                       {holdBases.map((toBase) => (
@@ -1567,15 +1621,15 @@ export function PitchInput({
             <TouchableOpacity
               className={`rounded-xl px-5 py-4 mt-2 ${runnerEvaluation?.error ? 'bg-slate-300' : 'bg-slate-800'}`}
               disabled={!!runnerEvaluation?.error}
-              onPress={confirmHitWithRunners}
+              onPress={confirmRunnerPlay}
             >
               <Text className="text-white font-semibold text-center">
-                Confirm {hitName(pendingHitWithRunners)}
+                Confirm {playName(pendingRunnerPlay)}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
               className="mt-2 py-3 items-center"
-              onPress={cancelHitWithRunners}
+              onPress={cancelRunnerPlay}
             >
               <Text className="text-gray-500 font-semibold">Cancel</Text>
             </TouchableOpacity>
@@ -1809,6 +1863,13 @@ function hitName(hitType: HitType | null): string {
   if (hitType === HitType.SINGLE) return 'Single';
   if (hitType === HitType.TRIPLE) return 'Triple';
   return 'Double';
+}
+
+/** The runner-outcome prompt's play name: the hit, or the sacrifice. */
+function playName(play: { kind: 'hit'; hitType: HitType } | { kind: 'sac_fly' | 'sac_bunt' } | null): string {
+  if (!play) return '';
+  if (play.kind !== 'hit') return play.kind === 'sac_fly' ? 'Sac Fly' : 'Sac Bunt';
+  return hitName(play.hitType);
 }
 
 function baseLabel(base: Base): string {

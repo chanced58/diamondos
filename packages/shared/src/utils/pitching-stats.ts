@@ -16,6 +16,7 @@ import {
   collectLinkedRunnerOutcomes,
   isRunnerOverridden,
   type Bases,
+  type RunnerPlay,
 } from '../rules/play-runners';
 
 // All 12 valid ball-strike counts
@@ -203,6 +204,24 @@ export function derivePitchingStats(
     // fate, keyed "<hit id>:<starting base>" — so a linked advance puts the
     // same runner (with his reached-on-error flag) back on base.
     const detachedByPlay = new Map<string, Runner>();
+
+    /**
+     * A play's default runner movement via the shared rule, charging each
+     * run to the pitcher. Runners left to a linked outcome are kept under
+     * "<play id>:<base>" so the linked advance restores the same runner.
+     */
+    const movePlayRunners = (play: RunnerPlay, batter: Runner | null, playId: string | undefined) => {
+      const overrides = linkedOutcomes.get(playId ?? '');
+      const before = currentBases();
+      for (const [base, runner] of [[1, before.first], [2, before.second], [3, before.third]] as const) {
+        if (runner && isRunnerOverridden(runner, base, overrides, runnerIdOf)) {
+          detachedByPlay.set(`${playId}:${base}`, runner);
+        }
+      }
+      const played = applyPlayToRunners(before, play, batter, overrides, runnerIdOf);
+      for (const runner of played.scoring) scoreRun(runner);
+      setBases(played.runners);
+    };
 
     // Per-half-inning out count (reset on INNING_CHANGE). Distinct from
     // the cumulative `inningsPitchedOuts` stat; used locally to guard the
@@ -469,22 +488,11 @@ export function derivePitchingStats(
             : p.hitType === 'triple' ? 3
             : p.hitType === 'double' ? 2
             : 1;
-          const overrides = linkedOutcomes.get((event as { id?: string }).id ?? '');
-          const before = currentBases();
-          for (const [base, runner] of [[1, before.first], [2, before.second], [3, before.third]] as const) {
-            if (runner && isRunnerOverridden(runner, base, overrides, runnerIdOf)) {
-              detachedByPlay.set(`${(event as { id?: string }).id}:${base}`, runner);
-            }
-          }
-          const played = applyPlayToRunners(
-            before,
+          movePlayRunners(
             { kind: 'hit', bases: bases as 1 | 2 | 3 | 4 },
             batterRunner as Runner,
-            overrides,
-            runnerIdOf,
+            (event as { id?: string }).id,
           );
-          for (const runner of played.scoring) scoreRun(runner);
-          setBases(played.runners);
         }
       }
 
@@ -670,19 +678,20 @@ export function derivePitchingStats(
             resetAtBat(batterId);
           }
         }
-        // Sac bunt: runners advance one base (runner on 3rd scores).
-        if (etype === EventType.SACRIFICE_BUNT) {
-          if (r3) {
-            scoreRun(r3);
-          }
-          r3 = r2;
-          r2 = r1;
-          r1 = null;
-        }
-        // Sac fly: runner on 3rd scores
-        if (etype === EventType.SACRIFICE_FLY && r3) {
-          scoreRun(r3);
-          r3 = null;
+        // Sacrifices (OBR 9.08): sac bunt moves everyone up one (a squeeze
+        // scores); sac fly scores the runner from 3rd. Runners with a linked
+        // outcome are left to it.
+        // The out is already counted above: a sacrifice that ends the inning
+        // moves no runner and charges no run.
+        if (
+          (etype === EventType.SACRIFICE_BUNT || etype === EventType.SACRIFICE_FLY) &&
+          outsThisInning < OUTS_PER_INNING
+        ) {
+          movePlayRunners(
+            { kind: etype === EventType.SACRIFICE_BUNT ? 'sac_bunt' : 'sac_fly' },
+            null,
+            (event as { id?: string }).id,
+          );
         }
         // Double play: remove the named forced runner so earned-run
         // classification stays accurate for the remaining runners.
@@ -712,7 +721,10 @@ export function derivePitchingStats(
       }
 
       // ── SCORE (explicit — stolen home, balk, runner advance) ───────────
-      if (etype === EventType.SCORE) {
+      // No run is charged after the 3rd out (deriveGameState rules the same)
+      // — e.g. a linked advance home recorded after a runner was thrown out
+      // for the 3rd out on a sacrifice.
+      if (etype === EventType.SCORE && outsThisInning < OUTS_PER_INNING) {
         addRunToPitcher(1);
       }
 

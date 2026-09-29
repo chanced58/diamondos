@@ -5,12 +5,19 @@ export type OccupiedBase = 1 | 2 | 3;
 /** A base a runner can finish on, with 4 meaning they scored. */
 export type FinishBase = 2 | 3 | 4;
 
-/** What the scorer said happened to one runner already on base. */
+/** What the scorer said happened to one runner already on base. A hold can
+ *  be at 1st only on a sac bunt (a runner staying put while the batter is out). */
 export type HitRunnerChoice =
   | { kind: 'auto' }
-  | { kind: 'held'; toBase: FinishBase }
+  | { kind: 'held'; toBase: 1 | FinishBase }
   | { kind: 'advanced'; toBase: FinishBase }
   | { kind: 'thrown_out' };
+
+/** The play a runner-outcome prompt is for: a hit, or a sacrifice (batter out). */
+export type RunnerOutcomePlay =
+  | { kind: 'hit'; hitType: HitType }
+  | { kind: 'sac_fly' }
+  | { kind: 'sac_bunt' };
 
 export interface HitRunnerOptions {
   /** Where the runner finishes on the standard advance. */
@@ -24,7 +31,7 @@ export interface HitRunnerOptions {
    * there; null when he is forced, or when the caller did not say which bases
    * were occupied (the conservative, pre-existing behavior).
    */
-  stayBase: 2 | 3 | null;
+  stayBase: 1 | 2 | 3 | null;
 }
 
 export interface HitRunnerEvaluation {
@@ -40,7 +47,7 @@ const BATTER_BASE: Partial<Record<HitType, 1 | 2 | 3>> = {
   [HitType.TRIPLE]: 3,
 };
 
-const BASE_NAME: Record<FinishBase, string> = { 2: '2B', 3: '3B', 4: 'home' };
+const BASE_NAME: Record<1 | FinishBase, string> = { 1: '1B', 2: '2B', 3: '3B', 4: 'home' };
 
 /**
  * The outcomes open to a runner already on base when the batter singles,
@@ -89,6 +96,35 @@ export function hitRunnerOptions(
 }
 
 /**
+ * The outcomes open to a runner on a hit or a sacrifice. Hits: see
+ * hitRunnerOptions. Sacrifices (OBR 9.08; the batter is out, so nothing
+ * forces a runner off his base):
+ *   - sac bunt — standard: up one base (a squeeze scores from 3rd); may hold
+ *     at his own base; may take more, up to home.
+ *   - sac fly — the runner from 3rd scores by default and may hold at 3rd;
+ *     runners on 1st/2nd hold by default and may tag up to any base ahead.
+ */
+export function playRunnerOptions(
+  fromBase: OccupiedBase,
+  play: RunnerOutcomePlay,
+  occupiedBases?: ReadonlyArray<OccupiedBase>,
+): HitRunnerOptions | null {
+  if (play.kind === 'hit') return hitRunnerOptions(fromBase, play.hitType, occupiedBases);
+
+  const moves = play.kind === 'sac_bunt' || fromBase === 3;
+  const standardBase = (moves ? fromBase + 1 : fromBase) as 1 | FinishBase;
+  const advancedBases: Array<3 | 4> = [];
+  for (let base = standardBase + 1; base <= 4; base++) advancedBases.push(base as 3 | 4);
+  return {
+    // A runner on 1st or 2nd who holds on a sac fly is already the standard.
+    standardBase: standardBase as FinishBase,
+    heldBase: null,
+    advancedBases,
+    stayBase: moves ? fromBase : null,
+  };
+}
+
+/**
  * The bases whose runners are forced to move on a hit. Walk up from the
  * batter: each runner at or below the highest base already claimed behind
  * him must move to the next base, which claims that one in turn. A runner
@@ -126,27 +162,40 @@ export function evaluateHitRunnerOutcomes(
   hitType: HitType,
   runners: ReadonlyArray<{ fromBase: OccupiedBase; choice: HitRunnerChoice }>,
 ): HitRunnerEvaluation {
-  const finishes: Array<{ fromBase: OccupiedBase; finish: FinishBase }> = [];
+  return evaluatePlayRunnerOutcomes({ kind: 'hit', hitType }, runners);
+}
+
+/**
+ * evaluateHitRunnerOutcomes for any RunnerOutcomePlay. On top of the per-
+ * runner, collision and passing checks, a sacrifice must be one (OBR 9.08):
+ * a sac fly needs a run to score; a sac bunt needs a runner to advance and
+ * none put out.
+ */
+export function evaluatePlayRunnerOutcomes(
+  play: RunnerOutcomePlay,
+  runners: ReadonlyArray<{ fromBase: OccupiedBase; choice: HitRunnerChoice }>,
+): HitRunnerEvaluation {
+  const finishes: Array<{ fromBase: OccupiedBase; finish: 1 | FinishBase }> = [];
   // A runner thrown out on the play no longer forces anyone: once the runner
   // from first is forced out, the runner from second may hold (OBR 5.09(b)(6)).
   const occupiedBases = runners.filter((r) => r.choice.kind !== 'thrown_out').map((r) => r.fromBase);
 
   for (const { fromBase, choice } of runners) {
-    const options = hitRunnerOptions(fromBase, hitType, occupiedBases);
-    if (!options) return { error: 'Runner outcomes only apply to a single, double or triple.', rbis: 0 };
+    const options = playRunnerOptions(fromBase, play, occupiedBases);
+    if (!options) return { error: 'Runner outcomes only apply to a single, double, triple, sac fly or sac bunt.', rbis: 0 };
     if (choice.kind === 'thrown_out') continue;
 
-    let finish: FinishBase;
+    let finish: 1 | FinishBase;
     if (choice.kind === 'auto') {
       finish = options.standardBase;
     } else if (choice.kind === 'held') {
       if (choice.toBase !== options.heldBase && choice.toBase !== options.stayBase) {
-        return { error: `A runner from ${fromBase}B can't be held at ${BASE_NAME[choice.toBase]} on this hit.`, rbis: 0 };
+        return { error: `A runner from ${fromBase}B can't be held at ${BASE_NAME[choice.toBase]} on this play.`, rbis: 0 };
       }
       finish = choice.toBase;
     } else {
       if (!options.advancedBases.includes(choice.toBase as 3 | 4)) {
-        return { error: `A runner from ${fromBase}B can't advance to ${BASE_NAME[choice.toBase]} beyond the standard advance on this hit.`, rbis: 0 };
+        return { error: `A runner from ${fromBase}B can't advance to ${BASE_NAME[choice.toBase]} beyond the standard advance on this play.`, rbis: 0 };
       }
       finish = choice.toBase;
     }
@@ -169,6 +218,19 @@ export function evaluateHitRunnerOutcomes(
     if (trailing.finish > leading.finish) {
       return { error: `The runner from ${trailing.fromBase}B can't pass the runner from ${leading.fromBase}B.`, rbis: 0 };
     }
+  }
+
+  if (play.kind === 'sac_fly' && !finishes.some((f) => f.finish === 4)) {
+    return { error: 'No run scored — record it as a fly out instead.', rbis: 0 };
+  }
+  // OBR 9.08(a): a runner put out attempting to advance one base on the bunt
+  // makes it no sacrifice — the batter is charged a time at bat. Which base
+  // the runner was out at isn't recorded, so any runner out counts.
+  if (play.kind === 'sac_bunt' && runners.some((r) => r.choice.kind === 'thrown_out')) {
+    return { error: 'A runner was put out advancing — record it as an out instead.', rbis: 0 };
+  }
+  if (play.kind === 'sac_bunt' && !finishes.some((f) => f.finish > f.fromBase)) {
+    return { error: 'No runner advanced — record it as an out instead.', rbis: 0 };
   }
 
   return { error: null, rbis: finishes.filter((f) => f.finish === 4).length };

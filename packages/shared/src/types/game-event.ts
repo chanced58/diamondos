@@ -253,7 +253,8 @@ export interface BaserunnerMovePayload {
   /** Set when the runner is an opponent_player. */
   isOpponentRunner?: boolean;
   fromBase: 1 | 2 | 3;
-  toBase: 2 | 3 | 4;  // 4 = home plate / scored
+  /** 4 = home plate / scored. 1 only for a runner held at 1st on a sac bunt. */
+  toBase: 1 | 2 | 3 | 4;
   /** Why the runner advanced (for BASERUNNER_ADVANCE events). */
   reason?: AdvanceReason;
   /** Fielder position number responsible for the error (1-9), when reason is error or overthrow. */
