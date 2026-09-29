@@ -681,7 +681,12 @@ export function derivePitchingStats(
         // Sacrifices (OBR 9.08): sac bunt moves everyone up one (a squeeze
         // scores); sac fly scores the runner from 3rd. Runners with a linked
         // outcome are left to it.
-        if (etype === EventType.SACRIFICE_BUNT || etype === EventType.SACRIFICE_FLY) {
+        // The out is already counted above: a sacrifice that ends the inning
+        // moves no runner and charges no run.
+        if (
+          (etype === EventType.SACRIFICE_BUNT || etype === EventType.SACRIFICE_FLY) &&
+          outsThisInning < OUTS_PER_INNING
+        ) {
           movePlayRunners(
             { kind: etype === EventType.SACRIFICE_BUNT ? 'sac_bunt' : 'sac_fly' },
             null,
@@ -716,7 +721,10 @@ export function derivePitchingStats(
       }
 
       // ── SCORE (explicit — stolen home, balk, runner advance) ───────────
-      if (etype === EventType.SCORE) {
+      // No run is charged after the 3rd out (deriveGameState rules the same)
+      // — e.g. a linked advance home recorded after a runner was thrown out
+      // for the 3rd out on a sacrifice.
+      if (etype === EventType.SCORE && outsThisInning < OUTS_PER_INNING) {
         addRunToPitcher(1);
       }
 

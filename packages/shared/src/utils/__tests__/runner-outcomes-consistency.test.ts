@@ -78,6 +78,11 @@ function builder(side: Side) {
       add('pitch_thrown', { [batterKey]: batter, [pitcherKey]: 'p1', outcome: 'in_play' });
       return add(kind, { [batterKey]: batter, [pitcherKey]: 'p1', ...extra });
     },
+    /** A plain out by `batter`. */
+    out(batter: string) {
+      add('pitch_thrown', { [batterKey]: batter, [pitcherKey]: 'p1', outcome: 'in_play' });
+      add('out', { [batterKey]: batter, [pitcherKey]: 'p1', outType: 'flyout' });
+    },
     /** The SCORE that accompanies a linked advance home. */
     score(runnerId: string, parentId: string) {
       add('score', { scoringPlayerId: runnerId, rbis: 0, relatedEventId: parentId });
@@ -91,6 +96,8 @@ type Scenario = {
   runs: number;
   runsBy: Record<string, number>;
   rbiBy: Record<string, number>;
+  /** Set when the MaxPreps copy can't model the scenario, with why. */
+  skipMaxPreps?: string;
 };
 
 const SCENARIOS: Scenario[] = [
@@ -194,12 +201,28 @@ const SCENARIOS: Scenario[] = [
     runsBy: { a1: 1, a2: 1, a3: 0, a4: 0 },
     rbiBy: { a1: 0, a2: 0, a3: 1, a4: 1 },
   },
+  {
+    name: 'H: sac fly — the runner from 1st is thrown out for the 3rd out before the runner from 2nd\'s SCORE',
+    build: (b) => {
+      b.out('x1'); // 1 out
+      b.hit('a1', 'single');
+      b.hit('a2', 'single'); // a1 2nd, a2 1st
+      const fly = b.sac('a3', 'sacrifice_fly'); // 2 outs
+      b.linked('baserunner_out', fly, { runnerId: 'a2', fromBase: 1 }); // 3rd out
+      b.linked('baserunner_advance', fly, { runnerId: 'a1', fromBase: 2, toBase: 4 });
+      b.score('a1', fly); // after the 3rd out: no run, as deriveGameState rules
+    },
+    runs: 0,
+    runsBy: { a1: 0, a2: 0 },
+    rbiBy: { a1: 0, a2: 0 },
+    skipMaxPreps: 'the MaxPreps copy tracks no outs, so it cannot tell a run after the 3rd out',
+  },
 ];
 
 const PLAYERS = ['a1', 'a2', 'a3', 'a4', 'a5', 'p1'].map((id) => ({ id, firstName: id, lastName: 'X' }));
 const OPP_NAMES = new Map(['a1', 'a2', 'a3', 'a4', 'a5'].map((id) => [id, id]));
 
-describe.each(SCENARIOS)('runner outcomes stay consistent — $name', ({ build, runs, runsBy, rbiBy }) => {
+describe.each(SCENARIOS)('runner outcomes stay consistent — $name', ({ build, runs, runsBy, rbiBy, skipMaxPreps }) => {
   const ours = builder('ours');
   build(ours);
   const theirs = builder('theirs');
@@ -232,7 +255,7 @@ describe.each(SCENARIOS)('runner outcomes stay consistent — $name', ({ build, 
     expect(stats.get('p1')?.runsAllowed ?? 0).toBe(runs);
   });
 
-  it('MaxPreps export copy', () => {
+  (skipMaxPreps ? it.skip : it)('MaxPreps export copy', () => {
     const stats = aggregateStats(ours.rows as never);
     for (const [id, r] of Object.entries(runsBy)) expect([id, stats.get(id)?.r ?? 0]).toEqual([id, r]);
     for (const [id, rbi] of Object.entries(rbiBy)) expect([id, stats.get(id)?.rbi ?? 0]).toEqual([id, rbi]);
