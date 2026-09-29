@@ -273,6 +273,11 @@ export function applyCorrections(events: RawEvent[]): RawEvent[] {
   return result;
 }
 
+/**
+ * Per-batter MaxPreps totals (AB, R, H, 2B, 3B, HR, RBI, BB, SO) from a
+ * corrected event log — mirrors batting-stats, with runner movement from the
+ * verbatim play-runners copy above.
+ */
 export function aggregateStats(events: RawEvent[]): Map<string, PlayerStats> {
   const stats = new Map<string, PlayerStats>();
 

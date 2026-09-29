@@ -519,6 +519,11 @@ function applyInsertionOrder(events: GameEvent[]): GameEvent[] {
   return result;
 }
 
+/**
+ * Builds the inning → half-inning → at-bat tree the game history view renders,
+ * with a running score (runner movement per rules/play-runners) and the play
+ * labels, including each play's linked runner outcomes.
+ */
 export function buildGameHistoryTree(
   events: GameEvent[],
   playerNameMap: Map<string, string>,

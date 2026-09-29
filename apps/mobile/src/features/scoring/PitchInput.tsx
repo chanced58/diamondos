@@ -715,8 +715,11 @@ export function PitchInput({
     commitInPlay(EventType.OUT, () => onRecordOut(t));
   }
 
-  // Step 2 (sac fly path): record SACRIFICE_FLY, carrying the trajectory
-  // the scorer just picked as additional payload context.
+  /**
+   * Step 2 (sac fly path): record SACRIFICE_FLY, carrying the trajectory the
+   * scorer just picked as payload context — via the runner-outcome prompt
+   * when runners are on (startSacrifice).
+   */
   function confirmSacFlyFromOut() {
     if (!pendingOutType) return;
     const t = pendingOutType;
@@ -724,7 +727,10 @@ export function PitchInput({
     startSacrifice('sac_fly', t, () => (onRecordSacFlyFromOut ? onRecordSacFlyFromOut(t) : onRecordSacFly()));
   }
 
-  // Step 2 (sac bunt path): record SACRIFICE_BUNT with trajectory context.
+  /**
+   * Step 2 (sac bunt path): record SACRIFICE_BUNT with trajectory context —
+   * via the runner-outcome prompt when runners are on (startSacrifice).
+   */
   function confirmSacBuntFromOut() {
     if (!pendingOutType) return;
     const t = pendingOutType;

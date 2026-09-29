@@ -38,6 +38,11 @@ function hitBases(hitType: string): number {
   }
 }
 
+/**
+ * Runs, hits and errors per inning and in total for both teams, from the
+ * event log (snake_case rows). Feeds the scoreboards and the final score
+ * written at finalize.
+ */
 export function computeLineScore(events: Record<string, unknown>[]): LineScoreData {
   let isTopOfInning = true;
   let currentInning = 1;

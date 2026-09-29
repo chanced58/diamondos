@@ -31,6 +31,10 @@ export type OppBattingRow = {
   avg: number; obp: number; slg: number; ops: number;
 };
 
+/**
+ * One batting row per opponent batter (see the module header for how an
+ * opponent batter is resolved), single-game or season, in sequence order.
+ */
 export function computeOpponentBatting(
   events: Record<string, unknown>[],
   oppPlayerNameMap: Map<string, string>,
