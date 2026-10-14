@@ -27,10 +27,11 @@ import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../src/feat
 import { createBattedBallSlot } from '../../../../src/features/scoring/batted-ball-fields';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
-import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, applyLineupSubstitutions, battingOrderHistory, deriveDueBatter, resolveDueBatter, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
+import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, battingOrderHistory, deriveActiveBattingOrder, deriveDueBatter, resolveDueBatter, isBetweenPlateAppearances, validateLineupContraction, defaultLeagueScoringSettings, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
+import { useGameScoringSettings } from '../../../../src/lib/game-scoring-settings';
 import { database } from '../../../../src/db';
 import type { GameEvent as WdbGameEvent } from '../../../../src/db/models/GameEvent';
 import type { Player } from '../../../../src/db/models/Player';
@@ -90,7 +91,11 @@ export default function ScoringScreen() {
     configured: isFinalizeConfigured(),
     consecutiveFailures: gameId ? getFinalizeFailureCount(gameId) : 0,
   });
-  const { settings: leagueSettings, leagueId, pitchRule } = useLeagueContext(teamId);
+  const { settings: teamLeagueSettings, leagueId, pitchRule } = useLeagueContext(teamId);
+  const gameScoringSettings = useGameScoringSettings(gameId);
+  const leagueSettings = gameScoringSettings.isTournament
+    ? (gameScoringSettings.settings ?? defaultLeagueScoringSettings())
+    : teamLeagueSettings;
   const maxBatters = getMaxBattingOrder(leagueSettings);
   const midGameExtensionAllowed = isMidGameExtensionAllowed(leagueSettings);
 
@@ -170,6 +175,7 @@ export default function ScoringScreen() {
   const currentPitcherId = gameState?.currentPitcherId ?? undefined;
   const defensiveLineup = useDefensiveLineup(gameId, roster);
   const [showLineupModal, setShowLineupModal] = useState(false);
+  const lineupChangeLockRef = useRef(false);
 
   // The current batting order, observed reactively from the local WatermelonDB
   // game_lineups mirror (synced both ways with Supabase). Drives the due-batter
@@ -195,7 +201,7 @@ export default function ScoringScreen() {
 
   // Prefill for the pre-game LineupSetupModal: the saved order, slot 1 first
   // (pre-game there are no SUBSTITUTION events to fold in, so this reads the
-  // raw rows rather than going through applyLineupSubstitutions/battingSlots).
+  // raw rows rather than replaying lineup events through activeTeamOrder.
   const initialBattingOrder = useMemo(
     () =>
       observedLineupRows
@@ -217,9 +223,13 @@ export default function ScoringScreen() {
         .map((row) => ({ playerId: row.playerRemoteId, battingOrder: row.battingOrder! })),
     [observedLineupRows],
   );
-  const battingSlots = useMemo(
-    () => applyLineupSubstitutions(baseBattingSlots, events),
-    [baseBattingSlots, events],
+  const activeTeamOrder = useMemo(
+    () => deriveActiveBattingOrder(baseBattingSlots, events, { batsOnTop: !isHome }),
+    [baseBattingSlots, events, isHome],
+  );
+  const battingSlots = useMemo<BattingSlot[]>(
+    () => activeTeamOrder.slots.map(({ playerId, battingOrder }) => ({ playerId, battingOrder })),
+    [activeTeamOrder],
   );
   const ourBattingOrderHistory = useMemo(
     () => battingOrderHistory(baseBattingSlots, events),
@@ -239,6 +249,31 @@ export default function ScoringScreen() {
     ourLastBatterId ? ourBattingOrderHistory.get(ourLastBatterId) : null,
   );
   const dueBatter = ourResolution.kind === 'due' ? ourResolution : null;
+  const betweenPlateAppearances = isBetweenPlateAppearances(events);
+  const maxRecordedOrder = Math.max(
+    0,
+    ...baseBattingSlots.map((slot) => slot.battingOrder),
+    ...events.flatMap((event) => {
+      const payload = event.payload as Partial<SubstitutionPayload>;
+      return event.eventType === EventType.SUBSTITUTION &&
+        payload.substitutionType === SubstitutionType.LINEUP_EXTENSION &&
+        !payload.isOpponentSubstitution &&
+        typeof payload.battingOrderPosition === 'number'
+        ? [payload.battingOrderPosition]
+        : [];
+    }),
+  );
+  const canExtendLineup =
+    lineupLoaded &&
+    midGameExtensionAllowed &&
+    betweenPlateAppearances &&
+    activeTeamOrder.slots.length < maxBatters &&
+    maxRecordedOrder < 30;
+  const tournamentLineupMissing =
+    gameScoringSettings.isTournament === true &&
+    (!lineupLoaded || (isOffline && observedLineupRows.length === 0));
+  const scoringRulesBlocked =
+    gameScoringSettings.status !== 'ready' || tournamentLineupMissing;
 
   // Per-PA manual override — the scorer can point the rotation at a
   // different batter (lineup drifted, skipped batter). Cleared when the PA
@@ -1343,7 +1378,7 @@ export default function ScoringScreen() {
     const payload: SubstitutionPayload = {
       inPlayerId: newBatterId,
       // Replace the effective batter (due-batter derivation / override), so
-      // applyLineupSubstitutions folds the sub into the right lineup slot.
+      // activeTeamOrder folds the sub into the right lineup slot.
       outPlayerId: ourBatterId ?? undefined,
       substitutionType: SubstitutionType.PINCH_HITTER,
     };
@@ -1390,11 +1425,19 @@ export default function ScoringScreen() {
    */
   async function handleAddBatter(newBatterId: string): Promise<string | null> {
     if (!gameState) return 'The game is still loading.';
+    if (!lineupLoaded) return 'The lineup is still loading.';
+    if (lineupChangeLockRef.current) return 'A lineup change is already being saved.';
+    if (!midGameExtensionAllowed) return 'The game rules do not allow lineup extension.';
+    if (!betweenPlateAppearances) {
+      return 'Finish the current plate appearance before extending the lineup.';
+    }
+    if (activeTeamOrder.slots.length >= maxBatters) {
+      return `The order is full at ${maxBatters} batters.`;
+    }
+    if (maxRecordedOrder >= 30) return 'The order cannot exceed 30 batting slots.';
     // Don't add anyone until the lineup observation has fired — computing
     // currentMax=0 against an unloaded lineup would collide with the real
     // slot-1 occupant.
-    if (!lineupLoaded) return 'The lineup is still loading.';
-
     // Build the set of player ids already in the BATTING ORDER (bench rows
     // with a null order — e.g. a non-batting pitcher under DH rules — stay
     // addable), including pending in-game LINEUP_EXTENSION events that
@@ -1441,7 +1484,12 @@ export default function ScoringScreen() {
       substitutionType: SubstitutionType.LINEUP_EXTENSION,
       battingOrderPosition,
     };
-    await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
+    lineupChangeLockRef.current = true;
+    try {
+      await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
+    } finally {
+      lineupChangeLockRef.current = false;
+    }
 
     // Persist the new batter to the local game_lineups mirror so post-game
     // consumers (MaxPreps export, season-stat rollups) see them alongside the
@@ -1484,6 +1532,32 @@ export default function ScoringScreen() {
     // convenience for post-game consumers. A failed mirror write is logged,
     // not reported to the scorer as a failed add.
     return null;
+  }
+
+  async function handleContractBatter(slot: { playerId: string; battingOrder: number }) {
+    if (!gameState || !gameScoringSettings.settings || lineupChangeLockRef.current) return;
+    const reason = validateLineupContraction({
+      slot,
+      settings: leagueSettings,
+      currentBatterId: activeTeamOrder.nextBatterId,
+      runnersOnBase: gameState
+        ? Object.values(gameState.runnersOnBase).filter((id): id is string => id !== null)
+        : [],
+      betweenPlateAppearances,
+    });
+    if (reason || activeTeamOrder.slots.length <= 1) return;
+
+    lineupChangeLockRef.current = true;
+    try {
+      await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, {
+        substitutionType: SubstitutionType.LINEUP_CONTRACTION,
+        outPlayerId: slot.playerId,
+        battingOrderPosition: slot.battingOrder,
+        removedBattingOrderPosition: slot.battingOrder,
+      });
+    } finally {
+      lineupChangeLockRef.current = false;
+    }
   }
 
   /**
@@ -2068,6 +2142,54 @@ export default function ScoringScreen() {
           }
         />
       )}
+      {gameStarted &&
+        gameScoringSettings.status === 'ready' &&
+        leagueSettings.lineup.allowMidGameContraction && (
+          <View className="mx-4 mt-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+            <Text className="text-score-sm font-semibold text-emerald-950">
+              Remove a batting slot
+            </Text>
+            <Text className="mt-1 text-score-xs text-emerald-800">
+              {betweenPlateAppearances
+                ? 'Choose an inactive batter to remove. Prior plate appearances remain in the game record.'
+                : 'Finish the current plate appearance before changing the batting order.'}
+            </Text>
+            {activeTeamOrder.slots.map((slot) => {
+              const reason = !lineupLoaded
+                ? 'Wait for the lineup to load.'
+                : activeTeamOrder.slots.length <= 1
+                  ? 'At least one batter must remain.'
+                  : validateLineupContraction({
+                      slot,
+                      settings: leagueSettings,
+                      currentBatterId: activeTeamOrder.nextBatterId,
+                      runnersOnBase: gameState
+                        ? Object.values(gameState.runnersOnBase).filter(
+                            (id): id is string => id !== null,
+                          )
+                        : [],
+                      betweenPlateAppearances,
+                    });
+              return (
+                <TouchableOpacity
+                  key={slot.battingOrder}
+                  disabled={!!reason || lineupChangeLockRef.current}
+                  onPress={() => void handleContractBatter(slot)}
+                  className={`mt-2 flex-row items-center justify-between rounded-lg border px-3 py-2 ${reason ? 'border-emerald-100 bg-white/60' : 'border-emerald-300 bg-white'}`}
+                >
+                  <Text className="text-score-xs text-gray-900">
+                    {batterName(slot.playerId)} · slot {slot.battingOrder}
+                  </Text>
+                  <Text
+                    className={`text-score-xs font-semibold ${reason ? 'text-gray-500' : 'text-emerald-800'}`}
+                  >
+                    {reason ?? 'Remove'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
       {/* An empty order still needs its Add control — the batter buttons live
           in the card header, and the opponent's book starts empty, so without
           this there is no way to enter the first one. */}
@@ -2335,7 +2457,7 @@ export default function ScoringScreen() {
         onRecordPinchHitter={handlePinchHitter}
         onRecordDefensiveSub={handleDefensiveSub}
         onRecordPositionChange={handlePositionChange}
-        onRecordAddBatter={midGameExtensionAllowed ? handleAddBatter : undefined}
+        onRecordAddBatter={canExtendLineup ? handleAddBatter : undefined}
         activeBattingOrderPlayerIds={lineupRows
           .filter((l) => l.batting_order != null)
           .map((l) => l.player_id)}
@@ -2375,6 +2497,33 @@ export default function ScoringScreen() {
       )}
       </ActionPane>
       </PaneRow>
+      {scoringRulesBlocked && (
+        <View className="absolute inset-0 z-50 items-center justify-center bg-white/95 px-8">
+          <Text className="text-center text-score-lg font-bold text-gray-900">
+            {gameScoringSettings.status === 'loading'
+              ? 'Verifying game rules…'
+              : tournamentLineupMissing
+                ? 'Tournament lineup unavailable'
+                : 'Game rules unavailable'}
+          </Text>
+          <Text className="mt-2 text-center text-score-sm text-gray-600">
+            {tournamentLineupMissing
+              ? (gameScoringSettings.error ?? 'Download this game’s lineup before scoring offline.')
+              : gameScoringSettings.status === 'loading'
+                ? 'Scoring controls will unlock after this game’s rules load.'
+                : (gameScoringSettings.error ?? 'Reconnect and sync this game before scoring.')}
+          </Text>
+          <TouchableOpacity
+            onPress={() => {
+              if (gameScoringSettings.status === 'error') gameScoringSettings.retry();
+              if (tournamentLineupMissing) triggerSync().catch(console.warn);
+            }}
+            className="mt-4 rounded-lg bg-blue-700 px-5 py-3"
+          >
+            <Text className="font-semibold text-white">Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }

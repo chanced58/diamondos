@@ -86,5 +86,19 @@ export const migrations = schemaMigrations({
         }),
       ],
     },
+    {
+      // v4: cache the tournament rules snapshot with each game for offline scoring.
+      toVersion: 4,
+      steps: [
+        addColumns({
+          table: 'games',
+          columns: [
+            { name: 'tournament_id', type: 'string', isOptional: true },
+            { name: 'tournament_scoring_settings', type: 'string', isOptional: true },
+            { name: 'tournament_rules_version', type: 'number', isOptional: true },
+          ],
+        }),
+      ],
+    },
   ],
 });

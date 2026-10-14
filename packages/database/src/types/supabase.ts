@@ -4959,6 +4959,19 @@ export type Database = {
         }
         Returns: string
       }
+      start_tournament_game_for_user: {
+        Args: {
+          p_event_id: string
+          p_game_id: string
+          p_occurred_at: string
+          p_payload: Json
+          p_sequence_number: number
+        }
+        Returns: {
+          event_id: string
+          sequence_number: number
+        }[]
+      }
       create_tournament: {
         Args: { p_input: Json }
         Returns: {

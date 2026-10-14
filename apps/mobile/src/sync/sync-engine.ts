@@ -1,6 +1,10 @@
 import { Q } from '@nozbe/watermelondb';
 import { synchronize, type SyncPullArgs, type SyncPushArgs } from '@nozbe/watermelondb/sync';
-import { computeLineupDeletes, PlayerPosition } from '@baseball/shared';
+import {
+  computeLineupDeletes,
+  PlayerPosition,
+  TOURNAMENT_SCORING_RULES_VERSION,
+} from '@baseball/shared';
 import { database } from '../db';
 import type { Channel } from '../db/models/Channel';
 import type { Game } from '../db/models/Game';
@@ -787,6 +791,25 @@ export async function syncWithSupabase(): Promise<void> {
         .find((e) => e != null);
       if (firstError) throw firstError;
 
+      const tournamentIds = [
+        ...new Set(
+          (gamesResult.data ?? [])
+            .map((game) => game.tournament_id)
+            .filter((id): id is string => typeof id === 'string'),
+        ),
+      ];
+      const tournamentSettingsById = new Map<string, unknown>();
+      if (tournamentIds.length > 0) {
+        const { data: tournaments, error: tournamentsError } = await supabase
+          .from('tournaments')
+          .select('id, scoring_settings')
+          .in('id', tournamentIds);
+        if (tournamentsError) throw tournamentsError;
+        for (const tournament of tournaments ?? []) {
+          tournamentSettingsById.set(tournament.id, tournament.scoring_settings);
+        }
+      }
+
       // Opponent batting orders. opponent_game_lineups has no updated_at
       // server-side, so a timestamp window would never re-deliver an edited
       // row — instead refresh the whole order for the games this cycle
@@ -926,7 +949,9 @@ export async function syncWithSupabase(): Promise<void> {
         changes: {
           games: {
             created: [],
-            updated: (gamesResult.data ?? []).map(mapGame),
+            updated: (gamesResult.data ?? []).map((game) =>
+              mapGame(game, tournamentSettingsById),
+            ),
             deleted: deletions.games,
           },
           game_events: {
@@ -1006,12 +1031,54 @@ export async function syncWithSupabase(): Promise<void> {
       // 1. Push locally-created game events (the main offline use case).
       const createdEvents = tableChanges.game_events?.created ?? [];
       if (createdEvents.length > 0) {
+        const orderedCreatedEvents = [...createdEvents].sort((a, b) => {
+          const gameOrder = String(a.game_remote_id).localeCompare(String(b.game_remote_id));
+          return gameOrder || Number(a.sequence_number) - Number(b.sequence_number);
+        });
+        const ignoredStartIds = new Set<string>();
+        for (const event of orderedCreatedEvents) {
+          if (event.event_type !== 'game_start') continue;
+          const gameRemoteId = event.game_remote_id as string;
+          const games = await database
+            .get<Game>('games')
+            .query(Q.where('remote_id', gameRemoteId))
+            .fetch();
+          const tournamentId = games[0]?.tournamentId;
+          if (!tournamentId) continue;
+
+          const payload = safeParsePayload(event.payload as string);
+          if (payload === null) continue;
+          const { data, error } = await supabase.rpc('start_tournament_game_for_user', {
+            p_game_id: gameRemoteId,
+            p_event_id: event.remote_id as string,
+            p_sequence_number: event.sequence_number as number,
+            p_payload: payload,
+            p_occurred_at: new Date(event.occurred_at as number).toISOString(),
+          });
+          if (error) {
+            if (error.code === '40001') {
+              await reconcileSequenceNumbers(orderedCreatedEvents, supabase);
+              throw new Error(
+                'sync: tournament start was reordered after another device event; renumbered locally, will retry',
+              );
+            }
+            throw error;
+          }
+
+          const acceptedStart = data?.[0];
+          if (acceptedStart && acceptedStart.event_id !== event.remote_id) {
+            ignoredStartIds.add(event.remote_id as string);
+          }
+          eventsPushed = true;
+        }
+
         // Skip events whose payload can't be parsed rather than aborting the
         // whole sync. Offenders are dead-lettered below — their rows remain
         // in WatermelonDB for inspection but are not retried, so one corrupt
         // payload can't wedge the queue for every other event.
         const skippedIds: string[] = [];
-        const pushablePayloads = createdEvents
+        const pushablePayloads = orderedCreatedEvents
+          .filter((event) => !ignoredStartIds.has(event.remote_id as string))
           .map((e) => {
             const payload = safeParsePayload(e.payload as string);
             if (payload === null) {
@@ -1049,8 +1116,8 @@ export async function syncWithSupabase(): Promise<void> {
             // records so they start above the server's current max, then
             // throw so WatermelonDB leaves them in the unsynced queue; the
             // next sync cycle will push the renumbered events.
-            if (error.code === '23505') {
-              await reconcileSequenceNumbers(createdEvents, supabase);
+            if (error.code === '23505' || error.code === '40001') {
+              await reconcileSequenceNumbers(orderedCreatedEvents, supabase);
               throw new Error('sync: seq-num collision; renumbered locally, will retry');
             }
             throw error;
@@ -1514,7 +1581,15 @@ async function redirtyLineupRows(gameRemoteId: string): Promise<void> {
 
 // ─── mapping helpers ─────────────────────────────────────────────────────────
 
-function mapGame(r: Record<string, unknown>) {
+function mapGame(
+  r: Record<string, unknown>,
+  tournamentSettingsById: ReadonlyMap<string, unknown>,
+) {
+  const tournamentId = typeof r.tournament_id === 'string' ? r.tournament_id : null;
+  const frozenSettings = r.scoring_settings_snapshot ?? null;
+  const tournamentSettings = tournamentId
+    ? (frozenSettings ?? tournamentSettingsById.get(tournamentId) ?? null)
+    : null;
   return {
     id: r.id,
     remote_id: r.id,
@@ -1535,6 +1610,11 @@ function mapGame(r: Record<string, unknown>) {
     current_inning: r.current_inning,
     is_top_of_inning: r.is_top_of_inning,
     outs: r.outs,
+    tournament_id: tournamentId,
+    tournament_scoring_settings:
+      tournamentSettings == null ? null : JSON.stringify(tournamentSettings),
+    tournament_rules_version:
+      tournamentSettings == null ? null : TOURNAMENT_SCORING_RULES_VERSION,
     synced_at: Date.now(),
   };
 }
