@@ -17,6 +17,10 @@ export function isMidGameExtensionAllowed(settings: LeagueScoringSettings): bool
   return settings.lineup.allowExpanded && settings.lineup.allowMidGameExtension;
 }
 
+export function isMidGameContractionAllowed(settings: LeagueScoringSettings): boolean {
+  return settings.lineup.allowMidGameContraction;
+}
+
 export function isContinuousBattingOrder(settings: LeagueScoringSettings): boolean {
   return settings.lineup.continuousBattingOrder;
 }

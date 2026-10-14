@@ -24,3 +24,4 @@ export * from './pitcher-availability';
 export * from './hot-hitters';
 export * from './prep-practice';
 export * from './league-scoring-settings';
+export * from './tournament';
