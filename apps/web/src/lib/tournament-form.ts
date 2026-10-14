@@ -1,4 +1,23 @@
 import { createTournamentSchema } from '@baseball/shared';
+import type { TournamentTeamOption } from '@baseball/database';
+
+export function getTournamentReview(formData: FormData, teams: TournamentTeamOption[]) {
+  const isNewTeam = formData.get('teamType') === 'new';
+  const teamName = String(formData.get('teamName') ?? '').trim();
+  const selectedTeam = teams.find((team) => team.id === formData.get('teamId'));
+  const maxBatters = formData.get('allowExpanded') === 'on'
+    ? Number(formData.get('maxBatters') || 12)
+    : 9;
+  return {
+    team: isNewTeam
+      ? `${teamName || 'Enter a team name'} (new tournament team)`
+      : selectedTeam?.name ?? 'Select a team',
+    battingOrder: `Up to ${maxBatters} batters`,
+    midGameChanges: formData.get('allowMidGameChanges') === 'on'
+      ? 'Expansion and contraction allowed'
+      : 'Not allowed',
+  };
+}
 
 export function parseTournamentFormData(formData: FormData) {
   const teamType = formData.get('teamType');

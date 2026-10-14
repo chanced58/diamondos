@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import type { TournamentTeamOption } from '@baseball/database';
+import { getTournamentReview } from '@/lib/tournament-form';
 import { createTournamentAction } from '../actions';
 
 function CreateButton(): JSX.Element {
@@ -20,9 +21,14 @@ export function CreateTournamentForm({ teams, requestId }: { teams: TournamentTe
   const [error, action] = useFormState(createTournamentAction, null);
   const [teamType, setTeamType] = useState<'existing' | 'new'>(teams.length ? 'existing' : 'new');
   const [allowExpanded, setAllowExpanded] = useState(false);
+  const [review, setReview] = useState({
+    team: teams[0]?.name ?? 'Enter a team name (new tournament team)',
+    battingOrder: 'Up to 9 batters',
+    midGameChanges: 'Not allowed',
+  });
 
   return (
-    <form action={action} className="space-y-6">
+    <form action={action} onChange={(event) => setReview(getTournamentReview(new FormData(event.currentTarget), teams))} className="space-y-6">
       <input type="hidden" name="requestId" value={requestId} />
 
       <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -120,6 +126,11 @@ export function CreateTournamentForm({ teams, requestId }: { teams: TournamentTe
 
       <section className="rounded-xl border border-brand-100 bg-brand-50/60 p-5">
         <h2 className="font-semibold text-gray-900">Review before creating</h2>
+        <dl aria-live="polite" className="mt-3 space-y-2 text-sm text-gray-900">
+          <div><dt className="font-medium">Team</dt><dd>{review.team}</dd></div>
+          <div><dt className="font-medium">Batting order</dt><dd>{review.battingOrder}</dd></div>
+          <div><dt className="font-medium">Mid-game lineup changes</dt><dd>{review.midGameChanges}</dd></div>
+        </dl>
         <p className="mt-1 text-sm text-gray-700">The tournament gets its own season and scoring rules. Creating it will not change your current team season or league settings.</p>
       </section>
 
