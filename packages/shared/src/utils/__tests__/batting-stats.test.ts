@@ -1,5 +1,5 @@
 import { deriveBattingStats, type BattingLineupContext } from '../batting-stats';
-import { EventType, HitType, HitTrajectory, PitchOutcome } from '../../types/game-event';
+import { EventType, HitType, HitTrajectory, PitchOutcome, SubstitutionType } from '../../types/game-event';
 
 type Evt = {
   game_id: string;
@@ -254,6 +254,34 @@ describe('deriveBattingStats — lineup-replay batter inference', () => {
     expect(stats.get('p4')?.plateAppearances).toBe(1);
     expect(stats.get('p4')?.hits).toBe(1);
     expect(stats.get('p4')?.doubles).toBe(1);
+  });
+
+  it('keeps historical plate appearances for a contracted slot and rotates through the remaining stable slots', () => {
+    const lineupCtx: BattingLineupContext = {
+      isHome: true,
+      ourLineup: [
+        { playerId: 'p1', battingOrder: 1 },
+        { playerId: 'p2', battingOrder: 2 },
+        { playerId: 'p3', battingOrder: 3 },
+      ],
+    };
+    const events = [
+      e(EventType.HIT, { hitType: HitType.SINGLE }, false), // p1
+      e(EventType.OUT, { outType: 'groundout' }, false), // p2 remains in historical stats
+      e(EventType.SUBSTITUTION, {
+        substitutionType: SubstitutionType.LINEUP_CONTRACTION,
+        outPlayerId: 'p2',
+        removedBattingOrderPosition: 2,
+      }, false),
+      e(EventType.WALK, {}, false), // next slot remains p3
+      e(EventType.STRIKEOUT, {}, false), // wraps to p1
+    ];
+    const lineups = new Map([[GAME, lineupCtx]]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = deriveBattingStats(events as any, players, lineups);
+    expect(stats.get('p1')?.plateAppearances).toBe(2);
+    expect(stats.get('p2')?.plateAppearances).toBe(1);
+    expect(stats.get('p3')?.plateAppearances).toBe(1);
   });
 });
 

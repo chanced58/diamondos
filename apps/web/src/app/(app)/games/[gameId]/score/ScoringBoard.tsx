@@ -5,7 +5,31 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { deriveDefensiveLineup, deriveGameState, battingOrderHistory, deriveDueBatter, FIELDING_POSITION_NUMBERS, formatFieldingSequence, weAreHome, computeLineScore, evaluateGameEnd, shouldEndHalfForRunCap, isDroppedThirdStrikeAllowed, ghostRunnerBaseForHalf, defaultLeagueScoringSettings, sacrificeEligibility, hitRunnerOptions, evaluateHitRunnerOutcomes, HitType, HitTrajectory, type LeagueScoringSettings } from '@baseball/shared';
+import {
+  applyPitchReverted,
+  deriveActiveBattingOrder,
+  deriveDefensiveLineup,
+  deriveGameState,
+  EventType,
+  FIELDING_POSITION_NUMBERS,
+  formatFieldingSequence,
+  isBetweenPlateAppearances,
+  weAreHome,
+  computeLineScore,
+  evaluateGameEnd,
+  shouldEndHalfForRunCap,
+  isDroppedThirdStrikeAllowed,
+  ghostRunnerBaseForHalf,
+  defaultLeagueScoringSettings,
+  validateLineupContraction,
+  SubstitutionType,
+  sacrificeEligibility,
+  hitRunnerOptions,
+  evaluateHitRunnerOutcomes,
+  HitType,
+  HitTrajectory,
+  type LeagueScoringSettings,
+} from '@baseball/shared';
 import type { GameEvent } from '@baseball/shared';
 import { endGameAction } from '../actions';
 import { DefensiveDiamond } from './DefensiveDiamond';
@@ -660,6 +684,9 @@ export function ScoringBoard({
   const [subInPlayerId, setSubInPlayerId] = useState('');
   const [subRunnerBase, setSubRunnerBase] = useState<1 | 2 | 3 | null>(null);
   const [subNewPosition, setSubNewPosition] = useState('');
+  const [lineupAdjustmentSide, setLineupAdjustmentSide] = useState<'us' | 'opponent'>('us');
+  const [newLineupBatterId, setNewLineupBatterId] = useState('');
+  const [lineupSlotToRemove, setLineupSlotToRemove] = useState('');
   // Per-pitch annotations (optional, cleared after each pitch is recorded)
   const [pitchType, setPitchType] = useState<string | null>(null);
   const [zoneLocation, setZoneLocation] = useState<number | null>(null);
@@ -786,31 +813,9 @@ export function ScoringBoard({
   //     event_voided) and viewed here would otherwise show voided plays in the
   //     line score while the derived score/runners excluded them.
   const effectiveEventRows: EventRow[] = (() => {
-    const result: EventRow[] = [];
-    for (const row of eventRows) {
-      const etype = row.event_type as string;
-      if (etype === 'pitch_reverted') {
-        const p = (row.payload ?? {}) as Record<string, unknown>;
-        const keepUntilSeq = p.revertToSequenceNumber as number;
-        result.splice(0, result.length, ...result.filter((r) => (r.sequence_number as number) <= keepUntilSeq));
-        // The pitch_reverted marker itself is NOT added to the result
-      } else if (etype === 'event_voided') {
-        const p = (row.payload ?? {}) as Record<string, unknown>;
-        const voidedId = p.voidedEventId as string | undefined;
-        let idx = voidedId ? result.findIndex((r) => (r.id as string) === voidedId) : -1;
-        // Fall back to the sequence number (mirrors the shared filter) so a
-        // voided play is removed even when the id is missing or differs.
-        if (idx === -1 && typeof p.voidedSequenceNumber === 'number') {
-          const voidedSeq = p.voidedSequenceNumber;
-          idx = result.findIndex((r) => (r.sequence_number as number) === voidedSeq);
-        }
-        if (idx !== -1) result.splice(idx, 1);
-        // The event_voided marker itself is NOT added to the result
-      } else {
-        result.push(row);
-      }
-    }
-    return result;
+    const lastResetIndex = eventRows.map((row) => row.event_type).lastIndexOf('game_reset');
+    const currentSession = lastResetIndex < 0 ? eventRows : eventRows.slice(lastResetIndex + 1);
+    return applyPitchReverted(currentSession as unknown as Record<string, unknown>[]) as unknown as EventRow[];
   })();
 
   // Derive game state from events
@@ -876,11 +881,6 @@ export function ScoringBoard({
     .filter((l) => l.battingOrder >= 1 && l.battingOrder <= 30)
     .sort((a, b) => a.battingOrder - b.battingOrder);
 
-  // Derive current batter from the PA counts tracked by deriveGameState.
-  // completedTopHalfPAs / completedBottomHalfPAs accumulate across the whole game;
-  // modulo lineup size gives the correct batting-order position for each team.
-  const opponentBatsInTop = isHome;
-
   // Apply substitution events to produce effective lineups so pinch hitters
   // (and other subs) are reflected in the batter display.
   function applySubstitutions(
@@ -905,6 +905,13 @@ export function ScoringBoard({
           ...result[idx],
           startingPosition: (p.newPosition as string | null) ?? result[idx].startingPosition,
         };
+        continue;
+      }
+
+      if (p.substitutionType === SubstitutionType.LINEUP_CONTRACTION) {
+        const position = Number(p.removedBattingOrderPosition ?? p.battingOrderPosition);
+        const idx = result.findIndex((slot) => slot.battingOrder === position && (!outId || slot.playerId === outId));
+        if (idx >= 0) result.splice(idx, 1);
         continue;
       }
 
@@ -943,47 +950,79 @@ export function ScoringBoard({
 
   const effectiveStarters         = applySubstitutions(starters,         teamRoster,     false);
   const effectiveOpponentStarters = applySubstitutions(opponentStarters, opponentRoster, true);
+  const activeTeamOrder = deriveActiveBattingOrder(
+    starters.map(({ playerId, battingOrder }) => ({ playerId, battingOrder })),
+    events,
+    { batsOnTop: !isHome },
+  );
+  const activeOpponentOrder = deriveActiveBattingOrder(
+    opponentStarters.map(({ playerId, battingOrder }) => ({ playerId, battingOrder })),
+    events,
+    { batsOnTop: isHome, forOpponent: true },
+  );
+  const currentBatter = effectiveStarters.find((slot) => slot.playerId === activeTeamOrder.nextBatterId);
+  const currentOpponentBatter = effectiveOpponentStarters.find((slot) => slot.playerId === activeOpponentOrder.nextBatterId) ?? null;
+  const expectedOpponentSlot = activeOpponentOrder.nextBattingOrderPosition ?? 1;
 
-  // The due batter is the slot after whoever completed that team's last PA
-  // (deriveDueBatter), so a batter added or removed mid-game doesn't shift
-  // the rotation. Before the first PA it cycles by index against the sorted
-  // starters, so non-contiguous batting orders (e.g. slots 1,2,3,5,…,9 when
-  // slot 4 was removed) and "everyone bats" rosters (slot 10+) still walk
-  // every batter.
-  /** A lineup entry reduced to the id + slot the shared due-batter rules use. */
-  const toSlot = (s: LineupEntry) => ({ playerId: s.playerId, battingOrder: s.battingOrder });
+  const isBetweenPAs = isBetweenPlateAppearances(events);
+  const adjustmentSlots = lineupAdjustmentSide === 'us' ? effectiveStarters : effectiveOpponentStarters;
+  const adjustmentRoster = lineupAdjustmentSide === 'us' ? (teamRoster ?? []) : (opponentRoster ?? []);
+  const adjustmentOrder = lineupAdjustmentSide === 'us' ? activeTeamOrder : activeOpponentOrder;
+  const adjustmentIsOpponent = lineupAdjustmentSide === 'opponent';
+  const adjustmentActivePlayerIds = new Set(adjustmentSlots.map((slot) => slot.playerId));
+  const adjustmentHistoricalPlayerIds = new Set([
+    ...(adjustmentIsOpponent ? opponentStarters : starters).map((slot) => slot.playerId),
+    ...eventRows.flatMap((row) => {
+      const payload = (row.payload ?? {}) as Record<string, unknown>;
+      return row.event_type === EventType.SUBSTITUTION &&
+        payload.substitutionType === SubstitutionType.LINEUP_EXTENSION &&
+        Boolean(payload.isOpponentSubstitution) === adjustmentIsOpponent &&
+        typeof payload.inPlayerId === 'string'
+        ? [payload.inPlayerId]
+        : [];
+    }),
+  ]);
+  const adjustmentMaxOrder = eventRows.reduce((max, row) => {
+    const payload = (row.payload ?? {}) as Record<string, unknown>;
+    if (
+      row.event_type !== EventType.SUBSTITUTION ||
+      payload.substitutionType !== SubstitutionType.LINEUP_EXTENSION ||
+      Boolean(payload.isOpponentSubstitution) !== adjustmentIsOpponent
+    ) return max;
+    const order = Number(payload.battingOrderPosition);
+    return Number.isInteger(order) ? Math.max(max, order) : max;
+  }, Math.max(0, ...(lineupAdjustmentSide === 'us' ? starters : opponentStarters).map((slot) => slot.battingOrder)));
+  const nextExtensionOrder = adjustmentMaxOrder + 1;
+  const canExtendSelectedLineup =
+    !isDemo &&
+    settings.lineup.allowMidGameExtension &&
+    isBetweenPAs &&
+    adjustmentSlots.length < settings.lineup.maxBatters &&
+    nextExtensionOrder <= 30;
+  const extensionCandidates = adjustmentRoster.filter((player) =>
+    player.id !== null &&
+    !adjustmentActivePlayerIds.has(player.id) &&
+    !adjustmentHistoricalPlayerIds.has(player.id),
+  );
 
-  const completedTeamPAs = opponentBatsInTop
-    ? gameState.completedBottomHalfPAs
-    : gameState.completedTopHalfPAs;
-  const teamLastBatterId = opponentBatsInTop
-    ? gameState.lastCompletedBottomHalfBatterId
-    : gameState.lastCompletedTopHalfBatterId;
-  const teamLastBatterOrder = teamLastBatterId
-    ? battingOrderHistory(starters.map(toSlot), events).get(teamLastBatterId)
+  const removeSelection = lineupSlotToRemove.split(':');
+  const selectedRemovalPosition = removeSelection.length === 2 && removeSelection[0] === lineupAdjustmentSide
+    ? Number(removeSelection[1])
     : null;
-  const currentBatterIdx =
-    deriveDueBatter(effectiveStarters.map(toSlot), completedTeamPAs, teamLastBatterOrder)?.index ?? 0;
-  const currentBatter = effectiveStarters[currentBatterIdx] ?? effectiveStarters[0];
-
-  const completedOpponentPAs = opponentBatsInTop
-    ? gameState.completedTopHalfPAs
-    : gameState.completedBottomHalfPAs;
-  const opponentLastBatterId = opponentBatsInTop
-    ? gameState.lastCompletedTopHalfBatterId
-    : gameState.lastCompletedBottomHalfBatterId;
-  const opponentLastBatterOrder = opponentLastBatterId
-    ? battingOrderHistory(opponentStarters.map(toSlot), events, { forOpponent: true })
-        .get(opponentLastBatterId)
-    : null;
-  const opponentDueIdx = deriveDueBatter(
-    effectiveOpponentStarters.map(toSlot),
-    completedOpponentPAs,
-    opponentLastBatterOrder,
-  )?.index;
-  const currentOpponentBatter =
-    opponentDueIdx !== undefined ? effectiveOpponentStarters[opponentDueIdx] : null;
-  const expectedOpponentSlot = currentOpponentBatter?.battingOrder ?? 1;
+  const selectedRemovalSlot = selectedRemovalPosition === null
+    ? undefined
+    : adjustmentSlots.find((slot) => slot.battingOrder === selectedRemovalPosition);
+  const selectedRemovalError = selectedRemovalSlot
+    ? adjustmentSlots.length <= 1
+      ? 'At least one batter must remain in the lineup.'
+      : validateLineupContraction({
+          slot: selectedRemovalSlot,
+          settings,
+          currentBatterId: adjustmentOrder.nextBatterId,
+          runnersOnBase: Object.values(gameState.runnersOnBase).filter((id): id is string => id !== null),
+          betweenPlateAppearances: isBetweenPAs,
+        })
+    : 'Choose an active batting slot.';
 
   // Clear skipped-slot dismissals when the active slot changes (skip is per-PA only)
   useEffect(() => {
@@ -1760,6 +1799,29 @@ export function ScoringBoard({
     setSubInPlayerId('');
     setSubRunnerBase(null);
     setSubNewPosition('');
+  }
+
+  async function handleExtendLineup() {
+    if (!newLineupBatterId || !canExtendSelectedLineup) return;
+    await recordEvent(EventType.SUBSTITUTION, {
+      inPlayerId: newLineupBatterId,
+      substitutionType: SubstitutionType.LINEUP_EXTENSION,
+      battingOrderPosition: nextExtensionOrder,
+      isOpponentSubstitution: adjustmentIsOpponent,
+    });
+    setNewLineupBatterId('');
+  }
+
+  async function handleContractLineup() {
+    if (!selectedRemovalSlot || selectedRemovalError) return;
+    await recordEvent(EventType.SUBSTITUTION, {
+      substitutionType: SubstitutionType.LINEUP_CONTRACTION,
+      outPlayerId: selectedRemovalSlot.playerId,
+      battingOrderPosition: selectedRemovalSlot.battingOrder,
+      removedBattingOrderPosition: selectedRemovalSlot.battingOrder,
+      isOpponentSubstitution: adjustmentIsOpponent,
+    });
+    setLineupSlotToRemove('');
   }
 
   // ── Undo (pitch revert) ───────────────────────────────────────────────────
@@ -3189,6 +3251,132 @@ export function ScoringBoard({
             Substitution…
           </button>
         )}
+
+        {isCoach && !isDemo && (settings.lineup.allowMidGameExtension || settings.lineup.allowMidGameContraction) && (
+          <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-emerald-950">Batting order changes</p>
+              <p className="mt-1 text-xs text-emerald-800">
+                {isBetweenPAs ? 'Changes take effect before the next plate appearance.' : 'Finish the current plate appearance before changing the batting order.'}
+              </p>
+            </div>
+
+            {effectiveEventRows
+              .filter((row) => {
+                const payload = (row.payload ?? {}) as Record<string, unknown>;
+                return row.event_type === EventType.SUBSTITUTION &&
+                  (payload.substitutionType === SubstitutionType.LINEUP_EXTENSION ||
+                    payload.substitutionType === SubstitutionType.LINEUP_CONTRACTION);
+              })
+              .slice(-4)
+              .reverse()
+              .map((row) => {
+                const payload = (row.payload ?? {}) as Record<string, unknown>;
+                const isOpponent = Boolean(payload.isOpponentSubstitution);
+                const roster = isOpponent ? (opponentRoster ?? []) : (teamRoster ?? []);
+                const playerId = String(
+                  payload.substitutionType === SubstitutionType.LINEUP_EXTENSION
+                    ? payload.inPlayerId ?? ''
+                    : payload.outPlayerId ?? '',
+                );
+                const player = roster.find((entry) => entry.id === playerId);
+                const name = player ? `${player.firstName} ${player.lastName}` : `Player ${playerId.slice(0, 8)}`;
+                const position = Number(payload.removedBattingOrderPosition ?? payload.battingOrderPosition);
+                const description = payload.substitutionType === SubstitutionType.LINEUP_EXTENSION
+                  ? `Added ${name} to slot ${position}`
+                  : `Removed ${name} from slot ${position}`;
+                return (
+                  <p key={String(row.id)} className="text-xs text-emerald-900">
+                    {isOpponent ? 'Opponent' : 'Our team'}: {description}
+                  </p>
+                );
+              })}
+
+            <label className="block text-xs font-medium text-emerald-950">
+              Lineup
+              <select
+                value={lineupAdjustmentSide}
+                onChange={(event) => {
+                  setLineupAdjustmentSide(event.target.value as 'us' | 'opponent');
+                  setNewLineupBatterId('');
+                  setLineupSlotToRemove('');
+                }}
+                className="mt-1 block w-full rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm text-gray-900"
+              >
+                <option value="us">Our team ({activeTeamOrder.slots.length} active slots)</option>
+                <option value="opponent">Opponent ({activeOpponentOrder.slots.length} active slots)</option>
+              </select>
+            </label>
+
+            {settings.lineup.allowMidGameExtension && (
+              <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                <select
+                  value={newLineupBatterId}
+                  onChange={(event) => setNewLineupBatterId(event.target.value)}
+                  className="w-full rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm text-gray-900"
+                >
+                  <option value="">Add a roster player to the end of the order…</option>
+                  {extensionCandidates.map((player) => (
+                    <option key={player.id ?? ''} value={player.id ?? ''}>
+                      {player.lastName}, {player.firstName}{player.jerseyNumber != null ? ` #${player.jerseyNumber}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleExtendLineup}
+                  disabled={!newLineupBatterId || !canExtendSelectedLineup}
+                  className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Add batter
+                </button>
+                {!isBetweenPAs && <p className="text-xs text-amber-800 sm:col-span-2">Lineup expansion is disabled until this plate appearance ends.</p>}
+                {isBetweenPAs && adjustmentSlots.length >= settings.lineup.maxBatters && <p className="text-xs text-amber-800 sm:col-span-2">This lineup has reached its {settings.lineup.maxBatters}-batter limit.</p>}
+                {isBetweenPAs && adjustmentSlots.length < settings.lineup.maxBatters && extensionCandidates.length === 0 && <p className="text-xs text-gray-600 sm:col-span-2">No eligible roster players remain to add.</p>}
+              </div>
+            )}
+
+            {settings.lineup.allowMidGameContraction && (
+              <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                <select
+                  value={lineupSlotToRemove}
+                  onChange={(event) => setLineupSlotToRemove(event.target.value)}
+                  className="w-full rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm text-gray-900"
+                >
+                  <option value="">Choose a slot to remove…</option>
+                  {adjustmentSlots.map((slot) => {
+                    const runnerIds = Object.values(gameState.runnersOnBase).filter((id): id is string => id !== null);
+                    const reason = adjustmentSlots.length <= 1
+                      ? 'at least one batter must remain'
+                      : validateLineupContraction({
+                          slot,
+                          settings,
+                          currentBatterId: adjustmentOrder.nextBatterId,
+                          runnersOnBase: runnerIds,
+                          betweenPlateAppearances: isBetweenPAs,
+                        });
+                    return (
+                      <option key={slot.battingOrder} value={`${lineupAdjustmentSide}:${slot.battingOrder}`} disabled={!!reason}>
+                        {slot.player.lastName}, {slot.player.firstName} · slot {slot.battingOrder}{reason ? ` — ${reason}` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleContractLineup}
+                  disabled={!selectedRemovalSlot || !!selectedRemovalError}
+                  className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Remove slot
+                </button>
+                {selectedRemovalSlot && selectedRemovalError && <p className="text-xs text-amber-800 sm:col-span-2">{selectedRemovalError}</p>}
+                {adjustmentSlots.length <= 1 && <p className="text-xs text-amber-800 sm:col-span-2">At least one batter must remain in the lineup.</p>}
+              </div>
+            )}
+          </section>
+        )}
+
         {isCoach && showSubstitution && (
           <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
             <p className="text-sm font-semibold text-gray-700">Substitution</p>

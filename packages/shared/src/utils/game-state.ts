@@ -378,6 +378,9 @@ export function deriveGameState(
 
       case EventType.SUBSTITUTION: {
         const p = event.payload as SubstitutionPayload;
+        // A LINEUP_CONTRACTION has no incoming player. It only changes the
+        // ordered slot reducer, not the active batter or runner identities.
+        if (!p.inPlayerId) break;
         if (p.outPlayerId !== undefined && state.currentBatterId === p.outPlayerId) {
           state.currentBatterId = p.inPlayerId;
         }

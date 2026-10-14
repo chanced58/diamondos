@@ -59,6 +59,8 @@ export enum SubstitutionType {
   POSITION_CHANGE = 'position_change',
   /** Adding a new batter to the end of the order mid-game (late arrival, courtesy player). */
   LINEUP_EXTENSION = 'lineup_extension',
+  /** Remove a stable batting slot after its current plate appearance has ended. */
+  LINEUP_CONTRACTION = 'lineup_contraction',
   /** Courtesy runner for catcher or pitcher — does not burn a regular sub
    *  (LL/HS rule). Allowed only when the league enables the flag. */
   COURTESY_RUNNER  = 'courtesy_runner',
@@ -212,7 +214,7 @@ export interface SacrificePayload {
 }
 
 export interface SubstitutionPayload {
-  inPlayerId: string;
+  inPlayerId?: string;
   /** Optional: the slot may have had no known occupant yet (initial lineup setup). */
   outPlayerId?: string;
   /** Set when the substitution involves opponent_players. */
@@ -220,6 +222,8 @@ export interface SubstitutionPayload {
   substitutionType?: SubstitutionType;
   newPosition?: string;
   battingOrderPosition?: number;
+  /** Stable batting slot removed by a LINEUP_CONTRACTION event. */
+  removedBattingOrderPosition?: number;
   /** For pinch runners: which base the incoming runner is placed on (1 | 2 | 3). */
   runnerBase?: 1 | 2 | 3;
 }
