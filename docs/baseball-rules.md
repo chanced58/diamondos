@@ -158,6 +158,14 @@ OBR places its **Definitions of Terms** section at the front of the rulebook, ah
 - **Wild Pitch** — see [§9.13](#913-wild-pitches-and-passed-balls). A pitch so high, so low, or so wide of the plate that it cannot be handled with ordinary effort by the catcher, and which allows a runner to advance.
 - **Windup Position** — a legal pitching position in which the pitcher stands with both feet on the ground, with the pivot foot in contact with the pitcher's plate and the free foot free. The pitcher may take one step back and one step forward; they must deliver the pitch without interruption.
 
+### App-specific tournament terms
+
+These terms describe the app's tournament workflow; they are not definitions from OBR.
+
+- **Tournament** — a tournament instance created in the app with its own date range, participating team season, and scoring settings. Each tournament game uses the tournament's settings until its start event freezes them for that game.
+- **TournamentTeam** — the link between a tournament and a participating team and season. A tournament can use a current team season or a dedicated team created for tournament play.
+- **TournamentMode** — an account permission that allows its holder to create tournament instances. Team coach permissions still govern which team the user may select.
+
 ---
 
 ## Rule 1 — Objectives of the Game
@@ -488,6 +496,8 @@ The critical edge case (handled by this app's recent fix): **if the FC out is th
 **5.10(g) — Pinch Runner.** A substitute runner who replaces a runner on base. The pinch runner takes the replaced runner's place on the base and in the batting order.
 
 **App mapping.** Substitutions are recorded as `SUBSTITUTION` events with `substitutionType` of `pinch_hitter`, `pinch_runner`, `defensive`, or `position_change`. Pitching changes are the discrete `PITCHING_CHANGE` event type. Re-entry rules are not enforced at the event-sourcing level today; the UI displays a warning for OBR re-entry violations.
+
+**Tournament lineup settings (app-specific).** Tournament organizers may allow up to 30 batters in the lineup and may separately allow the lineup to expand or contract during a game. An enabled expansion or contraction is recorded as an append-only lineup event and can occur only between plate appearances. Contraction removes an occupied slot while preserving the order of the remaining slots; it is rejected for the scheduled batter, a runner on base, or the last remaining batter. Removing a slot does not erase that player's earlier plate appearances or create an automatic out. These configurable tournament behaviors are app rules and do not change OBR, NFHS, NCAA, or Little League rules.
 
 ### 5.11 Designated Hitter
 
