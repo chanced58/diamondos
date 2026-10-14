@@ -18,10 +18,10 @@ This is a team-centered first release. Contraction removes an occupied slot betw
 
 - `pnpm test -- --concurrency=1`: 103 suites, **1,091 tests** (shared 702, web 85, mobile 304).
 - `pnpm type-check`, `pnpm lint` and `pnpm build`: passed. Lint retains existing warnings.
-- Four real PostgreSQL pgTAP suites: **58 assertions** passed, covering authorization, rollback/idempotency, settings, start and lineup enforcement.
-- Two-connection concurrency test: second writer waited, received a serialization conflict, and its retry was rejected at the cap without changing scores.
+- Four real PostgreSQL pgTAP suites: **61 assertions** passed, covering authorization, rollback/idempotency, settings, start and lineup enforcement.
+- Two-connection concurrency tests: the lineup writer waited, received a serialization conflict, and its retry was rejected at the cap without changing scores. Concurrent identical creation requests waited and returned the same tournament.
 - Local browser acceptance: both team choices, all four rules combinations, keyboard interaction, review summary, revocation after page load, input retention, existing-instance access and tournament game scheduling.
-- Initial CodeRabbit review: all six findings addressed (navigation, initial-slot replay, mobile refill cap, rejected queues, start upload ordering and forced runner advancement). Final review status is recorded in the PR.
+- Initial CodeRabbit review: all six findings addressed (navigation, initial-slot replay, mobile refill cap, rejected queues, start upload ordering and forced runner advancement). The follow-up review found three further defects (same-key creation serialization, canceled-slot numbering and plain start ingestion), now fixed and verified, plus a weak fixture assertion, now corrected. Two compatibility questions were checked against existing paths: the league form submits normalized settings including contraction=false; tournament lineup sync skips started games and regular substitutions remain events, so no mutable replacement projection needs an exception. Final review completion status is recorded in the PR.
 
 ## Remaining acceptance and deployment prerequisites
 
