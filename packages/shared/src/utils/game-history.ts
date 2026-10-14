@@ -83,21 +83,6 @@ export interface GameHistoryTree {
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
-const TERMINAL_EVENT_TYPES = new Set<string>([
-  EventType.HIT,
-  EventType.OUT,
-  EventType.WALK,
-  EventType.HIT_BY_PITCH,
-  EventType.STRIKEOUT,
-  EventType.SACRIFICE_BUNT,
-  EventType.SACRIFICE_FLY,
-  EventType.FIELD_ERROR,
-  EventType.DOUBLE_PLAY,
-  EventType.TRIPLE_PLAY,
-  EventType.DROPPED_THIRD_STRIKE,
-  EventType.CATCHER_INTERFERENCE,
-]);
-
 const BASE_NAMES: Record<number, string> = {
   1: '1st',
   2: '2nd',

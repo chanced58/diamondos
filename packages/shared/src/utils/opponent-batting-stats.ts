@@ -79,7 +79,7 @@ export function computeOpponentBatting(
     // guard in packages/shared/src/utils/game-state.ts.
     let outsThisInning = 0;
 
-    function clearBases() { r1 = null; r2 = null; r3 = null; }
+    const clearBases = () => { r1 = null; r2 = null; r3 = null; };
 
     // A hit's linked runner outcomes, and the shared rule that applies them
     // (rules/play-runners — the one deriveGameState uses).
@@ -88,18 +88,18 @@ export function computeOpponentBatting(
     const currentBases = (): Bases<string> => ({ first: r1, second: r2, third: r3 });
     const setBases = (next: Bases<string>) => { r1 = next.first; r2 = next.second; r3 = next.third; };
 
-    function scoreRunner(runnerId: string | null) {
+    const scoreRunner = (runnerId: string | null) => {
       if (runnerId && oppPlayerNameMap.has(runnerId)) {
         get(runnerId).r++;
       }
-    }
+    };
 
-    function forceAdvance(batterId: string) {
+    const forceAdvance = (batterId: string) => {
       if (r1 && r2 && r3) scoreRunner(r3);
       if (r1 && r2) r3 = r2;
       if (r1) r2 = r1;
       r1 = batterId;
-    }
+    };
 
     for (const event of gameEvents) {
       const etype = event.event_type as string;

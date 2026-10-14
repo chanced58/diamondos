@@ -1,6 +1,6 @@
 import { EventType, type GameEvent, type PitchThrownPayload, type HitPayload, type SubstitutionPayload, type PitchingChangePayload, type BaserunnerMovePayload, type PickoffPayload, type RundownPayload, type DroppedThirdStrikePayload } from '../types/game-event';
 import type { LiveGameState } from '../types/game';
-import { BALLS_FOR_WALK, STRIKES_FOR_STRIKEOUT, OUTS_PER_INNING } from '../constants/baseball';
+import { STRIKES_FOR_STRIKEOUT, OUTS_PER_INNING } from '../constants/baseball';
 import {
   applyLinkedAdvance,
   applyPlayToRunners,
