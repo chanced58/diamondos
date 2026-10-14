@@ -784,6 +784,7 @@ export type Database = {
           scheduled_at: string
           scorer_side: string | null
           season_id: string | null
+          scoring_settings_snapshot: Json | null
           started_at: string | null
           status: Database["public"]["Enums"]["game_status"]
           team_id: string
@@ -814,6 +815,7 @@ export type Database = {
           scheduled_at: string
           scorer_side?: string | null
           season_id?: string | null
+          scoring_settings_snapshot?: Json | null
           started_at?: string | null
           status?: Database["public"]["Enums"]["game_status"]
           team_id: string
@@ -844,6 +846,7 @@ export type Database = {
           scheduled_at?: string
           scorer_side?: string | null
           season_id?: string | null
+          scoring_settings_snapshot?: Json | null
           started_at?: string | null
           status?: Database["public"]["Enums"]["game_status"]
           team_id?: string
@@ -4947,6 +4950,15 @@ export type Database = {
     },
     Functions: {
       can_edit_block: { Args: { p_block_id: string }; Returns: boolean }
+      start_tournament_game: {
+        Args: {
+          p_game_id: string
+          p_occurred_at: string
+          p_payload: Json
+          p_user_id: string
+        }
+        Returns: string
+      }
       create_tournament: {
         Args: { p_input: Json }
         Returns: {

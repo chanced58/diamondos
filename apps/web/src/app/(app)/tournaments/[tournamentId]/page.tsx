@@ -24,6 +24,13 @@ export default async function TournamentWorkspacePage({
   if (error) throw error;
   if (!tournament) notFound();
 
+  const { data: games, error: gamesError } = await client
+    .from('games')
+    .select('id, opponent_name, scheduled_at, status, location_type')
+    .eq('tournament_id', tournament.id)
+    .order('scheduled_at');
+  if (gamesError) throw gamesError;
+
   const participant = tournament.tournament_teams[0];
   if (!participant) notFound();
   const team = Array.isArray(participant.teams) ? participant.teams[0] : participant.teams;
@@ -56,6 +63,30 @@ export default async function TournamentWorkspacePage({
           </dl>
         </section>
       </div>
+
+      <section className="mt-8 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-950">Tournament games</h2>
+            <p className="mt-1 text-sm text-gray-500">Games scheduled for this tournament stay separate from the team&apos;s regular schedule.</p>
+          </div>
+          <Link href={`/games/new?tournamentId=${tournament.id}`} className="text-sm font-semibold text-brand-700 hover:underline">Add game</Link>
+        </div>
+        {games?.length ? (
+          <ul className="mt-4 divide-y divide-gray-100">
+            {games.map((game) => (
+              <li key={game.id}>
+                <Link href={`/games/${game.id}`} className="flex flex-wrap items-center justify-between gap-2 py-3 hover:text-brand-700">
+                  <span className="font-medium">{game.opponent_name ?? 'Opponent TBD'}</span>
+                  <span className="text-sm text-gray-500">{new Date(game.scheduled_at).toLocaleString()} · {game.status.replace('_', ' ')}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-4 text-sm text-gray-500">No games scheduled yet.</p>
+        )}
+      </section>
     </main>
   );
 }

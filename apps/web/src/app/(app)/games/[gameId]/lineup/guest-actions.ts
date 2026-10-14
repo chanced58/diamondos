@@ -5,7 +5,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getMaxBattingOrder } from '@baseball/shared';
 import type { Database } from '@baseball/database';
-import { getLeagueSettingsForTeam } from '@/lib/league-settings';
+import { getScoringSettingsForGame } from '@/lib/game-scoring-settings';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
@@ -13,6 +13,8 @@ interface CoachContext {
   userId: string;
   teamId: string;
   leagueId: string | null;
+  tournamentId: string | null;
+  scoringSettingsSnapshot: unknown | null;
   db: SupabaseClient<Database>;
 }
 
@@ -28,7 +30,7 @@ async function getCoachContext(gameId: string): Promise<CoachContext | { error: 
   const db = createClient<Database>(supabaseUrl, serviceRoleKey);
   const { data: game } = await db
     .from('games')
-    .select('team_id')
+    .select('team_id, tournament_id, scoring_settings_snapshot')
     .eq('id', gameId)
     .maybeSingle();
   if (!game?.team_id) return { error: 'Game not found.' };
@@ -55,6 +57,8 @@ async function getCoachContext(gameId: string): Promise<CoachContext | { error: 
     userId: user.id,
     teamId: game.team_id,
     leagueId: leagueRow?.league_id ?? null,
+    tournamentId: game.tournament_id,
+    scoringSettingsSnapshot: game.scoring_settings_snapshot,
     db,
   };
 }
@@ -123,7 +127,11 @@ export async function addExistingGuestToLineupAction(input: {
   const ctx = await getCoachContext(input.gameId);
   if ('error' in ctx) return { error: ctx.error };
 
-  const settings = await getLeagueSettingsForTeam(ctx.db, ctx.teamId);
+  const settings = await getScoringSettingsForGame(ctx.db, {
+    teamId: ctx.teamId,
+    tournamentId: ctx.tournamentId,
+    scoringSettingsSnapshot: ctx.scoringSettingsSnapshot,
+  });
   if (!settings.guests.allowed) return { error: 'League does not allow guest players.' };
 
   const maxBatters = getMaxBattingOrder(settings);
@@ -174,7 +182,11 @@ export async function addNewGuestToLineupAction(input: {
   const ctx = await getCoachContext(input.gameId);
   if ('error' in ctx) return { error: ctx.error };
 
-  const settings = await getLeagueSettingsForTeam(ctx.db, ctx.teamId);
+  const settings = await getScoringSettingsForGame(ctx.db, {
+    teamId: ctx.teamId,
+    tournamentId: ctx.tournamentId,
+    scoringSettingsSnapshot: ctx.scoringSettingsSnapshot,
+  });
   if (!settings.guests.allowed) return { error: 'League does not allow guest players.' };
 
   const trimmedFirst = input.firstName.trim();

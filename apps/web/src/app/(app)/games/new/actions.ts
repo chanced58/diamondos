@@ -13,6 +13,7 @@ export async function createGameAction(_prevState: string | null | undefined, fo
   if (!user) return 'Not authenticated — please log in again.';
 
   const teamId       = formData.get('teamId') as string;
+  const tournamentId = (formData.get('tournamentId') as string | null)?.trim() || null;
   const opponentTbd  = formData.get('opponentTbd') === 'on';
   const opponent     = (formData.get('opponent') as string)?.trim();
   const opponentTeamId = (formData.get('opponentTeamId') as string)?.trim() || null;
@@ -104,13 +105,31 @@ export async function createGameAction(_prevState: string | null | undefined, fo
     validatedOpponentTeamId = opponentTeam.id;
   }
 
-  // Look up active season so the game is automatically linked
-  const { data: activeSeason } = await supabase
-    .from('seasons')
-    .select('id')
-    .eq('team_id', teamId)
-    .eq('is_active', true)
-    .maybeSingle();
+  // Tournament game creation is scoped to the exact tournament team/season
+  // tuple. Never trust the team or season supplied by a hidden form field.
+  let seasonId: string | null = null;
+  if (tournamentId) {
+    const { data: tournamentTeam, error: tournamentTeamError } = await supabase
+      .from('tournament_teams')
+      .select('team_id, season_id')
+      .eq('tournament_id', tournamentId)
+      .eq('team_id', teamId)
+      .maybeSingle();
+
+    if (tournamentTeamError || !tournamentTeam) {
+      return 'This team is not registered for the selected tournament.';
+    }
+    seasonId = tournamentTeam.season_id;
+  } else {
+    // Regular games continue to use the team's active season.
+    const { data: activeSeason } = await supabase
+      .from('seasons')
+      .select('id')
+      .eq('team_id', teamId)
+      .eq('is_active', true)
+      .maybeSingle();
+    seasonId = activeSeason?.id ?? null;
+  }
 
   const { data: game, error } = await supabase
     .from('games')
@@ -128,7 +147,8 @@ export async function createGameAction(_prevState: string | null | undefined, fo
       place_id:      placeId,
       notes,
       created_by:    user.id,
-      season_id:     activeSeason?.id ?? null,
+      season_id:     seasonId,
+      tournament_id: tournamentId,
     })
     .select()
     .single();
