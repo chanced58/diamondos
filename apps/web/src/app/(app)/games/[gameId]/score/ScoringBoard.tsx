@@ -9,6 +9,7 @@ import { deriveDefensiveLineup, deriveGameState, FIELDING_POSITION_NUMBERS, form
 import type { GameEvent } from '@baseball/shared';
 import { endGameAction } from '../actions';
 import { DefensiveDiamond } from './DefensiveDiamond';
+import { BattingOrderPanel, type BattingOrderPlayer } from './BattingOrderPanel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1025,6 +1026,17 @@ export function ScoringBoard({
     return jerseyOverrides[playerId] ?? original;
   };
 
+  const battingTeamName = isOpponentBatting ? game.opponentName : 'Us';
+  const battingOrderPlayers: BattingOrderPlayer[] = (
+    isOpponentBatting ? effectiveOpponentStarters : effectiveStarters
+  ).map((entry) => ({
+    playerId: entry.playerId,
+    battingOrder: entry.battingOrder,
+    name: [entry.player.firstName, entry.player.lastName].filter(Boolean).join(' ') || 'Unknown player',
+    jerseyNumber: resolveJersey(entry.playerId, entry.player.jerseyNumber),
+    position: entry.startingPosition,
+  }));
+
   // Player name lookup (searches both lineups)
   const playerName = (playerId: string | null) => {
     if (!playerId) return '—';
@@ -1757,7 +1769,7 @@ export function ScoringBoard({
       {/* ── Settings panel ──────────────────────────────────── */}
       {showSettings && isCoach && (
         <div className="bg-white border-b border-gray-200 px-6 py-4">
-          <div className="max-w-lg mx-auto space-y-3">
+          <div className="max-w-7xl mx-auto space-y-3">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
               Scoring options
             </p>
@@ -1786,7 +1798,7 @@ export function ScoringBoard({
       {/* ── Demo Mode Banner ─────────────────────────────────── */}
       {isDemo && (
         <div className="bg-amber-50 border-b border-amber-200 px-6 py-3">
-          <div className="max-w-lg mx-auto flex items-center justify-between gap-4">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-semibold text-amber-800">Practice Mode</p>
               <p className="text-xs text-amber-700 mt-0.5">
@@ -1803,90 +1815,103 @@ export function ScoringBoard({
         </div>
       )}
 
-      <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
-
-        {/* ── Scoreboard ───────────────────────────────────────── */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-center">
-              <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Inning</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {gameState.inning}
-                <span className="text-base ml-1">{gameState.isTopOfInning ? '▲' : '▼'}</span>
-              </p>
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 space-y-4">
+        {/* ── Scoreboard: compact, high-contrast game state like mobile ── */}
+        <section className="overflow-hidden rounded-xl bg-brand-900 text-white">
+          <div className="flex items-center justify-between px-4 pt-4 sm:px-6">
+            <p className="text-xs font-semibold tracking-wide text-blue-200">
+              {gameState.isTopOfInning ? 'Top' : 'Bottom'} {gameState.inning}
+            </p>
+            <p className="text-xs font-medium text-blue-100">
+              {gameState.outs} out{gameState.outs === 1 ? '' : 's'}
+            </p>
+          </div>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 px-4 pb-5 pt-2 text-center sm:px-10 sm:pb-6">
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium text-blue-200 sm:text-sm">Us</p>
+              <p className="text-4xl font-bold leading-none sm:text-5xl">{usScore}</p>
             </div>
-            <div className="flex items-center gap-6 text-center">
-              <div>
-                <p className="text-xs text-gray-400 font-medium">Us</p>
-                <p className="text-3xl font-bold text-gray-900">{usScore}</p>
-              </div>
-              <div className="text-gray-300 text-xl">—</div>
-              <div>
-                <p className="text-xs text-gray-400 font-medium">{game.opponentName}</p>
-                <p className="text-3xl font-bold text-gray-900">{themScore}</p>
-              </div>
+            <span className="text-2xl font-light text-blue-300">–</span>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium text-blue-200 sm:text-sm">{game.opponentName}</p>
+              <p className="text-4xl font-bold leading-none sm:text-5xl">{themScore}</p>
             </div>
           </div>
+        </section>
 
-          {/* Count + Undo */}
-          <div className="flex items-center justify-between mt-2">
-            <div className="flex items-center gap-6 text-xs text-gray-500 font-medium flex-1 justify-center">
-              <div className="flex items-center gap-1.5">
-                <span>B</span>
-                {[0,1,2,3].map((i) => <Dot key={i} filled={i < gameState.balls} color="bg-green-500 border-green-600" />)}
+        {/* ── Pitch count: same B/S/O dots as the mobile scorer ── */}
+        <section className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white px-4 py-3 sm:px-6">
+          <div className="flex flex-1 items-center justify-center gap-5 sm:gap-10">
+            {([
+              { label: 'B', value: gameState.balls, total: 4, color: 'bg-green-500 border-green-600' },
+              { label: 'S', value: gameState.strikes, total: 3, color: 'bg-yellow-400 border-yellow-500' },
+              { label: 'O', value: gameState.outs, total: 3, color: 'bg-red-500 border-red-600' },
+            ]).map(({ label, value, total, color }) => (
+              <div key={label} className="flex flex-col items-center gap-1">
+                <span className="text-xs font-semibold text-gray-500">{label}</span>
+                <span className="flex gap-1.5" aria-label={`${label}: ${value} of ${total}`}>
+                  {Array.from({ length: total }, (_, index) => (
+                    <Dot key={index} filled={index < value} color={color} />
+                  ))}
+                </span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <span>S</span>
-                {[0,1].map((i) => <Dot key={i} filled={i < gameState.strikes} color="bg-yellow-400 border-yellow-500" />)}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span>O</span>
-                {[0,1].map((i) => <Dot key={i} filled={i < gameState.outs} color="bg-red-500 border-red-600" />)}
-              </div>
-            </div>
-            {isCoach && (
-              <button
-                onClick={handleUndo}
-                disabled={!canUndo}
-                title={canUndo ? `Undo last pitch (${lastPitchOutcome ?? ''})` : 'Nothing to undo'}
-                className={`shrink-0 text-xs font-medium px-2.5 py-1 rounded border transition-colors ${
-                  canUndo
-                    ? 'border-gray-300 text-gray-600 bg-white hover:border-red-300 hover:text-red-600 hover:bg-red-50'
-                    : 'border-gray-200 text-gray-300 bg-white cursor-not-allowed'
-                }`}
-              >
-                ← Undo
-              </button>
-            )}
+            ))}
           </div>
-        </div>
+          {isCoach && (
+            <button
+              onClick={handleUndo}
+              disabled={!canUndo}
+              title={canUndo ? `Undo last pitch (${lastPitchOutcome ?? ''})` : 'Nothing to undo'}
+              className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+                canUndo
+                  ? 'border-gray-300 text-gray-600 hover:border-red-300 hover:bg-red-50 hover:text-red-600'
+                  : 'cursor-not-allowed border-gray-200 text-gray-300'
+              }`}
+            >
+              ← Undo
+            </button>
+          )}
+        </section>
 
-        {/* ── Baserunners + Current Players ────────────────────── */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 grid grid-cols-2 gap-4 items-center">
-          <BaserunnerDiamond runners={gameState.runnersOnBase} labels={runnerLabels} />
-          <div className="space-y-2 text-sm">
-            <div>
-              <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Batting</p>
-              <p className="font-semibold text-gray-900">
-                {activeBatter
-                  ? `${activeBatter.player.lastName} #${resolveJersey(activeBatter.playerId, activeBatter.player.jerseyNumber) ?? '—'}`
-                  : '—'}
-              </p>
+        <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem] xl:grid-rows-[auto_1fr] xl:gap-x-6 xl:gap-y-4">
+          {/* ── Runners and active matchup ── */}
+          <section className="order-1 grid grid-cols-[minmax(0,120px)_minmax(0,1fr)] items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)] sm:gap-5 sm:p-5 xl:col-start-1 xl:row-start-1">
+            <div className="flex flex-col items-center gap-1">
+              <p className="text-xs font-medium text-gray-500">Runners</p>
+              <BaserunnerDiamond runners={gameState.runnersOnBase} labels={runnerLabels} />
             </div>
-            <div>
-              <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Pitching</p>
-              <p className="font-semibold text-gray-900">
-                {activePitcher
-                  ? `${activePitcher.player.lastName} #${resolveJersey(activePitcher.playerId, activePitcher.player.jerseyNumber) ?? '—'}`
-                  : '—'}
-              </p>
-              {activePitcherPitchCount > 0 && (
-                <p className="text-xs text-gray-400">{activePitcherPitchCount} pitches</p>
-              )}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-1">
+              <div className="min-w-0 border-l-2 border-brand-600 pl-3">
+                <p className="text-xs font-medium text-gray-500">At bat</p>
+                <p className="mt-0.5 truncate text-base font-semibold text-gray-900 sm:text-lg">
+                  {activeBatter
+                    ? `${activeBatter.player.firstName} ${activeBatter.player.lastName} #${resolveJersey(activeBatter.playerId, activeBatter.player.jerseyNumber) ?? '—'}`
+                    : 'No active batter'}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-500">{battingTeamName}</p>
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-gray-500">Pitching</p>
+                <p className="mt-0.5 truncate text-sm font-semibold text-gray-900 sm:text-base">
+                  {activePitcher
+                    ? `${activePitcher.player.firstName} ${activePitcher.player.lastName} #${resolveJersey(activePitcher.playerId, activePitcher.player.jerseyNumber) ?? '—'}`
+                    : 'No active pitcher'}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  {activePitcherPitchCount} pitches
+                </p>
+              </div>
             </div>
-          </div>
-        </div>
+          </section>
 
+          <BattingOrderPanel
+            players={battingOrderPlayers}
+            activePlayerId={activeBatterId}
+            teamName={battingTeamName}
+            className="order-2 xl:col-start-2 xl:row-span-2 xl:row-start-1"
+          />
+
+          <section className="order-3 space-y-4 xl:col-start-1 xl:row-start-2">
         {/* ── Jersey Number Prompt (opponent batters without a number) ── */}
         {isCoach && isOpponentBatting && activeBatter &&
          activeBatter.player.jerseyNumber == null &&
@@ -3329,6 +3354,8 @@ export function ScoringBoard({
             Live scoring in progress — updates appear automatically.
           </div>
         )}
+          </section>
+        </div>
       </div>
 
       {/* ── Spray Chart Modal ─────────────────────────────────── */}
