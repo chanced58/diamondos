@@ -126,11 +126,11 @@ The original checkout has an untracked user-owned `AGENTS.md`; it was left untou
 
 - [ ] Exercise authorized/unauthorized users, existing/new teams, all four rules combinations, same-team regular/tournament games, failed creation retry, contraction/undo, stats isolation, and cross-season compliance end to end.
 - [x] Run `pnpm test`, `pnpm type-check`, `pnpm lint`, and `pnpm build` after dependencies/database prerequisites are ready; record pre-existing failures separately.
-- [ ] Run CodeRabbit using the installed/authenticated repository workflow, address actionable findings, and rerun affected checks. If unavailable, report the blocker instead of claiming review passed.
+- [x] Run CodeRabbit using the installed/authenticated repository workflow, address actionable findings, and rerun affected checks. If unavailable, report the blocker instead of claiming review passed.
 - [x] Commit `docs(tournament): document setup and scoring behavior` and prepare a Conventional Commits PR description with tests and remaining limitations. Open a PR when implementation is requested; retain branch discipline and do not merge without authorization.
 
 ## Completion audit — 2026-10-14
 
 Checked tasks reflect implemented deliverables and completed verification, including follow-up fixes. Historical red/green details are recorded in the execution ledger; a checked test task does not imply every command listed was available during the initial implementation. Database verification used unchanged SQL copied into an isolated project because legacy migration versions collide. Mobile tests and type checks pass; the combined native smoke task remains open. Browser creation/access acceptance passes; scoring acceptance is automated, with full device end-to-end coverage still open. The user-owned original AGENTS.md was preserved; accepted domain definitions are maintained in docs/baseball-rules.md.
 
-Draft PR: https://github.com/chanced58/diamondos/pull/215. Both CodeRabbit runs reported six findings each; the initial run completed, while the follow-up CLI run continued sending heartbeats after 15 minutes. Every reported finding has been addressed or checked against current behavior, with affected database checks passing. The review checkbox remains open until the follow-up process finishes.
+Draft PR: https://github.com/chanced58/diamondos/pull/215. The initial CodeRabbit run reported six findings; the follow-up completed with ten findings after more than 15 minutes. Every reported finding has been addressed or checked against current behavior. Database regressions, concurrency checks and final JS/type/lint/build verification pass. No finding-free rerun is claimed.

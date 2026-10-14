@@ -16,12 +16,12 @@ This is a team-centered first release. Contraction removes an occupied slot betw
 
 ## Passing verification
 
-- `pnpm test -- --concurrency=1`: 103 suites, **1,091 tests** (shared 702, web 85, mobile 304).
+- `pnpm test -- --concurrency=1`: 105 suites, **1,095 tests** (shared 702, web 85, mobile 308).
 - `pnpm type-check`, `pnpm lint` and `pnpm build`: passed. Lint retains existing warnings.
 - Four real PostgreSQL pgTAP suites: **61 assertions** passed, covering authorization, rollback/idempotency, settings, start and lineup enforcement.
 - Two-connection concurrency tests: the lineup writer waited, received a serialization conflict, and its retry was rejected at the cap without changing scores. Concurrent identical creation requests waited and returned the same tournament.
 - Local browser acceptance: both team choices, all four rules combinations, keyboard interaction, review summary, revocation after page load, input retention, existing-instance access and tournament game scheduling.
-- Initial CodeRabbit review: all six findings addressed (navigation, initial-slot replay, mobile refill cap, rejected queues, start upload ordering and forced runner advancement). The follow-up review found three further defects (same-key creation serialization, canceled-slot numbering and plain start ingestion), now fixed and verified, plus a weak fixture assertion, now corrected. Two compatibility questions were checked against existing paths: the league form submits normalized settings including contraction=false; tournament lineup sync skips started games and regular substitutions remain events, so no mutable replacement projection needs an exception. The follow-up CLI remained running after 15 minutes and has not supplied a completion signal; no clean-review result is claimed. GitHub skips CodeRabbit reviews for draft PRs.
+- Initial CodeRabbit review: all six findings addressed (navigation, initial-slot replay, mobile refill cap, rejected queues, start upload ordering and forced runner advancement). The follow-up review found three further defects (same-key creation serialization, canceled-slot numbering and plain start ingestion), now fixed and verified, plus a weak fixture assertion, now corrected. Two compatibility questions were checked against existing paths: the league form submits normalized settings including contraction=false; tournament lineup sync skips started games and regular substitutions remain events, so no mutable replacement projection needs an exception. The follow-up CLI completed with ten findings. Its four final mobile findings were fixed: message starvation, addition locking, persisted rejection recovery and the active opponent picker. Regression tests and final JS/type/lint checks pass. No finding-free rerun is claimed. GitHub skips CodeRabbit reviews for draft PRs.
 
 ## Remaining acceptance and deployment prerequisites
 
