@@ -30,24 +30,24 @@ export function ScoreBoard({ gameState, opponentName, teamName }: ScoreBoardProp
     <View className="bg-brand-900 px-4 py-2 flex-row items-center justify-between">
       <View className="flex-row items-center gap-2.5 flex-1 mr-2">
         <Text
-          className="text-blue-300 text-xs"
+          className="text-blue-300 text-score-xs"
           numberOfLines={1}
           style={{ flexShrink: 1 }}
         >
           {teamName}
         </Text>
-        <Text className="text-white text-2xl font-bold">{gameState.homeScore}</Text>
-        <Text className="text-blue-400 text-base">–</Text>
-        <Text className="text-white text-2xl font-bold">{gameState.awayScore}</Text>
+        <Text className="text-white text-score-2xl font-bold">{gameState.homeScore}</Text>
+        <Text className="text-blue-400 text-score-base">–</Text>
+        <Text className="text-white text-score-2xl font-bold">{gameState.awayScore}</Text>
         <Text
-          className="text-blue-300 text-xs"
+          className="text-blue-300 text-score-xs"
           numberOfLines={1}
           style={{ flexShrink: 1 }}
         >
           {opponentName}
         </Text>
       </View>
-      <Text className="text-blue-300 text-xs uppercase tracking-widest">
+      <Text className="text-blue-300 text-score-xs uppercase tracking-widest">
         {inningLabel} • {gameState.outs} Out{gameState.outs !== 1 ? 's' : ''}
       </Text>
     </View>

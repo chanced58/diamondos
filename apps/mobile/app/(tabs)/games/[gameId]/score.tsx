@@ -14,7 +14,7 @@ import { useGameIdentity } from '../../../../src/features/scoring/use-game-ident
 import { useGameState } from '../../../../src/features/scoring/use-game-state';
 import { useRecordEvent } from '../../../../src/features/scoring/use-record-event';
 import { usePlayFeed } from '../../../../src/features/scoring/use-play-feed';
-import { PlayFeed } from '../../../../src/features/scoring/PlayFeed';
+import { PlayFeedSheet } from '../../../../src/features/scoring/PlayFeed';
 import { voidEvent as voidEventCascade } from '../../../../src/features/scoring/void-event';
 import { fetchGameEventsForGame } from '../../../../src/features/scoring/fetch-game-events';
 import { ScoreBoard } from '../../../../src/features/scoring/ScoreBoard';
@@ -716,6 +716,7 @@ export default function ScoringScreen() {
   // Guest-player modal — open via the small button on the score screen,
   // gated on the league's guests.allowed flag.
   const [showGuestModal, setShowGuestModal] = useState(false);
+  const [showPlayFeed, setShowPlayFeed] = useState(false);
 
   async function handlePitch(
     outcome: PitchOutcome,
@@ -1778,17 +1779,17 @@ export default function ScoringScreen() {
       isLast: boolean,
     ) => (
       <View className={`flex-row ${isLast ? '' : 'border-b border-gray-100'}`}>
-        <Text className="w-24 px-2 py-1.5 text-xs font-semibold text-gray-700" numberOfLines={1}>
+        <Text className="w-24 px-2 py-1.5 text-score-xs font-semibold text-gray-700" numberOfLines={1}>
           {label}
         </Text>
         {Array.from({ length: inningCount }, (_, i) => (
-          <Text key={i} className="w-8 py-1.5 text-center text-xs text-gray-600">
+          <Text key={i} className="w-8 py-1.5 text-center text-score-xs text-gray-600">
             {runsByInning[i] ?? '-'}
           </Text>
         ))}
-        <Text className="w-8 py-1.5 text-center text-xs font-bold text-gray-900">{runs}</Text>
-        <Text className="w-8 py-1.5 text-center text-xs text-gray-600">{hits}</Text>
-        <Text className="w-8 py-1.5 text-center text-xs text-gray-600">{errors}</Text>
+        <Text className="w-8 py-1.5 text-center text-score-xs font-bold text-gray-900">{runs}</Text>
+        <Text className="w-8 py-1.5 text-center text-score-xs text-gray-600">{hits}</Text>
+        <Text className="w-8 py-1.5 text-center text-score-xs text-gray-600">{errors}</Text>
       </View>
     );
 
@@ -1802,7 +1803,7 @@ export default function ScoringScreen() {
         />
         <View className="items-center pt-6 pb-2">
           <View className="px-3 py-1 rounded-full bg-gray-900">
-            <Text className="text-white text-xs font-bold uppercase tracking-wide">Final</Text>
+            <Text className="text-white text-score-xs font-bold uppercase tracking-wide">Final</Text>
           </View>
         </View>
         {/*
@@ -1819,8 +1820,8 @@ export default function ScoringScreen() {
         */}
         {gameState.isFinal && game?.status !== 'completed' && (
           <View className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg">
-            <Text className="text-sm font-semibold text-amber-900">{finalizeStatus.bannerTitle}</Text>
-            <Text className="text-xs text-amber-800 mt-0.5">{finalizeStatus.bannerDetail}</Text>
+            <Text className="text-score-sm font-semibold text-amber-900">{finalizeStatus.bannerTitle}</Text>
+            <Text className="text-score-xs text-amber-800 mt-0.5">{finalizeStatus.bannerDetail}</Text>
           </View>
         )}
         {lineScore && (
@@ -1828,15 +1829,15 @@ export default function ScoringScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <View>
                 <View className="flex-row bg-gray-50 border-b border-gray-200">
-                  <Text className="w-24 px-2 py-1.5 text-xs font-semibold text-gray-400" />
+                  <Text className="w-24 px-2 py-1.5 text-score-xs font-semibold text-gray-400" />
                   {Array.from({ length: inningCount }, (_, i) => (
-                    <Text key={i} className="w-8 py-1.5 text-center text-xs font-semibold text-gray-500">
+                    <Text key={i} className="w-8 py-1.5 text-center text-score-xs font-semibold text-gray-500">
                       {i + 1}
                     </Text>
                   ))}
-                  <Text className="w-8 py-1.5 text-center text-xs font-semibold text-gray-500">R</Text>
-                  <Text className="w-8 py-1.5 text-center text-xs font-semibold text-gray-500">H</Text>
-                  <Text className="w-8 py-1.5 text-center text-xs font-semibold text-gray-500">E</Text>
+                  <Text className="w-8 py-1.5 text-center text-score-xs font-semibold text-gray-500">R</Text>
+                  <Text className="w-8 py-1.5 text-center text-score-xs font-semibold text-gray-500">H</Text>
+                  <Text className="w-8 py-1.5 text-center text-score-xs font-semibold text-gray-500">E</Text>
                 </View>
                 {lineRow(awayLabel, lineScore.awayRunsByInning, lineScore.awayRuns, lineScore.awayHits, lineScore.awayErrors, false)}
                 {lineRow(homeLabel, lineScore.homeRunsByInning, lineScore.homeRuns, lineScore.homeHits, lineScore.homeErrors, true)}
@@ -1844,7 +1845,7 @@ export default function ScoringScreen() {
             </ScrollView>
           </View>
         )}
-        <Text className="text-gray-400 text-xs text-center mt-4 px-6">
+        <Text className="text-gray-400 text-score-xs text-center mt-4 px-6">
           Full box score and player stats are on the web dashboard.
         </Text>
       </View>
@@ -1865,12 +1866,7 @@ export default function ScoringScreen() {
       />
 
       <PaneRow isWide={isWide}>
-      <BookPane
-        isWide={isWide}
-        // Outside the pane's ScrollView: a FlatList nested in a same-orientation
-        // ScrollView is invalid, and RN logs it on every render.
-        footer={gameStarted ? <PlayFeed rows={playFeedRows} onVoid={voidEvent} /> : null}
-      >
+      <BookPane isWide={isWide}>
 
       {/* Book toolbar. These were floating over the pane on absolute
           positioning, which put them on top of the count once this column
@@ -1883,14 +1879,22 @@ export default function ScoringScreen() {
           }
           className="px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200"
         >
-          <Text className="text-xs font-semibold text-gray-700">Full lineup</Text>
+          <Text className="text-score-xs font-semibold text-gray-700">Full lineup</Text>
         </TouchableOpacity>
+        {gameStarted && (
+          <TouchableOpacity
+            onPress={() => setShowPlayFeed(true)}
+            className="px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200"
+          >
+            <Text className="text-score-xs font-semibold text-gray-700">Play-by-Play</Text>
+          </TouchableOpacity>
+        )}
         {leagueSettings.guests.allowed && (
           <TouchableOpacity
             onPress={() => setShowGuestModal(true)}
             className="px-3 py-1.5 rounded-full bg-emerald-100 border border-emerald-200"
           >
-            <Text className="text-xs font-semibold text-emerald-800">+ Guest</Text>
+            <Text className="text-score-xs font-semibold text-emerald-800">+ Guest</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -1899,22 +1903,22 @@ export default function ScoringScreen() {
       {gameEndDecision && !gameState.isFinal && (
         <View className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg flex-row items-center">
           <View className="flex-1">
-            <Text className="text-sm font-semibold text-amber-900">End game?</Text>
-            <Text className="text-xs text-amber-800 mt-0.5">{gameEndDecision.message}</Text>
+            <Text className="text-score-sm font-semibold text-amber-900">End game?</Text>
+            <Text className="text-score-xs text-amber-800 mt-0.5">{gameEndDecision.message}</Text>
           </View>
           <TouchableOpacity
             onPress={confirmEndGame}
             className="ml-2 px-3 py-1.5 rounded-full bg-amber-600"
           >
-            <Text className="text-xs font-semibold text-white">End Game</Text>
+            <Text className="text-score-xs font-semibold text-white">End Game</Text>
           </TouchableOpacity>
         </View>
       )}
       {runCapReached && (
         <View className="mx-4 mt-2 p-3 bg-blue-50 border border-blue-300 rounded-lg flex-row items-center">
           <View className="flex-1">
-            <Text className="text-sm font-semibold text-blue-900">Run cap reached</Text>
-            <Text className="text-xs text-blue-800 mt-0.5">
+            <Text className="text-score-sm font-semibold text-blue-900">Run cap reached</Text>
+            <Text className="text-score-xs text-blue-800 mt-0.5">
               This half-inning ends at the league run cap.
             </Text>
           </View>
@@ -1922,14 +1926,14 @@ export default function ScoringScreen() {
             onPress={confirmInningChange}
             className="ml-2 px-3 py-1.5 rounded-full bg-blue-600"
           >
-            <Text className="text-xs font-semibold text-white">Switch sides</Text>
+            <Text className="text-score-xs font-semibold text-white">Switch sides</Text>
           </TouchableOpacity>
         </View>
       )}
       {ghostRunnerBase && (
         <View className="mx-4 mt-2 p-3 bg-purple-50 border border-purple-300 rounded-lg">
-          <Text className="text-sm font-semibold text-purple-900">Ghost runner</Text>
-          <Text className="text-xs text-purple-800 mt-0.5">
+          <Text className="text-score-sm font-semibold text-purple-900">Ghost runner</Text>
+          <Text className="text-score-xs text-purple-800 mt-0.5">
             Place a runner on {ghostRunnerBase === 1 ? '1st' : ghostRunnerBase === 2 ? '2nd' : '3rd'} via Substitution → Pinch Runner.
           </Text>
         </View>
@@ -1961,15 +1965,15 @@ export default function ScoringScreen() {
             that actually failed while connected — otherwise the scorer
             learns to ignore the one signal that should mean something. */}
         {isSyncing ? (
-          <Text className="text-xs text-blue-500">Syncing…</Text>
+          <Text className="text-score-xs text-blue-500">Syncing…</Text>
         ) : isOffline ? (
-          <Text className="text-xs text-slate-500">
+          <Text className="text-score-xs text-slate-500">
             Offline{pendingEventsCount > 0 ? ` · ${pendingEventsCount} saved` : ' · saved on device'}
           </Text>
         ) : lastSyncError ? (
-          <Text className="text-xs text-red-600">⚠ Sync failed</Text>
+          <Text className="text-score-xs text-red-600">⚠ Sync failed</Text>
         ) : pendingEventsCount > 0 ? (
-          <Text className="text-xs text-amber-600">{pendingEventsCount} unsynced</Text>
+          <Text className="text-score-xs text-amber-600">{pendingEventsCount} unsynced</Text>
         ) : null}
       </View>
 
@@ -1985,7 +1989,7 @@ export default function ScoringScreen() {
           className="mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg flex-row items-center"
           onPress={() => setShowLineupModal(true)}
         >
-          <Text className="flex-1 text-sm text-amber-900">
+          <Text className="flex-1 text-score-sm text-amber-900">
             <Text className="font-semibold">Set starting lineup</Text>
             <Text> — tap to pick your starting pitcher and batting order.</Text>
           </Text>
@@ -2018,6 +2022,13 @@ export default function ScoringScreen() {
         onClose={() => setShowGuestModal(false)}
       />
 
+      <PlayFeedSheet
+        visible={showPlayFeed}
+        onClose={() => setShowPlayFeed(false)}
+        rows={playFeedRows}
+        onVoid={voidEvent}
+      />
+
 
       {/* Next up — on deck while we bat, leading off our next half while the
           opponent does. Named for what it is in each case so the scorer
@@ -2038,7 +2049,7 @@ export default function ScoringScreen() {
                   }
                   className={`px-3 py-1 rounded-full ${weBat ? 'bg-emerald-600' : 'bg-slate-600'}`}
                 >
-                  <Text className="text-xs font-semibold text-white">Change</Text>
+                  <Text className="text-score-xs font-semibold text-white">Change</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity
@@ -2048,7 +2059,7 @@ export default function ScoringScreen() {
                 className={`px-3 py-1 rounded-full ${weBat ? 'bg-emerald-100' : 'bg-slate-200'}`}
               >
                 <Text
-                  className={`text-xs font-semibold ${weBat ? 'text-emerald-800' : 'text-slate-700'}`}
+                  className={`text-score-xs font-semibold ${weBat ? 'text-emerald-800' : 'text-slate-700'}`}
                 >
                   + Batter
                 </Text>
@@ -2062,7 +2073,7 @@ export default function ScoringScreen() {
           this there is no way to enter the first one. */}
       {gameStarted && battingOrderView.length === 0 && (
         <View className="flex-row items-center px-4 py-2 border-t border-gray-100">
-          <Text className="flex-1 text-sm text-gray-500" numberOfLines={1}>
+          <Text className="flex-1 text-score-sm text-gray-500" numberOfLines={1}>
             No {weBat ? 'batting order' : `${opponentName} order`} set
           </Text>
           <TouchableOpacity
@@ -2072,7 +2083,7 @@ export default function ScoringScreen() {
             className={`px-3 py-1 rounded-full ${weBat ? 'bg-emerald-100' : 'bg-slate-200'}`}
           >
             <Text
-              className={`text-xs font-semibold ${weBat ? 'text-emerald-800' : 'text-slate-700'}`}
+              className={`text-score-xs font-semibold ${weBat ? 'text-emerald-800' : 'text-slate-700'}`}
             >
               + Batter
             </Text>
@@ -2082,10 +2093,10 @@ export default function ScoringScreen() {
       {gameStarted && battingOrderView.length === 0 && nextBatter
         && nextBatter.playerId !== currentPlateBatterId && (
         <View className="flex-row items-center px-4 py-2 border-t border-gray-100">
-          <Text className="text-xs text-gray-500 w-20">Up next</Text>
-          <Text className="flex-1 text-sm text-gray-900" numberOfLines={1}>
+          <Text className="text-score-xs text-gray-500 w-20">Up next</Text>
+          <Text className="flex-1 text-score-sm text-gray-900" numberOfLines={1}>
             <Text className="font-semibold">{nextBatterName(nextBatter.playerId)}</Text>
-            <Text className="text-xs text-gray-500">{'  '}slot {nextBatter.battingOrder}</Text>
+            <Text className="text-score-xs text-gray-500">{'  '}slot {nextBatter.battingOrder}</Text>
           </Text>
         </View>
       )}
@@ -2225,8 +2236,8 @@ export default function ScoringScreen() {
           without duplicating the wizard's rules here. */}
       {!gameStarted ? (
         <View className="flex-1 items-center justify-center px-6">
-          <Text className="text-2xl font-bold text-gray-900 mb-1">Lineup required</Text>
-          <Text className="text-sm text-gray-500 text-center mb-5">
+          <Text className="text-score-2xl font-bold text-gray-900 mb-1">Lineup required</Text>
+          <Text className="text-score-sm text-gray-500 text-center mb-5">
             Set your batting order and starting pitcher before scoring. Pitches
             recorded without a lineup can&apos;t be credited to a pitcher.
           </Text>
@@ -2234,13 +2245,13 @@ export default function ScoringScreen() {
             onPress={() => setShowLineupModal(true)}
             className="w-full bg-blue-600 rounded-2xl py-4 items-center"
           >
-            <Text className="text-white text-lg font-bold">Set starting lineup</Text>
+            <Text className="text-white text-score-lg font-bold">Set starting lineup</Text>
           </TouchableOpacity>
         </View>
       ) : gameState.outs >= OUTS_PER_INNING ? (
         <View className="flex-1 items-center justify-center px-6">
-          <Text className="text-2xl font-bold text-gray-900 mb-1">3 outs</Text>
-          <Text className="text-sm text-gray-500 mb-5">
+          <Text className="text-score-2xl font-bold text-gray-900 mb-1">3 outs</Text>
+          <Text className="text-score-sm text-gray-500 mb-5">
             {gameState.isTopOfInning ? 'Top' : 'Bottom'} {gameState.inning} is over.
           </Text>
           {/* When the league rules say the game can end here (regulation
@@ -2252,13 +2263,13 @@ export default function ScoringScreen() {
                 onPress={confirmEndGame}
                 className="w-full bg-amber-600 rounded-2xl py-4 items-center"
               >
-                <Text className="text-white text-lg font-bold">End Game — {lineScore ? `${lineScore.homeRuns}–${lineScore.awayRuns}` : 'Final'}</Text>
+                <Text className="text-white text-score-lg font-bold">End Game — {lineScore ? `${lineScore.homeRuns}–${lineScore.awayRuns}` : 'Final'}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => { handleInningChange().catch(console.warn); }}
                 className="w-full bg-blue-600 rounded-2xl py-3 items-center mt-3"
               >
-                <Text className="text-white text-base font-bold">Start {nextHalfLabel} ▸</Text>
+                <Text className="text-white text-score-base font-bold">Start {nextHalfLabel} ▸</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -2267,31 +2278,31 @@ export default function ScoringScreen() {
                 onPress={() => { handleInningChange().catch(console.warn); }}
                 className="w-full bg-blue-600 rounded-2xl py-4 items-center"
               >
-                <Text className="text-white text-lg font-bold">Start {nextHalfLabel} ▸</Text>
+                <Text className="text-white text-score-lg font-bold">Start {nextHalfLabel} ▸</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={confirmEndGame} className="mt-3 px-4 py-2">
-                <Text className="text-gray-600 text-sm font-semibold">End Game</Text>
+                <Text className="text-gray-600 text-score-sm font-semibold">End Game</Text>
               </TouchableOpacity>
             </>
           )}
           <TouchableOpacity onPress={() => { handleUndo().catch(console.warn); }} className="mt-2 px-4 py-2">
-            <Text className="text-gray-500 text-sm">Undo last event</Text>
+            <Text className="text-gray-500 text-score-sm">Undo last event</Text>
           </TouchableOpacity>
         </View>
       ) : sideNeedsBatter ? (
         <View className="flex-1 items-center justify-center px-6">
-          <Text className="text-2xl font-bold text-gray-900 mb-1">Who&apos;s up?</Text>
-          <Text className="text-sm text-gray-500 mb-5 text-center">
+          <Text className="text-score-2xl font-bold text-gray-900 mb-1">Who&apos;s up?</Text>
+          <Text className="text-score-sm text-gray-500 mb-5 text-center">
             {weBat ? teamName : opponentName} — pick the batter coming up, or add a new one.
           </Text>
           <TouchableOpacity
             onPress={() => (weBat ? setShowAddOurBatter(true) : setShowAddOpponentBatter(true))}
             className="w-full bg-slate-800 rounded-2xl py-4 items-center"
           >
-            <Text className="text-white text-lg font-bold">Choose batter</Text>
+            <Text className="text-white text-score-lg font-bold">Choose batter</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => { handleUndo().catch(console.warn); }} className="mt-2 px-4 py-2">
-            <Text className="text-gray-500 text-sm">Undo last event</Text>
+            <Text className="text-gray-500 text-score-sm">Undo last event</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -2348,7 +2359,7 @@ export default function ScoringScreen() {
             onPress={confirmInningChange}
             className="px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200"
           >
-            <Text className="text-xs font-semibold text-gray-700">End Inning ▸</Text>
+            <Text className="text-score-xs font-semibold text-gray-700">End Inning ▸</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={confirmEndGame}
@@ -2356,7 +2367,7 @@ export default function ScoringScreen() {
               gameEndDecision ? 'bg-amber-100 border-amber-300' : 'bg-gray-100 border-gray-200'
             }`}
           >
-            <Text className={`text-xs font-semibold ${gameEndDecision ? 'text-amber-800' : 'text-gray-700'}`}>
+            <Text className={`text-score-xs font-semibold ${gameEndDecision ? 'text-amber-800' : 'text-gray-700'}`}>
               End Game
             </Text>
           </TouchableOpacity>
@@ -2393,20 +2404,11 @@ function PaneRow({ isWide, children }: { isWide: boolean; children: ReactNode })
  * set directly on a ScrollView is not honoured — it collapses towards its
  * content — which is why earlier splits only ever worked at 1:1.
  */
-function BookPane({
-  isWide,
-  children,
-  footer,
-}: {
-  isWide: boolean;
-  children: ReactNode;
-  footer?: ReactNode;
-}) {
-  if (!isWide) return <>{children}{footer}</>;
+function BookPane({ isWide, children }: { isWide: boolean; children: ReactNode }) {
+  if (!isWide) return <>{children}</>;
   return (
     <View className="border-r border-gray-200 bg-white" style={{ flex: 5 }}>
       <ScrollView style={{ flex: 1 }}>{children}</ScrollView>
-      {footer}
     </View>
   );
 }
@@ -2438,19 +2440,19 @@ function CountGroup({
   const pct = pitches > 0 ? Math.round((strikes / pitches) * 100) : null;
   return (
     <View className="flex-1">
-      <Text className="text-[11px] text-gray-500" numberOfLines={1}>
+      <Text className="text-score-11px text-gray-500" numberOfLines={1}>
         {label}
       </Text>
       <View className="flex-row items-baseline gap-1.5 mt-0.5">
-        <Text className={emphasis ? 'text-2xl font-bold text-gray-900' : 'text-lg font-semibold text-gray-700'}>
+        <Text className={emphasis ? 'text-score-2xl font-bold text-gray-900' : 'text-score-lg font-semibold text-gray-700'}>
           {pitches}
         </Text>
-        <Text className="text-[11px] text-gray-500">P</Text>
-        <Text className={emphasis ? 'text-lg font-semibold text-gray-700' : 'text-base font-semibold text-gray-600'}>
+        <Text className="text-score-11px text-gray-500">P</Text>
+        <Text className={emphasis ? 'text-score-lg font-semibold text-gray-700' : 'text-score-base font-semibold text-gray-600'}>
           {strikes}
         </Text>
-        <Text className="text-[11px] text-gray-500">S</Text>
-        <Text className="text-[11px] text-gray-400">{pct === null ? '—' : `${pct}%`}</Text>
+        <Text className="text-score-11px text-gray-500">S</Text>
+        <Text className="text-score-11px text-gray-400">{pct === null ? '—' : `${pct}%`}</Text>
       </View>
     </View>
   );
@@ -2490,7 +2492,7 @@ function PitchCountStrip({
           }`}
         >
           <Text
-            className={`text-xs font-semibold ${
+            className={`text-score-xs font-semibold ${
               status.isOverLimit ? 'text-white' : status.isAtLimit ? 'text-red-700' : 'text-amber-700'
             }`}
           >
@@ -2531,8 +2533,8 @@ function BatterPickerModal({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <View className="flex-1 justify-end bg-black/50">
         <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '75%' }}>
-          <Text className="text-lg font-bold text-gray-900 mb-1">Now Batting</Text>
-          <Text className="text-sm text-gray-500 mb-4">
+          <Text className="text-score-lg font-bold text-gray-900 mb-1">Now Batting</Text>
+          <Text className="text-score-sm text-gray-500 mb-4">
             Pick who is at the plate. The rotation resumes from this batter
             after the plate appearance completes.
           </Text>
@@ -2556,7 +2558,7 @@ function BatterPickerModal({
                       {batterName(slot.playerId)}
                     </Text>
                     {isDue && (
-                      <Text className={`text-xs font-semibold ${isSelected ? 'text-emerald-100' : 'text-emerald-700'}`}>
+                      <Text className={`text-score-xs font-semibold ${isSelected ? 'text-emerald-100' : 'text-emerald-700'}`}>
                         due up
                       </Text>
                     )}
@@ -2596,7 +2598,7 @@ function RunnerAction({
 }) {
   return (
     <TouchableOpacity className={`px-2.5 py-1.5 rounded-lg border ${tone}`} onPress={onPress}>
-      <Text className="text-[11px] font-semibold">{label}</Text>
+      <Text className="text-score-11px font-semibold">{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -2632,14 +2634,14 @@ function RunnersPanel({
   if (runners.length === 0) return null;
   return (
     <View className="px-4 py-2 border-b border-gray-200 bg-white">
-      <Text className="text-[11px] font-semibold text-gray-500 mb-1.5">ON BASE</Text>
+      <Text className="text-score-11px font-semibold text-gray-500 mb-1.5">ON BASE</Text>
       <View className="gap-1.5">
         {runners.map((r) => (
           <View key={`${r.base}-${r.runnerId}`} className="flex-row items-center gap-1.5">
             <View className="w-8 py-1 rounded-md bg-amber-100 items-center">
-              <Text className="text-[11px] font-bold text-amber-800">{BASE_ABBREV[r.base]}</Text>
+              <Text className="text-score-11px font-bold text-amber-800">{BASE_ABBREV[r.base]}</Text>
             </View>
-            <Text className="flex-1 text-[13px] text-gray-900" numberOfLines={1}>
+            <Text className="flex-1 text-score-13px text-gray-900" numberOfLines={1}>
               {r.name}
             </Text>
             <RunnerAction
@@ -2734,16 +2736,16 @@ function CaughtStealingModal({
     <Modal visible transparent animationType="slide" onRequestClose={onCancel}>
       <View className="flex-1 justify-end bg-black/50">
         <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '90%' }}>
-          <Text className="text-lg font-bold text-gray-900 mb-1">
+          <Text className="text-score-lg font-bold text-gray-900 mb-1">
             Caught stealing {STOLEN_BASE_LABEL[runner.base]}
           </Text>
-          <Text className="text-sm text-gray-500 mb-4">
+          <Text className="text-score-sm text-gray-500 mb-4">
             {runner.name} — who made the play?
           </Text>
 
           <View className="flex-row items-center mb-4">
-            <Text className="text-xs text-gray-500 w-16">Sequence</Text>
-            <Text className="flex-1 text-2xl font-bold text-gray-900">
+            <Text className="text-score-xs text-gray-500 w-16">Sequence</Text>
+            <Text className="flex-1 text-score-2xl font-bold text-gray-900">
               {sequence.length > 0 ? formatFieldingSequence(sequence) : '—'}
             </Text>
             {sequence.length > 0 && (
@@ -2751,13 +2753,13 @@ function CaughtStealingModal({
                 onPress={() => setSequence((prev) => prev.slice(0, -1))}
                 className="px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200"
               >
-                <Text className="text-xs font-semibold text-gray-700">Undo</Text>
+                <Text className="text-score-xs font-semibold text-gray-700">Undo</Text>
               </TouchableOpacity>
             )}
           </View>
 
           <ScrollView style={{ maxHeight: 400 }}>
-            <Text className="text-[11px] font-semibold text-gray-500 mb-2">COMMON</Text>
+            <Text className="text-score-11px font-semibold text-gray-500 mb-2">COMMON</Text>
             <View className="flex-row gap-2 mb-5">
               {presets.map((preset) => (
                 <TouchableOpacity
@@ -2765,15 +2767,15 @@ function CaughtStealingModal({
                   onPress={() => setSequence(preset.seq)}
                   className="px-4 py-2.5 rounded-xl bg-white border border-sky-300"
                 >
-                  <Text className="text-base font-bold text-sky-900">
+                  <Text className="text-score-base font-bold text-sky-900">
                     {formatFieldingSequence(preset.seq)}
                   </Text>
-                  <Text className="text-[11px] text-gray-500">{preset.hint}</Text>
+                  <Text className="text-score-11px text-gray-500">{preset.hint}</Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            <Text className="text-[11px] font-semibold text-gray-500 mb-2">
+            <Text className="text-score-11px font-semibold text-gray-500 mb-2">
               OR TAP FIELDERS IN ORDER
             </Text>
             <View className="flex-row flex-wrap gap-2">
@@ -2784,8 +2786,8 @@ function CaughtStealingModal({
                   className="rounded-xl bg-white border border-gray-300 px-3 py-2.5 items-center"
                   style={{ width: 84 }}
                 >
-                  <Text className="text-base font-bold text-gray-900">{pos.number}</Text>
-                  <Text className="text-[11px] text-gray-500">{pos.abbr}</Text>
+                  <Text className="text-score-base font-bold text-gray-900">{pos.number}</Text>
+                  <Text className="text-score-11px text-gray-500">{pos.abbr}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -2795,7 +2797,7 @@ function CaughtStealingModal({
             onPress={() => onRecord(sequence)}
             className="mt-5 rounded-xl py-4 items-center bg-rose-600"
           >
-            <Text className="text-white font-bold text-base">
+            <Text className="text-white font-bold text-score-base">
               Record out{sequence.length > 0 ? ` — ${formatFieldingSequence(sequence)}` : ''}
             </Text>
           </TouchableOpacity>
@@ -2831,10 +2833,10 @@ function PickoffOutcomeModal({
     <Modal visible={!!runner} transparent animationType="slide" onRequestClose={onCancel}>
       <View className="flex-1 justify-end bg-black/50">
         <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
-          <Text className="text-lg font-bold text-gray-900 mb-1">
+          <Text className="text-score-lg font-bold text-gray-900 mb-1">
             Pickoff at {runner ? BASE_ABBREV[runner.base] : ''}
           </Text>
-          <Text className="text-sm text-gray-500 mb-4">
+          <Text className="text-score-sm text-gray-500 mb-4">
             {runner ? runner.name : ''} — how did the throw end?
           </Text>
           <View className="gap-3">
@@ -2888,8 +2890,8 @@ function PickoffChoice({
 }) {
   return (
     <TouchableOpacity className={`rounded-xl border px-5 py-4 ${tone}`} onPress={onPress}>
-      <Text className={`font-semibold text-base ${textTone}`}>{label}</Text>
-      <Text className="text-gray-500 text-xs mt-0.5">{sub}</Text>
+      <Text className={`font-semibold text-score-base ${textTone}`}>{label}</Text>
+      <Text className="text-gray-500 text-score-xs mt-0.5">{sub}</Text>
     </TouchableOpacity>
   );
 }
@@ -2953,7 +2955,7 @@ function BattingOrderCard({
     <View className="px-4 pt-2 pb-1 border-t border-gray-100">
       <View className="flex-row items-center mb-1">
         <Text
-          className="flex-1 text-[11px] font-semibold text-gray-500"
+          className="flex-1 text-score-11px font-semibold text-gray-500"
           numberOfLines={1}
         >
           {title}
@@ -2975,12 +2977,12 @@ function BattingOrderCard({
               }`}
             >
               <Text
-                className={`w-6 text-xs font-bold ${isAtBat ? slotText : 'text-gray-400'}`}
+                className={`w-6 text-score-xs font-bold ${isAtBat ? slotText : 'text-gray-400'}`}
               >
                 {row.battingOrder}
               </Text>
               <Text
-                className={`flex-1 text-[13px] ${
+                className={`flex-1 text-score-13px ${
                   isAtBat ? `font-bold ${atBatText}` : 'text-gray-800'
                 }`}
                 numberOfLines={1}
@@ -2988,11 +2990,11 @@ function BattingOrderCard({
                 {row.name}
               </Text>
               {row.position && (
-                <Text className="w-7 text-[11px] text-gray-400 text-right">
+                <Text className="w-7 text-score-11px text-gray-400 text-right">
                   {POSITION_ABBREV[row.position] ?? ''}
                 </Text>
               )}
-              <Text className={`w-16 text-[10px] font-semibold text-right ${slotText}`}>
+              <Text className={`w-16 text-score-10px font-semibold text-right ${slotText}`}>
                 {isAtBat ? 'AT BAT' : isOnDeck ? 'on deck' : ''}
               </Text>
             </View>
@@ -3027,8 +3029,8 @@ function OpponentBatterPickerModal({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <View className="flex-1 justify-end bg-black/50">
         <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '75%' }}>
-          <Text className="text-lg font-bold text-gray-900 mb-1">Opponent at the plate</Text>
-          <Text className="text-sm text-gray-500 mb-4">
+          <Text className="text-score-lg font-bold text-gray-900 mb-1">Opponent at the plate</Text>
+          <Text className="text-score-sm text-gray-500 mb-4">
             Pick who is batting. The rotation resumes from this batter after
             the plate appearance completes.
           </Text>
@@ -3052,7 +3054,7 @@ function OpponentBatterPickerModal({
                       {slot.name}
                     </Text>
                     {isDue && (
-                      <Text className={`text-xs font-semibold ${isSelected ? 'text-slate-100' : 'text-slate-600'}`}>
+                      <Text className={`text-score-xs font-semibold ${isSelected ? 'text-slate-100' : 'text-slate-600'}`}>
                         due up
                       </Text>
                     )}
@@ -3143,54 +3145,54 @@ function AddBatterModal({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <View className="flex-1 justify-end bg-black/50">
         <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '85%' }}>
-          <Text className="text-lg font-bold text-gray-900 mb-1">{title}</Text>
-          <Text className="text-sm text-gray-500 mb-4">
+          <Text className="text-score-lg font-bold text-gray-900 mb-1">{title}</Text>
+          <Text className="text-score-sm text-gray-500 mb-4">
             Goes to the end of their order. Saves on the device — it reaches
             the server whenever you have signal.
           </Text>
 
           {error && (
             <View className="mb-3 px-3 py-2 rounded-lg bg-red-50 border border-red-200">
-              <Text className="text-sm text-red-700">{error}</Text>
+              <Text className="text-score-sm text-red-700">{error}</Text>
             </View>
           )}
 
           <ScrollView className="max-h-96">
             {topOfOrder && (
               <>
-                <Text className="text-xs font-semibold text-gray-500 mb-2">BACK TO THE TOP</Text>
+                <Text className="text-score-xs font-semibold text-gray-500 mb-2">BACK TO THE TOP</Text>
                 <TouchableOpacity
                   disabled={busy}
                   onPress={topOfOrder.onPick}
                   className="rounded-xl px-4 py-3 mb-6 bg-sky-50 border border-sky-300"
                 >
-                  <Text className="text-sky-900 font-semibold text-base">{topOfOrder.name}</Text>
-                  <Text className="text-xs text-sky-700">Leads off the order again</Text>
+                  <Text className="text-sky-900 font-semibold text-score-base">{topOfOrder.name}</Text>
+                  <Text className="text-score-xs text-sky-700">Leads off the order again</Text>
                 </TouchableOpacity>
               </>
             )}
-            <Text className="text-xs font-semibold text-gray-500 mb-2">NEW BATTER</Text>
+            <Text className="text-score-xs font-semibold text-gray-500 mb-2">NEW BATTER</Text>
             <View className="flex-row gap-2">
               <TextInput
                 value={jersey}
                 onChangeText={setJersey}
                 placeholder="##"
                 keyboardType="number-pad"
-                className="w-16 rounded-xl border border-gray-300 px-3 py-3 text-base text-gray-900"
+                className="w-16 rounded-xl border border-gray-300 px-3 py-3 text-score-base text-gray-900"
               />
               <TextInput
                 value={firstName}
                 onChangeText={setFirstName}
                 placeholder="First"
                 autoCapitalize="words"
-                className="flex-1 rounded-xl border border-gray-300 px-3 py-3 text-base text-gray-900"
+                className="flex-1 rounded-xl border border-gray-300 px-3 py-3 text-score-base text-gray-900"
               />
               <TextInput
                 value={lastName}
                 onChangeText={setLastName}
                 placeholder="Last"
                 autoCapitalize="words"
-                className="flex-1 rounded-xl border border-gray-300 px-3 py-3 text-base text-gray-900"
+                className="flex-1 rounded-xl border border-gray-300 px-3 py-3 text-score-base text-gray-900"
               />
             </View>
             <TouchableOpacity
@@ -3200,13 +3202,13 @@ function AddBatterModal({
             >
               <Text className="text-white font-semibold">Add to order</Text>
             </TouchableOpacity>
-            <Text className="text-xs text-gray-400 mt-2">
+            <Text className="text-score-xs text-gray-400 mt-2">
               A jersey number on its own is enough — you can add the name later.
             </Text>
 
             {roster.length > 0 && (
               <>
-                <Text className="text-xs font-semibold text-gray-500 mt-6 mb-2">
+                <Text className="text-score-xs font-semibold text-gray-500 mt-6 mb-2">
                   {rosterLabel}
                 </Text>
                 <View className="gap-2">
@@ -3217,7 +3219,7 @@ function AddBatterModal({
                       className="rounded-xl px-4 py-3 bg-white border border-slate-300"
                       onPress={() => run({ kind: 'roster', opponentPlayerId: p.id })}
                     >
-                      <Text className="text-slate-800 font-semibold text-base">{p.name}</Text>
+                      <Text className="text-slate-800 font-semibold text-score-base">{p.name}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -3263,11 +3265,11 @@ function TrackingToggle({
           value ? 'bg-emerald-600 border-emerald-700' : 'bg-white border-gray-400'
         }`}
       >
-        {value ? <Text className="text-white text-xs font-bold">✓</Text> : null}
+        {value ? <Text className="text-white text-score-xs font-bold">✓</Text> : null}
       </View>
       <View className="flex-1">
         <Text className="text-gray-900 font-semibold">{label}</Text>
-        <Text className="text-gray-500 text-xs mt-0.5">{hint}</Text>
+        <Text className="text-gray-500 text-score-xs mt-0.5">{hint}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -3352,10 +3354,10 @@ function LineupSetupModal({
         <View className="bg-white rounded-t-2xl" style={{ maxHeight: '85%' }}>
           {/* Header — fixed height */}
           <View className="px-5 pt-5 pb-3">
-            <Text className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+            <Text className="text-score-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
               Step {stepNumber} of 3
             </Text>
-            <Text className="text-xl font-bold text-gray-900">
+            <Text className="text-score-xl font-bold text-gray-900">
               {onPitcherStep
                 ? "Who's pitching?"
                 : onBatterStep
@@ -3363,13 +3365,13 @@ function LineupSetupModal({
                   : 'What do you want to track?'}
             </Text>
             {onBatterStep ? (
-              <Text className="text-sm text-gray-500 mt-1">
+              <Text className="text-score-sm text-gray-500 mt-1">
                 Tap a name to add them to the order, tap again to remove. Up
                 to {maxBatters}; slot 1 leads off.
               </Text>
             ) : null}
             {!onPitcherStep && pitcher ? (
-              <Text className="text-sm text-gray-500 mt-1">
+              <Text className="text-score-sm text-gray-500 mt-1">
                 Pitcher: {label(pitcher)}
               </Text>
             ) : null}
@@ -3380,7 +3382,7 @@ function LineupSetupModal({
               past the sheet's maxHeight and pushes the footer off-screen. */}
           {onTrackingStep ? (
             <ScrollView className="px-5" style={{ flexShrink: 1 }}>
-              <Text className="text-sm text-gray-500 mb-4">
+              <Text className="text-score-sm text-gray-500 mb-4">
                 Anything you turn off is hidden while scoring, so the buttons
                 stay out of your way. You can still record the game without it.
               </Text>
@@ -3406,7 +3408,7 @@ function LineupSetupModal({
               </View>
             </ScrollView>
           ) : roster.length === 0 ? (
-            <Text className="text-gray-500 text-sm px-5 py-4">
+            <Text className="text-gray-500 text-score-sm px-5 py-4">
               No players loaded. Sync the roster first.
             </Text>
           ) : (
@@ -3473,7 +3475,7 @@ function LineupSetupModal({
                       </Text>
                       {isSelected ? (
                         <View className="w-6 h-6 rounded-full bg-white items-center justify-center">
-                          <Text className="text-green-700 font-bold text-xs">{slotIndex + 1}</Text>
+                          <Text className="text-green-700 font-bold text-score-xs">{slotIndex + 1}</Text>
                         </View>
                       ) : null}
                     </TouchableOpacity>

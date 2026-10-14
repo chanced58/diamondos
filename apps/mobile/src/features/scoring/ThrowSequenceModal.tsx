@@ -67,11 +67,11 @@ export function ThrowSequenceModal({
     >
       <View className="flex-1 justify-end bg-black/50">
         <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
-          <Text className="text-lg font-bold text-gray-900 mb-1">{title}</Text>
-          <Text className="text-sm text-gray-500 mb-3">{subtitle}</Text>
+          <Text className="text-score-lg font-bold text-gray-900 mb-1">{title}</Text>
+          <Text className="text-score-sm text-gray-500 mb-3">{subtitle}</Text>
           <Text
             testID="throw-sequence-readout"
-            className={`text-2xl font-bold mb-4 ${isUnconfirmedGuess ? 'text-slate-400' : 'text-slate-900'}`}
+            className={`text-score-2xl font-bold mb-4 ${isUnconfirmedGuess ? 'text-slate-400' : 'text-slate-900'}`}
           >
             {sequence.join(' → ')}
           </Text>

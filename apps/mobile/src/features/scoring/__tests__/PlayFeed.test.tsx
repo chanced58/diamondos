@@ -1,6 +1,6 @@
 import { Alert } from 'react-native';
 import { render, fireEvent, screen } from '@testing-library/react-native';
-import { PlayFeed, toFeedItems, PLAY_FEED_COLLAPSED_HEIGHT, PLAY_FEED_EXPANDED_HEIGHT } from '../PlayFeed';
+import { PlayFeed, PlayFeedSheet, toFeedItems } from '../PlayFeed';
 import type { PlayFeedRow } from '../use-play-feed';
 
 /**
@@ -237,28 +237,31 @@ describe('PlayFeed grouping and key uniqueness', () => {
   });
 });
 
-describe('PlayFeed size', () => {
-  /** The feed's current rendered height. */
-  function feedHeight() {
-    const style = screen.getByTestId('play-feed').props.style as { height: number };
-    return style.height;
-  }
-
-  it('should start as a small band so the bases and batter stay in view', () => {
-    render(<PlayFeed rows={[actionableRow()]} />);
-    expect(feedHeight()).toBe(PLAY_FEED_COLLAPSED_HEIGHT);
-    expect(screen.getByText('Expand')).toBeTruthy();
+describe('PlayFeedSheet', () => {
+  it('should render the feed under a Play-by-Play title when open', () => {
+    render(<PlayFeedSheet visible onClose={jest.fn()} rows={[actionableRow()]} />);
+    expect(screen.getByText('Play-by-Play')).toBeTruthy();
+    expect(screen.getByTestId('play-feed')).toBeTruthy();
   });
 
-  it('should expand and collapse from its header', () => {
-    render(<PlayFeed rows={[actionableRow()]} />);
-    fireEvent.press(screen.getByText('Expand'));
-    expect(feedHeight()).toBe(PLAY_FEED_EXPANDED_HEIGHT);
-    fireEvent.press(screen.getByText('Collapse'));
-    expect(feedHeight()).toBe(PLAY_FEED_COLLAPSED_HEIGHT);
+  it('should call onClose when Done is pressed', () => {
+    const onClose = jest.fn();
+    render(<PlayFeedSheet visible onClose={onClose} rows={[actionableRow()]} />);
+    fireEvent.press(screen.getByText('Done'));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('should be much smaller collapsed than expanded', () => {
-    expect(PLAY_FEED_COLLAPSED_HEIGHT * 2).toBeLessThan(PLAY_FEED_EXPANDED_HEIGHT);
+  it('should only show the void hint when plays can be voided', () => {
+    const { rerender } = render(
+      <PlayFeedSheet visible onClose={jest.fn()} rows={[actionableRow()]} onVoid={jest.fn()} />,
+    );
+    expect(screen.getByText('Long-press a play to void it.')).toBeTruthy();
+    rerender(<PlayFeedSheet visible onClose={jest.fn()} rows={[actionableRow()]} />);
+    expect(screen.queryByText('Long-press a play to void it.')).toBeNull();
+  });
+
+  it('should show an empty state before any plays are recorded', () => {
+    render(<PlayFeedSheet visible onClose={jest.fn()} rows={[]} />);
+    expect(screen.getByText('No plays recorded yet.')).toBeTruthy();
   });
 });

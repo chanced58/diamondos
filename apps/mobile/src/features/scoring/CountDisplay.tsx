@@ -34,7 +34,7 @@ function CountItem({
 
   return (
     <View className="items-center">
-      <Text className="text-gray-500 text-xs font-medium mb-1">{label}</Text>
+      <Text className="text-gray-500 text-score-xs font-medium mb-1">{label}</Text>
       <View className="flex-row gap-1">
         {Array.from({ length: total }).map((_, i) => (
           <View
