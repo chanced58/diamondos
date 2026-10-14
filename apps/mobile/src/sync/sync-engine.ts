@@ -1267,17 +1267,12 @@ export async function syncWithSupabase(): Promise<void> {
         }
       }
 
-      if (deferredErrors.length > 0) {
-        throw new Error(`sync: deferred push failures — ${deferredErrors.join('; ')}`);
-      }
-
-      // 5. Push locally-created messages. Last and after the deferred throw:
-      // this insert is not idempotent, so it must only run in a cycle that
-      // will be marked complete (otherwise retries would duplicate messages).
+      // 5. Messages use stable IDs and duplicate-ignore inserts, so rejected
+      // tournament queues cannot block delivery or duplicate messages on retry.
       const createdMessages = tableChanges.messages?.created ?? [];
       if (createdMessages.length > 0) {
         const { data: { user } } = await supabase.auth.getUser();
-        const { error } = await supabase.from('messages').insert(
+        const { error } = await supabase.from('messages').upsert(
           createdMessages.map((m) => ({
             id: m.remote_id as string,
             channel_id: m.channel_remote_id as string,
@@ -1285,8 +1280,12 @@ export async function syncWithSupabase(): Promise<void> {
             body: m.body as string,
             parent_id: m.parent_id as string | undefined,
           })),
+          { onConflict: 'id', ignoreDuplicates: true },
         );
         if (error) throw error;
+      }
+      if (deferredErrors.length > 0) {
+        throw new Error(`sync: deferred push failures — ${deferredErrors.join('; ')}`);
       }
     },
 

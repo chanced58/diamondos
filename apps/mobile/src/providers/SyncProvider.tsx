@@ -17,6 +17,7 @@ interface SyncContextValue {
   isOffline: boolean;
   pendingEventsCount: number;
   tournamentRejections: TournamentSyncRejection[];
+  tournamentRejectionsLoaded: boolean;
   triggerSync: () => Promise<void>;
 }
 
@@ -27,6 +28,7 @@ const SyncContext = createContext<SyncContextValue>({
   isOffline: false,
   pendingEventsCount: 0,
   tournamentRejections: [],
+  tournamentRejectionsLoaded: false,
   triggerSync: async () => {},
 });
 
@@ -69,6 +71,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [isOffline, setIsOffline] = useState(false);
   const [pendingEventsCount, setPendingEventsCount] = useState(0);
   const [tournamentRejections, setTournamentRejections] = useState<TournamentSyncRejection[]>([]);
+  const [tournamentRejectionsLoaded, setTournamentRejectionsLoaded] = useState(false);
   const wasOfflineRef = useRef(false);
   const syncLockRef = useRef(false);
 
@@ -113,6 +116,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     } finally {
       try {
         setTournamentRejections(await getTournamentSyncRejections());
+        setTournamentRejectionsLoaded(true);
       } catch (error) {
         console.warn('Could not load tournament sync rejections:', error);
       }
@@ -120,6 +124,20 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       syncLockRef.current = false;
     }
   };
+
+  // Restore rejection guards even when network-gated bootstrap sync cannot run.
+  useEffect(() => {
+    let mounted = true;
+    getTournamentSyncRejections().then((rejections) => {
+      if (!mounted) return;
+      setTournamentRejections(rejections);
+      setTournamentRejectionsLoaded(true);
+    }).catch((error) => {
+      console.warn('Could not restore tournament sync rejections:', error);
+      if (mounted) setLastSyncError(error instanceof Error ? error : new Error(String(error)));
+    });
+    return () => { mounted = false; };
+  }, []);
 
   // Observe count of locally-created events not yet acked by Supabase.
   // A non-zero count means either a sync is pending or sync has failed —
@@ -224,7 +242,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SyncContext.Provider
-      value={{ isSyncing, lastSyncedAt, lastSyncError, isOffline, pendingEventsCount, tournamentRejections, triggerSync }}
+      value={{ isSyncing, lastSyncedAt, lastSyncError, isOffline, pendingEventsCount, tournamentRejections, tournamentRejectionsLoaded, triggerSync }}
     >
       {children}
     </SyncContext.Provider>

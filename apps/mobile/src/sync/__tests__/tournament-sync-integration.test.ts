@@ -24,6 +24,7 @@ jest.mock('@nozbe/watermelondb/sync', () => ({ synchronize: async (options: { pu
 jest.mock('../../lib/supabase', () => ({ getSupabaseClient: () => ({
   rpc: (...args: unknown[]) => mockRpc(...args),
   from: () => ({ upsert: (...args: unknown[]) => mockUpsert(...args) }),
+  auth: { getUser: async () => ({ data: { user: { id: 'coach' } } }) },
 }) }));
 
 function row(id: string, game = 'one', type = 'substitution', sequence = 2) {
@@ -69,4 +70,17 @@ it('uses the atomic cancellation RPC and clears the rejection after the correcte
   expect(mockSent).toEqual(['later']);
   expect(await getTournamentSyncRejections()).toEqual([]);
   expect(JSON.parse(change.payload).substitutionType).toBe('lineup_extension');
+});
+
+it('delivers a queued message idempotently despite a permanently rejected tournament event', async () => {
+  mockChanges.game_events = { created: [row('bad')] };
+  mockChanges.messages = { created: [{ remote_id: 'message', channel_remote_id: 'channel', body: 'Practice update' }] };
+  mockUpsert.mockImplementation(async (rows) => {
+    if (rows[0].id === 'bad') return { error: { code: '23514', message: 'Tournament cap reached' } };
+    mockSent.push(rows[0].id); return { error: null };
+  });
+  await expect(syncWithSupabase()).rejects.toThrow('Tournament cap reached');
+  await expect(syncWithSupabase()).rejects.toThrow('Tournament cap reached');
+  expect(mockSent).toEqual(['message', 'message']);
+  expect(mockUpsert).toHaveBeenCalledWith([expect.objectContaining({ id: 'message', sender_id: 'coach' })], { onConflict: 'id', ignoreDuplicates: true });
 });

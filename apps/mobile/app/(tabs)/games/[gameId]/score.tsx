@@ -41,6 +41,7 @@ import { useSyncContext } from '../../../../src/providers/SyncProvider';
 import { isFinalizeConfigured, getFinalizeFailureCount } from '../../../../src/sync/sync-engine';
 import { describeFinalizeStatus } from '../../../../src/sync/finalize-status';
 import { addLineupRow, createLocalGuest, prepareLineupRow } from '../../../../src/features/lineup/local-guest';
+import { withLineupChangeLock } from '../../../../src/features/lineup/lineup-change-lock';
 import { useGameLineups } from '../../../../src/features/lineup/use-game-lineups';
 import { useOpponentLineup, type OpponentBatter } from '../../../../src/features/lineup/use-opponent-lineup';
 import {
@@ -83,7 +84,7 @@ export default function ScoringScreen() {
 
   const { gameState, lineScore, events, rawEvents, loading } = useGameState(gameId, teamId);
   const { recordEvent } = useRecordEvent(gameId);
-  const { isSyncing, lastSyncError, isOffline, pendingEventsCount, tournamentRejections = [], triggerSync } = useSyncContext();
+  const { isSyncing, lastSyncError, isOffline, pendingEventsCount, tournamentRejections = [], tournamentRejectionsLoaded, triggerSync } = useSyncContext();
   const rejectedChange = tournamentRejections.find((rejection) => rejection.gameId === gameId);
   // Recomputed on every render, which — via `isSyncing` above, which flips
   // true→false on every ~30s sync cycle — includes right after each cycle
@@ -252,6 +253,9 @@ export default function ScoringScreen() {
   );
   const dueBatter = ourResolution.kind === 'due' ? ourResolution : null;
   const betweenPlateAppearances = isBetweenPlateAppearances(events);
+  const cancelledLineupEventIds = new Set(rawEvents.filter((event) => event.eventType === EventType.EVENT_VOIDED &&
+    (event.payload as { cancelledBeforeSync?: boolean }).cancelledBeforeSync).map((event) =>
+    (event.payload as { voidedEventId: string }).voidedEventId));
   const maxRecordedOrder = Math.max(
     0,
     ...baseBattingSlots.map((slot) => slot.battingOrder),
@@ -275,7 +279,7 @@ export default function ScoringScreen() {
     gameScoringSettings.isTournament === true &&
     (!lineupLoaded || (isOffline && observedLineupRows.length === 0));
   const scoringRulesBlocked =
-    gameScoringSettings.status !== 'ready' || tournamentLineupMissing || !!rejectedChange;
+    gameScoringSettings.status !== 'ready' || !tournamentRejectionsLoaded || tournamentLineupMissing || !!rejectedChange;
 
   // Per-PA manual override — the scorer can point the rotation at a
   // different batter (lineup drifted, skipped batter). Cleared when the PA
@@ -368,7 +372,7 @@ export default function ScoringScreen() {
       if (!betweenPlateAppearances) return 'Finish the current plate appearance before changing the lineup.';
       const maxPosition = Math.max(0, ...opponentSlots.map((slot) => slot.battingOrder), ...rawEvents.flatMap((event) => {
         const payload = event.payload as Partial<SubstitutionPayload>;
-        return event.eventType === EventType.SUBSTITUTION && payload.isOpponentSubstitution
+        return !cancelledLineupEventIds.has(event.id) && event.eventType === EventType.SUBSTITUTION && payload.isOpponentSubstitution
           && payload.substitutionType === SubstitutionType.LINEUP_EXTENSION ? [payload.battingOrderPosition ?? 0] : [];
       }));
       const reason = lineupExtensionError({ activeCount: activeOpponentOrder.slots.length, maxBatters, maxRecordedPosition: maxPosition });
@@ -1486,108 +1490,109 @@ export default function ScoringScreen() {
       return `The order is full at ${maxBatters} batters.`;
     }
     if (maxRecordedOrder >= 30) return 'The order cannot exceed 30 batting slots.';
-    // Don't add anyone until the lineup observation has fired — computing
-    // currentMax=0 against an unloaded lineup would collide with the real
-    // slot-1 occupant.
-    // Build the set of player ids already in the BATTING ORDER (bench rows
-    // with a null order — e.g. a non-batting pitcher under DH rules — stay
-    // addable), including pending in-game LINEUP_EXTENSION events that
-    // haven't been reflected in the local rows yet (defense-in-depth against
-    // picker filter bypass / two rapid taps).
-    const activePlayerIds = new Set(
-      lineupRows.filter((row) => row.batting_order != null).map((row) => row.player_id),
-    );
-
-    // Compute current max from both the DB snapshot AND any in-game
-    // SUBSTITUTION events that already extended the lineup but haven't yet
-    // been reflected in lineupRows.
-    let currentMax = lineupRows.reduce(
-      (max, l) => (l.batting_order ?? 0) > max ? (l.batting_order ?? 0) : max,
-      0,
-    );
-    const eventsCollection = database.get<WdbGameEvent>('game_events');
-    const recent = await eventsCollection
-      .query(Q.where('game_remote_id', gameId), Q.sortBy('sequence_number', Q.asc))
-      .fetch();
-    for (const evt of recent) {
-      if (evt.eventType !== EventType.SUBSTITUTION) continue;
-      const p = evt.payload as Partial<SubstitutionPayload> | undefined;
-      if (!p) continue;
-      if (p.substitutionType === SubstitutionType.LINEUP_EXTENSION && p.inPlayerId) {
-        activePlayerIds.add(p.inPlayerId);
-      }
-      if (!p.outPlayerId && typeof p.battingOrderPosition === 'number') {
-        if (p.battingOrderPosition > currentMax) currentMax = p.battingOrderPosition;
-      }
-    }
-
-    // DB check constraint caps batting_order at 30 and the league cap may be
-    // tighter. Bail before emitting an event that the persistence layer would
-    // reject; the SUBSTITUTION would still land in the event log and diverge
-    // replay from the DB state.
-    if (activePlayerIds.has(newBatterId)) return 'That player is already in the order.';
-    const extensionError = lineupExtensionError({ activeCount: activeTeamOrder.slots.length, maxBatters, maxRecordedPosition: currentMax });
-    if (extensionError) return extensionError;
-
-    const battingOrderPosition = currentMax + 1;
-
-    const payload: SubstitutionPayload = {
-      inPlayerId: newBatterId,
-      substitutionType: SubstitutionType.LINEUP_EXTENSION,
-      battingOrderPosition,
-    };
-    lineupChangeLockRef.current = true;
-    try {
-      await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
-    } finally {
-      lineupChangeLockRef.current = false;
-    }
-
-    // Tournament projections are created only after the server accepts the event.
-    // The event already supplies the slot for offline replay.
-    if (gameScoringSettings.isTournament) return null;
-
-    // Persist the new batter to the local game_lineups mirror so post-game
-    // consumers (MaxPreps export, season-stat rollups) see them alongside the
-    // pre-game starters once the sync engine pushes it. A player may already
-    // have a bench row (null batting order — e.g. a non-batting pitcher);
-    // unique(game_id, player_id) forbids a second row, so that row is UPDATED
-    // into the order instead. Offline-first like everything else on this
-    // screen; the SUBSTITUTION event above remains the authoritative source
-    // for live state and the shared stats derivers.
-    try {
-      const existingRow = observedLineupRows.find((row) => row.playerRemoteId === newBatterId);
-      if (existingRow) {
-        await database.write(async () => {
-          await existingRow.update((r) => {
-            r.battingOrder = battingOrderPosition;
-            r.updatedAt = Date.now();
-          });
-        });
-      } else {
-        await addLineupRow({
-          gameRemoteId: gameId,
-          playerRemoteId: newBatterId,
-          battingOrder: battingOrderPosition,
-          isStarter: false,
-          isGuest: false,
-          countTowardStats: true,
-        });
-      }
-    } catch (err) {
-      // The SUBSTITUTION event above already keeps live play correct; log
-      // with context so a missing post-game lineup row can be traced.
-      console.warn(
-        `Add Batter lineup row write failed game=${gameId} player=${newBatterId}:`,
-        err,
+    return withLineupChangeLock<string | null>(lineupChangeLockRef, async () => {
+      // Don't add anyone until the lineup observation has fired — computing
+      // currentMax=0 against an unloaded lineup would collide with the real
+      // slot-1 occupant.
+      // Build the set of player ids already in the BATTING ORDER (bench rows
+      // with a null order — e.g. a non-batting pitcher under DH rules — stay
+      // addable), including pending in-game LINEUP_EXTENSION events that
+      // haven't been reflected in the local rows yet (defense-in-depth against
+      // picker filter bypass / two rapid taps).
+      const activePlayerIds = new Set(
+        lineupRows.filter((row) => row.batting_order != null).map((row) => row.player_id),
       );
-    }
-    triggerSync().catch(console.warn);
-    // The batter is in the order either way — the SUBSTITUTION event is the
-    // authoritative source for live play, and the mirror row is a
-    // convenience for post-game consumers. A failed mirror write is logged,
-    // not reported to the scorer as a failed add.
-    return null;
+
+      // Compute current max from both the DB snapshot AND any in-game
+      // SUBSTITUTION events that already extended the lineup but haven't yet
+      // been reflected in lineupRows.
+      let currentMax = lineupRows.reduce(
+        (max, l) => (l.batting_order ?? 0) > max ? (l.batting_order ?? 0) : max,
+        0,
+      );
+      const eventsCollection = database.get<WdbGameEvent>('game_events');
+      const recent = await eventsCollection
+        .query(Q.where('game_remote_id', gameId), Q.sortBy('sequence_number', Q.asc))
+        .fetch();
+      const cancelled = new Set(recent.filter((event) => event.eventType === EventType.EVENT_VOIDED &&
+        (event.payload as { cancelledBeforeSync?: boolean }).cancelledBeforeSync).map((event) =>
+        (event.payload as { voidedEventId: string }).voidedEventId));
+      for (const evt of recent) {
+        if (cancelled.has(evt.remoteId)) continue;
+        if (evt.eventType !== EventType.SUBSTITUTION) continue;
+        const p = evt.payload as Partial<SubstitutionPayload> | undefined;
+        if (!p) continue;
+        if (p.substitutionType === SubstitutionType.LINEUP_EXTENSION && p.inPlayerId) {
+          activePlayerIds.add(p.inPlayerId);
+        }
+        if (!p.outPlayerId && typeof p.battingOrderPosition === 'number') {
+          if (p.battingOrderPosition > currentMax) currentMax = p.battingOrderPosition;
+        }
+      }
+
+      // DB check constraint caps batting_order at 30 and the league cap may be
+      // tighter. Bail before emitting an event that the persistence layer would
+      // reject; the SUBSTITUTION would still land in the event log and diverge
+      // replay from the DB state.
+      if (activePlayerIds.has(newBatterId)) return 'That player is already in the order.';
+      const extensionError = lineupExtensionError({ activeCount: activeTeamOrder.slots.length, maxBatters, maxRecordedPosition: currentMax });
+      if (extensionError) return extensionError;
+
+      const battingOrderPosition = currentMax + 1;
+
+      const payload: SubstitutionPayload = {
+        inPlayerId: newBatterId,
+        substitutionType: SubstitutionType.LINEUP_EXTENSION,
+        battingOrderPosition,
+      };
+      await recordEvent(EventType.SUBSTITUTION, gameState.inning, gameState.isTopOfInning, payload);
+
+      // Tournament projections are created only after the server accepts the event.
+      // The event already supplies the slot for offline replay.
+      if (gameScoringSettings.isTournament) return null;
+
+      // Persist the new batter to the local game_lineups mirror so post-game
+      // consumers (MaxPreps export, season-stat rollups) see them alongside the
+      // pre-game starters once the sync engine pushes it. A player may already
+      // have a bench row (null batting order — e.g. a non-batting pitcher);
+      // unique(game_id, player_id) forbids a second row, so that row is UPDATED
+      // into the order instead. Offline-first like everything else on this
+      // screen; the SUBSTITUTION event above remains the authoritative source
+      // for live state and the shared stats derivers.
+      try {
+        const existingRow = observedLineupRows.find((row) => row.playerRemoteId === newBatterId);
+        if (existingRow) {
+          await database.write(async () => {
+            await existingRow.update((r) => {
+              r.battingOrder = battingOrderPosition;
+              r.updatedAt = Date.now();
+            });
+          });
+        } else {
+          await addLineupRow({
+            gameRemoteId: gameId,
+            playerRemoteId: newBatterId,
+            battingOrder: battingOrderPosition,
+            isStarter: false,
+            isGuest: false,
+            countTowardStats: true,
+          });
+        }
+      } catch (err) {
+        // The SUBSTITUTION event above already keeps live play correct; log
+        // with context so a missing post-game lineup row can be traced.
+        console.warn(
+          `Add Batter lineup row write failed game=${gameId} player=${newBatterId}:`,
+          err,
+        );
+      }
+      triggerSync().catch(console.warn);
+      // The batter is in the order either way — the SUBSTITUTION event is the
+      // authoritative source for live play, and the mirror row is a
+      // convenience for post-game consumers. A failed mirror write is logged,
+      // not reported to the scorer as a failed add.
+      return null;
+    }, 'A lineup change is already being saved.');
   }
 
   async function handleContractBatter(slot: { playerId: string; battingOrder: number }, forOpponent = false) {
@@ -2322,7 +2327,7 @@ export default function ScoringScreen() {
 
       <OpponentBatterPickerModal
         visible={showOpponentBatterPicker}
-        slots={opponentSlots}
+        slots={opponentBattingSlots.map((slot) => ({ ...slot, name: opponentNameById.get(slot.playerId) ?? 'Unknown batter' }))}
         dueBatterId={opponentDueBatter?.playerId ?? null}
         selectedId={opponentBatterId}
         onSelect={(playerId) => {
@@ -2582,7 +2587,8 @@ export default function ScoringScreen() {
       {scoringRulesBlocked && (
         <View className="absolute inset-0 z-50 items-center justify-center bg-white/95 px-8">
           <Text className="text-center text-score-lg font-bold text-gray-900">
-            {rejectedChange ? 'Tournament change rejected' : gameScoringSettings.status === 'loading'
+            {rejectedChange ? 'Tournament change rejected' : !tournamentRejectionsLoaded
+              ? 'Restoring saved sync status…' : gameScoringSettings.status === 'loading'
               ? 'Verifying game rules…'
               : tournamentLineupMissing
                 ? 'Tournament lineup unavailable'
@@ -2591,6 +2597,8 @@ export default function ScoringScreen() {
           <Text className="mt-2 text-center text-score-sm text-gray-600">
             {rejectedChange
               ? `Event ${rejectedChange.sequenceNumber}: ${rejectedChange.reason}. Your events remain saved on this device. Resolve coaching access or cancel the rejected lineup change, then retry. Review any subsequent plays after cancelling a change.`
+              : !tournamentRejectionsLoaded
+              ? (lastSyncError?.message ?? 'Checking saved lineup rejections before scoring.')
               : tournamentLineupMissing
               ? (gameScoringSettings.error ?? 'Download this game’s lineup before scoring offline.')
               : gameScoringSettings.status === 'loading'
@@ -2609,7 +2617,7 @@ export default function ScoringScreen() {
           )}
           <TouchableOpacity
             onPress={() => {
-              if (rejectedChange) triggerSync().catch(console.warn);
+              if (rejectedChange || !tournamentRejectionsLoaded) triggerSync().catch(console.warn);
               if (gameScoringSettings.status === 'error') gameScoringSettings.retry();
               if (tournamentLineupMissing) triggerSync().catch(console.warn);
             }}
