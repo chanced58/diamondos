@@ -7,6 +7,11 @@ import { NextResponse, type NextRequest } from 'next/server';
  * always receive a valid session.
  */
 export async function middleware(request: NextRequest) {
+  // The local scorekeeper preview uses sample data and never needs a session.
+  if (process.env.NODE_ENV === 'development' && request.nextUrl.pathname === '/demo/scorekeeper') {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
