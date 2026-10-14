@@ -216,8 +216,8 @@ export function GuestPlayerModal({
     >
       <View className="flex-1 justify-end bg-black/50">
         <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '85%' }}>
-          <Text className="text-lg font-bold text-gray-900 mb-1">Add Guest Player</Text>
-          <Text className="text-sm text-gray-500 mb-3">
+          <Text className="text-score-lg font-bold text-gray-900 mb-1">Add Guest Player</Text>
+          <Text className="text-score-sm text-gray-500 mb-3">
             Adds a non-roster batter to the end of the order. Saved offline and
             synced when you're back online.
           </Text>
@@ -229,7 +229,7 @@ export function GuestPlayerModal({
                 disabled={submitting}
                 className={`flex-1 rounded-md py-1.5 items-center ${tab === 'new' ? 'bg-white' : ''}`}
               >
-                <Text className={`text-sm font-semibold ${tab === 'new' ? 'text-gray-900' : 'text-gray-500'}`}>
+                <Text className={`text-score-sm font-semibold ${tab === 'new' ? 'text-gray-900' : 'text-gray-500'}`}>
                   New guest
                 </Text>
               </TouchableOpacity>
@@ -238,7 +238,7 @@ export function GuestPlayerModal({
                 disabled={submitting}
                 className={`flex-1 rounded-md py-1.5 items-center ${tab === 'pool' ? 'bg-white' : ''}`}
               >
-                <Text className={`text-sm font-semibold ${tab === 'pool' ? 'text-gray-900' : 'text-gray-500'}`}>
+                <Text className={`text-score-sm font-semibold ${tab === 'pool' ? 'text-gray-900' : 'text-gray-500'}`}>
                   League pool
                 </Text>
               </TouchableOpacity>
@@ -248,7 +248,7 @@ export function GuestPlayerModal({
           <ScrollView keyboardShouldPersistTaps="handled">
             {error && (
               <View className="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                <Text className="text-sm text-red-700">{error}</Text>
+                <Text className="text-score-sm text-red-700">{error}</Text>
               </View>
             )}
 
@@ -256,35 +256,35 @@ export function GuestPlayerModal({
               <>
                 <View className="flex-row gap-3 mb-3">
                   <View className="flex-1">
-                    <Text className="text-xs font-medium text-gray-500 mb-1">First name</Text>
+                    <Text className="text-score-xs font-medium text-gray-500 mb-1">First name</Text>
                     <TextInput
                       value={firstName}
                       onChangeText={setFirstName}
                       placeholder="First"
-                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
+                      className="border border-gray-300 rounded-lg px-3 py-2 text-score-sm text-gray-900"
                       editable={!submitting}
                     />
                   </View>
                   <View className="flex-1">
-                    <Text className="text-xs font-medium text-gray-500 mb-1">Last name</Text>
+                    <Text className="text-score-xs font-medium text-gray-500 mb-1">Last name</Text>
                     <TextInput
                       value={lastName}
                       onChangeText={setLastName}
                       placeholder="Last"
-                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
+                      className="border border-gray-300 rounded-lg px-3 py-2 text-score-sm text-gray-900"
                       editable={!submitting}
                     />
                   </View>
                 </View>
 
                 <View className="mb-4 w-32">
-                  <Text className="text-xs font-medium text-gray-500 mb-1">Jersey # (optional)</Text>
+                  <Text className="text-score-xs font-medium text-gray-500 mb-1">Jersey # (optional)</Text>
                   <TextInput
                     value={jerseyNumber}
                     onChangeText={setJerseyNumber}
                     keyboardType="number-pad"
                     placeholder="##"
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-score-sm text-gray-900"
                     editable={!submitting}
                   />
                 </View>
@@ -295,13 +295,13 @@ export function GuestPlayerModal({
                   value={poolSearch}
                   onChangeText={setPoolSearch}
                   placeholder="Search league players…"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 mb-3"
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-score-sm text-gray-900 mb-3"
                   editable={!submitting}
                 />
                 {poolLoading ? (
-                  <Text className="text-sm text-gray-500 mb-4">Loading league players…</Text>
+                  <Text className="text-score-sm text-gray-500 mb-4">Loading league players…</Text>
                 ) : filteredPool.length === 0 ? (
-                  <Text className="text-sm text-gray-500 mb-4">
+                  <Text className="text-score-sm text-gray-500 mb-4">
                     {poolCandidates.length === 0
                       ? 'No league players synced yet.'
                       : 'No matches.'}
@@ -316,11 +316,11 @@ export function GuestPlayerModal({
                           disabled={submitting}
                           className="flex-row items-center justify-between border-b border-gray-100 py-2.5"
                         >
-                          <Text className="text-sm text-gray-900">
+                          <Text className="text-score-sm text-gray-900">
                             {candidate.name}
                             {candidate.jerseyNumber != null ? `  #${candidate.jerseyNumber}` : ''}
                           </Text>
-                          <Text className="text-xs text-gray-400">
+                          <Text className="text-score-xs text-gray-400">
                             {candidate.isGuestOnly ? 'Guest pool' : 'Other team'}
                           </Text>
                         </TouchableOpacity>
@@ -339,9 +339,9 @@ export function GuestPlayerModal({
               <View
                 className={`h-5 w-5 rounded border ${countTowardStats ? 'bg-brand-700 border-brand-700' : 'bg-white border-gray-400'} items-center justify-center`}
               >
-                {countTowardStats && <Text className="text-white text-xs font-bold">✓</Text>}
+                {countTowardStats && <Text className="text-white text-score-xs font-bold">✓</Text>}
               </View>
-              <Text className="text-sm text-gray-700 flex-1">
+              <Text className="text-score-sm text-gray-700 flex-1">
                 Count this appearance toward the player's stats
               </Text>
             </TouchableOpacity>

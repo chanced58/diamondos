@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, Modal, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, ScrollView, StyleSheet } from 'react-native';
+import Svg, { Circle, Polygon, Rect } from 'react-native-svg';
 import { AdvanceReason } from '@baseball/shared';
 import type { LiveGameState } from '@baseball/shared';
 
@@ -30,10 +31,82 @@ interface BaserunnerDisplayProps {
   runnerName?: (runnerId: string) => string;
 }
 
-const DIAMOND_SIZE = 116;
+/** The whole field square. */
+const FIELD_SIZE = 128;
+/** Side of a (pre-rotation) base square — big enough to tap and to hold a jersey number. */
+const BASE_SIZE = 34;
+
+// Base centres. Home sits at the bottom, second at the top, so the scorer
+// reads the field the way they see it from behind the plate.
+const HOME = { x: 64, y: 112 };
+const BASE_CENTERS: Record<Base, { x: number; y: number }> = {
+  1: { x: 104, y: 72 },
+  2: { x: 64, y: 32 },
+  3: { x: 24, y: 72 },
+};
+
+const GRASS = '#3f9a4b';
+const INFIELD_GRASS = '#4caf5a';
+const DIRT = '#c8955f';
+const CHALK = '#ffffff';
+
+function baseOffset(base: Base) {
+  const { x, y } = BASE_CENTERS[base];
+  return { left: x - BASE_SIZE / 2, top: y - BASE_SIZE / 2 };
+}
 
 /**
- * Renders a baseball diamond with filled bases for occupied runners.
+ * The field the bases sit on — grass, the dirt infield with its inner grass,
+ * mound and home-plate circle. Purely decorative; the bases are
+ * drawn over it as ordinary views so they stay tappable.
+ */
+function FieldBackground() {
+  const pts = (...p: { x: number; y: number }[]) => p.map(({ x, y }) => `${x},${y}`).join(' ');
+  const b1 = BASE_CENTERS[1];
+  const b2 = BASE_CENTERS[2];
+  const b3 = BASE_CENTERS[3];
+  return (
+    <Svg width={FIELD_SIZE} height={FIELD_SIZE} style={StyleSheet.absoluteFill}>
+      <Rect x={0} y={0} width={FIELD_SIZE} height={FIELD_SIZE} fill={GRASS} />
+      {/* Dirt: the base paths, drawn as a fat round-cornered stroke around the diamond. */}
+      <Polygon
+        points={pts(HOME, b1, b2, b3)}
+        fill={DIRT}
+        stroke={DIRT}
+        strokeWidth={16}
+        strokeLinejoin="round"
+      />
+      {/* Inner grass, inset from the base paths. */}
+      <Polygon
+        points={pts(
+          { x: HOME.x, y: HOME.y - 14 },
+          { x: b1.x - 14, y: b1.y },
+          { x: b2.x, y: b2.y + 14 },
+          { x: b3.x + 14, y: b3.y },
+        )}
+        fill={INFIELD_GRASS}
+      />
+      <Circle cx={HOME.x} cy={HOME.y} r={13} fill={DIRT} />
+      {/* Mound and rubber. */}
+      <Circle cx={64} cy={74} r={7} fill={DIRT} />
+      <Rect x={61} y={73} width={6} height={1.5} fill={CHALK} />
+      {/* Home plate, point toward the catcher. */}
+      <Polygon
+        points={pts(
+          { x: HOME.x - 6, y: HOME.y - 5 },
+          { x: HOME.x + 6, y: HOME.y - 5 },
+          { x: HOME.x + 6, y: HOME.y },
+          { x: HOME.x, y: HOME.y + 6 },
+          { x: HOME.x - 6, y: HOME.y },
+        )}
+        fill={CHALK}
+      />
+    </Svg>
+  );
+}
+
+/**
+ * Renders a small baseball field with filled bases for occupied runners.
  * Tapping an occupied base opens an action modal for baserunning events
  * (stolen base, caught stealing, advance on wild pitch / passed ball).
  */
@@ -116,40 +189,34 @@ export function BaserunnerDisplay({
 
   return (
     <View
-      className="items-center justify-center"
-      style={{ width: DIAMOND_SIZE, height: DIAMOND_SIZE }}
+      className="rounded-xl overflow-hidden"
+      style={{ width: FIELD_SIZE, height: FIELD_SIZE }}
     >
-      <View className="relative" style={{ width: 96, height: 96 }}>
-        <BaseTap
-          base={2}
-          runnerId={second}
-          style={{ top: 0, left: 34 }}
-          onPress={handleBaseTap}
-          interactive={interactive}
-          label={second ? runnerShortLabel?.(second) : undefined}
-        />
-        <BaseTap
-          base={3}
-          runnerId={third}
-          style={{ top: 34, left: 0 }}
-          onPress={handleBaseTap}
-          interactive={interactive}
-          label={third ? runnerShortLabel?.(third) : undefined}
-        />
-        <BaseTap
-          base={1}
-          runnerId={first}
-          style={{ top: 34, left: 68 }}
-          onPress={handleBaseTap}
-          interactive={interactive}
-          label={first ? runnerShortLabel?.(first) : undefined}
-        />
-        {/* Home plate — bottom center (indicator only) */}
-        <View
-          className="absolute w-4 h-4 bg-gray-300 rotate-45"
-          style={{ bottom: 0, left: 40 }}
-        />
-      </View>
+      <FieldBackground />
+      <BaseTap
+        base={2}
+        runnerId={second}
+        style={baseOffset(2)}
+        onPress={handleBaseTap}
+        interactive={interactive}
+        label={second ? runnerShortLabel?.(second) : undefined}
+      />
+      <BaseTap
+        base={3}
+        runnerId={third}
+        style={baseOffset(3)}
+        onPress={handleBaseTap}
+        interactive={interactive}
+        label={third ? runnerShortLabel?.(third) : undefined}
+      />
+      <BaseTap
+        base={1}
+        runnerId={first}
+        style={baseOffset(1)}
+        onPress={handleBaseTap}
+        interactive={interactive}
+        label={first ? runnerShortLabel?.(first) : undefined}
+      />
 
       <Modal
         visible={!!selected}
@@ -159,12 +226,12 @@ export function BaserunnerDisplay({
       >
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
-            <Text className="text-lg font-bold text-gray-900 mb-1">
+            <Text className="text-score-lg font-bold text-gray-900 mb-1">
               {selected
                 ? `${runnerName?.(selected.runnerId) ?? 'Runner'} on ${baseLabel(selected.base)}`
                 : ''}
             </Text>
-            <Text className="text-sm text-gray-500 mb-4">
+            <Text className="text-score-sm text-gray-500 mb-4">
               What just happened to this runner?
             </Text>
 
@@ -243,10 +310,10 @@ export function BaserunnerDisplay({
       >
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '75%' }}>
-            <Text className="text-lg font-bold text-gray-900 mb-1">
+            <Text className="text-score-lg font-bold text-gray-900 mb-1">
               {pinchRunnerPicker?.courtesy ? 'Courtesy Runner' : 'Pinch Runner'}
             </Text>
-            <Text className="text-sm text-gray-500 mb-4">
+            <Text className="text-score-sm text-gray-500 mb-4">
               Select the new runner for {pinchRunnerPicker ? baseLabel(pinchRunnerPicker.base) : ''}.
             </Text>
             {roster && roster.length > 0 ? (
@@ -258,7 +325,7 @@ export function BaserunnerDisplay({
                       className="bg-sky-700 rounded-xl px-4 py-3"
                       onPress={() => handlePinchRunnerPick(p.id)}
                     >
-                      <Text className="text-white font-semibold text-base">
+                      <Text className="text-white font-semibold text-score-base">
                         {p.jerseyNumber !== undefined ? `#${p.jerseyNumber} ` : ''}
                         {p.name}
                       </Text>
@@ -267,7 +334,7 @@ export function BaserunnerDisplay({
                 </View>
               </ScrollView>
             ) : (
-              <Text className="text-gray-500 text-sm py-4">No players loaded.</Text>
+              <Text className="text-gray-500 text-score-sm py-4">No players loaded.</Text>
             )}
             <TouchableOpacity className="mt-4 py-3 items-center" onPress={() => setPinchRunnerPicker(null)}>
               <Text className="text-gray-500 font-semibold">Cancel</Text>
@@ -288,6 +355,8 @@ function baseLabel(base: 1 | 2 | 3 | 4): string {
   }
 }
 
+const BASE_BOX = { width: BASE_SIZE, height: BASE_SIZE };
+
 function BaseTap({
   base,
   runnerId,
@@ -304,14 +373,16 @@ function BaseTap({
   label?: string;
 }) {
   const occupied = !!runnerId;
+  // Empty bases are white bags, as on a real field; an occupied one turns
+  // amber so it jumps off the green.
   const fill = occupied
     ? 'bg-amber-300 border-2 border-amber-500'
-    : 'bg-gray-200 border-2 border-gray-300';
+    : 'bg-white border-2 border-gray-300';
   // The base is drawn rotated 45°; the label inside has to be turned back or
   // it reads on the diagonal.
   const content = occupied && label ? (
     <View className="flex-1 items-center justify-center -rotate-45">
-      <Text className="text-[10px] font-bold text-amber-900" numberOfLines={1}>
+      <Text className="text-score-10px font-bold text-amber-900" numberOfLines={1}>
         {label}
       </Text>
     </View>
@@ -319,7 +390,7 @@ function BaseTap({
 
   if (!interactive || !occupied) {
     return (
-      <View className={`absolute w-7 h-7 rotate-45 ${fill}`} style={style}>
+      <View className={`absolute rotate-45 ${fill}`} style={[BASE_BOX, style]}>
         {content}
       </View>
     );
@@ -327,8 +398,8 @@ function BaseTap({
 
   return (
     <TouchableOpacity
-      className={`absolute w-7 h-7 rotate-45 ${fill}`}
-      style={style}
+      className={`absolute rotate-45 ${fill}`}
+      style={[BASE_BOX, style]}
       accessibilityRole="button"
       // The visible label is a jersey number or initials, which on its own
       // tells a screen-reader user nothing about which base it is.
@@ -354,7 +425,7 @@ function RunnerActionButton({
   return (
     <TouchableOpacity className={`${color} rounded-xl px-5 py-4`} onPress={onPress}>
       <Text className="text-white font-semibold">{label}</Text>
-      {sub ? <Text className="text-white/70 text-xs mt-0.5">{sub}</Text> : null}
+      {sub ? <Text className="text-white/70 text-score-xs mt-0.5">{sub}</Text> : null}
     </TouchableOpacity>
   );
 }

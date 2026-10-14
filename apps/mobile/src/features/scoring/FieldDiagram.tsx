@@ -131,7 +131,10 @@ export function FieldDiagram({
                 borderColor: selected ? '#1e3a8a' : '#475569',
               }}
             >
-              <Text style={{ fontSize: 12, fontWeight: '700', color: selected ? '#ffffff' : '#0f172a' }}>
+              <Text
+                className="text-score-12px"
+                style={{ fontWeight: '700', color: selected ? '#ffffff' : '#0f172a' }}
+              >
                 {abbr}
               </Text>
             </TouchableOpacity>
