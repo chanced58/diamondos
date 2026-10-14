@@ -7,6 +7,33 @@ export interface ActiveBattingSlot {
   battingOrder: number;
 }
 
+export function lineupExtensionError(input: { activeCount: number; maxBatters: number; maxRecordedPosition: number }): string | null {
+  if (input.activeCount >= input.maxBatters) return `The order is full at ${input.maxBatters} batters.`;
+  if (input.maxRecordedPosition >= 30) return 'The order cannot exceed 30 batting slots.';
+  return null;
+}
+
+/** Projected extension rows belong to their events, even after a void or undo. */
+export function initialBattingOrderSlots<T extends ActiveBattingSlot>(
+  slots: readonly T[],
+  events: readonly (Pick<GameEvent, 'eventType' | 'payload'> & Partial<Pick<GameEvent, 'id'>>)[],
+  options: { forOpponent?: boolean } = {},
+): T[] {
+  const cancelledBeforeSync = new Set(events.flatMap((event) => {
+    const payload = (event.payload ?? {}) as Record<string, unknown>;
+    return event.eventType === EventType.EVENT_VOIDED && payload.cancelledBeforeSync === true
+      ? [String(payload.voidedEventId)] : [];
+  }));
+  const projected = new Set(events.flatMap((event) => {
+    const payload = (event.payload ?? {}) as Record<string, unknown>;
+    if (event.eventType !== EventType.SUBSTITUTION || payload.substitutionType !== SubstitutionType.LINEUP_EXTENSION
+      || ('id' in event && cancelledBeforeSync.has(String(event.id)))
+      || Boolean(payload.isOpponentSubstitution) !== Boolean(options.forOpponent)) return [];
+    return [`${payload.inPlayerId}:${payload.battingOrderPosition}`];
+  }));
+  return slots.filter((slot) => !projected.has(`${slot.playerId}:${slot.battingOrder}`));
+}
+
 export interface ActiveBattingOrderState {
   slots: ActiveBattingSlot[];
   nextBatterId: string | null;
@@ -89,7 +116,7 @@ export function createActiveBattingOrderReducer(
   initialSlots: readonly ActiveBattingSlot[],
   options: ActiveBattingOrderOptions,
 ): ActiveBattingOrderReducer {
-  let slots = initialSlots
+  const slots = initialSlots
     .filter((slot) => slot.playerId && Number.isInteger(slot.battingOrder) && slot.battingOrder > 0)
     .map((slot) => ({ ...slot }))
     .sort((a, b) => a.battingOrder - b.battingOrder)
@@ -195,7 +222,7 @@ export function deriveActiveBattingOrder(
   events: readonly GameEvent[],
   options: ActiveBattingOrderOptions,
 ): ActiveBattingOrderState {
-  const reducer = createActiveBattingOrderReducer(initialSlots, options);
+  const reducer = createActiveBattingOrderReducer(initialBattingOrderSlots(initialSlots, events, options), options);
   for (const event of effectiveBattingOrderEvents(events)) reducer.apply(event);
   return reducer.snapshot();
 }

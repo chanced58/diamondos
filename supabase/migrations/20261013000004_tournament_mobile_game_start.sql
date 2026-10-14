@@ -16,7 +16,7 @@ BEGIN
      OR NOT (NEW.payload ? '_tournamentClientEventId' OR NEW.payload ? '_tournamentClientSequence') THEN
     RETURN NEW;
   END IF;
-  IF auth.uid() IS NULL OR NEW.created_by <> auth.uid() THEN
+  IF auth.uid() IS NULL OR NEW.created_by IS DISTINCT FROM auth.uid() THEN
     RAISE EXCEPTION 'Tournament game start must be submitted by the signed-in coach' USING ERRCODE = '42501';
   END IF;
   IF jsonb_typeof(NEW.payload -> '_tournamentClientEventId') IS DISTINCT FROM 'string'

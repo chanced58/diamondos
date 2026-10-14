@@ -2,7 +2,8 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { Q } from '@nozbe/watermelondb';
-import { syncWithSupabase } from '../sync/sync-engine';
+import { syncWithSupabase, getTournamentSyncRejections } from '../sync/sync-engine';
+import type { TournamentSyncRejection } from '../sync/tournament-event-sync';
 import { getSupabaseClient } from '../lib/supabase';
 import { database } from '../db';
 import type { GameEvent } from '../db/models/GameEvent';
@@ -15,6 +16,7 @@ interface SyncContextValue {
   /** No usable connection. Expected and safe: writes queue locally. */
   isOffline: boolean;
   pendingEventsCount: number;
+  tournamentRejections: TournamentSyncRejection[];
   triggerSync: () => Promise<void>;
 }
 
@@ -24,6 +26,7 @@ const SyncContext = createContext<SyncContextValue>({
   lastSyncError: null,
   isOffline: false,
   pendingEventsCount: 0,
+  tournamentRejections: [],
   triggerSync: async () => {},
 });
 
@@ -65,6 +68,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [lastSyncError, setLastSyncError] = useState<Error | null>(null);
   const [isOffline, setIsOffline] = useState(false);
   const [pendingEventsCount, setPendingEventsCount] = useState(0);
+  const [tournamentRejections, setTournamentRejections] = useState<TournamentSyncRejection[]>([]);
   const wasOfflineRef = useRef(false);
   const syncLockRef = useRef(false);
 
@@ -107,6 +111,11 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         setLastSyncError(error instanceof Error ? error : new Error(String(error)));
       }
     } finally {
+      try {
+        setTournamentRejections(await getTournamentSyncRejections());
+      } catch (error) {
+        console.warn('Could not load tournament sync rejections:', error);
+      }
       setIsSyncing(false);
       syncLockRef.current = false;
     }
@@ -215,7 +224,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SyncContext.Provider
-      value={{ isSyncing, lastSyncedAt, lastSyncError, isOffline, pendingEventsCount, triggerSync }}
+      value={{ isSyncing, lastSyncedAt, lastSyncError, isOffline, pendingEventsCount, tournamentRejections, triggerSync }}
     >
       {children}
     </SyncContext.Provider>

@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(11);
+SELECT plan(17);
 
 INSERT INTO auth.users (id, instance_id, email, aud, role, created_at, updated_at)
 VALUES
@@ -60,8 +60,9 @@ SELECT is((SELECT count(*) FROM public.tournaments WHERE name = 'Existing Team C
 SELECT is((SELECT count(*) FROM public.seasons WHERE team_id = '52000000-0000-4000-8000-000000000001' AND is_active), 1::bigint, 'existing-team branch preserves its active regular season');
 SELECT is((SELECT count(*) FROM public.tournament_teams tt JOIN public.teams t ON t.id = tt.team_id WHERE t.name = 'One Weekend Team'), 0::bigint, 'existing-team branch does not create an extra team');
 SELECT is((SELECT count(*) FROM public.create_tournament('{"name":"Existing Team Cup","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000002","team":{"type":"existing","teamId":"52000000-0000-4000-8000-000000000001"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}'::jsonb)), 1::bigint, 'retry with the same request ID returns the original result');
+CREATE TEMP TABLE new_tournament_result AS SELECT * FROM public.create_tournament('{"name":"One Weekend Cup","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000003","team":{"type":"new","name":"One Weekend Team"},"lineup":{"allowExpanded":true,"maxBatters":12,"allowMidGameChanges":true}}'::jsonb);
 SELECT is(
-  (SELECT count(*) FROM public.create_tournament('{"name":"One Weekend Cup","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000003","team":{"type":"new","name":"One Weekend Team"},"lineup":{"allowExpanded":true,"maxBatters":12,"allowMidGameChanges":true}}'::jsonb) r
+  (SELECT count(*) FROM new_tournament_result r
    JOIN public.tournament_teams tt ON tt.tournament_id = r.tournament_id AND tt.team_id = r.team_id AND tt.season_id = r.season_id
    JOIN public.seasons s ON s.id = r.season_id AND s.team_id = r.team_id AND s.is_active
    JOIN public.team_members tm ON tm.team_id = r.team_id AND tm.user_id = auth.uid() AND tm.role = 'head_coach'
@@ -81,5 +82,32 @@ SELECT is(
   'failed creation leaves no tournament or orphan team'
 );
 
+SELECT throws_ok(
+ $$ SELECT public.set_tournament_mode_permission(auth.uid(), true) $$,
+ '42501', NULL, 'a non-admin cannot grant permissions through the management RPC');
+SELECT throws_ok(
+ $$ SELECT * FROM public.create_tournament('{"name":"Different request body","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000002","team":{"type":"existing","teamId":"52000000-0000-4000-8000-000000000001"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}') $$,
+ '23505', NULL, 'an idempotency key cannot be reused for different input');
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '', true);
+UPDATE public.user_profiles SET tournament_mode_enabled = false WHERE id = '51000000-0000-4000-8000-000000000001';
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub', '51000000-0000-4000-8000-000000000001', true);
+SELECT throws_ok(
+ $$ SELECT * FROM public.create_tournament('{"name":"Revoked grant","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000006","team":{"type":"new","name":"Denied team"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}') $$,
+ '42501', NULL, 'revoking the grant prevents new creation');
+SELECT is((SELECT count(*) FROM public.tournaments WHERE name = 'Existing Team Cup'), 1::bigint,
+ 'grant revocation preserves access to the existing tournament');
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '', true);
+UPDATE public.user_profiles SET tournament_mode_enabled = true WHERE id = '51000000-0000-4000-8000-000000000001';
+UPDATE public.team_members SET is_active = false WHERE team_id = '52000000-0000-4000-8000-000000000001';
+SELECT is((SELECT count(*) FROM public.tournament_mode_permission_audit WHERE user_id = '51000000-0000-4000-8000-000000000001'),
+ 3::bigint, 'grant, revocation, and regrant each produce an audit record');
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub', '51000000-0000-4000-8000-000000000001', true);
+SELECT throws_ok(
+ $$ SELECT * FROM public.create_tournament('{"name":"Inactive membership","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000007","team":{"type":"existing","teamId":"52000000-0000-4000-8000-000000000001"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}') $$,
+ '42501', NULL, 'inactive team administration cannot create a tournament');
 SELECT * FROM finish();
 ROLLBACK;

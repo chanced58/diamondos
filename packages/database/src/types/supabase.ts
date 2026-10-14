@@ -783,8 +783,8 @@ export type Database = {
           place_id: string | null
           scheduled_at: string
           scorer_side: string | null
-          season_id: string | null
           scoring_settings_snapshot: Json | null
+          season_id: string | null
           started_at: string | null
           status: Database["public"]["Enums"]["game_status"]
           team_id: string
@@ -814,8 +814,8 @@ export type Database = {
           place_id?: string | null
           scheduled_at: string
           scorer_side?: string | null
-          season_id?: string | null
           scoring_settings_snapshot?: Json | null
+          season_id?: string | null
           started_at?: string | null
           status?: Database["public"]["Enums"]["game_status"]
           team_id: string
@@ -845,8 +845,8 @@ export type Database = {
           place_id?: string | null
           scheduled_at?: string
           scorer_side?: string | null
-          season_id?: string | null
           scoring_settings_snapshot?: Json | null
+          season_id?: string | null
           started_at?: string | null
           status?: Database["public"]["Enums"]["game_status"]
           team_id?: string
@@ -856,13 +856,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "games_paired_game_id_fkey"
-            columns: ["paired_game_id"]
-            isOneToOne: false
-            referencedRelation: "games"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "games_opponent_team_id_fkey"
             columns: ["opponent_team_id"]
             isOneToOne: false
@@ -870,10 +863,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "games_paired_game_id_fkey"
+            columns: ["paired_game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "games_season_id_fkey"
             columns: ["season_id"]
             isOneToOne: false
             referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "games_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
             referencedColumns: ["id"]
           },
           {
@@ -889,13 +896,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "tournament_teams"
             referencedColumns: ["tournament_id", "team_id", "season_id"]
-          },
-          {
-            foreignKeyName: "games_team_id_fkey"
-            columns: ["team_id"]
-            isOneToOne: false
-            referencedRelation: "teams"
-            referencedColumns: ["id"]
           },
         ]
       }
@@ -4790,6 +4790,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "tournament_teams_season_id_fkey"
+            columns: ["season_id"]
+            isOneToOne: false
+            referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "tournament_teams_season_team_fkey"
             columns: ["season_id", "team_id"]
             isOneToOne: false
@@ -4949,6 +4956,19 @@ export type Database = {
       }
     },
     Functions: {
+      tournament_lineup_state_before_event: {
+        Args: {
+          p_before_sequence: number
+          p_game_id: string
+          p_is_opponent: boolean
+        }
+        Returns: Json
+      }
+
+      sync_cancelled_tournament_lineup_change: {
+        Args: { p_change: Json; p_void: Json }
+        Returns: undefined
+      }
       can_edit_block: { Args: { p_block_id: string }; Returns: boolean }
       start_tournament_game: {
         Args: {

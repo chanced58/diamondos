@@ -31,7 +31,7 @@ export default async function OpponentLineupPage({
 
   const { data: game } = await db
     .from('games')
-    .select('id, team_id, opponent_name, opponent_team_id, location_type, neutral_home_team, tournament_id, scoring_settings_snapshot')
+    .select('id, team_id, opponent_name, opponent_team_id, location_type, neutral_home_team, status, tournament_id, scoring_settings_snapshot')
     .eq('id', params.gameId)
     .single();
 
@@ -47,6 +47,7 @@ export default async function OpponentLineupPage({
   if (!membership || !COACH_ROLES.includes(membership.role)) {
     redirect(`/games/${params.gameId}`);
   }
+  if (game.tournament_id && game.status !== 'scheduled') redirect(`/games/${params.gameId}/score`);
 
   // Load opponent team + players + lineup + league settings in parallel
   const [opponentTeamResult, playersResult, lineupResult, leagueSettings] = await Promise.all([

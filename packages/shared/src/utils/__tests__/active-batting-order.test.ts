@@ -2,6 +2,7 @@ import { defaultLeagueScoringSettings, EventType, SubstitutionType, type GameEve
 import {
   createActiveBattingOrderReducer,
   deriveActiveBattingOrder,
+  lineupExtensionError,
   isBetweenPlateAppearances,
   validateLineupContraction,
   type ActiveBattingSlot,
@@ -39,6 +40,18 @@ function completedPa(sequenceNumber: number, isTopOfInning = false) {
 }
 
 describe('active batting order reducer', () => {
+  it('removes a projected extension from the initial order when its event is voided', () => {
+    const extension = event(1, EventType.SUBSTITUTION, { substitutionType: SubstitutionType.LINEUP_EXTENSION, inPlayerId: 'late', battingOrderPosition: 4 });
+    const rows = [...initialSlots, { playerId: 'late', battingOrder: 4 }];
+    const state = deriveActiveBattingOrder(rows, [extension, event(2, EventType.EVENT_VOIDED, { voidedEventId: extension.id })], { batsOnTop: false });
+    expect(state.slots).toEqual(initialSlots);
+  });
+
+  it('allows refilling a contracted order at a new stable position beyond the active-batter cap', () => {
+    expect(lineupExtensionError({ activeCount: 11, maxBatters: 12, maxRecordedPosition: 12 })).toBeNull();
+    expect(lineupExtensionError({ activeCount: 12, maxBatters: 12, maxRecordedPosition: 12 })).toContain('full');
+    expect(lineupExtensionError({ activeCount: 11, maxBatters: 12, maxRecordedPosition: 30 })).toContain('30');
+  });
   it('allows a change at a new half inning before its first pitch', () => {
     expect(isBetweenPlateAppearances([
       event(1, EventType.PITCH_THROWN),

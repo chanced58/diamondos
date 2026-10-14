@@ -317,6 +317,8 @@ export interface DroppedThirdStrikePayload {
 export interface EventVoidedPayload {
   voidedEventId: string;
   voidedSequenceNumber: number;
+  /** The original lineup attempt was rejected before it reached the server. */
+  cancelledBeforeSync?: boolean;
 }
 
 export type GameEventPayload =

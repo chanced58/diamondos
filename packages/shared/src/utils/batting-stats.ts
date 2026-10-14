@@ -8,7 +8,7 @@ import {
   collectLinkedRunnerOutcomes,
   type Bases,
 } from '../rules/play-runners';
-import { createActiveBattingOrderReducer, effectiveBattingOrderEvents } from './active-batting-order';
+import { createActiveBattingOrderReducer, effectiveBattingOrderEvents, initialBattingOrderSlots } from './active-batting-order';
 
 /**
  * A batted ball is a "Hard Hit Ball" when:
@@ -207,12 +207,12 @@ export function deriveBattingStats(
     currentExcluded = lineupsByGameId?.get(gameId)?.excludedPlayerIds ?? new Set<string>();
     const appearedThisGame = new Set<string>();
 
-    function markAppeared(playerId: string) {
+    const markAppeared = (playerId: string) => {
       if (!appearedThisGame.has(playerId)) {
         appearedThisGame.add(playerId);
         getStats(playerId).gamesAppeared += 1;
       }
-    }
+    };
 
     // ── Lineup-based batter inference (only if caller supplied context) ────
     // Stable slot positions make lineup changes replayable without shifting
@@ -235,7 +235,7 @@ export function deriveBattingStats(
     };
 
     const lineupReducer = lineupInfo
-      ? createActiveBattingOrderReducer(orderedLineup, { batsOnTop: !lineupInfo.isHome })
+      ? createActiveBattingOrderReducer(initialBattingOrderSlots(orderedLineup, normalizedEvents), { batsOnTop: !lineupInfo.isHome })
       : null;
     const inferredBatterByEventId = new Map<string, string | null>();
     if (lineupReducer) {
@@ -265,7 +265,7 @@ export function deriveBattingStats(
     let r2: string | null = null; // runner on 2nd
     let r3: string | null = null; // runner on 3rd
 
-    function clearBases() { r1 = null; r2 = null; r3 = null; }
+    const clearBases = () => { r1 = null; r2 = null; r3 = null; };
 
     // ── QAB tracking state ───────────────────────────────────────────────
     //
@@ -308,20 +308,20 @@ export function deriveBattingStats(
       // start of the next PA-closing event handler.
     };
 
-    function scoreRunner(runnerId: string | null) {
+    const scoreRunner = (runnerId: string | null) => {
       if (runnerId) {
         getStats(runnerId).runs += 1;
       }
-    }
+    };
 
     /** Force-advance all runners (walk / HBP / error reach). Batter goes to 1st. */
-    function forceAdvance(batterId: string) {
+    const forceAdvance = (batterId: string) => {
       if (r1 && r2 && r3) scoreRunner(r3); // bases loaded → runner on 3rd scores
       if (r1 && r2) r3 = r2;
       else if (!r3 && r2) { /* r2 stays */ }
       if (r1) r2 = r1;
       r1 = batterId;
-    }
+    };
 
     // A hit's linked runner outcomes (BASERUNNER_OUT / BASERUNNER_ADVANCE with
     // relatedEventId), matched by starting base when recorded, and the shared
@@ -818,7 +818,6 @@ export function deriveBattingStats(
       if (etype === 'substitution') {
         const inId: string | undefined = payload?.inPlayerId;
         const outId: string | undefined = payload?.outPlayerId;
-        const isOpponentSub = payload?.isOpponentSubstitution === true;
         if (inId && outId) {
           // If the substituted player is on base, replace them
           if (r1 === outId) r1 = inId;

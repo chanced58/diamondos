@@ -8,6 +8,7 @@ import { createBrowserClient } from '@/lib/supabase/client';
 import {
   applyPitchReverted,
   deriveActiveBattingOrder,
+  initialBattingOrderSlots,
   deriveDefensiveLineup,
   deriveGameState,
   EventType,
@@ -866,8 +867,8 @@ export function ScoringBoard({
 
   // Sorted starters for batting order cycling. Upper bound matches the DB
   // check constraint (1–30) — "everyone bats" lineups go beyond 9.
-  const starters = lineup
-    .filter((l) => l.battingOrder >= 1 && l.battingOrder <= 30)
+  const starters = initialBattingOrderSlots(lineup
+    .filter((l) => l.battingOrder >= 1 && l.battingOrder <= 30), eventRows.map(mapRowToEvent))
     .sort((a, b) => a.battingOrder - b.battingOrder);
 
   // Is the opponent currently batting?
@@ -877,8 +878,8 @@ export function ScoringBoard({
     isHome ? gameState.isTopOfInning : !gameState.isTopOfInning;
 
   // Opponent starters sorted by batting order
-  const opponentStarters = localOpponentLineup
-    .filter((l) => l.battingOrder >= 1 && l.battingOrder <= 30)
+  const opponentStarters = initialBattingOrderSlots(localOpponentLineup
+    .filter((l) => l.battingOrder >= 1 && l.battingOrder <= 30), eventRows.map(mapRowToEvent), { forOpponent: true })
     .sort((a, b) => a.battingOrder - b.battingOrder);
 
   // Apply substitution events to produce effective lineups so pinch hitters

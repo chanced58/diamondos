@@ -100,11 +100,15 @@ async function persistTournamentCache(
 
 /** Loads rules for one game and uses only that game's durable tournament cache offline. */
 export function useGameScoringSettings(gameId: string | undefined): GameScoringSettingsState {
-  const [state, setState] = useState<SettingsStateWithoutRetry>(EMPTY_STATE);
+  const [resolved, setResolved] = useState<{ gameId: string | undefined; state: SettingsStateWithoutRetry }>({
+    gameId: undefined, state: EMPTY_STATE,
+  });
+  const state = resolved.gameId === gameId ? resolved.state : EMPTY_STATE;
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt((previous) => previous + 1), []);
 
   useEffect(() => {
+    const setState = (nextState: SettingsStateWithoutRetry) => setResolved({ gameId, state: nextState });
     if (!gameId) {
       setState({
         status: 'error',
@@ -117,9 +121,34 @@ export function useGameScoringSettings(gameId: string | undefined): GameScoringS
     }
     const currentGameId = gameId;
     let cancelled = false;
+    let cacheRevision = 0;
+    let observedCache = false;
     setState(EMPTY_STATE);
 
+    // A start/reconnect can pull a newer frozen snapshot while this screen is
+    // still open. Observe only rule columns so ordinary pitches do not reload it.
+    const cacheSubscription = database.get<Game>('games').query(Q.where('remote_id', currentGameId))
+      .observeWithColumns(['tournament_id', 'tournament_scoring_settings', 'tournament_rules_version'])
+      .subscribe({
+        next: (games) => {
+          if (cancelled || !games[0]?.tournamentId) return;
+          if (observedCache) cacheRevision += 1;
+          observedCache = true;
+          try {
+            setState({ status: 'ready', isTournament: true, tournamentId: games[0].tournamentId,
+              settings: readTournamentCache(games[0]), error: null });
+          } catch (error) {
+            setState({ status: 'error', isTournament: true, tournamentId: games[0].tournamentId,
+              settings: null, error: error instanceof Error ? error.message : 'Downloaded tournament rules are invalid.' });
+          }
+        },
+        error: (error) => {
+          console.warn(`Could not observe game rules game=${currentGameId}:`, error);
+        },
+      });
+
     async function load() {
+      const revisionAtLoad = cacheRevision;
       let localGame: Game | null = null;
       try {
         localGame = await findLocalGame(currentGameId);
@@ -193,6 +222,9 @@ export function useGameScoringSettings(gameId: string | undefined): GameScoringS
           rulesVersion: TOURNAMENT_SCORING_RULES_VERSION,
           scoringSettings,
         });
+        // The sync observer has a newer snapshot; do not overwrite it with
+        // the response from a request begun before that pull finished.
+        if (cacheRevision !== revisionAtLoad) return;
         await persistTournamentCache(
           currentGameId,
           gameRow.team_id,
@@ -249,6 +281,7 @@ export function useGameScoringSettings(gameId: string | undefined): GameScoringS
     void load();
     return () => {
       cancelled = true;
+      cacheSubscription.unsubscribe();
     };
   }, [gameId, attempt]);
 

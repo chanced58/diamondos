@@ -64,7 +64,15 @@ BEGIN
       ) ORDER BY ogl.batting_order), '[]'::jsonb)
       INTO v_initial_slots
     FROM public.opponent_game_lineups ogl
-    WHERE ogl.game_id = p_game_id AND ogl.is_starter AND ogl.batting_order IS NOT NULL;
+    WHERE ogl.game_id = p_game_id AND ogl.batting_order IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM public.game_events ge WHERE ge.game_id = p_game_id
+        AND ge.event_type = 'substitution' AND ge.payload ->> 'substitutionType' = 'lineup_extension'
+        AND NOT EXISTS (SELECT 1 FROM public.game_events cancelled WHERE cancelled.game_id = ge.game_id
+          AND cancelled.event_type = 'event_voided' AND cancelled.payload ->> 'voidedEventId' = ge.id::text
+          AND cancelled.payload ->> 'cancelledBeforeSync' = 'true')
+        AND coalesce((ge.payload ->> 'isOpponentSubstitution')::boolean, false)
+        AND ge.payload ->> 'inPlayerId' = ogl.opponent_player_id::text
+        AND ge.payload ->> 'battingOrderPosition' = ogl.batting_order::text);
   ELSE
     SELECT coalesce(jsonb_agg(jsonb_build_object(
         'playerId', gl.player_id::text,
@@ -72,7 +80,15 @@ BEGIN
       ) ORDER BY gl.batting_order), '[]'::jsonb)
       INTO v_initial_slots
     FROM public.game_lineups gl
-    WHERE gl.game_id = p_game_id AND gl.is_starter AND gl.batting_order IS NOT NULL;
+    WHERE gl.game_id = p_game_id AND gl.batting_order IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM public.game_events ge WHERE ge.game_id = p_game_id
+        AND ge.event_type = 'substitution' AND ge.payload ->> 'substitutionType' = 'lineup_extension'
+        AND NOT EXISTS (SELECT 1 FROM public.game_events cancelled WHERE cancelled.game_id = ge.game_id
+          AND cancelled.event_type = 'event_voided' AND cancelled.payload ->> 'voidedEventId' = ge.id::text
+          AND cancelled.payload ->> 'cancelledBeforeSync' = 'true')
+        AND NOT coalesce((ge.payload ->> 'isOpponentSubstitution')::boolean, false)
+        AND ge.payload ->> 'inPlayerId' = gl.player_id::text
+        AND ge.payload ->> 'battingOrderPosition' = gl.batting_order::text);
   END IF;
   v_slots := v_initial_slots;
   v_next_position := nullif(v_slots -> 0 ->> 'battingOrder', '')::integer;
@@ -83,7 +99,8 @@ BEGIN
   FOR v_event IN
     SELECT ge.*
     FROM public.game_events ge
-    WHERE ge.game_id = p_game_id AND ge.sequence_number < p_before_sequence
+    WHERE ge.game_id = p_game_id AND (ge.sequence_number < p_before_sequence
+      OR (ge.event_type = 'event_voided' AND ge.payload ->> 'cancelledBeforeSync' = 'true'))
     ORDER BY ge.sequence_number
   LOOP
     IF v_event.event_type = 'game_reset' THEN
@@ -230,7 +247,7 @@ BEGIN
             v_current_batter_id
           );
           IF v_runners[1] IS NOT NULL AND v_runners[2] IS NOT NULL THEN
-            IF v_runners[3] IS NOT NULL THEN v_runners[3] := v_runners[2]; END IF;
+            v_runners[3] := v_runners[2];
             v_runners[2] := v_runners[1];
           ELSIF v_runners[1] IS NOT NULL THEN
             v_runners[2] := v_runners[1];
@@ -246,7 +263,7 @@ BEGIN
             v_current_batter_id
           );
           IF v_runners[1] IS NOT NULL AND v_runners[2] IS NOT NULL THEN
-            IF v_runners[3] IS NOT NULL THEN v_runners[3] := v_runners[2]; END IF;
+            v_runners[3] := v_runners[2];
             v_runners[2] := v_runners[1];
           ELSIF v_runners[1] IS NOT NULL THEN
             v_runners[2] := v_runners[1];
@@ -383,6 +400,7 @@ DECLARE
   v_actor uuid := auth.uid();
   v_is_opponent boolean;
   v_substitution_type text;
+  v_position_json jsonb;
   v_settings jsonb;
   v_max_batters integer;
   v_position integer;
@@ -414,7 +432,7 @@ BEGIN
   END IF;
 
   IF v_actor IS NULL THEN v_actor := NEW.created_by; END IF;
-  IF auth.uid() IS NOT NULL AND NEW.created_by <> auth.uid() THEN
+  IF auth.uid() IS NOT NULL AND NEW.created_by IS DISTINCT FROM auth.uid() THEN
     RAISE EXCEPTION 'A lineup event must be created by the signed-in user' USING ERRCODE = '42501';
   END IF;
   IF NOT EXISTS (
@@ -424,7 +442,16 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Only an active team coach can change a tournament lineup' USING ERRCODE = '42501';
   END IF;
-  IF NEW.sequence_number <> (SELECT coalesce(max(ge.sequence_number), 0) + 1 FROM public.game_events ge WHERE ge.game_id = NEW.game_id) THEN
+  -- A coach may explicitly cancel an unaccepted attempt. Both immutable
+  -- facts are recorded atomically; the attempt never affects replay or rows.
+  IF EXISTS (SELECT 1 FROM public.game_events cancelled WHERE cancelled.game_id = NEW.game_id
+    AND cancelled.event_type = 'event_voided' AND cancelled.payload ->> 'voidedEventId' = NEW.id::text
+    AND cancelled.payload ->> 'cancelledBeforeSync' = 'true' AND cancelled.created_by = NEW.created_by) THEN
+    RETURN NEW;
+  END IF;
+  IF NEW.sequence_number <> (SELECT coalesce(max(ge.sequence_number), 0) + 1 FROM public.game_events ge WHERE ge.game_id = NEW.game_id
+    AND NOT (ge.sequence_number > NEW.sequence_number AND ge.event_type = 'event_voided'
+      AND ge.payload ->> 'cancelledBeforeSync' = 'true')) THEN
     RAISE EXCEPTION 'Tournament lineup changes must sync after all earlier game events' USING ERRCODE = '40001';
   END IF;
 
@@ -444,13 +471,16 @@ BEGIN
     RAISE EXCEPTION 'Tournament lineup changes are only allowed between plate appearances' USING ERRCODE = '23514';
   END IF;
 
-  IF jsonb_typeof(NEW.payload -> 'battingOrderPosition') IS DISTINCT FROM 'number' THEN
+  v_position_json := CASE WHEN v_substitution_type = 'lineup_contraction'
+    THEN coalesce(NEW.payload -> 'removedBattingOrderPosition', NEW.payload -> 'battingOrderPosition')
+    ELSE NEW.payload -> 'battingOrderPosition' END;
+  IF jsonb_typeof(v_position_json) IS DISTINCT FROM 'number' THEN
     RAISE EXCEPTION 'A stable batting-order position is required' USING ERRCODE = '23514';
   END IF;
-  IF (NEW.payload ->> 'battingOrderPosition')::numeric <> trunc((NEW.payload ->> 'battingOrderPosition')::numeric) THEN
+  IF (v_position_json #>> '{}')::numeric <> trunc((v_position_json #>> '{}')::numeric) THEN
     RAISE EXCEPTION 'The stable batting-order position must be an integer' USING ERRCODE = '23514';
   END IF;
-  v_position := (NEW.payload ->> 'battingOrderPosition')::integer;
+  v_position := (v_position_json #>> '{}')::integer;
 
   IF v_substitution_type = 'lineup_extension' THEN
     IF coalesce((v_settings ->> 'allowMidGameExtension')::boolean, false) IS NOT TRUE THEN
@@ -478,7 +508,7 @@ BEGIN
             AND ge.payload ->> 'substitutionType' = 'lineup_extension'
             AND coalesce((ge.payload ->> 'isOpponentSubstitution')::boolean, false)), 0)
       ) INTO v_max_recorded_position;
-      IF EXISTS (SELECT 1 FROM public.opponent_game_lineups ogl WHERE ogl.game_id = NEW.game_id AND ogl.opponent_player_id = v_player_id) THEN
+      IF EXISTS (SELECT 1 FROM public.opponent_game_lineups ogl WHERE ogl.game_id = NEW.game_id AND ogl.opponent_player_id = v_player_id AND ogl.batting_order IS NOT NULL) THEN
         RAISE EXCEPTION 'This opponent batter already has a historical lineup slot' USING ERRCODE = '23514';
       END IF;
     ELSE
@@ -492,7 +522,7 @@ BEGIN
             AND ge.payload ->> 'substitutionType' = 'lineup_extension'
             AND NOT coalesce((ge.payload ->> 'isOpponentSubstitution')::boolean, false)), 0)
       ) INTO v_max_recorded_position;
-      IF EXISTS (SELECT 1 FROM public.game_lineups gl WHERE gl.game_id = NEW.game_id AND gl.player_id = v_player_id) THEN
+      IF EXISTS (SELECT 1 FROM public.game_lineups gl WHERE gl.game_id = NEW.game_id AND gl.player_id = v_player_id AND gl.batting_order IS NOT NULL) THEN
         RAISE EXCEPTION 'This batter already has a historical lineup slot' USING ERRCODE = '23514';
       END IF;
     END IF;
@@ -554,14 +584,19 @@ BEGIN
   ) THEN
     RETURN NEW;
   END IF;
+  IF EXISTS (SELECT 1 FROM public.game_events cancelled WHERE cancelled.game_id = NEW.game_id
+    AND cancelled.event_type = 'event_voided' AND cancelled.payload ->> 'voidedEventId' = NEW.id::text
+    AND cancelled.payload ->> 'cancelledBeforeSync' = 'true') THEN RETURN NEW; END IF;
   v_position := (NEW.payload ->> 'battingOrderPosition')::integer;
   v_player_id := (NEW.payload ->> 'inPlayerId')::uuid;
   IF coalesce((NEW.payload ->> 'isOpponentSubstitution')::boolean, false) THEN
     INSERT INTO public.opponent_game_lineups (game_id, opponent_player_id, batting_order, is_starter)
-    VALUES (NEW.game_id, v_player_id, v_position, false);
+    VALUES (NEW.game_id, v_player_id, v_position, false)
+    ON CONFLICT (game_id, opponent_player_id) DO UPDATE SET batting_order = EXCLUDED.batting_order;
   ELSE
     INSERT INTO public.game_lineups (game_id, player_id, batting_order, starting_position, is_starter)
-    VALUES (NEW.game_id, v_player_id, v_position, NULL, false);
+    VALUES (NEW.game_id, v_player_id, v_position, NULL, false)
+    ON CONFLICT (game_id, player_id) DO UPDATE SET batting_order = EXCLUDED.batting_order;
   END IF;
   RETURN NEW;
 END;

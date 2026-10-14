@@ -38,6 +38,7 @@ export default async function LineupPage({ params }: { params: { gameId: string 
   if (!membership || !isCoachRole(membership.role)) {
     redirect(`/games/${params.gameId}`);
   }
+  if (game.tournament_id && game.status !== 'scheduled') redirect(`/games/${params.gameId}/score`);
 
   const [playersResult, lineupResult, guestsResult, leagueSettings] = await Promise.all([
     db

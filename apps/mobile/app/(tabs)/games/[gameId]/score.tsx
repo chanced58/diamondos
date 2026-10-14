@@ -32,6 +32,7 @@ import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayl
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
 import { useGameScoringSettings } from '../../../../src/lib/game-scoring-settings';
+import { initialBattingOrderSlots, lineupExtensionError } from '@baseball/shared';
 import { database } from '../../../../src/db';
 import type { GameEvent as WdbGameEvent } from '../../../../src/db/models/GameEvent';
 import type { Player } from '../../../../src/db/models/Player';
@@ -82,7 +83,8 @@ export default function ScoringScreen() {
 
   const { gameState, lineScore, events, rawEvents, loading } = useGameState(gameId, teamId);
   const { recordEvent } = useRecordEvent(gameId);
-  const { isSyncing, lastSyncError, isOffline, pendingEventsCount, triggerSync } = useSyncContext();
+  const { isSyncing, lastSyncError, isOffline, pendingEventsCount, tournamentRejections = [], triggerSync } = useSyncContext();
+  const rejectedChange = tournamentRejections.find((rejection) => rejection.gameId === gameId);
   // Recomputed on every render, which — via `isSyncing` above, which flips
   // true→false on every ~30s sync cycle — includes right after each cycle
   // that may have changed the finalize failure count read below. Cheap pure
@@ -218,10 +220,10 @@ export default function ScoringScreen() {
   // shift the rotation — the same derivation the web ScoringBoard uses.
   const baseBattingSlots = useMemo<BattingSlot[]>(
     () =>
-      observedLineupRows
+      initialBattingOrderSlots(observedLineupRows
         .filter((row) => row.battingOrder != null)
-        .map((row) => ({ playerId: row.playerRemoteId, battingOrder: row.battingOrder! })),
-    [observedLineupRows],
+        .map((row) => ({ playerId: row.playerRemoteId, battingOrder: row.battingOrder! })), rawEvents),
+    [observedLineupRows, rawEvents],
   );
   const activeTeamOrder = useMemo(
     () => deriveActiveBattingOrder(baseBattingSlots, events, { batsOnTop: !isHome }),
@@ -273,7 +275,7 @@ export default function ScoringScreen() {
     gameScoringSettings.isTournament === true &&
     (!lineupLoaded || (isOffline && observedLineupRows.length === 0));
   const scoringRulesBlocked =
-    gameScoringSettings.status !== 'ready' || tournamentLineupMissing;
+    gameScoringSettings.status !== 'ready' || tournamentLineupMissing || !!rejectedChange;
 
   // Per-PA manual override — the scorer can point the rotation at a
   // different batter (lineup drifted, skipped batter). Cleared when the PA
@@ -299,10 +301,11 @@ export default function ScoringScreen() {
   const opponentPAs = gameState
     ? (isHome ? gameState.completedTopHalfPAs : gameState.completedBottomHalfPAs)
     : 0;
-  const opponentBattingSlots = useMemo<BattingSlot[]>(
-    () => opponentSlots.map((s) => ({ playerId: s.playerId, battingOrder: s.battingOrder })),
-    [opponentSlots],
+  const activeOpponentOrder = useMemo(
+    () => deriveActiveBattingOrder(opponentSlots, rawEvents, { batsOnTop: isHome, forOpponent: true }),
+    [opponentSlots, rawEvents, isHome],
   );
+  const opponentBattingSlots = activeOpponentOrder.slots;
   const opponentBattingOrderHistory = useMemo(
     () => battingOrderHistory(opponentBattingSlots, events, { forOpponent: true }),
     [opponentBattingSlots, events],
@@ -310,7 +313,10 @@ export default function ScoringScreen() {
   const opponentLastBatterId = gameState
     ? (isHome ? gameState.lastCompletedTopHalfBatterId : gameState.lastCompletedBottomHalfBatterId)
     : null;
-  const opponentResolution = resolveDueBatter(
+  const opponentResolution = gameScoringSettings.isTournament && activeOpponentOrder.nextBatterId
+    ? { kind: 'due' as const, playerId: activeOpponentOrder.nextBatterId,
+        battingOrder: activeOpponentOrder.nextBattingOrderPosition!, index: opponentBattingSlots.findIndex((slot) => slot.playerId === activeOpponentOrder.nextBatterId) }
+    : resolveDueBatter(
     opponentBattingSlots,
     opponentPAs,
     opponentLastBatterId ? opponentBattingOrderHistory.get(opponentLastBatterId) : null,
@@ -333,12 +339,14 @@ export default function ScoringScreen() {
     opponentDueBatter?.playerId ??
     (canNameOpponentBatters ? null : gameState?.currentBatterId ?? null);
   const opponentNameById = useMemo(
-    () => new Map(opponentSlots.map((s) => [s.playerId, s.name])),
-    [opponentSlots],
+    () => new Map([...opponentRoster.map((player) => [player.remoteId, opponentDisplayName(player)] as const), ...opponentSlots.map((s) => [s.playerId, s.name] as const)]),
+    [opponentSlots, opponentRoster],
   );
   const [showOpponentBatterPicker, setShowOpponentBatterPicker] = useState(false);
   const [showAddOpponentBatter, setShowAddOpponentBatter] = useState(false);
   const [showAddOurBatter, setShowAddOurBatter] = useState(false);
+  const [contractionSide, setContractionSide] = useState<'us' | 'opponent'>('us');
+  const contractionOrder = contractionSide === 'us' ? activeTeamOrder : activeOpponentOrder;
   const [caughtStealingFor, setCaughtStealingFor] =
     useState<{ base: 1 | 2 | 3; runnerId: string; name: string } | null>(null);
 
@@ -351,12 +359,36 @@ export default function ScoringScreen() {
     | { kind: 'roster'; opponentPlayerId: string }
     | { kind: 'new'; firstName: string; lastName: string; jerseyNumber: string }
   ): Promise<string | null> {
+    if (!gameState) return 'The game is still loading.';
+    const currentGameState = gameState;
+    if (lineupChangeLockRef.current) return 'A lineup change is already being saved.';
+    let extension: { battingOrder: number; record: (playerId: string, position: number) => Promise<void> } | undefined;
+    if (gameScoringSettings.isTournament && gameStarted) {
+      if (!midGameExtensionAllowed) return 'The tournament rules do not allow lineup extension.';
+      if (!betweenPlateAppearances) return 'Finish the current plate appearance before changing the lineup.';
+      const maxPosition = Math.max(0, ...opponentSlots.map((slot) => slot.battingOrder), ...rawEvents.flatMap((event) => {
+        const payload = event.payload as Partial<SubstitutionPayload>;
+        return event.eventType === EventType.SUBSTITUTION && payload.isOpponentSubstitution
+          && payload.substitutionType === SubstitutionType.LINEUP_EXTENSION ? [payload.battingOrderPosition ?? 0] : [];
+      }));
+      const reason = lineupExtensionError({ activeCount: activeOpponentOrder.slots.length, maxBatters, maxRecordedPosition: maxPosition });
+      if (reason) return reason;
+      if (input.kind === 'roster' && opponentSlots.some((slot) => slot.playerId === input.opponentPlayerId)) return 'That player already has a batting slot.';
+      extension = { battingOrder: maxPosition + 1, record: (playerId, position) =>
+        recordEvent(EventType.SUBSTITUTION, currentGameState.inning, currentGameState.isTopOfInning, {
+          substitutionType: SubstitutionType.LINEUP_EXTENSION, inPlayerId: playerId,
+          battingOrderPosition: position, isOpponentSubstitution: true,
+        }).then(() => undefined) };
+    }
+    lineupChangeLockRef.current = true;
+    try {
     const result =
       input.kind === 'roster'
         ? await addOpponentBatterFromRoster({
             gameRemoteId: gameId,
             opponentPlayerRemoteId: input.opponentPlayerId,
             maxBatters,
+            extension,
           })
         : game?.opponentTeamId
           ? await addNewOpponentBatter({
@@ -366,6 +398,7 @@ export default function ScoringScreen() {
               lastName: input.lastName,
               jerseyNumber: input.jerseyNumber,
               maxBatters,
+              extension,
             })
           : ({ ok: false, message: 'This game has no opponent team on file.' } as const);
 
@@ -375,6 +408,9 @@ export default function ScoringScreen() {
     // rows are already durable locally and the next cycle will carry them.
     triggerSync().catch(() => {});
     return null;
+    } finally {
+      lineupChangeLockRef.current = false;
+    }
   }
 
   /**
@@ -401,6 +437,7 @@ export default function ScoringScreen() {
     }
 
     const jersey = input.jerseyNumber.trim();
+    if (gameScoringSettings.isTournament) return 'Add this player to the tournament team roster before placing them in the lineup.';
     const result = await createLocalGuest({
       gameRemoteId: gameId,
       leagueId: leagueId ?? null,
@@ -426,7 +463,7 @@ export default function ScoringScreen() {
   const nextBatter = useMemo(() => {
     const slots = weBat
       ? battingSlots
-      : opponentSlots.map((s) => ({ playerId: s.playerId, battingOrder: s.battingOrder }));
+      : opponentBattingSlots;
     const overrideId = weBat ? batterOverrideId : opponentBatterOverrideId;
     const current = weBat ? dueBatter : opponentDueBatter;
 
@@ -441,7 +478,7 @@ export default function ScoringScreen() {
     if (currentIndex < 0) return null;
     return deriveDueBatter(slots, currentIndex + 1);
   }, [
-    weBat, battingSlots, opponentSlots, batterOverrideId,
+    weBat, battingSlots, opponentBattingSlots, batterOverrideId,
     opponentBatterOverrideId, dueBatter, opponentDueBatter,
   ]);
   /**
@@ -625,11 +662,11 @@ export default function ScoringScreen() {
    */
   const battingOrderView = useMemo<BattingOrderRow[]>(() => {
     if (!weBat) {
-      return opponentSlots.map((slot) => ({
+      return opponentBattingSlots.map((slot) => ({
         playerId: slot.playerId,
         battingOrder: slot.battingOrder,
-        name: slot.name,
-        position: slot.startingPosition ?? null,
+        name: opponentNameById.get(slot.playerId) ?? 'Opponent batter',
+        position: opponentSlots.find((row) => row.playerId === slot.playerId)?.startingPosition ?? null,
       }));
     }
     const positionByPlayer = new Map(
@@ -649,7 +686,7 @@ export default function ScoringScreen() {
             positionByPlayer.get(slot.playerId) ?? player?.primaryPosition ?? null,
         };
       });
-  }, [weBat, opponentSlots, battingSlots, observedLineupRows, roster, nameById, extraNames]);
+  }, [weBat, opponentSlots, opponentBattingSlots, opponentNameById, battingSlots, observedLineupRows, roster, nameById, extraNames]);
 
   const gameStarted = useMemo(
     () => events.some((e) => e.eventType === EventType.GAME_START),
@@ -1228,6 +1265,7 @@ export default function ScoringScreen() {
     }
 
     const payload = buildGameStartPayload({ isHome, pitcherId, battingOrder, tracking });
+    if (!gameScoringSettings.isTournament) {
     try {
       await recordEvent(EventType.GAME_START, gameState.inning, gameState.isTopOfInning, payload);
     } catch (err) {
@@ -1239,6 +1277,7 @@ export default function ScoringScreen() {
         'The starting lineup was not saved. Check your connection and try again.',
       );
       return;
+    }
     }
 
     // Write the batting order into game_lineups through the existing
@@ -1266,7 +1305,7 @@ export default function ScoringScreen() {
         }
         await database.batch(...lineupPlan.rowsToCreate.map(prepareLineupRow));
       });
-      triggerSync().catch((err) =>
+      if (!gameScoringSettings.isTournament) triggerSync().catch((err) =>
         console.warn(`handleStartGame: lineup sync trigger failed game=${gameId}:`, err),
       );
     } catch (err) {
@@ -1276,8 +1315,20 @@ export default function ScoringScreen() {
       console.warn(`handleStartGame: writing game_lineups failed game=${gameId}:`, err);
       Alert.alert(
         'Lineup not saved',
-        "The game started, but the batting order couldn't be saved on this device. Set it from the Lineup screen.",
+        gameScoringSettings.isTournament
+          ? 'The tournament game has not started. Save its batting order on this device and try again.'
+          : "The game started, but the batting order couldn't be saved on this device. Set it from the Lineup screen.",
       );
+      if (gameScoringSettings.isTournament) return;
+    }
+    if (gameScoringSettings.isTournament) {
+      try {
+        await recordEvent(EventType.GAME_START, gameState.inning, gameState.isTopOfInning, payload);
+      } catch (error) {
+        console.warn(`Tournament start could not be saved game=${gameId}:`, error);
+        Alert.alert('Game not started', 'The lineup is saved. Try starting the game again.');
+        return;
+      }
     }
     // Reflect the transition locally right away (list badge); the server
     // flips via fn_start_game in the sync engine's lifecycle scan.
@@ -1475,7 +1526,8 @@ export default function ScoringScreen() {
     // reject; the SUBSTITUTION would still land in the event log and diverge
     // replay from the DB state.
     if (activePlayerIds.has(newBatterId)) return 'That player is already in the order.';
-    if (currentMax >= maxBatters) return `The order is full at ${maxBatters} batters.`;
+    const extensionError = lineupExtensionError({ activeCount: activeTeamOrder.slots.length, maxBatters, maxRecordedPosition: currentMax });
+    if (extensionError) return extensionError;
 
     const battingOrderPosition = currentMax + 1;
 
@@ -1490,6 +1542,10 @@ export default function ScoringScreen() {
     } finally {
       lineupChangeLockRef.current = false;
     }
+
+    // Tournament projections are created only after the server accepts the event.
+    // The event already supplies the slot for offline replay.
+    if (gameScoringSettings.isTournament) return null;
 
     // Persist the new batter to the local game_lineups mirror so post-game
     // consumers (MaxPreps export, season-stat rollups) see them alongside the
@@ -1534,18 +1590,18 @@ export default function ScoringScreen() {
     return null;
   }
 
-  async function handleContractBatter(slot: { playerId: string; battingOrder: number }) {
+  async function handleContractBatter(slot: { playerId: string; battingOrder: number }, forOpponent = false) {
     if (!gameState || !gameScoringSettings.settings || lineupChangeLockRef.current) return;
     const reason = validateLineupContraction({
       slot,
       settings: leagueSettings,
-      currentBatterId: activeTeamOrder.nextBatterId,
+      currentBatterId: forOpponent ? activeOpponentOrder.nextBatterId : activeTeamOrder.nextBatterId,
       runnersOnBase: gameState
         ? Object.values(gameState.runnersOnBase).filter((id): id is string => id !== null)
         : [],
       betweenPlateAppearances,
     });
-    if (reason || activeTeamOrder.slots.length <= 1) return;
+    if (reason || (forOpponent ? activeOpponentOrder : activeTeamOrder).slots.length <= 1) return;
 
     lineupChangeLockRef.current = true;
     try {
@@ -1554,6 +1610,7 @@ export default function ScoringScreen() {
         outPlayerId: slot.playerId,
         battingOrderPosition: slot.battingOrder,
         removedBattingOrderPosition: slot.battingOrder,
+        isOpponentSubstitution: forOpponent,
       });
     } finally {
       lineupChangeLockRef.current = false;
@@ -1587,6 +1644,27 @@ export default function ScoringScreen() {
       recordVoid: (payload: EventVoidedPayload) =>
         recordEvent(EventType.EVENT_VOIDED, gameState.inning, gameState.isTopOfInning, payload),
     });
+  }
+
+  async function cancelRejectedLineupChange() {
+    if (!rejectedChange || rejectedChange.eventType !== EventType.SUBSTITUTION || !gameState || lineupChangeLockRef.current) return;
+    lineupChangeLockRef.current = true;
+    try {
+      if (!rawEvents.some((event) => event.eventType === EventType.EVENT_VOIDED
+        && (event.payload as EventVoidedPayload).voidedEventId === rejectedChange.eventId)) {
+        await recordEvent(EventType.EVENT_VOIDED, gameState.inning, gameState.isTopOfInning, {
+          voidedEventId: rejectedChange.eventId,
+          voidedSequenceNumber: rejectedChange.sequenceNumber,
+          cancelledBeforeSync: true,
+        });
+      }
+      await triggerSync();
+    } catch (error) {
+      console.warn(`Could not cancel rejected lineup change game=${gameId}:`, error);
+      Alert.alert('Cancellation not saved', 'The original change is still on this device. Please try again.');
+    } finally {
+      lineupChangeLockRef.current = false;
+    }
   }
 
   // Only scan this far back when searching for an event to void. Typical
@@ -2154,15 +2232,19 @@ export default function ScoringScreen() {
                 ? 'Choose an inactive batter to remove. Prior plate appearances remain in the game record.'
                 : 'Finish the current plate appearance before changing the batting order.'}
             </Text>
-            {activeTeamOrder.slots.map((slot) => {
+            <View className="mt-2 flex-row gap-3">
+              <TouchableOpacity onPress={() => setContractionSide('us')}><Text className="font-semibold text-emerald-900">Our lineup{contractionSide === 'us' ? ' ✓' : ''}</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setContractionSide('opponent')}><Text className="font-semibold text-emerald-900">Opponent lineup{contractionSide === 'opponent' ? ' ✓' : ''}</Text></TouchableOpacity>
+            </View>
+            {contractionOrder.slots.map((slot) => {
               const reason = !lineupLoaded
                 ? 'Wait for the lineup to load.'
-                : activeTeamOrder.slots.length <= 1
+                : contractionOrder.slots.length <= 1
                   ? 'At least one batter must remain.'
                   : validateLineupContraction({
                       slot,
                       settings: leagueSettings,
-                      currentBatterId: activeTeamOrder.nextBatterId,
+                      currentBatterId: contractionOrder.nextBatterId,
                       runnersOnBase: gameState
                         ? Object.values(gameState.runnersOnBase).filter(
                             (id): id is string => id !== null,
@@ -2174,11 +2256,11 @@ export default function ScoringScreen() {
                 <TouchableOpacity
                   key={slot.battingOrder}
                   disabled={!!reason || lineupChangeLockRef.current}
-                  onPress={() => void handleContractBatter(slot)}
+                  onPress={() => void handleContractBatter(slot, contractionSide === 'opponent')}
                   className={`mt-2 flex-row items-center justify-between rounded-lg border px-3 py-2 ${reason ? 'border-emerald-100 bg-white/60' : 'border-emerald-300 bg-white'}`}
                 >
                   <Text className="text-score-xs text-gray-900">
-                    {batterName(slot.playerId)} · slot {slot.battingOrder}
+                    {contractionSide === 'us' ? batterName(slot.playerId) : (opponentNameById.get(slot.playerId) ?? 'Opponent batter')} · slot {slot.battingOrder}
                   </Text>
                   <Text
                     className={`text-score-xs font-semibold ${reason ? 'text-gray-500' : 'text-emerald-800'}`}
@@ -2500,21 +2582,34 @@ export default function ScoringScreen() {
       {scoringRulesBlocked && (
         <View className="absolute inset-0 z-50 items-center justify-center bg-white/95 px-8">
           <Text className="text-center text-score-lg font-bold text-gray-900">
-            {gameScoringSettings.status === 'loading'
+            {rejectedChange ? 'Tournament change rejected' : gameScoringSettings.status === 'loading'
               ? 'Verifying game rules…'
               : tournamentLineupMissing
                 ? 'Tournament lineup unavailable'
                 : 'Game rules unavailable'}
           </Text>
           <Text className="mt-2 text-center text-score-sm text-gray-600">
-            {tournamentLineupMissing
+            {rejectedChange
+              ? `Event ${rejectedChange.sequenceNumber}: ${rejectedChange.reason}. Your events remain saved on this device. Resolve coaching access or cancel the rejected lineup change, then retry. Review any subsequent plays after cancelling a change.`
+              : tournamentLineupMissing
               ? (gameScoringSettings.error ?? 'Download this game’s lineup before scoring offline.')
               : gameScoringSettings.status === 'loading'
                 ? 'Scoring controls will unlock after this game’s rules load.'
                 : (gameScoringSettings.error ?? 'Reconnect and sync this game before scoring.')}
           </Text>
+          {rejectedChange?.eventType === EventType.SUBSTITUTION && (
+            <TouchableOpacity disabled={isSyncing} onPress={() => {
+              Alert.alert('Cancel rejected lineup change?', 'The attempt and its cancellation will remain in the game history. Review later plays before continuing.', [
+                { text: 'Keep change', style: 'cancel' },
+                { text: 'Cancel change', onPress: () => void cancelRejectedLineupChange() },
+              ]);
+            }} className="mt-4 rounded-lg border border-red-300 px-5 py-3">
+              <Text className="font-semibold text-red-700">Cancel rejected change</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             onPress={() => {
+              if (rejectedChange) triggerSync().catch(console.warn);
               if (gameScoringSettings.status === 'error') gameScoringSettings.retry();
               if (tournamentLineupMissing) triggerSync().catch(console.warn);
             }}
