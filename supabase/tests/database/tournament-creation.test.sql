@@ -63,6 +63,7 @@ SELECT is((SELECT count(*) FROM public.create_tournament('{"name":"Existing Team
 SELECT is(
   (SELECT count(*) FROM public.create_tournament('{"name":"One Weekend Cup","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000003","team":{"type":"new","name":"One Weekend Team"},"lineup":{"allowExpanded":true,"maxBatters":12,"allowMidGameChanges":true}}'::jsonb) r
    JOIN public.tournament_teams tt ON tt.tournament_id = r.tournament_id AND tt.team_id = r.team_id AND tt.season_id = r.season_id
+   JOIN public.seasons s ON s.id = r.season_id AND s.team_id = r.team_id AND s.is_active
    JOIN public.team_members tm ON tm.team_id = r.team_id AND tm.user_id = auth.uid() AND tm.role = 'head_coach'
    JOIN public.channels c ON c.team_id = r.team_id AND c.name = 'Announcements'
    JOIN public.channel_members cm ON cm.channel_id = c.id AND cm.user_id = auth.uid() AND cm.can_post),

@@ -90,8 +90,9 @@ CREATE TABLE public.tournaments (
     AND jsonb_typeof(scoring_settings->'lineup'->'allowMidGameContraction') = 'boolean'
     AND CASE
       WHEN scoring_settings->'lineup'->>'allowExpanded' = 'true'
-        THEN (scoring_settings->'lineup'->>'maxBatters')::integer BETWEEN 10 AND 30
-      ELSE (scoring_settings->'lineup'->>'maxBatters')::integer = 9
+        THEN (scoring_settings->'lineup'->>'maxBatters')::numeric BETWEEN 10 AND 30
+          AND (scoring_settings->'lineup'->>'maxBatters')::numeric = trunc((scoring_settings->'lineup'->>'maxBatters')::numeric)
+      ELSE (scoring_settings->'lineup'->>'maxBatters')::numeric = 9
     END
   )
 );
@@ -211,9 +212,10 @@ BEGIN
     RAISE EXCEPTION 'Tournament mode permission is required' USING ERRCODE = '42501';
   END IF;
   IF p_input IS NULL OR jsonb_typeof(p_input) <> 'object'
+     OR jsonb_typeof(p_input->'name') IS DISTINCT FROM 'string'
      OR v_name IS NULL OR length(v_name) NOT BETWEEN 1 AND 100
      OR v_request_id IS NULL OR v_start_date IS NULL OR v_end_date < v_start_date
-     OR v_team_type NOT IN ('existing', 'new') THEN
+     OR v_team_type IS NULL OR v_team_type NOT IN ('existing', 'new') THEN
     RAISE EXCEPTION 'Tournament details are invalid' USING ERRCODE = '22023';
   END IF;
 
@@ -243,20 +245,23 @@ BEGIN
         USING ERRCODE = '42501';
     END IF;
   ELSE
-    IF length(btrim(coalesce(p_input->'team'->>'name', ''))) NOT BETWEEN 1 AND 100
+    IF jsonb_typeof(p_input->'team'->'name') IS DISTINCT FROM 'string'
+       OR length(btrim(coalesce(p_input->'team'->>'name', ''))) NOT BETWEEN 1 AND 100
+       OR (p_input->'team' ? 'organization' AND jsonb_typeof(p_input->'team'->'organization') NOT IN ('string', 'null'))
        OR (p_input->'team' ? 'stateCode' AND length(p_input->'team'->>'stateCode') <> 2)
        OR (p_input->'team' ? 'organization' AND length(p_input->'team'->>'organization') > 100) THEN
       RAISE EXCEPTION 'Tournament team details are invalid' USING ERRCODE = '22023';
     END IF;
   END IF;
 
-  IF jsonb_typeof(p_input->'lineup'->'allowExpanded') <> 'boolean'
-     OR jsonb_typeof(p_input->'lineup'->'allowMidGameChanges') <> 'boolean' THEN
+  IF jsonb_typeof(p_input->'lineup'->'allowExpanded') IS DISTINCT FROM 'boolean'
+     OR jsonb_typeof(p_input->'lineup'->'allowMidGameChanges') IS DISTINCT FROM 'boolean' THEN
     RAISE EXCEPTION 'Tournament lineup choices are invalid' USING ERRCODE = '22023';
   END IF;
   IF p_input->'lineup'->>'allowExpanded' = 'true' THEN
-    IF jsonb_typeof(p_input->'lineup'->'maxBatters') <> 'number'
-       OR (p_input->'lineup'->>'maxBatters')::integer NOT BETWEEN 10 AND 30 THEN
+    IF jsonb_typeof(p_input->'lineup'->'maxBatters') IS DISTINCT FROM 'number'
+       OR (p_input->'lineup'->>'maxBatters')::numeric NOT BETWEEN 10 AND 30
+       OR (p_input->'lineup'->>'maxBatters')::numeric <> trunc((p_input->'lineup'->>'maxBatters')::numeric) THEN
       RAISE EXCEPTION 'Expanded lineup cap must be from 10 to 30 batters' USING ERRCODE = '22023';
     END IF;
   ELSIF p_input->'lineup' ? 'maxBatters' THEN
@@ -293,7 +298,7 @@ BEGIN
   END IF;
 
   INSERT INTO public.seasons (team_id, name, start_date, end_date, is_active)
-  VALUES (v_team_id, left(v_name || ' Tournament', 100), v_start_date, v_end_date, false)
+  VALUES (v_team_id, left(v_name || ' Tournament', 100), v_start_date, v_end_date, v_team_type = 'new')
   RETURNING id INTO v_season_id;
 
   INSERT INTO public.tournament_teams (tournament_id, team_id, season_id, is_tournament_only)

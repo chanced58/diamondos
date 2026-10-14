@@ -62,7 +62,7 @@ The original checkout has an untracked user-owned `AGENTS.md`; it was left untou
 
 - [ ] Write database tests for missing/revoked grants, inactive/foreign memberships, self-grant attempts, both branches, participant/game constraints, duplicate requests, and an injected channel-insert failure. Assert every resource count is unchanged after rollback.
 - [ ] Add the permission column, admin-only grant guard and audit table, tournament/participant tables, game association, and RLS. Validate scoring JSON against required fields/ranges in SQL; client Zod validation alone is insufficient.
-- [ ] Implement the transaction with request-ID uniqueness and retry handling, head-coach/AD eligibility, tournament-specific inactive season, and new-team membership/channel creation. Restrict direct writes and RPC privileges. Keep roster and league membership unchanged.
+- [ ] Implement the transaction with request-ID uniqueness and retry handling, head-coach/AD eligibility, a tournament season inactive for selected existing teams and active for new tournament-only teams, and new-team membership/channel creation. Restrict direct writes and RPC privileges. Keep roster and league membership unchanged.
 - [ ] Run `supabase db reset`, `supabase test db`, and `pnpm --filter @baseball/database gen-types`; verify all RLS tests pass with actual authenticated roles.
 - [ ] Add query wrappers and run `pnpm --filter @baseball/database type-check`.
 - [ ] Commit `feat(tournament): create authorized tournament instances atomically`.
