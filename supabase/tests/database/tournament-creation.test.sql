@@ -58,7 +58,7 @@ SELECT isnt(
 );
 SELECT is((SELECT count(*) FROM public.tournaments WHERE name = 'Existing Team Cup'), 1::bigint, 'existing-team branch creates one tournament');
 SELECT is((SELECT count(*) FROM public.seasons WHERE team_id = '52000000-0000-4000-8000-000000000001' AND is_active), 1::bigint, 'existing-team branch preserves its active regular season');
-SELECT is((SELECT count(*) FROM public.tournament_teams tt JOIN public.teams t ON t.id = tt.team_id WHERE t.name = 'One Weekend Team'), 0::bigint, 'existing-team branch does not create an extra team');
+SELECT is((SELECT count(*) FROM public.tournament_teams tt JOIN public.tournaments t ON t.id = tt.tournament_id WHERE t.name = 'Existing Team Cup' AND tt.team_id <> '52000000-0000-4000-8000-000000000001'), 0::bigint, 'existing-team branch does not create an extra team');
 SELECT is((SELECT count(*) FROM public.create_tournament('{"name":"Existing Team Cup","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000002","team":{"type":"existing","teamId":"52000000-0000-4000-8000-000000000001"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}'::jsonb)), 1::bigint, 'retry with the same request ID returns the original result');
 CREATE TEMP TABLE new_tournament_result AS SELECT * FROM public.create_tournament('{"name":"One Weekend Cup","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000003","team":{"type":"new","name":"One Weekend Team"},"lineup":{"allowExpanded":true,"maxBatters":12,"allowMidGameChanges":true}}'::jsonb);
 SELECT is(

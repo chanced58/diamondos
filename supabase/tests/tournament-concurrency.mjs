@@ -78,3 +78,36 @@ assert.equal(state.activeCount, 10);
 assert.equal(state.eventCount, 3);
 assert.deepEqual(state.score, [0, 0]);
 console.log('PASS: two concurrent connections serialize the final slot; one extension succeeds, the retry respects the cap, and historical events/scores remain intact.');
+
+await run(`UPDATE public.user_profiles SET tournament_mode_enabled = true WHERE id = '${coachId}';`);
+const request = JSON.stringify({ name: 'Concurrent Creation', startDate: '2026-10-20', endDate: '2026-10-22',
+  requestId: '79000000-0000-4000-8000-000000000001',
+  team: { type: 'existing', teamId: '72000000-0000-4000-8000-000000000001' },
+  lineup: { allowExpanded: false, allowMidGameChanges: false } });
+const create = `SELECT tournament_id FROM public.create_tournament('${request}'::jsonb);`;
+let creationReady;
+const created = new Promise((resolve) => { creationReady = resolve; });
+const creator = sqlProcess(authorize + create + "SELECT 'CREATION_HELD';", {
+  open: true, onOutput: (output) => { if (output.includes('CREATION_HELD')) creationReady(); },
+});
+try {
+  await Promise.race([created, creator.finished.then((result) => { throw new Error(result.stderr || 'Creator exited before holding its transaction.'); })]);
+  const duplicate = sqlProcess("SET application_name = 'tournament_creation_second';" + authorize + create + 'COMMIT;');
+  let sawWait = false;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const waiting = await run("SELECT count(*) FROM pg_stat_activity WHERE application_name = 'tournament_creation_second' AND wait_event_type = 'Lock';");
+    if (Number(waiting) > 0) { sawWait = true; break; }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  creator.child.stdin.end('COMMIT;\n');
+  const [original, retried] = await Promise.all([creator.finished, duplicate.finished]);
+  assert.ok(sawWait, 'The duplicate creation must wait for the original transaction.');
+  assert.equal(original.code, 0, original.stderr);
+  assert.equal(retried.code, 0, retried.stderr);
+  const uuid = /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/g;
+  assert.equal(original.stdout.match(uuid).at(-1), retried.stdout.match(uuid).at(-1));
+  assert.equal(Number(await run("SELECT count(*) FROM public.tournaments WHERE request_id = '79000000-0000-4000-8000-000000000001';")), 1);
+  console.log('PASS: concurrent identical creation requests wait and return the same complete tournament.');
+} finally {
+  if (!creator.child.stdin.writableEnded) creator.child.stdin.end('ROLLBACK;\n');
+}

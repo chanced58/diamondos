@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(5);
+SELECT plan(6);
 
 INSERT INTO auth.users (id, instance_id, email, aud, role, created_at, updated_at)
 VALUES
@@ -31,6 +31,12 @@ SELECT throws_ok(
 );
 
 SELECT set_config('request.jwt.claim.sub', '81000000-0000-4000-8000-000000000001', true);
+SELECT throws_ok(
+  $$ INSERT INTO public.game_events (game_id, sequence_number, event_type, inning, is_top_of_inning, payload, occurred_at, created_by, device_id)
+     VALUES ('86000000-0000-4000-8000-000000000001', 1, 'game_start', 1, true, '{}', now(), auth.uid(), 'legacy-client') $$,
+  '23514', 'Tournament game starts require atomically frozen rules',
+  'plain event inserts cannot poison a scheduled tournament game'
+);
 SELECT is(
   (SELECT s.event_id FROM public.start_tournament_game_for_user(
     '86000000-0000-4000-8000-000000000001', '87000000-0000-4000-8000-000000000001', 1,

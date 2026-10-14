@@ -12,8 +12,16 @@ DECLARE
   v_requested_event_id uuid;
   v_requested_sequence integer;
 BEGIN
-  IF NEW.event_type <> 'game_start'
-     OR NOT (NEW.payload ? '_tournamentClientEventId' OR NEW.payload ? '_tournamentClientSequence') THEN
+  IF NEW.event_type <> 'game_start' THEN
+    RETURN NEW;
+  END IF;
+  -- The start RPC updates the protected snapshot before inserting this event
+  -- in the same transaction. Plain legacy inserts cannot do that update.
+  IF EXISTS (SELECT 1 FROM public.games g WHERE g.id = NEW.game_id
+    AND g.tournament_id IS NOT NULL AND (g.scoring_settings_snapshot IS NULL OR g.status <> 'in_progress')) THEN
+    RAISE EXCEPTION 'Tournament game starts require atomically frozen rules' USING ERRCODE = '23514';
+  END IF;
+  IF NOT (NEW.payload ? '_tournamentClientEventId' OR NEW.payload ? '_tournamentClientSequence') THEN
     RETURN NEW;
   END IF;
   IF auth.uid() IS NULL OR NEW.created_by IS DISTINCT FROM auth.uid() THEN

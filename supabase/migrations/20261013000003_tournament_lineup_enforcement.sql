@@ -506,7 +506,10 @@ BEGIN
         coalesce((SELECT max((ge.payload ->> 'battingOrderPosition')::integer)
           FROM public.game_events ge WHERE ge.game_id = NEW.game_id AND ge.event_type = 'substitution'
             AND ge.payload ->> 'substitutionType' = 'lineup_extension'
-            AND coalesce((ge.payload ->> 'isOpponentSubstitution')::boolean, false)), 0)
+            AND coalesce((ge.payload ->> 'isOpponentSubstitution')::boolean, false)
+            AND NOT EXISTS (SELECT 1 FROM public.game_events cancelled WHERE cancelled.game_id = ge.game_id
+              AND cancelled.event_type = 'event_voided' AND cancelled.payload ->> 'voidedEventId' = ge.id::text
+              AND cancelled.payload ->> 'cancelledBeforeSync' = 'true')), 0)
       ) INTO v_max_recorded_position;
       IF EXISTS (SELECT 1 FROM public.opponent_game_lineups ogl WHERE ogl.game_id = NEW.game_id AND ogl.opponent_player_id = v_player_id AND ogl.batting_order IS NOT NULL) THEN
         RAISE EXCEPTION 'This opponent batter already has a historical lineup slot' USING ERRCODE = '23514';
@@ -520,7 +523,10 @@ BEGIN
         coalesce((SELECT max((ge.payload ->> 'battingOrderPosition')::integer)
           FROM public.game_events ge WHERE ge.game_id = NEW.game_id AND ge.event_type = 'substitution'
             AND ge.payload ->> 'substitutionType' = 'lineup_extension'
-            AND NOT coalesce((ge.payload ->> 'isOpponentSubstitution')::boolean, false)), 0)
+            AND NOT coalesce((ge.payload ->> 'isOpponentSubstitution')::boolean, false)
+            AND NOT EXISTS (SELECT 1 FROM public.game_events cancelled WHERE cancelled.game_id = ge.game_id
+              AND cancelled.event_type = 'event_voided' AND cancelled.payload ->> 'voidedEventId' = ge.id::text
+              AND cancelled.payload ->> 'cancelledBeforeSync' = 'true')), 0)
       ) INTO v_max_recorded_position;
       IF EXISTS (SELECT 1 FROM public.game_lineups gl WHERE gl.game_id = NEW.game_id AND gl.player_id = v_player_id AND gl.batting_order IS NOT NULL) THEN
         RAISE EXCEPTION 'This batter already has a historical lineup slot' USING ERRCODE = '23514';

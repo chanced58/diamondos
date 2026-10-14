@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(25);
+SELECT plan(27);
 
 INSERT INTO auth.users (id, instance_id, email, aud, role, created_at, updated_at)
 VALUES
@@ -199,5 +199,15 @@ SELECT throws_ok(
  '23514', NULL, 'the generic game-start path cannot skip tournament rule freezing');
 SELECT throws_ok($$ SELECT public.sync_cancelled_tournament_lineup_change(jsonb_set('{"id":"78000000-0000-4000-8000-000000000014","game_id":"77000000-0000-4000-8000-000000000001","sequence_number":9,"event_type":"substitution","inning":1,"is_top_of_inning":false,"payload":{"substitutionType":"lineup_extension","inPlayerId":"74000000-0000-4000-8000-000000000012","battingOrderPosition":13,"isOpponentSubstitution":"invalid"},"occurred_at":"2026-10-14T00:00:00Z","created_by":"71000000-0000-4000-8000-000000000001","device_id":"test"}'::jsonb, '{occurred_at}', to_jsonb(now())), jsonb_set('{"id":"78000000-0000-4000-8000-000000000015","game_id":"77000000-0000-4000-8000-000000000001","sequence_number":10,"event_type":"event_voided","inning":1,"is_top_of_inning":false,"payload":{"voidedEventId":"78000000-0000-4000-8000-000000000014","voidedSequenceNumber":9,"cancelledBeforeSync":true},"occurred_at":"2026-10-14T00:00:00Z","created_by":"71000000-0000-4000-8000-000000000001","device_id":"test"}'::jsonb, '{occurred_at}', to_jsonb(now()))) $$,
  '22023', NULL, 'cancelled attempts cannot poison replay with a non-boolean side field');
+SELECT lives_ok(
+ $$ INSERT INTO public.game_events (game_id, sequence_number, event_type, inning, is_top_of_inning, payload, occurred_at, created_by, device_id)
+ VALUES ('77000000-0000-4000-8000-000000000001', 9, 'substitution', 1, false,
+ '{"substitutionType":"lineup_contraction","outPlayerId":"74000000-0000-4000-8000-000000000006","removedBattingOrderPosition":6}', now(), auth.uid(), 'test') $$,
+ 'make space after a cancelled offline addition');
+SELECT lives_ok(
+ $$ INSERT INTO public.game_events (game_id, sequence_number, event_type, inning, is_top_of_inning, payload, occurred_at, created_by, device_id)
+ VALUES ('77000000-0000-4000-8000-000000000001', 10, 'substitution', 1, false,
+ '{"substitutionType":"lineup_extension","inPlayerId":"74000000-0000-4000-8000-000000000012","battingOrderPosition":12}', now(), auth.uid(), 'test') $$,
+ 'a cancelled attempt does not consume the next stable batting slot');
 SELECT * FROM finish();
 ROLLBACK;

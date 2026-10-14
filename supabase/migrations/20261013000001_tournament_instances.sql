@@ -219,6 +219,9 @@ BEGIN
     RAISE EXCEPTION 'Tournament details are invalid' USING ERRCODE = '22023';
   END IF;
 
+  -- Concurrent retries must see the committed result before checking this key.
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(v_user_id::text || ':' || v_request_id::text, 0));
+
   SELECT t.id, tt.team_id, tt.season_id, t.request_payload
   INTO v_tournament_id, v_team_id, v_season_id, v_existing_payload
   FROM public.tournaments t
