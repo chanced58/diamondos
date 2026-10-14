@@ -163,7 +163,7 @@ OBR places its **Definitions of Terms** section at the front of the rulebook, ah
 These terms describe the app's tournament workflow; they are not definitions from OBR.
 
 - **Tournament** — a tournament instance created in the app with its own date range, participating team season, and scoring settings. Each tournament game uses the tournament's settings until its start event freezes them for that game.
-- **TournamentTeam** — the link between a tournament and a participating team and season. A tournament can use a current team season or a dedicated team created for tournament play.
+- **TournamentTeam** — the link between a tournament and a participating team and season. Every participant uses a dedicated tournament season; its team may be an existing administered team or a new tournament-only team.
 - **TournamentMode** — an account permission that allows its holder to create tournament instances. Team coach permissions still govern which team the user may select.
 
 ---

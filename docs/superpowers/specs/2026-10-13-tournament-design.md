@@ -1,6 +1,6 @@
-# Tournament creation — proposed design
+# Tournament creation — accepted design
 
-Status: planning draft; product implementation has not started.
+Status: implemented on `feature/tournament`. See [verification and remaining acceptance checks](../../tournament-verification.md).
 
 ## Requested outcome
 
@@ -8,11 +8,11 @@ A user with an explicit **tournament mode** permission can start a new tournamen
 
 ## Scope and assumptions for review
 
-The first release creates a team-centered tournament workspace, schedules its games, and enforces its lineup rules in web and mobile scoring. The data model permits additional participating teams later. Whether the intended product is instead an organizer-owned multi-team competition remains a product decision; a clarification was requested during planning.
+The first release creates a team-centered tournament workspace, schedules its games, and enforces its lineup rules in web and mobile scoring. The data model permits additional participating teams later. Implementation follows the authorized team-centered first-release plan.
 
 Bracket generation, seeding, registration, payments, public tournament pages, and automatic advancement are outside this first release. Tournament creation starts online; previously downloaded tournament games remain scoreable offline.
 
-Proposed definition of team administrator: an active `head_coach` or `athletic_director` membership. Assistant coaches retain existing scoring privileges but cannot select a team for tournament creation without an explicit future grant. Platform administrators may administer permission grants, but tournament creation still requires the tournament mode grant and team eligibility. This needs product confirmation because the repository has no generic team-admin role.
+Accepted definition of team administrator: an active `head_coach` or `athletic_director` membership. Assistant coaches retain existing scoring privileges but cannot select a team for tournament creation without an explicit future grant. Platform administrators may administer permission grants, but tournament creation still requires the tournament mode grant and team eligibility.
 
 ## Existing code and alternatives
 
@@ -53,9 +53,9 @@ Reuse the settings shape but add `lineup.allowMidGameContraction`, default false
 
 Capture effective settings on a game when play starts and keep them fixed for that game's replay. Tournament settings changes apply only to games not yet started. Missing or unreadable tournament settings must prevent starting or changing a lineup rather than silently using the permissive league defaults. Store downloaded settings by game ID/version for mobile; an uncached tournament game must load them online before offline scoring.
 
-Add `LINEUP_CONTRACTION` as an append-only `SUBSTITUTION` variant. The proposed first-release policy removes a batting slot without an automatic out, keeps the remaining order stable, and never removes existing player statistics. Confirm this policy before implementation: forfeited-slot automatic outs and orders below nine differ across competitions and are not specified by the request.
+Add `LINEUP_CONTRACTION` as an append-only `SUBSTITUTION` variant. The accepted first-release policy removes a batting slot without an automatic out, keeps the remaining order stable, and never removes existing player statistics. Competition-specific automatic-out policies remain outside this implementation.
 
-For this proposed policy, allow a reduction down to one occupied batting slot, reject removing the current batter during an active plate appearance or a runner still on base, and apply changes between plate appearances. Ordinary replacements stay substitutions rather than contraction. Replay must track the next batter by stable slot/player identity at each event boundary, rather than only taking total plate appearances modulo the new lineup length. Contraction, expansion, voiding, undo, reload, and offline sync must agree on the next batter for both sides.
+For this policy, allow a reduction down to one occupied batting slot, reject removing the current batter during an active plate appearance or a runner still on base, and apply changes between plate appearances. Ordinary replacements stay substitutions rather than contraction. Replay must track the next batter by stable slot/player identity at each event boundary, rather than only taking total plate appearances modulo the new lineup length. Contraction, expansion, voiding, undo, reload, and offline sync must agree on the next batter for both sides.
 
 Enforce lineup rule checks at the database ingestion boundary as well as server actions and UI. Serialize each game's lineup-changing writes so concurrent additions cannot exceed the cap. Do not UPDATE or DELETE `game_events`; any lineup projection must be reproducible from original lineup plus effective events and their voids.
 
@@ -69,4 +69,4 @@ Enforce lineup rule checks at the database ingestion boundary as well as server 
 - Contraction never erases prior at-bats, changes score/pitch count, or selects the wrong next batter after replay/undo/sync.
 - Historical/public league results and pitch-rest compliance are verified across tournament and regular seasons.
 
-Implement with unit, database authorization/transaction, server action, and offline replay tests. Regenerate database types after migrations, run type checks/lint/build, run CodeRabbit review, and commit each discrete unit. No schema deployment or PR merge is part of this planning task.
+Implement with unit, database authorization/transaction, server action, and offline replay tests. Regenerate database types after migrations, run type checks/lint/build, run CodeRabbit review, and commit each discrete unit. Production schema deployment and PR merge require separate authorization.
