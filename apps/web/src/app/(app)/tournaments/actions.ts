@@ -29,7 +29,9 @@ export async function createTournamentAction(
     redirect(`/tournaments/${created.tournamentId}`);
   } catch (error) {
     if (error instanceof Error && 'digest' in error) throw error;
-    const message = error instanceof Error ? error.message : 'Unknown error';
+    const message = error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+      ? error.message
+      : 'Unknown error';
     if (message.includes('active head coach or athletic director')) {
       return 'You must be an active head coach or athletic director for the selected team.';
     }

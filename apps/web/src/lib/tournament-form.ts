@@ -4,7 +4,7 @@ import type { TournamentTeamOption } from '@baseball/database';
 export function getTournamentReview(formData: FormData, teams: TournamentTeamOption[]) {
   const isNewTeam = formData.get('teamType') === 'new';
   const teamName = String(formData.get('teamName') ?? '').trim();
-  const selectedTeam = teams.find((team) => team.id === formData.get('teamId'));
+  const selectedTeam = teams.find((team) => team.id === (formData.get('teamId') ?? teams[0]?.id));
   const maxBatters = formData.get('allowExpanded') === 'on'
     ? Number(formData.get('maxBatters') || 12)
     : 9;

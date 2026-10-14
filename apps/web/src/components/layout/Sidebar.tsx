@@ -49,7 +49,6 @@ export function Sidebar({
   primaryColor,
   secondaryColor,
   isPlatformAdmin,
-  tournamentModeEnabled = false,
   leagueId,
   leagueName,
   leagueSlug,
@@ -85,7 +84,7 @@ export function Sidebar({
         } as NavItem]
       : []),
     { href: '/messages',   label: 'Messages', icon: <Icon.msg /> },
-    ...(tournamentModeEnabled ? [{ href: '/tournaments', label: 'Tournaments', icon: <Icon.admin /> }] : []),
+    { href: '/tournaments', label: 'Tournaments', icon: <Icon.admin /> },
     {
       href: teamId ? `/teams/${teamId}/admin` : '/teams',
       label: 'Roster',
