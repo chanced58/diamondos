@@ -371,7 +371,8 @@ describe('tournament pressure test: 10 batters, an 11th added in the second trip
     const sim = new TournamentGameSim();
     sim.playUntil(() => sim.timesBatted('us', 'h5') === 2 && sim.battingSide === 'us');
     const revertTo = sim.rawEvents[sim.rawEvents.length - 1].sequenceNumber;
-    sim.addBatter('us', 'h11');
+    expect(sim.addBatter('us', 'h11').error).toBeNull();
+    expect(sim.activeOrder('us')).toEqual(order('h', ...range(1, 11)));
     sim.push(EventType.PITCH_REVERTED, { revertToSequenceNumber: revertTo });
 
     expect(sim.activeOrder('us')).toEqual(order('h', ...range(1, 10)));
@@ -383,8 +384,8 @@ describe('tournament pressure test: 10 batters, an 11th added in the second trip
     const sim = new TournamentGameSim();
     sim.playUntil(() => sim.timesBatted('us', 'h2') === 2 && sim.timesBatted('them', 'a2') === 2);
     const before = sim.state;
-    sim.addBatter('us', 'h11');
-    sim.addBatter('them', 'a11');
+    expect(sim.addBatter('us', 'h11').error).toBeNull();
+    expect(sim.addBatter('them', 'a11').error).toBeNull();
     const after = sim.state;
     expect(after.pitcherPitchCounts).toEqual(before.pitcherPitchCounts);
     expect([after.homeScore, after.awayScore, after.outs]).toEqual([before.homeScore, before.awayScore, before.outs]);
