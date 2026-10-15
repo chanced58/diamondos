@@ -1,5 +1,7 @@
 'use client';
 
+import { getLineupExtensionHistory } from '@baseball/shared';
+
 import type { JSX } from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
@@ -971,28 +973,13 @@ export function ScoringBoard({
   const adjustmentOrder = lineupAdjustmentSide === 'us' ? activeTeamOrder : activeOpponentOrder;
   const adjustmentIsOpponent = lineupAdjustmentSide === 'opponent';
   const adjustmentActivePlayerIds = new Set(adjustmentSlots.map((slot) => slot.playerId));
-  const adjustmentHistoricalPlayerIds = new Set([
-    ...(adjustmentIsOpponent ? opponentStarters : starters).map((slot) => slot.playerId),
-    ...eventRows.flatMap((row) => {
-      const payload = (row.payload ?? {}) as Record<string, unknown>;
-      return row.event_type === EventType.SUBSTITUTION &&
-        payload.substitutionType === SubstitutionType.LINEUP_EXTENSION &&
-        Boolean(payload.isOpponentSubstitution) === adjustmentIsOpponent &&
-        typeof payload.inPlayerId === 'string'
-        ? [payload.inPlayerId]
-        : [];
-    }),
-  ]);
-  const adjustmentMaxOrder = eventRows.reduce((max, row) => {
-    const payload = (row.payload ?? {}) as Record<string, unknown>;
-    if (
-      row.event_type !== EventType.SUBSTITUTION ||
-      payload.substitutionType !== SubstitutionType.LINEUP_EXTENSION ||
-      Boolean(payload.isOpponentSubstitution) !== adjustmentIsOpponent
-    ) return max;
-    const order = Number(payload.battingOrderPosition);
-    return Number.isInteger(order) ? Math.max(max, order) : max;
-  }, Math.max(0, ...(lineupAdjustmentSide === 'us' ? starters : opponentStarters).map((slot) => slot.battingOrder)));
+  const adjustmentHistory = getLineupExtensionHistory(
+    adjustmentIsOpponent ? opponentStarters : starters,
+    eventRows.map(mapRowToEvent),
+    { forOpponent: adjustmentIsOpponent },
+  );
+  const adjustmentHistoricalPlayerIds = adjustmentHistory.playerIds;
+  const adjustmentMaxOrder = adjustmentHistory.maxRecordedPosition;
   const nextExtensionOrder = adjustmentMaxOrder + 1;
   const canExtendSelectedLineup =
     !isDemo &&
@@ -3312,6 +3299,7 @@ export function ScoringBoard({
             {settings.lineup.allowMidGameExtension && (
               <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                 <select
+                  aria-label="Batter to add to the end of the order"
                   value={newLineupBatterId}
                   onChange={(event) => setNewLineupBatterId(event.target.value)}
                   className="w-full rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm text-gray-900"
@@ -3340,6 +3328,7 @@ export function ScoringBoard({
             {settings.lineup.allowMidGameContraction && (
               <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                 <select
+                  aria-label="Batting slot to remove"
                   value={lineupSlotToRemove}
                   onChange={(event) => setLineupSlotToRemove(event.target.value)}
                   className="w-full rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm text-gray-900"

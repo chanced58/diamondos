@@ -32,7 +32,7 @@ import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayl
 import { SubstitutionType } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
 import { useGameScoringSettings } from '../../../../src/lib/game-scoring-settings';
-import { initialBattingOrderSlots, lineupExtensionError } from '@baseball/shared';
+import { initialBattingOrderSlots, lineupExtensionError, getLineupExtensionHistory } from '@baseball/shared';
 import { database } from '../../../../src/db';
 import type { GameEvent as WdbGameEvent } from '../../../../src/db/models/GameEvent';
 import type { Player } from '../../../../src/db/models/Player';
@@ -253,22 +253,10 @@ export default function ScoringScreen() {
   );
   const dueBatter = ourResolution.kind === 'due' ? ourResolution : null;
   const betweenPlateAppearances = isBetweenPlateAppearances(events);
-  const cancelledLineupEventIds = new Set(rawEvents.filter((event) => event.eventType === EventType.EVENT_VOIDED &&
-    (event.payload as { cancelledBeforeSync?: boolean }).cancelledBeforeSync).map((event) =>
-    (event.payload as { voidedEventId: string }).voidedEventId));
-  const maxRecordedOrder = Math.max(
-    0,
-    ...baseBattingSlots.map((slot) => slot.battingOrder),
-    ...events.flatMap((event) => {
-      const payload = event.payload as Partial<SubstitutionPayload>;
-      return event.eventType === EventType.SUBSTITUTION &&
-        payload.substitutionType === SubstitutionType.LINEUP_EXTENSION &&
-        !payload.isOpponentSubstitution &&
-        typeof payload.battingOrderPosition === 'number'
-        ? [payload.battingOrderPosition]
-        : [];
-    }),
-  );
+  const maxRecordedOrder = getLineupExtensionHistory(
+    observedLineupRows.filter((row) => row.battingOrder != null).map((row) => ({ playerId: row.playerRemoteId, battingOrder: row.battingOrder! })),
+    rawEvents,
+  ).maxRecordedPosition;
   const canExtendLineup =
     lineupLoaded &&
     midGameExtensionAllowed &&
@@ -279,7 +267,7 @@ export default function ScoringScreen() {
     gameScoringSettings.isTournament === true &&
     (!lineupLoaded || (isOffline && observedLineupRows.length === 0));
   const scoringRulesBlocked =
-    gameScoringSettings.status !== 'ready' || !tournamentRejectionsLoaded || tournamentLineupMissing || !!rejectedChange;
+    gameScoringSettings.status !== 'ready' || (gameScoringSettings.isTournament === true && !tournamentRejectionsLoaded) || tournamentLineupMissing || !!rejectedChange;
 
   // Per-PA manual override — the scorer can point the rotation at a
   // different batter (lineup drifted, skipped batter). Cleared when the PA
@@ -370,14 +358,11 @@ export default function ScoringScreen() {
     if (gameScoringSettings.isTournament && gameStarted) {
       if (!midGameExtensionAllowed) return 'The tournament rules do not allow lineup extension.';
       if (!betweenPlateAppearances) return 'Finish the current plate appearance before changing the lineup.';
-      const maxPosition = Math.max(0, ...opponentSlots.map((slot) => slot.battingOrder), ...rawEvents.flatMap((event) => {
-        const payload = event.payload as Partial<SubstitutionPayload>;
-        return !cancelledLineupEventIds.has(event.id) && event.eventType === EventType.SUBSTITUTION && payload.isOpponentSubstitution
-          && payload.substitutionType === SubstitutionType.LINEUP_EXTENSION ? [payload.battingOrderPosition ?? 0] : [];
-      }));
+      const opponentHistory = getLineupExtensionHistory(opponentSlots, rawEvents, { forOpponent: true });
+      const maxPosition = opponentHistory.maxRecordedPosition;
       const reason = lineupExtensionError({ activeCount: activeOpponentOrder.slots.length, maxBatters, maxRecordedPosition: maxPosition });
       if (reason) return reason;
-      if (input.kind === 'roster' && opponentSlots.some((slot) => slot.playerId === input.opponentPlayerId)) return 'That player already has a batting slot.';
+      if (input.kind === 'roster' && opponentHistory.playerIds.has(input.opponentPlayerId)) return 'That player already has a batting slot.';
       extension = { battingOrder: maxPosition + 1, record: (playerId, position) =>
         recordEvent(EventType.SUBSTITUTION, currentGameState.inning, currentGameState.isTopOfInning, {
           substitutionType: SubstitutionType.LINEUP_EXTENSION, inPlayerId: playerId,
@@ -1499,36 +1484,14 @@ export default function ScoringScreen() {
       // addable), including pending in-game LINEUP_EXTENSION events that
       // haven't been reflected in the local rows yet (defense-in-depth against
       // picker filter bypass / two rapid taps).
-      const activePlayerIds = new Set(
-        lineupRows.filter((row) => row.batting_order != null).map((row) => row.player_id),
+      const recent = await database.get<WdbGameEvent>('game_events')
+        .query(Q.where('game_remote_id', gameId), Q.sortBy('sequence_number', Q.asc)).fetch();
+      const history = getLineupExtensionHistory(
+        lineupRows.filter((row) => row.batting_order != null).map((row) => ({ playerId: row.player_id, battingOrder: row.batting_order! })),
+        recent.map((event) => ({ id: event.remoteId, eventType: event.eventType as EventType, payload: event.payload })),
       );
-
-      // Compute current max from both the DB snapshot AND any in-game
-      // SUBSTITUTION events that already extended the lineup but haven't yet
-      // been reflected in lineupRows.
-      let currentMax = lineupRows.reduce(
-        (max, l) => (l.batting_order ?? 0) > max ? (l.batting_order ?? 0) : max,
-        0,
-      );
-      const eventsCollection = database.get<WdbGameEvent>('game_events');
-      const recent = await eventsCollection
-        .query(Q.where('game_remote_id', gameId), Q.sortBy('sequence_number', Q.asc))
-        .fetch();
-      const cancelled = new Set(recent.filter((event) => event.eventType === EventType.EVENT_VOIDED &&
-        (event.payload as { cancelledBeforeSync?: boolean }).cancelledBeforeSync).map((event) =>
-        (event.payload as { voidedEventId: string }).voidedEventId));
-      for (const evt of recent) {
-        if (cancelled.has(evt.remoteId)) continue;
-        if (evt.eventType !== EventType.SUBSTITUTION) continue;
-        const p = evt.payload as Partial<SubstitutionPayload> | undefined;
-        if (!p) continue;
-        if (p.substitutionType === SubstitutionType.LINEUP_EXTENSION && p.inPlayerId) {
-          activePlayerIds.add(p.inPlayerId);
-        }
-        if (!p.outPlayerId && typeof p.battingOrderPosition === 'number') {
-          if (p.battingOrderPosition > currentMax) currentMax = p.battingOrderPosition;
-        }
-      }
+      const activePlayerIds = history.playerIds;
+      const currentMax = history.maxRecordedPosition;
 
       // DB check constraint caps batting_order at 30 and the league cap may be
       // tighter. Bail before emitting an event that the persistence layer would

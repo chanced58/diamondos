@@ -27,8 +27,21 @@ type GameEventInsert = RemoteDatabase['public']['Tables']['game_events']['Insert
 const TOURNAMENT_REJECTIONS_KEY = 'sync.tournamentRejections';
 
 export async function getTournamentSyncRejections(): Promise<TournamentSyncRejection[]> {
-  const raw = await database.localStorage.get<string>(TOURNAMENT_REJECTIONS_KEY);
-  return raw ? JSON.parse(raw) as TournamentSyncRejection[] : [];
+  try {
+    const raw = await database.localStorage.get<string>(TOURNAMENT_REJECTIONS_KEY);
+    if (!raw) return [];
+    const records: unknown = JSON.parse(raw);
+    if (!Array.isArray(records) || !records.every((record) => record &&
+      typeof record.gameId === 'string' && typeof record.eventId === 'string' &&
+      typeof record.eventType === 'string' && Number.isInteger(record.sequenceNumber) &&
+      typeof record.code === 'string' && typeof record.reason === 'string')) {
+      throw new Error('Invalid tournament rejection register');
+    }
+    return records as TournamentSyncRejection[];
+  } catch (error) {
+    console.warn('sync: tournament rejection register is unreadable; queued events will be revalidated on sync', error);
+    return [];
+  }
 }
 import {
   applyServerLineupSnapshot,

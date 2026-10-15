@@ -84,3 +84,13 @@ it('delivers a queued message idempotently despite a permanently rejected tourna
   expect(mockSent).toEqual(['message', 'message']);
   expect(mockUpsert).toHaveBeenCalledWith([expect.objectContaining({ id: 'message', sender_id: 'coach' })], { onConflict: 'id', ignoreDuplicates: true });
 });
+
+
+it.each(['{broken', '{}', '[null]', '[{"gameId":"one"}]'])('recovers an unreadable rejection register without wedging sync: %s', async (raw) => {
+  mockStorage.set('sync.tournamentRejections', raw);
+  const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    expect(await getTournamentSyncRejections()).toEqual([]);
+    expect(warn).toHaveBeenCalled();
+  } finally { warn.mockRestore(); }
+});

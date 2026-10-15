@@ -3,6 +3,7 @@ import {
   createActiveBattingOrderReducer,
   deriveActiveBattingOrder,
   lineupExtensionError,
+  getLineupExtensionHistory,
   isBetweenPlateAppearances,
   validateLineupContraction,
   type ActiveBattingSlot,
@@ -203,4 +204,30 @@ describe('active batting order reducer', () => {
       betweenPlateAppearances: false,
     })).toMatch(/between plate appearances/);
   });
+});
+
+
+it('keeps historical extension slots separate by side and ignores canceled attempts across resets', () => {
+  const history = [
+    event(1, EventType.SUBSTITUTION, { substitutionType: SubstitutionType.LINEUP_EXTENSION, inPlayerId: 'ours', battingOrderPosition: 4 }),
+    event(2, EventType.SUBSTITUTION, { substitutionType: SubstitutionType.LINEUP_EXTENSION, inPlayerId: 'theirs', battingOrderPosition: 11, isOpponentSubstitution: true }),
+    event(3, EventType.SUBSTITUTION, { substitutionType: SubstitutionType.LINEUP_EXTENSION, inPlayerId: 'canceled', battingOrderPosition: 5 }),
+    event(4, EventType.EVENT_VOIDED, { voidedEventId: 'e3', cancelledBeforeSync: true }),
+    event(5, 'game_reset'),
+  ];
+  const ours = getLineupExtensionHistory(initialSlots, history);
+  expect(ours.maxRecordedPosition).toBe(4);
+  expect([...ours.playerIds]).toEqual(['p1', 'p2', 'p3', 'ours']);
+  const theirs = getLineupExtensionHistory([], history, { forOpponent: true });
+  expect(theirs.maxRecordedPosition).toBe(11);
+  expect([...theirs.playerIds]).toEqual(['theirs']);
+});
+
+it('reserves accepted extension identities after a normal undo', () => {
+  const result = getLineupExtensionHistory(initialSlots, [
+    event(1, EventType.SUBSTITUTION, { substitutionType: SubstitutionType.LINEUP_EXTENSION, inPlayerId: 'late', battingOrderPosition: 4 }),
+    event(2, EventType.EVENT_VOIDED, { voidedEventId: 'e1' }),
+  ]);
+  expect(result.maxRecordedPosition).toBe(4);
+  expect(result.playerIds.has('late')).toBe(true);
 });

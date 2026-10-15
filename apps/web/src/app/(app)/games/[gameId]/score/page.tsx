@@ -279,7 +279,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       opponentLineup={opponentLineup}
       teamRoster={teamRoster}
       opponentRoster={opponentRoster}
-      initialEvents={activeEvents}
+      initialEvents={allEvents}
       minNextSequenceNumber={allEventsMaxSeq + 1}
       currentUserId={user.id}
       isCoach={isCoach}

@@ -13,6 +13,31 @@ export function lineupExtensionError(input: { activeCount: number; maxBatters: n
   return null;
 }
 
+/** Historical slots stay reserved across resets/undo; canceled unsynced attempts never owned a slot. */
+export function getLineupExtensionHistory(
+  slots: readonly ActiveBattingSlot[],
+  events: readonly (Pick<GameEvent, 'eventType' | 'payload'> & Partial<Pick<GameEvent, 'id'>>)[],
+  options: { forOpponent?: boolean } = {},
+): { playerIds: Set<string>; maxRecordedPosition: number } {
+  const playerIds = new Set(slots.map((slot) => slot.playerId));
+  let maxRecordedPosition = Math.max(0, ...slots.map((slot) => slot.battingOrder));
+  const canceledIds = new Set(events.flatMap((event) => {
+    const payload = (event.payload ?? {}) as Record<string, unknown>;
+    return event.eventType === EventType.EVENT_VOIDED && payload.cancelledBeforeSync === true
+      ? [String(payload.voidedEventId)] : [];
+  }));
+  for (const event of events) {
+    const payload = (event.payload ?? {}) as Record<string, unknown>;
+    if (canceledIds.has(String(event.id)) || event.eventType !== EventType.SUBSTITUTION
+      || payload.substitutionType !== SubstitutionType.LINEUP_EXTENSION
+      || Boolean(payload.isOpponentSubstitution) !== Boolean(options.forOpponent)) continue;
+    if (typeof payload.inPlayerId === 'string') playerIds.add(payload.inPlayerId);
+    const position = payload.battingOrderPosition;
+    if (typeof position === 'number' && Number.isInteger(position)) maxRecordedPosition = Math.max(maxRecordedPosition, position);
+  }
+  return { playerIds, maxRecordedPosition };
+}
+
 /** Projected extension rows belong to their events, even after a void or undo. */
 export function initialBattingOrderSlots<T extends ActiveBattingSlot>(
   slots: readonly T[],
