@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@baseball/database';
 import { createServerClient } from '@/lib/supabase/server';
 
 export async function POST(req: NextRequest) {
@@ -10,7 +11,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  const supabase = createClient(
+  const supabase = createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
@@ -45,13 +46,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
-  const VALID_ROLES = ['league_admin', 'league_manager'] as const;
-  if (!VALID_ROLES.includes(role as any)) {
+  if (role !== 'league_admin' && role !== 'league_manager') {
     return NextResponse.json({ error: `Invalid role: ${role}` }, { status: 400 });
   }
 
   // Verify the league exists
-  const { data: league } = await (supabase as any)
+  const { data: league } = await supabase
     .from('leagues')
     .select('id')
     .eq('id', leagueId)
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     staffUserId = existingUser.id;
 
     // Check if already a staff member of this league
-    const { data: existingStaff } = await (supabase as any)
+    const { data: existingStaff } = await supabase
       .from('league_staff')
       .select('id')
       .eq('league_id', leagueId)
@@ -102,8 +102,8 @@ export async function POST(req: NextRequest) {
     const { error: profileError } = await supabase.from('user_profiles').upsert({
       id: staffUserId,
       email: email.toLowerCase(),
-      first_name: firstName || null,
-      last_name: lastName || null,
+      first_name: firstName || '',
+      last_name: lastName || '',
     });
     if (profileError) {
       return NextResponse.json({ error: `Profile creation failed: ${profileError.message}` }, { status: 500 });
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Add to league_staff
-  const { error: staffError } = await (supabase as any).from('league_staff').insert({
+  const { error: staffError } = await supabase.from('league_staff').insert({
     league_id: leagueId,
     user_id: staffUserId,
     role,
@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Add to league announcement channel
-  const { data: channels } = await (supabase as any)
+  const { data: channels } = await supabase
     .from('league_channels')
     .select('id')
     .eq('league_id', leagueId)
@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
 
   let channelWarning: string | undefined;
   if (channels?.[0]) {
-    const { error: channelMemberError } = await (supabase as any).from('league_channel_members').insert({
+    const { error: channelMemberError } = await supabase.from('league_channel_members').insert({
       league_channel_id: channels[0].id,
       user_id: staffUserId,
       can_post: role === 'league_admin',

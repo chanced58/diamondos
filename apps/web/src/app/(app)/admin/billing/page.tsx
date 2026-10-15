@@ -3,6 +3,7 @@ import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import type { AdminDatabase } from '../database-types';
 import { BillingClient } from './BillingClient';
 
 export const metadata: Metadata = { title: 'Billing — Platform Admin' };
@@ -12,7 +13,7 @@ export default async function BillingPage(): Promise<JSX.Element> {
   const { data: { user } } = await auth.auth.getUser();
   if (!user) redirect('/login');
 
-  const db = createClient(
+  const db = createClient<AdminDatabase>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
@@ -26,7 +27,7 @@ export default async function BillingPage(): Promise<JSX.Element> {
   if (!profile?.is_platform_admin) redirect('/admin');
 
   // Fetch subscriptions with entity names
-  const { data: subscriptions } = await (db as any)
+  const { data: subscriptions } = await db
     .from('subscriptions')
     .select('*, teams(id, name), leagues(id, name)')
     .order('created_at', { ascending: false });
@@ -38,8 +39,8 @@ export default async function BillingPage(): Promise<JSX.Element> {
   const PLAYER_DROPDOWN_LIMIT = 500;
   const [teamsResult, leaguesResult, playerProfilesResult] = await Promise.all([
     db.from('teams').select('id, name').order('name'),
-    (db as any).from('leagues').select('id, name').order('name'),
-    (db as any)
+    db.from('leagues').select('id, name').order('name'),
+    db
       .from('player_profiles')
       .select('user_id, handle')
       .order('handle')
@@ -48,8 +49,8 @@ export default async function BillingPage(): Promise<JSX.Element> {
 
   // Resolve league admin sign-in status for league subscriptions
   const leagueIds = (subscriptions ?? [])
-    .filter((s: any) => s.entity_type === 'league' && s.league_id)
-    .map((s: any) => s.league_id as string);
+    .filter((s) => s.entity_type === 'league' && s.league_id)
+    .map((s) => s.league_id as string);
 
   const adminStatusMap = new Map<string, boolean>();
   if (leagueIds.length > 0) {
@@ -84,7 +85,7 @@ export default async function BillingPage(): Promise<JSX.Element> {
     playerProfileByUser.set(row.user_id, { handle: row.handle });
   }
 
-  const subscriptionPlayerUserIds = ((subscriptions ?? []) as any[])
+  const subscriptionPlayerUserIds = (subscriptions ?? [])
     .filter((s) => s.entity_type === 'player' && s.user_id)
     .map((s) => s.user_id as string);
 
@@ -112,7 +113,7 @@ export default async function BillingPage(): Promise<JSX.Element> {
         .select('id, first_name, last_name, email')
         .in('id', allPlayerUserIds),
       missingProfileIds.length > 0
-        ? (db as any)
+        ? db
             .from('player_profiles')
             .select('user_id, handle')
             .in('user_id', missingProfileIds)
@@ -155,20 +156,21 @@ export default async function BillingPage(): Promise<JSX.Element> {
       <p className="text-gray-500 mb-8">Manage subscriptions for teams, leagues, and players.</p>
 
       <BillingClient
-        subscriptions={(subscriptions ?? []).map((s: any) => {
+        subscriptions={(subscriptions ?? []).map((s) => {
+          // subscriptions_entity_check requires the ID matching entity_type.
           const entityType = s.entity_type as 'team' | 'league' | 'player';
           const entityName =
             entityType === 'team'
               ? (s.teams?.name ?? 'Unknown Team')
               : entityType === 'league'
                 ? (s.leagues?.name ?? 'Unknown League')
-                : playerDisplayName(s.user_id);
+                : playerDisplayName(s.user_id!);
           const entityId =
             entityType === 'team'
-              ? s.team_id
+              ? s.team_id!
               : entityType === 'league'
-                ? s.league_id
-                : s.user_id;
+                ? s.league_id!
+                : s.user_id!;
           return {
             id: s.id,
             entityType,
@@ -188,12 +190,12 @@ export default async function BillingPage(): Promise<JSX.Element> {
             createdAt: s.created_at,
             adminSignedIn:
               entityType === 'league'
-                ? (adminStatusMap.get(s.league_id) ?? null)
+                ? (adminStatusMap.get(s.league_id!) ?? null)
                 : null,
           };
         })}
-        teams={(teamsResult.data ?? []).map((t: any) => ({ id: t.id, name: t.name }))}
-        leagues={(leaguesResult.data ?? []).map((l: any) => ({ id: l.id, name: l.name }))}
+        teams={(teamsResult.data ?? []).map((t) => ({ id: t.id, name: t.name }))}
+        leagues={(leaguesResult.data ?? []).map((l) => ({ id: l.id, name: l.name }))}
         players={playersForDropdown}
         hasMorePlayers={hasMorePlayers}
       />

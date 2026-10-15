@@ -1,3 +1,4 @@
+import NextImage from 'next/image';
 import type { JSX } from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
@@ -88,7 +89,14 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
                 >
                   <div className="shrink-0 w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-lg font-bold text-gray-400 overflow-hidden">
                     {team.logoUrl ? (
-                      <img src={team.logoUrl} alt="" className="w-full h-full object-cover" />
+                      <NextImage
+                        width={40}
+                        height={40}
+                        unoptimized
+                        src={team.logoUrl}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
                     ) : (
                       team.name.charAt(0).toUpperCase()
                     )}

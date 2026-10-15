@@ -26,12 +26,12 @@ describe('computeTeamRank', () => {
     { team_id: null, win_pct: 0.9 }, // external opponent row — excluded
   ];
   it('ranks a team among platform teams by win_pct (1-based)', () => {
-    expect(computeTeamRank(standings as any, 't2')).toEqual({ rank: 1, total: 3 });
-    expect(computeTeamRank(standings as any, 't1')).toEqual({ rank: 2, total: 3 });
-    expect(computeTeamRank(standings as any, 't3')).toEqual({ rank: 3, total: 3 });
+    expect(computeTeamRank(standings, 't2')).toEqual({ rank: 1, total: 3 });
+    expect(computeTeamRank(standings, 't1')).toEqual({ rank: 2, total: 3 });
+    expect(computeTeamRank(standings, 't3')).toEqual({ rank: 3, total: 3 });
   });
   it('returns null rank when the team is absent', () => {
-    expect(computeTeamRank(standings as any, 'tX')).toEqual({ rank: null, total: 3 });
+    expect(computeTeamRank(standings, 'tX')).toEqual({ rank: null, total: 3 });
   });
   it('breaks win_pct ties deterministically by team_id regardless of row order', () => {
     const tied = [
@@ -41,9 +41,9 @@ describe('computeTeamRank', () => {
     const reversed = [...tied].reverse();
     // 'ta' sorts before 'tb' on the team_id tie-break, so its rank is stable (1)
     // whichever order the rows arrive in.
-    expect(computeTeamRank(tied as any, 'ta')).toEqual({ rank: 1, total: 2 });
-    expect(computeTeamRank(reversed as any, 'ta')).toEqual({ rank: 1, total: 2 });
-    expect(computeTeamRank(tied as any, 'tb')).toEqual({ rank: 2, total: 2 });
+    expect(computeTeamRank(tied, 'ta')).toEqual({ rank: 1, total: 2 });
+    expect(computeTeamRank(reversed, 'ta')).toEqual({ rank: 1, total: 2 });
+    expect(computeTeamRank(tied, 'tb')).toEqual({ rank: 2, total: 2 });
   });
 });
 
@@ -54,16 +54,16 @@ describe('toTeamPlayerRows', () => {
     { player_id: 'p3', first_name: 'Pat', last_name: 'Kim', public_opt_out: true, stats: { era: 2.1 }, plate_appearances: 0, innings_pitched_outs: 18 },
   ];
   it('masks names and flags opt-out for public viewers', () => {
-    const rows = toTeamPlayerRows(snap as any, false);
+    const rows = toTeamPlayerRows(snap, false);
     expect(rows.find((r) => r.playerId === 'p1')).toMatchObject({ name: 'Alex R.', optedOut: false });
     expect(rows.find((r) => r.playerId === 'p2')).toMatchObject({ name: 'Sam L.', optedOut: true });
   });
   it('shows full names and never flags opt-out for authed viewers', () => {
-    const rows = toTeamPlayerRows(snap as any, true);
+    const rows = toTeamPlayerRows(snap, true);
     expect(rows.find((r) => r.playerId === 'p2')).toMatchObject({ name: 'Sam Lee', optedOut: false });
   });
   it('blanks all numeric data for opted-out public rows but keeps the pitched flag', () => {
-    const rows = toTeamPlayerRows(snap as any, false);
+    const rows = toTeamPlayerRows(snap, false);
     expect(rows.find((r) => r.playerId === 'p3')).toMatchObject({
       optedOut: true,
       pitched: true,
@@ -74,7 +74,7 @@ describe('toTeamPlayerRows', () => {
     expect(rows.find((r) => r.playerId === 'p2')).toMatchObject({ pitched: false, plateAppearances: null });
   });
   it('keeps full numeric data (and pitched) for authed viewers', () => {
-    const rows = toTeamPlayerRows(snap as any, true);
+    const rows = toTeamPlayerRows(snap, true);
     expect(rows.find((r) => r.playerId === 'p3')).toMatchObject({
       optedOut: false,
       pitched: true,
@@ -88,9 +88,9 @@ describe('toTeamPlayerRows', () => {
 describe('teamIdByName', () => {
   it('maps folded team names to ids, skipping null-id rows', () => {
     const map = teamIdByName([
-      { team_id: 't1', team_name: '  Reds ' },
-      { team_id: null, team_name: 'Outsiders' },
-    ] as any);
+      { team_id: 't1', team_name: '  Reds ', win_pct: 0 },
+      { team_id: null, team_name: 'Outsiders', win_pct: 0 },
+    ]);
     expect(map.get('reds')).toBe('t1');
     expect(map.has('outsiders')).toBe(false);
   });

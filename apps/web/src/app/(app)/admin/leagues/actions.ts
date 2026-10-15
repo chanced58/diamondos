@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import type { AdminDatabase } from '../database-types';
 
 export async function markInviteAcceptedAction(formData: FormData): Promise<void> {
   const authClient = createServerClient();
@@ -12,7 +13,7 @@ export async function markInviteAcceptedAction(formData: FormData): Promise<void
   const adminUserId = (formData.get('adminUserId') as string)?.trim();
   if (!adminUserId) return;
 
-  const supabase = createClient(
+  const supabase = createClient<AdminDatabase>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
@@ -46,13 +47,13 @@ export async function inviteLeagueAdminAction(_prevState: string | null | undefi
   const lastName = ((formData.get('lastName') as string) || '').trim();
   const VALID_TIERS = ['free', 'starter', 'pro'] as const;
   const rawTier = ((formData.get('tier') as string) || 'free').trim().toLowerCase();
-  const tier = VALID_TIERS.includes(rawTier as any) ? rawTier : 'free';
+  const tier = VALID_TIERS.find((validTier) => validTier === rawTier) ?? 'free';
 
   if (!email) return 'Email is required.';
   if (!firstName) return 'First name is required.';
   if (!lastName) return 'Last name is required.';
 
-  const supabase = createClient(
+  const supabase = createClient<AdminDatabase>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
@@ -66,8 +67,7 @@ export async function inviteLeagueAdminAction(_prevState: string | null | undefi
 
   if (!profile?.is_platform_admin) return 'Platform admin access required.';
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = supabase as any;
+  const db = supabase;
 
   // 1. Create league with placeholder name (no setup_completed_at → wizard triggers)
   const placeholderName = `${firstName} ${lastName}'s League`;
@@ -82,13 +82,15 @@ export async function inviteLeagueAdminAction(_prevState: string | null | undefi
 
   if (leagueError) return `League creation failed: ${leagueError.message}`;
 
+  const leagueId = league.id;
+
   // Rollback helper
   async function rollbackLeague() {
-    await db.from('subscriptions').delete().eq('league_id', league.id);
-    await db.from('league_channel_members').delete().eq('league_channel_id', league.id);
-    await db.from('league_channels').delete().eq('league_id', league.id);
-    await db.from('league_staff').delete().eq('league_id', league.id);
-    await db.from('leagues').delete().eq('id', league.id);
+    await db.from('subscriptions').delete().eq('league_id', leagueId);
+    await db.from('league_channel_members').delete().eq('league_channel_id', leagueId);
+    await db.from('league_channels').delete().eq('league_id', leagueId);
+    await db.from('league_staff').delete().eq('league_id', leagueId);
+    await db.from('leagues').delete().eq('id', leagueId);
   }
 
   // 2. Resolve user (existing or invite new)

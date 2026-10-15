@@ -1,3 +1,4 @@
+import NextImage from 'next/image';
 import type { JSX, ReactNode } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -124,7 +125,14 @@ export default async function HomePage(): Promise<JSX.Element> {
         >
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'var(--app-fg)' }}>
             {s.logo_url ? (
-              <img src={s.logo_url} alt={s.site_name} style={{ height: 32, width: 32, objectFit: 'contain' }} />
+              <NextImage
+                width={32}
+                height={32}
+                unoptimized
+                src={s.logo_url}
+                alt={s.site_name}
+                style={{ height: 32, width: 32, objectFit: 'contain' }}
+              />
             ) : (
               <BrandMark size={32} />
             )}

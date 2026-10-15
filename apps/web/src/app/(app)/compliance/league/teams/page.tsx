@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
-import { getLeagueTeams, leagueMemberName } from '@baseball/database';
+import { getLeagueTeams, leagueMemberName, type Database } from '@baseball/database';
 import { derivePitchingStats, deriveBattingStats, computeOpponentBatting, filterResetAndReverted, weAreHome } from '@baseball/shared';
 import type { GameEvent } from '@baseball/shared';
 import { buildLineupsByGameId } from '@/lib/stats/lineups';
@@ -42,7 +42,7 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
   const league = await getActiveLeague(activeTeam.id);
   if (!league) redirect('/compliance');
 
-  const db = createClient(
+  const db = createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
@@ -69,12 +69,12 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
         .select('id, team_id, opponent_team_id, home_score, away_score, location_type, neutral_home_team')
         .in('team_id', platformIds)
         .eq('status', 'completed')
-    : { data: [] as any[], error: null };
+    : { data: [], error: null };
   if (gamesError) throw new Error(`Failed to fetch league games: ${gamesError.message}`);
 
   // Get all game events. Paginated so the PostgREST default 1000-row
   // limit doesn't silently truncate the events feed for active leagues.
-  const gameIds = (allGames ?? []).map((g: any) => g.id);
+  const gameIds = (allGames ?? []).map((g) => g.id);
   const rawEvents = await fetchAllEventsForGames(
     db,
     gameIds,
@@ -85,7 +85,7 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
   const filteredEvents = filterResetAndReverted(rawEvents);
 
   // Build per-game lineup context for all platform-team games. Best-effort.
-  const lineupsByGameId = await buildLineupsByGameId(db, ((allGames ?? []) as any[]).map((g) => ({
+  const lineupsByGameId = await buildLineupsByGameId(db, (allGames ?? []).map((g) => ({
     id: g.id as string,
     location_type: g.location_type as string,
     neutral_home_team: g.neutral_home_team as string | null,
@@ -94,20 +94,20 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
   // Get all platform players
   const { data: allPlayers } = platformIds.length > 0
     ? await db.from('players').select('id, team_id, first_name, last_name').in('team_id', platformIds)
-    : { data: [] as any[] };
+    : { data: [] };
 
   // Get opponent players
   const { data: oppPlayers } = opponentIds.length > 0
     ? await db.from('opponent_players').select('id, opponent_team_id, first_name, last_name').in('opponent_team_id', opponentIds)
-    : { data: [] as any[] };
+    : { data: [] };
 
   const rows: TeamComparisonRow[] = [];
 
   // Platform team rows
   for (const lt of platformMembers) {
     const tid = lt.team_id!;
-    const teamGames = (allGames ?? []).filter((g: any) => g.team_id === tid);
-    const teamGameIds = new Set(teamGames.map((g: any) => g.id));
+    const teamGames = (allGames ?? []).filter((g) => g.team_id === tid);
+    const teamGameIds = new Set(teamGames.map((g) => g.id));
 
     let wins = 0, losses = 0, ties = 0, runsScored = 0, runsAllowed = 0;
     for (const g of teamGames) {
@@ -123,9 +123,9 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
 
     const teamEvents = filteredEvents.filter((e) => teamGameIds.has(e.game_id as string)) as unknown as GameEvent[];
     const teamPlayers = (allPlayers ?? [])
-      .filter((p: any) => p.team_id === tid)
-      .map((p: any) => ({ id: p.id, firstName: p.first_name, lastName: p.last_name }));
-    const teamPlayerIds = new Set(teamPlayers.map((p: any) => p.id));
+      .filter((p) => p.team_id === tid)
+      .map((p) => ({ id: p.id, firstName: p.first_name, lastName: p.last_name }));
+    const teamPlayerIds = new Set(teamPlayers.map((p) => p.id));
 
     const battingMap = deriveBattingStats(teamEvents, teamPlayers, lineupsByGameId);
     let totalHits = 0, totalAB = 0;
@@ -161,8 +161,8 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
   // Opponent team rows (inverse perspective)
   for (const lt of opponentMembers) {
     const otId = lt.opponent_team_id!;
-    const oppGames = (allGames ?? []).filter((g: any) => g.opponent_team_id === otId);
-    const oppGameIds = new Set(oppGames.map((g: any) => g.id));
+    const oppGames = (allGames ?? []).filter((g) => g.opponent_team_id === otId);
+    const oppGameIds = new Set(oppGames.map((g) => g.id));
 
     let wins = 0, losses = 0, ties = 0, runsScored = 0, runsAllowed = 0;
     for (const g of oppGames) {
@@ -177,11 +177,11 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
     }
 
     const oppEvents = filteredEvents.filter((e) => oppGameIds.has(e.game_id as string));
-    const thisOppPlayers = (oppPlayers ?? []).filter((p: any) => p.opponent_team_id === otId);
+    const thisOppPlayers = (oppPlayers ?? []).filter((p) => p.opponent_team_id === otId);
     const oppPlayerNameMap = new Map<string, string>(
-      thisOppPlayers.map((p: any) => [p.id, `${p.first_name} ${p.last_name}`]),
+      thisOppPlayers.map((p) => [p.id, `${p.first_name} ${p.last_name}`]),
     );
-    const oppPlayerIds = new Set(thisOppPlayers.map((p: any) => p.id));
+    const oppPlayerIds = new Set(thisOppPlayers.map((p) => p.id));
 
     // Opponent batting via computeOpponentBatting (takes Record<string,unknown>[])
     const oppBatting = computeOpponentBatting(oppEvents, oppPlayerNameMap);
@@ -192,7 +192,7 @@ export default async function TeamComparisonPage(): Promise<JSX.Element | null> 
     }
 
     // Opponent pitching via derivePitchingStats (takes GameEvent[])
-    const oppPlayerList = thisOppPlayers.map((p: any) => ({
+    const oppPlayerList = thisOppPlayers.map((p) => ({
       id: p.id, firstName: p.first_name, lastName: p.last_name,
     }));
     const oppPitchingMap = derivePitchingStats(oppEvents as unknown as GameEvent[], oppPlayerList);

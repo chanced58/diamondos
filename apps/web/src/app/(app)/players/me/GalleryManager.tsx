@@ -1,4 +1,6 @@
 'use client';
+
+import NextImage from 'next/image';
 import type { JSX } from 'react';
 import { useState, useTransition } from 'react';
 import { uploadGalleryPhotoAction, deleteGalleryPhotoAction } from './actions';
@@ -53,7 +55,10 @@ export function GalleryManager({ photos, isPro, publicUrlForPath }: Props): JSX.
         <div className="grid grid-cols-3 gap-3 mb-5">
           {photos.map((p) => (
             <div key={p.id} className="group relative aspect-square bg-gray-100 rounded-lg overflow-hidden">
-              <img
+              <NextImage
+                fill
+                unoptimized
+                sizes="(min-width: 1024px) 280px, 33vw"
                 src={publicUrlForPath(p.storagePath)}
                 alt={p.caption ?? ''}
                 className="w-full h-full object-cover"

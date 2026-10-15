@@ -1,5 +1,6 @@
 'use client';
 
+import NextImage from 'next/image';
 import type { JSX } from 'react';
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -300,7 +301,10 @@ export function LeagueSetupWizard({ leagueId, initialName, initialStateCode }: P
               </label>
               <div className="flex items-center gap-4">
                 {logoPreview && (
-                  <img
+                  <NextImage
+                    width={56}
+                    height={56}
+                    unoptimized
                     src={logoPreview}
                     alt="Logo preview"
                     className="h-14 w-14 rounded-lg object-contain border border-gray-200"

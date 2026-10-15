@@ -1,8 +1,9 @@
+import type { Database } from '@baseball/database';
 import 'server-only';
 import { createClient } from '@supabase/supabase-js';
 import { STAT_CATALOG, memberDisplayName, publicDisplayName, mergeWithThemeDefaults } from '@baseball/shared';
 import { formatStat } from './format-stat';
-import { resolveVisibility } from './load';
+import { type TeamPlayerSnapshot, resolveVisibility } from './load';
 import { getStatValue } from './stat-value';
 
 export { teamHref } from './team-href';
@@ -59,7 +60,7 @@ export interface TeamPlayerStatRow {
 }
 
 /** Map player snapshot rows to display rows with name masking + opt-out blanking. */
-export function toTeamPlayerRows(snap: any[], isAuthed: boolean): TeamPlayerStatRow[] {
+export function toTeamPlayerRows(snap: TeamPlayerSnapshot[], isAuthed: boolean): TeamPlayerStatRow[] {
   return snap.map((r) => {
     const optedOut = !isAuthed && !!r.public_opt_out;
     return {
@@ -128,7 +129,7 @@ export async function getTeamMeta(
   slug: string,
   teamId: string,
 ): Promise<{ leagueName: string; visibility: string; teamName: string } | null> {
-  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const db = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
   const { data: league, error } = await db
     .from('leagues')
     .select('id, name, visibility')
@@ -165,7 +166,7 @@ export async function getTeamStatPageData(
   isAuthed: boolean,
   seasonParam?: string,
 ): Promise<TeamStatPageData> {
-  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const db = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
   const { data: league, error: leagueErr } = await db
     .from('leagues')
@@ -220,7 +221,7 @@ export async function getTeamStatPageData(
     throw new Error('Failed to load team data. Please try again.');
   }
 
-  const allStandings = (standings ?? []) as any[];
+  const allStandings = standings ?? [];
   const standingRow = allStandings.find((r) => r.team_id === teamId);
   const players = toTeamPlayerRows(playerSnap ?? [], isAuthed);
 

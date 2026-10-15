@@ -4,6 +4,7 @@ import type { JSX } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { formatDate, formatTime } from '@baseball/shared';
+import type { Database } from '@baseball/database';
 
 type MessageRow = {
   id: string;
@@ -54,15 +55,13 @@ export function LeagueMessageThread({
   const [sending, setSending]   = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  // Cast to any — league tables are not in generated types until `gen-types` runs
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const supabase  = createBrowserClient() as any;
+  const supabase = createBrowserClient();
 
   // Subscribe to new league messages via Supabase Realtime
   useEffect(() => {
     const sub = supabase
       .channel(`league-room:${channelId}`)
-      .on(
+      .on<Database['public']['Tables']['league_messages']['Row']>(
         'postgres_changes',
         {
           event:  'INSERT',
@@ -70,8 +69,8 @@ export function LeagueMessageThread({
           table:  'league_messages',
           filter: `league_channel_id=eq.${channelId}`,
         },
-        (payload: any) => {
-          const newMsg = payload.new as MessageRow;
+        (payload) => {
+          const newMsg = payload.new;
           const profile = memberProfiles[newMsg.sender_id];
           setMessages((prev) => {
             if (prev.some((m) => m.id === newMsg.id)) return prev;
@@ -117,8 +116,8 @@ export function LeagueMessageThread({
       } else {
         setDraft('');
       }
-    } catch (e: any) {
-      setSendError(e.message || String(e));
+    } catch (e: unknown) {
+      setSendError(e instanceof Error ? e.message || String(e) : String(e));
     } finally {
       setSending(false);
     }

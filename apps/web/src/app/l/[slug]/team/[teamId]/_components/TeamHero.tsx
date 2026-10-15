@@ -1,3 +1,4 @@
+import NextImage from 'next/image';
 import type { TeamRecord } from '@/lib/league-home/team-load';
 
 export function TeamHero({
@@ -29,7 +30,14 @@ export function TeamHero({
       </a>
       <div className="mt-3 flex items-center gap-4">
         {team.logoUrl ? (
-          <img src={team.logoUrl} alt="" className="h-14 w-14 rounded-lg object-contain" />
+          <NextImage
+            width={56}
+            height={56}
+            unoptimized
+            src={team.logoUrl}
+            alt=""
+            className="h-14 w-14 rounded-lg object-contain"
+          />
         ) : null}
         <div>
           <h1 className="display text-2xl font-bold text-app-fg">{team.name}</h1>

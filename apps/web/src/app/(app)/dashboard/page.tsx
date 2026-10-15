@@ -40,7 +40,7 @@ type UpcomingItem = {
 type RecentGame = {
   id: string;
   date: string;
-  opponent: string;
+  opponent: string | null;
   ourScore: number;
   theirScore: number;
   locationLabel: string;
@@ -85,7 +85,7 @@ export default async function DashboardPage({
     );
   }
 
-  const db = createClient(
+  const db = createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
@@ -220,7 +220,7 @@ export default async function DashboardPage({
   const canPostAnnouncement = ['head_coach', 'assistant_coach', 'athletic_director'].includes(role ?? '');
 
   const upcomingItems: UpcomingItem[] = [
-    ...(upcomingGamesResult.data ?? []).map((g: any) => {
+    ...(upcomingGamesResult.data ?? []).map((g) => {
       const isHome = weAreHome(g.location_type, g.neutral_home_team);
       const locTag = g.location_type === 'home' ? 'Home' : g.location_type === 'away' ? 'Away' : 'Neutral';
       const teamLabel = isLeagueView && g.team_id !== activeTeam.id ? teamNameMap[g.team_id] : null;
@@ -255,7 +255,7 @@ export default async function DashboardPage({
   const upcomingGameItems = upcomingItems.filter((i) => i.kind === 'game');
   const upcomingNonGameItems = upcomingItems.filter((i) => i.kind !== 'game');
 
-  const recentGames: RecentGame[] = (recentGamesResult.data ?? []).map((g: any) => {
+  const recentGames: RecentGame[] = (recentGamesResult.data ?? []).map((g) => {
     const isHome = weAreHome(g.location_type, g.neutral_home_team);
     const ourScore   = isHome ? g.home_score : g.away_score;
     const theirScore = isHome ? g.away_score : g.home_score;
@@ -290,7 +290,7 @@ export default async function DashboardPage({
       .order('created_at', { ascending: false })
       .limit(6);
 
-    const senderIds = [...new Set((messages ?? []).map((m) => m.sender_id))];
+    const senderIds = [...new Set((messages ?? []).map((m) => m.sender_id).filter((id): id is string => id !== null))];
     const senderMap = new Map<string, { first_name: string; last_name: string }>();
     if (senderIds.length > 0) {
       const { data: profiles } = await db
@@ -303,7 +303,7 @@ export default async function DashboardPage({
     }
 
     for (const msg of messages ?? []) {
-      const profile = senderMap.get(msg.sender_id);
+      const profile = msg.sender_id === null ? undefined : senderMap.get(msg.sender_id);
       const firstName = profile?.first_name ?? '';
       const lastName  = profile?.last_name  ?? '';
       const senderName = (firstName || lastName)

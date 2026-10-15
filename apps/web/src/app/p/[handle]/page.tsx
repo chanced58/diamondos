@@ -1,3 +1,4 @@
+import NextImage from 'next/image';
 import type { JSX } from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
@@ -92,7 +93,10 @@ export default async function PublicProfilePage({ params }: Params): Promise<JSX
         <div className="max-w-4xl mx-auto px-6 py-8 flex items-center gap-6">
           <div className="w-24 h-24 md:w-28 md:h-28 rounded-full overflow-hidden bg-brand-100 flex items-center justify-center text-brand-700 text-3xl font-bold shrink-0">
             {profile.profilePhotoUrl ? (
-              <img
+              <NextImage
+                width={112}
+                height={112}
+                unoptimized
                 src={profile.profilePhotoUrl}
                 alt={name}
                 className="w-full h-full object-cover"
@@ -155,7 +159,10 @@ export default async function PublicProfilePage({ params }: Params): Promise<JSX
                   rel="noreferrer"
                   className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden block"
                 >
-                  <img
+                  <NextImage
+                    fill
+                    unoptimized
+                    sizes="(min-width: 768px) 280px, 50vw"
                     src={p.url}
                     alt={p.caption ?? ''}
                     className="w-full h-full object-cover hover:scale-105 transition-transform"
