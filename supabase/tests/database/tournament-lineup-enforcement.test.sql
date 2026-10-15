@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(27);
+SELECT plan(29);
 
 INSERT INTO auth.users (id, instance_id, email, aud, role, created_at, updated_at)
 VALUES
@@ -209,5 +209,19 @@ SELECT lives_ok(
  VALUES ('77000000-0000-4000-8000-000000000001', 10, 'substitution', 1, false,
  '{"substitutionType":"lineup_extension","inPlayerId":"74000000-0000-4000-8000-000000000012","battingOrderPosition":12}', now(), auth.uid(), 'test') $$,
  'a cancelled attempt does not consume the next stable batting slot');
+INSERT INTO public.game_events (id, game_id, sequence_number, event_type, inning, is_top_of_inning, payload, occurred_at, created_by, device_id)
+VALUES ('78000000-0000-4000-8000-000000000030', '77000000-0000-4000-8000-000000000001', 11, 'hit', 1, false,
+ '{"batterId":"74000000-0000-4000-8000-000000000005","hitType":"single"}', now(), auth.uid(), 'test'),
+ ('78000000-0000-4000-8000-000000000031', '77000000-0000-4000-8000-000000000001', 12, 'baserunner_advance', 1, false,
+ '{"runnerId":"74000000-0000-4000-8000-000000000002","fromBase":2,"toBase":4,"relatedEventId":"78000000-0000-4000-8000-000000000030"}', now(), auth.uid(), 'test');
+RESET ROLE;
+SELECT ok(NOT ((public.tournament_lineup_state_before_event('77000000-0000-4000-8000-000000000001', false, 13)->'runnerIds')
+ ? '74000000-0000-4000-8000-000000000002'), 'linked advance home clears the runner from the default hit destination');
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+ $$ INSERT INTO public.game_events (game_id, sequence_number, event_type, inning, is_top_of_inning, payload, occurred_at, created_by, device_id)
+ VALUES ('77000000-0000-4000-8000-000000000001', 13, 'substitution', 1, false,
+ '{"substitutionType":"lineup_contraction","outPlayerId":"74000000-0000-4000-8000-000000000002","removedBattingOrderPosition":2}', now(), auth.uid(), 'test') $$,
+ 'a runner who scored through a linked advance can subsequently leave the lineup');
 SELECT * FROM finish();
 ROLLBACK;

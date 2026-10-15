@@ -310,7 +310,13 @@ BEGIN
         v_runner_id := nullif(v_event.payload ->> 'runnerId', '')::uuid;
         v_from_base := nullif(v_event.payload ->> 'fromBase', '')::integer;
         v_to_base := nullif(v_event.payload ->> 'toBase', '')::integer;
-        IF v_from_base BETWEEN 1 AND 3 AND v_runners[v_from_base] = v_runner_id THEN v_runners[v_from_base] := NULL; END IF;
+        IF v_runner_id IS NOT NULL THEN
+          FOR v_slot_index IN 1..3 LOOP
+            IF v_runners[v_slot_index] = v_runner_id THEN v_runners[v_slot_index] := NULL; END IF;
+          END LOOP;
+        ELSIF v_from_base BETWEEN 1 AND 3 THEN
+          v_runners[v_from_base] := NULL;
+        END IF;
         IF v_to_base BETWEEN 1 AND 3 AND v_runner_id IS NOT NULL THEN v_runners[v_to_base] := v_runner_id; END IF;
 
       WHEN 'baserunner_out' THEN

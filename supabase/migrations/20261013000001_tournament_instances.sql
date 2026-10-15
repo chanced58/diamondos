@@ -134,10 +134,14 @@ AS $$
     FROM public.tournament_teams tt
     JOIN public.team_members tm ON tm.team_id = tt.team_id
     WHERE tt.tournament_id = p_tournament_id
+      AND (p_user_id = auth.uid() OR auth.role() = 'service_role')
       AND tm.user_id = p_user_id
       AND tm.is_active
   );
 $$;
+
+REVOKE ALL ON FUNCTION public.is_tournament_member(uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.is_tournament_member(uuid, uuid) TO authenticated, service_role;
 
 ALTER TABLE public.tournaments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournament_teams ENABLE ROW LEVEL SECURITY;

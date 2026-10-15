@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(17);
+SELECT plan(20);
 
 INSERT INTO auth.users (id, instance_id, email, aud, role, created_at, updated_at)
 VALUES
@@ -57,6 +57,18 @@ SELECT isnt(
   'existing-team tournament creates a dedicated season'
 );
 SELECT is((SELECT count(*) FROM public.tournaments WHERE name = 'Existing Team Cup'), 1::bigint, 'existing-team branch creates one tournament');
+SELECT ok(NOT has_function_privilege('anon', 'public.is_tournament_member(uuid,uuid)', 'EXECUTE'),
+ 'anonymous callers cannot invoke the membership lookup');
+SELECT ok(public.is_tournament_member((SELECT id FROM public.tournaments WHERE name = 'Existing Team Cup'),
+ '51000000-0000-4000-8000-000000000001'),
+ 'authenticated participants can check their own membership');
+SELECT set_config('test.tournament_id', (SELECT id::text FROM public.tournaments WHERE name = 'Existing Team Cup'), true);
+SELECT set_config('request.jwt.claim.sub', '51000000-0000-4000-8000-000000000002', true);
+SELECT ok(NOT public.is_tournament_member(current_setting('test.tournament_id')::uuid,
+ '51000000-0000-4000-8000-000000000001'), 'authenticated callers cannot inspect another user membership');
+SELECT set_config('request.jwt.claim.sub', '51000000-0000-4000-8000-000000000001', true);
+
+
 SELECT is((SELECT count(*) FROM public.seasons WHERE team_id = '52000000-0000-4000-8000-000000000001' AND is_active), 1::bigint, 'existing-team branch preserves its active regular season');
 SELECT is((SELECT count(*) FROM public.tournament_teams tt JOIN public.tournaments t ON t.id = tt.tournament_id WHERE t.name = 'Existing Team Cup' AND tt.team_id <> '52000000-0000-4000-8000-000000000001'), 0::bigint, 'existing-team branch does not create an extra team');
 SELECT is((SELECT count(*) FROM public.create_tournament('{"name":"Existing Team Cup","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000002","team":{"type":"existing","teamId":"52000000-0000-4000-8000-000000000001"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}'::jsonb)), 1::bigint, 'retry with the same request ID returns the original result');
