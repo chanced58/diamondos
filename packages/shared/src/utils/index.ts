@@ -7,6 +7,8 @@ export * from './opponent-batting-stats';
 export * from './fielding-stats';
 export * from './historical-stats';
 export * from './defensive-lineup';
+export * from './active-batting-order';
+export * from './game-scoring-settings';
 export * from './event-filters';
 export * from './line-score';
 export * from './reconcile-scorelogs';

@@ -11,7 +11,7 @@ import {
   validateFieldingPositions,
   type PlayerPosition,
 } from '@baseball/shared';
-import { getLeagueSettingsForTeam } from '@/lib/league-settings';
+import { getScoringSettingsForGame } from '@/lib/game-scoring-settings';
 
 export async function saveLineupAction(
   _prevState: string | null | undefined,
@@ -31,7 +31,7 @@ export async function saveLineupAction(
 
   const { data: game } = await supabase
     .from('games')
-    .select('team_id')
+    .select('team_id, tournament_id, scoring_settings_snapshot')
     .eq('id', gameId)
     .single();
 
@@ -48,7 +48,11 @@ export async function saveLineupAction(
     return 'Only coaches can set the lineup.';
   }
 
-  const leagueSettings = await getLeagueSettingsForTeam(supabase, game.team_id);
+  const leagueSettings = await getScoringSettingsForGame(supabase, {
+    teamId: game.team_id,
+    tournamentId: game.tournament_id,
+    scoringSettingsSnapshot: game.scoring_settings_snapshot,
+  });
   const maxBatters = getMaxBattingOrder(leagueSettings);
 
   // Parse lineup entries: player_{id}_order and player_{id}_position

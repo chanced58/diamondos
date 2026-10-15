@@ -10,6 +10,7 @@ export interface LeagueScoringSettings {
     allowExpanded: boolean;
     maxBatters: number;
     allowMidGameExtension: boolean;
+    allowMidGameContraction: boolean;
     continuousBattingOrder: boolean;
   };
   guests: {

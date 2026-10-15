@@ -2,7 +2,8 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { Q } from '@nozbe/watermelondb';
-import { syncWithSupabase } from '../sync/sync-engine';
+import { syncWithSupabase, getTournamentSyncRejections } from '../sync/sync-engine';
+import type { TournamentSyncRejection } from '../sync/tournament-event-sync';
 import { getSupabaseClient } from '../lib/supabase';
 import { database } from '../db';
 import type { GameEvent } from '../db/models/GameEvent';
@@ -15,6 +16,8 @@ interface SyncContextValue {
   /** No usable connection. Expected and safe: writes queue locally. */
   isOffline: boolean;
   pendingEventsCount: number;
+  tournamentRejections: TournamentSyncRejection[];
+  tournamentRejectionsLoaded: boolean;
   triggerSync: () => Promise<void>;
 }
 
@@ -24,6 +27,8 @@ const SyncContext = createContext<SyncContextValue>({
   lastSyncError: null,
   isOffline: false,
   pendingEventsCount: 0,
+  tournamentRejections: [],
+  tournamentRejectionsLoaded: false,
   triggerSync: async () => {},
 });
 
@@ -65,6 +70,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [lastSyncError, setLastSyncError] = useState<Error | null>(null);
   const [isOffline, setIsOffline] = useState(false);
   const [pendingEventsCount, setPendingEventsCount] = useState(0);
+  const [tournamentRejections, setTournamentRejections] = useState<TournamentSyncRejection[]>([]);
+  const [tournamentRejectionsLoaded, setTournamentRejectionsLoaded] = useState(false);
   const wasOfflineRef = useRef(false);
   const syncLockRef = useRef(false);
 
@@ -107,10 +114,30 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         setLastSyncError(error instanceof Error ? error : new Error(String(error)));
       }
     } finally {
+      try {
+        setTournamentRejections(await getTournamentSyncRejections());
+        setTournamentRejectionsLoaded(true);
+      } catch (error) {
+        console.warn('Could not load tournament sync rejections:', error);
+      }
       setIsSyncing(false);
       syncLockRef.current = false;
     }
   };
+
+  // Restore rejection guards even when network-gated bootstrap sync cannot run.
+  useEffect(() => {
+    let mounted = true;
+    getTournamentSyncRejections().then((rejections) => {
+      if (!mounted) return;
+      setTournamentRejections(rejections);
+      setTournamentRejectionsLoaded(true);
+    }).catch((error) => {
+      console.warn('Could not restore tournament sync rejections:', error);
+      if (mounted) setLastSyncError(error instanceof Error ? error : new Error(String(error)));
+    });
+    return () => { mounted = false; };
+  }, []);
 
   // Observe count of locally-created events not yet acked by Supabase.
   // A non-zero count means either a sync is pending or sync has failed —
@@ -215,7 +242,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SyncContext.Provider
-      value={{ isSyncing, lastSyncedAt, lastSyncError, isOffline, pendingEventsCount, triggerSync }}
+      value={{ isSyncing, lastSyncedAt, lastSyncError, isOffline, pendingEventsCount, tournamentRejections, tournamentRejectionsLoaded, triggerSync }}
     >
       {children}
     </SyncContext.Provider>

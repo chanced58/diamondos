@@ -1,7 +1,8 @@
 import { Q } from '@nozbe/watermelondb';
-import { decideLineupPush, resolveBattingOrderCollisions } from '@baseball/shared';
+import { decideLineupPush, resolveBattingOrderCollisions, initialBattingOrderSlots, type EventType } from '@baseball/shared';
 import type { Database } from '@nozbe/watermelondb';
 import type { GameLineup } from '../db/models/GameLineup';
+import type { GameEvent } from '../db/models/GameEvent';
 import type { getSupabaseClient } from '../lib/supabase';
 
 type SupabaseClient = ReturnType<typeof getSupabaseClient>;
@@ -79,7 +80,7 @@ export async function pushLineupsForGame(
   localEditedAtMs: number,
 ): Promise<'pushed' | 'skipped'> {
   const [gameResult, serverMaxResult] = await Promise.all([
-    supabase.from('games').select('status').eq('id', gameRemoteId).maybeSingle(),
+    supabase.from('games').select('status, tournament_id').eq('id', gameRemoteId).maybeSingle(),
     supabase
       .from('game_lineups')
       .select('updated_at')
@@ -94,6 +95,8 @@ export async function pushLineupsForGame(
   // Game gone from the server (deleted on web, or hidden from this user).
   // Treat as server-wins: the snapshot fallback will clear the local rows.
   if (!gameResult.data) return 'skipped';
+  // Started tournament lineups are append-only projections of accepted events.
+  if (gameResult.data.tournament_id && gameResult.data.status !== 'scheduled') return 'skipped';
 
   const serverMaxUpdatedAtMs = serverMaxResult.data
     ? new Date(serverMaxResult.data.updated_at).getTime()
@@ -102,10 +105,17 @@ export async function pushLineupsForGame(
   // The device's full current row set — not just the changed rows — because
   // the push replaces the game's entire lineup. Soft-deleted rows are
   // correctly absent from this query, which is how removals propagate.
-  const localRows = await database
+  let localRows = await database
     .get<GameLineup>('game_lineups')
     .query(Q.where('game_remote_id', gameRemoteId))
     .fetch();
+  if (gameResult.data.tournament_id) {
+    const events = await database.get<GameEvent>('game_events').query(Q.where('game_remote_id', gameRemoteId)).fetch();
+    const initial = initialBattingOrderSlots(localRows.map((row) => ({
+      playerId: row.playerRemoteId, battingOrder: row.battingOrder ?? 0, row,
+    })), events.map((event) => ({ id: event.remoteId, eventType: event.eventType as EventType, payload: event.payload })));
+    localRows = initial.map((entry) => entry.row);
+  }
 
   // Hydration must be checked against ALL rows including soft-deleted ones
   // (raw SQL — normal queries hide _status='deleted'): a coach clearing a

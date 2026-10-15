@@ -12,7 +12,7 @@ export const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'
 export async function getAuthorizedCoach(supabase: SupabaseClient, userId: string, gameId: string) {
   const { data: game } = await supabase
     .from('games')
-    .select('team_id, opponent_name, opponent_team_id, scheduled_at, status, location_type, neutral_home_team')
+    .select('team_id, opponent_name, opponent_team_id, scheduled_at, status, location_type, neutral_home_team, tournament_id')
     .eq('id', gameId)
     .single();
   // `code` lets callers branch on the failure kind (e.g. 404 vs 403) without

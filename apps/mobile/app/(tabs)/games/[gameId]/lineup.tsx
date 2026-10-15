@@ -20,6 +20,8 @@ import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerMo
 import { prepareLineupRow, removeLineupRow } from '../../../../src/features/lineup/local-guest';
 import { useGameLineups } from '../../../../src/features/lineup/use-game-lineups';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
+import { useGameScoringSettings } from '../../../../src/lib/game-scoring-settings';
+import { useGameState } from '../../../../src/features/scoring/use-game-state';
 import { useSyncContext } from '../../../../src/providers/SyncProvider';
 
 interface Assignment {
@@ -62,9 +64,13 @@ export default function LineupScreen() {
   }, [gameId]);
 
   const teamId = game?.teamId;
-  const { settings: leagueSettings, leagueId } = useLeagueContext(teamId);
+  const { settings: regularSettings, leagueId } = useLeagueContext(teamId);
+  const gameRules = useGameScoringSettings(gameId);
+  const { events } = useGameState(gameId, teamId ?? '');
+  const leagueSettings = gameRules.settings ?? regularSettings;
   const maxBatters = getMaxBattingOrder(leagueSettings);
-  const editable = game != null && EDITABLE_STATUSES.has(game.status);
+  const editable = game != null && gameRules.status === 'ready' && EDITABLE_STATUSES.has(game.status)
+    && !(gameRules.isTournament && (game.status === 'in_progress' || events.some((event) => event.eventType === 'game_start')));
 
   // Active roster, observed reactively.
   const [roster, setRoster] = useState<Player[]>([]);
@@ -308,8 +314,13 @@ export default function LineupScreen() {
       {!editable && (
         <View className="mx-4 mt-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
           <Text className="text-sm text-gray-600">
-            This game is {game.status} — the lineup is read-only.
+            {gameRules.status === 'error' ? gameRules.error : gameRules.status === 'loading'
+              ? 'Verifying the game rules before editing the lineup…'
+              : gameRules.isTournament && game.status !== 'completed' && game.status !== 'cancelled'
+                ? 'Use the scoring screen to change a started tournament lineup.'
+                : `This game is ${game.status} — the lineup is read-only.`}
           </Text>
+          {gameRules.status === 'error' && <TouchableOpacity onPress={gameRules.retry}><Text className="mt-2 font-semibold text-blue-700">Retry loading rules</Text></TouchableOpacity>}
         </View>
       )}
 

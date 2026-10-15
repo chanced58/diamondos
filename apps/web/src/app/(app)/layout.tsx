@@ -26,6 +26,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
 
   // Create a single service-role client (guarded — won't crash if key is missing)
   let isPlatformAdmin = false;
+  let tournamentModeEnabled = false;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const db = serviceRoleKey
     ? createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey)
@@ -36,10 +37,11 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
     try {
       const { data: adminProfile } = await db
         .from('user_profiles')
-        .select('is_platform_admin')
+        .select('is_platform_admin, tournament_mode_enabled')
         .eq('id', user.id)
         .maybeSingle();
       isPlatformAdmin = adminProfile?.is_platform_admin === true;
+      tournamentModeEnabled = adminProfile?.tournament_mode_enabled === true;
     } catch {
       // Fall back to non-admin if query fails
     }
@@ -297,6 +299,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         primaryColor={activeTeam?.primary_color ?? undefined}
         secondaryColor={activeTeam?.secondary_color ?? undefined}
         isPlatformAdmin={isPlatformAdmin}
+        tournamentModeEnabled={tournamentModeEnabled}
         leagueId={league?.id}
         leagueName={league?.name}
         leagueSlug={league?.slug ?? undefined}

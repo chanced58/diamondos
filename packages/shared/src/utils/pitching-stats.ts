@@ -191,7 +191,7 @@ export function derivePitchingStats(
     type RunnerState = { id: string; reachedOnError: boolean } | null;
     type Runner = NonNullable<RunnerState>;
     let r1: RunnerState = null, r2: RunnerState = null, r3: RunnerState = null;
-    function clearRunners() { r1 = null; r2 = null; r3 = null; }
+    const clearRunners = () => { r1 = null; r2 = null; r3 = null; };
 
     // A hit's linked runner outcomes, and the shared rule that applies them
     // (rules/play-runners — the one deriveGameState uses).
@@ -213,28 +213,28 @@ export function derivePitchingStats(
     let outsThisInning = 0;
 
     /** Score a single run, checking if the runner reached on error (unearned). */
-    function scoreRun(runner: RunnerState) {
+    const scoreRun = (runner: RunnerState) => {
       if (!currentPitcherId) return;
       const s = getStats(currentPitcherId);
       s.runsAllowed += 1;
       if (!runner?.reachedOnError) s.earnedRunsAllowed += 1;
-    }
+    };
 
     /** Score runs without runner context (SCORE events) — conservatively earned. */
-    function addRunToPitcher(count = 1) {
+    const addRunToPitcher = (count = 1) => {
       if (currentPitcherId && count > 0) {
         const s = getStats(currentPitcherId);
         s.runsAllowed += count;
         s.earnedRunsAllowed += count;
       }
-    }
+    };
 
-    function forceAdvanceRunners(batter: RunnerState) {
+    const forceAdvanceRunners = (batter: RunnerState) => {
       if (r1 && r2 && r3) scoreRun(r3); // bases loaded → runner on 3rd scores
       if (r1 && r2) r3 = r2;
       if (r1) r2 = r1;
       r1 = batter;
-    }
+    };
 
     // Per-at-bat state for the current pitcher (reset when batter changes)
     // batterId → { balls, strikes, isFirstPitch, reachedThreeBalls, contactCount }
@@ -258,7 +258,7 @@ export function derivePitchingStats(
       { pitcherId: string; count: string }
     >();
 
-    function resetAtBat(batterId: string) {
+    const resetAtBat = (batterId: string) => {
       atBatState.set(batterId, {
         balls: 0,
         strikes: 0,
@@ -268,12 +268,12 @@ export function derivePitchingStats(
         reachedThreeZero: false,
         contactCount: null,
       });
-    }
+    };
 
-    function getAtBat(batterId: string) {
+    const getAtBat = (batterId: string) => {
       if (!atBatState.has(batterId)) resetAtBat(batterId);
       return atBatState.get(batterId)!;
-    }
+    };
 
     for (const event of gameEvents) {
       const etype: string = (event as any).event_type ?? event.eventType;

@@ -11,7 +11,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
  * next launch.
  */
 export const schema = appSchema({
-  version: 3,
+  version: 4,
   tables: [
     tableSchema({
       name: 'games',
@@ -32,6 +32,9 @@ export const schema = appSchema({
         { name: 'is_top_of_inning', type: 'boolean' },
         { name: 'outs', type: 'number' },
         { name: 'synced_at', type: 'number', isOptional: true },
+        { name: 'tournament_id', type: 'string', isOptional: true },
+        { name: 'tournament_scoring_settings', type: 'string', isOptional: true },
+        { name: 'tournament_rules_version', type: 'number', isOptional: true },
       ],
     }),
     tableSchema({

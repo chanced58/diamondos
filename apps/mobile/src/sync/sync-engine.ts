@@ -1,6 +1,10 @@
 import { Q } from '@nozbe/watermelondb';
 import { synchronize, type SyncPullArgs, type SyncPushArgs } from '@nozbe/watermelondb/sync';
-import { computeLineupDeletes, PlayerPosition } from '@baseball/shared';
+import {
+  computeLineupDeletes,
+  PlayerPosition,
+  TOURNAMENT_SCORING_RULES_VERSION,
+} from '@baseball/shared';
 import { database } from '../db';
 import type { Channel } from '../db/models/Channel';
 import type { Game } from '../db/models/Game';
@@ -16,6 +20,29 @@ import type { OpponentGameLineup } from '../db/models/OpponentGameLineup';
 import type { OpponentPlayer } from '../db/models/OpponentPlayer';
 import type { Player } from '../db/models/Player';
 import { getSupabaseClient } from '../lib/supabase';
+import type { Database as RemoteDatabase, Json } from '@baseball/database';
+import { pushTournamentEventQueue, reconcilePendingSequences, type TournamentSyncRejection } from './tournament-event-sync';
+
+type GameEventInsert = RemoteDatabase['public']['Tables']['game_events']['Insert'];
+const TOURNAMENT_REJECTIONS_KEY = 'sync.tournamentRejections';
+
+export async function getTournamentSyncRejections(): Promise<TournamentSyncRejection[]> {
+  try {
+    const raw = await database.localStorage.get<string>(TOURNAMENT_REJECTIONS_KEY);
+    if (!raw) return [];
+    const records: unknown = JSON.parse(raw);
+    if (!Array.isArray(records) || !records.every((record) => record &&
+      typeof record.gameId === 'string' && typeof record.eventId === 'string' &&
+      typeof record.eventType === 'string' && Number.isInteger(record.sequenceNumber) &&
+      typeof record.code === 'string' && typeof record.reason === 'string')) {
+      throw new Error('Invalid tournament rejection register');
+    }
+    return records as TournamentSyncRejection[];
+  } catch (error) {
+    console.warn('sync: tournament rejection register is unreadable; queued events will be revalidated on sync', error);
+    return [];
+  }
+}
 import {
   applyServerLineupSnapshot,
   getDirtyLineupState,
@@ -658,22 +685,22 @@ async function reconcileSequenceNumbers(
 
     const serverMax = (data?.[0]?.sequence_number as number | undefined) ?? 0;
 
-    events.sort((a, b) => (a.sequence_number as number) - (b.sequence_number as number));
-    let nextSeq = serverMax + 1;
-    for (const e of events) {
-      const currentSeq = e.sequence_number as number;
-      // Renumber whenever the event's current seq number would collide
-      // with a slot we've already planned to use. Using (currentSeq <
-      // nextSeq) rather than (currentSeq <= serverMax) handles the gap
-      // case: e.g. serverMax=10 with local events [9, 11] — under the
-      // old condition event 9 renumbered to 11 and event 11 kept 11,
-      // colliding again. Under the new condition event 9 → 11 and
-      // event 11 → 12.
-      if (currentSeq < nextSeq) {
-        renumbers.push({ wdbId: e.id as string, newSeq: nextSeq });
-        nextSeq += 1;
-      } else {
-        nextSeq = currentSeq + 1;
+    const accepted = new Map<string, number>();
+    for (let offset = 0; offset < events.length; offset += 200) {
+      const ids = events.slice(offset, offset + 200).map((event) => String(event.remote_id));
+      const { data: acceptedRows, error: acceptedError } = await supabase.from('game_events')
+        .select('id, sequence_number').eq('game_id', gameRemoteId).in('id', ids);
+      if (acceptedError) throw acceptedError;
+      for (const event of acceptedRows ?? []) accepted.set(event.id, event.sequence_number);
+    }
+    const planned = reconcilePendingSequences(events.map((event) => ({
+      id: String(event.remote_id), sequenceNumber: Number(event.sequence_number),
+    })), accepted, serverMax);
+    const localById = new Map(events.map((event) => [String(event.remote_id), event]));
+    for (const event of planned) {
+      const local = localById.get(event.id)!;
+      if (event.sequenceNumber !== local.sequence_number) {
+        renumbers.push({ wdbId: String(local.id), newSeq: event.sequenceNumber });
       }
     }
   }
@@ -786,6 +813,25 @@ export async function syncWithSupabase(): Promise<void> {
         .map((r) => r.error)
         .find((e) => e != null);
       if (firstError) throw firstError;
+
+      const tournamentIds = [
+        ...new Set(
+          (gamesResult.data ?? [])
+            .map((game) => game.tournament_id)
+            .filter((id): id is string => typeof id === 'string'),
+        ),
+      ];
+      const tournamentSettingsById = new Map<string, unknown>();
+      if (tournamentIds.length > 0) {
+        const { data: tournaments, error: tournamentsError } = await supabase
+          .from('tournaments')
+          .select('id, scoring_settings')
+          .in('id', tournamentIds);
+        if (tournamentsError) throw tournamentsError;
+        for (const tournament of tournaments ?? []) {
+          tournamentSettingsById.set(tournament.id, tournament.scoring_settings);
+        }
+      }
 
       // Opponent batting orders. opponent_game_lineups has no updated_at
       // server-side, so a timestamp window would never re-deliver an edited
@@ -926,7 +972,9 @@ export async function syncWithSupabase(): Promise<void> {
         changes: {
           games: {
             created: [],
-            updated: (gamesResult.data ?? []).map(mapGame),
+            updated: (gamesResult.data ?? []).map((game) =>
+              mapGame(game, tournamentSettingsById),
+            ),
             deleted: deletions.games,
           },
           game_events: {
@@ -993,7 +1041,7 @@ export async function syncWithSupabase(): Promise<void> {
         }
       >;
 
-      // Push order: game events FIRST — they're the live-game lifeline
+      // Push order: regular game events FIRST — they're the live-game lifeline
       // (parents' live scores, pitch counts) and must never be starved by a
       // lineup or guest failure. Then guest players before league_players and
       // lineups (both FK to players); their errors are collected and thrown
@@ -1003,78 +1051,41 @@ export async function syncWithSupabase(): Promise<void> {
       // after the deferred throw — their insert is NOT idempotent, so they
       // must not run in a cycle that is already destined to fail and retry.
 
-      // 1. Push locally-created game events (the main offline use case).
       const createdEvents = tableChanges.game_events?.created ?? [];
-      if (createdEvents.length > 0) {
-        // Skip events whose payload can't be parsed rather than aborting the
-        // whole sync. Offenders are dead-lettered below — their rows remain
-        // in WatermelonDB for inspection but are not retried, so one corrupt
-        // payload can't wedge the queue for every other event.
-        const skippedIds: string[] = [];
-        const pushablePayloads = createdEvents
-          .map((e) => {
-            const payload = safeParsePayload(e.payload as string);
-            if (payload === null) {
-              // A row corrupt enough to have an unparseable payload may also
-              // be missing its remote_id, so fall back to the WDB id — an
-              // empty string in the register would be useless for tracking
-              // the offender down later.
-              skippedIds.push((e.remote_id as string) || `wdb:${e.id as string}`);
-              return null;
-            }
-            return {
-              id: e.remote_id as string,
-              game_id: e.game_remote_id as string,
-              sequence_number: e.sequence_number as number,
-              event_type: e.event_type as string,
-              inning: e.inning as number,
-              is_top_of_inning: e.is_top_of_inning as boolean,
-              payload,
-              occurred_at: new Date(e.occurred_at as number).toISOString(),
-              created_by: e.created_by as string,
-              device_id: e.device_id as string,
-            };
-          })
-          .filter((p) => p !== null);
-
-        if (pushablePayloads.length > 0) {
-          const { error } = await supabase.from('game_events').upsert(
-            pushablePayloads,
-            { onConflict: 'id', ignoreDuplicates: true },
-          );
-
-          if (error) {
-            // Sequence number collision — another device already used these
-            // sequence numbers for the same game. Renumber the local WDB
-            // records so they start above the server's current max, then
-            // throw so WatermelonDB leaves them in the unsynced queue; the
-            // next sync cycle will push the renumbered events.
-            if (error.code === '23505') {
-              await reconcileSequenceNumbers(createdEvents, supabase);
-              throw new Error('sync: seq-num collision; renumbered locally, will retry');
-            }
-            throw error;
-          }
-          // Parseable events (incl. game_start/game_end, whose payloads are
-          // always parseable) are now committed server-side, even if the
-          // skipped-payload guard below throws for other rows.
-          eventsPushed = true;
-        }
-
-        // Rows with unparseable payloads are dead-lettered, not retried.
-        // JSON.parse fails deterministically, so throwing here to keep them
-        // unsynced only produced an infinite retry loop that also blocked
-        // every healthy event in the batch from ever settling. Record them
-        // and let the cycle succeed; the local rows are untouched and can be
-        // inspected via getQuarantinedEventIds().
-        if (skippedIds.length > 0) {
-          await quarantineEventIds(skippedIds);
-          console.warn(
-            `sync: dead-lettered ${skippedIds.length} event(s) with unparseable payloads; ` +
-              `they will not be retried: ${skippedIds.slice(0, 3).join(', ')}${skippedIds.length > 3 ? '…' : ''}`,
-          );
-        }
+      const orderedCreatedEvents = [...createdEvents].sort((a, b) =>
+        String(a.game_remote_id).localeCompare(String(b.game_remote_id)) || Number(a.sequence_number) - Number(b.sequence_number));
+      const tournamentGameIds = new Set<string>();
+      for (const gameId of new Set(orderedCreatedEvents.map((event) => String(event.game_remote_id)))) {
+        const games = await database.get<Game>('games').query(Q.where('remote_id', gameId)).fetch();
+        if (games[0]?.tournamentId) tournamentGameIds.add(gameId);
       }
+      const skippedPayloadIds: string[] = [];
+      const eventWrites = orderedCreatedEvents.flatMap((event) => {
+        const payload = safeParsePayload(event.payload as string);
+        if (payload === null) {
+          skippedPayloadIds.push(String(event.remote_id || `wdb:${event.id}`));
+          return [];
+        }
+        return [{ id: String(event.remote_id), game_id: String(event.game_remote_id),
+          sequence_number: Number(event.sequence_number), event_type: String(event.event_type),
+          inning: Number(event.inning), is_top_of_inning: Boolean(event.is_top_of_inning), payload,
+          occurred_at: new Date(Number(event.occurred_at)).toISOString(),
+          created_by: String(event.created_by), device_id: String(event.device_id) }];
+      });
+      // Regular games keep the existing bulk upload before other mutable data.
+      const regularEvents = eventWrites.filter((event) => !tournamentGameIds.has(event.game_id));
+      if (regularEvents.length > 0) {
+        const { error } = await supabase.from('game_events').upsert(regularEvents, { onConflict: 'id', ignoreDuplicates: true });
+        if (error) {
+          if (error.code === '23505' || error.code === '40001') {
+            await reconcileSequenceNumbers(orderedCreatedEvents.filter((event) => !tournamentGameIds.has(String(event.game_remote_id))), supabase);
+          }
+          throw error;
+        }
+        eventsPushed = true;
+      }
+      await quarantineEventIds(skippedPayloadIds);
+      const preparedTournamentLineups = new Set<string>();
 
       // Steps 2-4 collect failures instead of throwing immediately: a single
       // poisoned guest row or lineup game must not abort the cycle before the
@@ -1196,6 +1207,55 @@ export async function syncWithSupabase(): Promise<void> {
         if (error) deferredErrors.push(`opponent_game_lineups delete: ${error.message}`);
       }
 
+      // Tournament starts/changes need their roster identities and starting
+      // lineup on the server first. A rejected game holds its own later events;
+      // other games still upload before we fail the cycle to preserve retry data.
+      const tournamentEvents = eventWrites.filter((event) => tournamentGameIds.has(event.game_id));
+      const tournamentResult = await pushTournamentEventQueue(tournamentEvents, {
+        prepare: async (gameId) => {
+          const dirty = await getDirtyLineupState(database);
+          if (!dirty.dirtyGameIds.has(gameId)) return;
+          const result = await pushLineupsForGame(supabase, database, gameId, dirty.localEditedAtMsByGame.get(gameId) ?? 0);
+          preparedTournamentLineups.add(gameId);
+          if (result === 'skipped') skippedLineupGames.push(gameId);
+        },
+        start: async (event) => {
+          const { error } = await supabase.rpc('start_tournament_game_for_user', {
+            p_game_id: event.game_id, p_event_id: event.id, p_sequence_number: event.sequence_number,
+            p_payload: event.payload as Json, p_occurred_at: event.occurred_at,
+          });
+          if (error) throw error;
+          eventsPushed = true;
+        },
+        send: async (event) => {
+          const { error } = await supabase.from('game_events').upsert([event as GameEventInsert], { onConflict: 'id', ignoreDuplicates: true });
+          if (error) throw error;
+          eventsPushed = true;
+        },
+        cancel: async (change, cancellation) => {
+          const { error } = await supabase.rpc('sync_cancelled_tournament_lineup_change', {
+            p_change: change as unknown as Json, p_void: cancellation as unknown as Json,
+          });
+          if (error) throw error;
+          eventsPushed = true;
+        },
+      });
+      if (tournamentEvents.length > 0) {
+        const priorRejections = await getTournamentSyncRejections();
+        const attemptedGames = new Set(tournamentEvents.map((event) => event.game_id));
+        await database.localStorage.set(TOURNAMENT_REJECTIONS_KEY, JSON.stringify([
+          ...priorRejections.filter((rejection) => !attemptedGames.has(rejection.gameId)),
+          ...tournamentResult.rejections,
+        ]));
+      }
+      for (const rejection of tournamentResult.rejections) {
+        deferredErrors.push(`Tournament event ${rejection.sequenceNumber}: ${rejection.reason}`);
+      }
+      if (tournamentResult.retryGameIds.length > 0) {
+        await reconcileSequenceNumbers(orderedCreatedEvents.filter((event) => tournamentResult.retryGameIds.includes(String(event.game_remote_id))), supabase);
+        deferredErrors.push('Tournament event order changed on another device; queued for retry.');
+      }
+
       // 4. Lineups — per-game whole-lineup replace, guarded by the conflict
       // policy in @baseball/shared (mobile wins live, LWW pre-game). Reuses
       // the dirty state computed during this cycle's pull; the deleted bucket
@@ -1204,6 +1264,7 @@ export async function syncWithSupabase(): Promise<void> {
       const { dirtyGameIds, localEditedAtMsByGame } =
         dirtyLineupState ?? (await getDirtyLineupState(database));
       for (const gameRemoteId of dirtyGameIds) {
+        if (preparedTournamentLineups.has(gameRemoteId)) continue;
         try {
           const result = await pushLineupsForGame(
             supabase,
@@ -1219,17 +1280,12 @@ export async function syncWithSupabase(): Promise<void> {
         }
       }
 
-      if (deferredErrors.length > 0) {
-        throw new Error(`sync: deferred push failures — ${deferredErrors.join('; ')}`);
-      }
-
-      // 5. Push locally-created messages. Last and after the deferred throw:
-      // this insert is not idempotent, so it must only run in a cycle that
-      // will be marked complete (otherwise retries would duplicate messages).
+      // 5. Messages use stable IDs and duplicate-ignore inserts, so rejected
+      // tournament queues cannot block delivery or duplicate messages on retry.
       const createdMessages = tableChanges.messages?.created ?? [];
       if (createdMessages.length > 0) {
         const { data: { user } } = await supabase.auth.getUser();
-        const { error } = await supabase.from('messages').insert(
+        const { error } = await supabase.from('messages').upsert(
           createdMessages.map((m) => ({
             id: m.remote_id as string,
             channel_id: m.channel_remote_id as string,
@@ -1237,8 +1293,12 @@ export async function syncWithSupabase(): Promise<void> {
             body: m.body as string,
             parent_id: m.parent_id as string | undefined,
           })),
+          { onConflict: 'id', ignoreDuplicates: true },
         );
         if (error) throw error;
+      }
+      if (deferredErrors.length > 0) {
+        throw new Error(`sync: deferred push failures — ${deferredErrors.join('; ')}`);
       }
     },
 
@@ -1384,6 +1444,7 @@ async function reconcileGameLifecycle(
   const candidates = [...new Set([...startedGames, ...endEventByGame.keys()])].filter(
     (id) => !lifecycleReconciledGames.has(id),
   );
+  const blockedGames = new Set((await getTournamentSyncRejections()).map((rejection) => rejection.gameId));
   if (candidates.length === 0) return;
 
   const { data: serverGames, error } = await supabase
@@ -1399,6 +1460,7 @@ async function reconcileGameLifecycle(
   let accessToken: string | null = null;
 
   for (const g of serverGames ?? []) {
+    if (blockedGames.has(g.id)) continue;
     const status = g.status as string;
 
     // Terminal on the server — nothing left to reconcile this session.
@@ -1419,6 +1481,9 @@ async function reconcileGameLifecycle(
 
     const endEvent = endEventByGame.get(g.id as string);
     if (!endEvent) continue;
+    const { data: acceptedEnd, error: endError } = await supabase.from('game_events')
+      .select('id').eq('id', endEvent.remoteId).maybeSingle();
+    if (endError || !acceptedEnd) continue;
 
     if (!apiBaseUrl) {
       if (!warnedMissingApiBase) {
@@ -1514,7 +1579,15 @@ async function redirtyLineupRows(gameRemoteId: string): Promise<void> {
 
 // ─── mapping helpers ─────────────────────────────────────────────────────────
 
-function mapGame(r: Record<string, unknown>) {
+function mapGame(
+  r: Record<string, unknown>,
+  tournamentSettingsById: ReadonlyMap<string, unknown>,
+) {
+  const tournamentId = typeof r.tournament_id === 'string' ? r.tournament_id : null;
+  const frozenSettings = r.scoring_settings_snapshot ?? null;
+  const tournamentSettings = tournamentId
+    ? (frozenSettings ?? tournamentSettingsById.get(tournamentId) ?? null)
+    : null;
   return {
     id: r.id,
     remote_id: r.id,
@@ -1535,6 +1608,11 @@ function mapGame(r: Record<string, unknown>) {
     current_inning: r.current_inning,
     is_top_of_inning: r.is_top_of_inning,
     outs: r.outs,
+    tournament_id: tournamentId,
+    tournament_scoring_settings:
+      tournamentSettings == null ? null : JSON.stringify(tournamentSettings),
+    tournament_rules_version:
+      tournamentSettings == null ? null : TOURNAMENT_SCORING_RULES_VERSION,
     synced_at: Date.now(),
   };
 }

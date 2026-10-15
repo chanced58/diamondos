@@ -1,6 +1,6 @@
 import { EventType, type GameEvent, type PitchThrownPayload, type HitPayload, type SubstitutionPayload, type PitchingChangePayload, type BaserunnerMovePayload, type PickoffPayload, type RundownPayload, type DroppedThirdStrikePayload } from '../types/game-event';
 import type { LiveGameState } from '../types/game';
-import { BALLS_FOR_WALK, STRIKES_FOR_STRIKEOUT, OUTS_PER_INNING } from '../constants/baseball';
+import { STRIKES_FOR_STRIKEOUT, OUTS_PER_INNING } from '../constants/baseball';
 import {
   applyLinkedAdvance,
   applyPlayToRunners,
@@ -378,6 +378,9 @@ export function deriveGameState(
 
       case EventType.SUBSTITUTION: {
         const p = event.payload as SubstitutionPayload;
+        // A LINEUP_CONTRACTION has no incoming player. It only changes the
+        // ordered slot reducer, not the active batter or runner identities.
+        if (!p.inPlayerId) break;
         if (p.outPlayerId !== undefined && state.currentBatterId === p.outPlayerId) {
           state.currentBatterId = p.inPlayerId;
         }

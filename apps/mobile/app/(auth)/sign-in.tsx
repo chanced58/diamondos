@@ -8,7 +8,6 @@ import {
   ScrollView,
   Platform,
 } from 'react-native';
-import { router } from 'expo-router';
 import { getSupabaseClient } from '../../src/lib/supabase';
 
 /**
