@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { redirect, notFound } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import type { AdminDatabase } from '../../database-types';
 import { getLeagueTeamsAll, getLeagueDivisions, getLeagueStaff } from '@baseball/database';
 import { LeagueAdminClient } from '@/app/(app)/league/admin/LeagueAdminClient';
 
@@ -20,7 +21,7 @@ export default async function PlatformAdminLeagueDetailPage({
   const { data: { user } } = await auth.auth.getUser();
   if (!user) redirect('/login');
 
-  const db = createClient(
+  const db = createClient<AdminDatabase>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
@@ -35,7 +36,7 @@ export default async function PlatformAdminLeagueDetailPage({
   if (!profile?.is_platform_admin) redirect('/admin');
 
   // Fetch the league itself
-  const { data: league, error: leagueError } = await (db as any)
+  const { data: league, error: leagueError } = await db
     .from('leagues')
     .select('id, name, description, state_code')
     .eq('id', leagueId)
@@ -52,13 +53,13 @@ export default async function PlatformAdminLeagueDetailPage({
     db.from('opponent_teams').select('id, name, city').order('name'),
   ]);
 
-  const availableTeams = (allTeamsResult.data ?? []).map((t: any) => ({
+  const availableTeams = (allTeamsResult.data ?? []).map((t) => ({
     id: t.id as string,
     name: t.name as string,
     organization: t.organization as string | null,
   }));
 
-  const availableOpponentTeams = (allOpponentTeamsResult.data ?? []).map((t: any) => ({
+  const availableOpponentTeams = (allOpponentTeamsResult.data ?? []).map((t) => ({
     id: t.id as string,
     name: t.name as string,
     city: t.city as string | null,

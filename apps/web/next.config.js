@@ -4,7 +4,9 @@ const withPWA = require('@ducanh2912/next-pwa').default;
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  outputFileTracingRoot: path.join(__dirname, '../../'),
+  experimental: {
+    outputFileTracingRoot: path.join(__dirname, '../../'),
+  },
   transpilePackages: ['@baseball/shared', '@baseball/database', '@baseball/ui'],
   images: {
     remotePatterns: [

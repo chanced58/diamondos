@@ -1,4 +1,6 @@
 'use client';
+
+import NextImage from 'next/image';
 import type { JSX } from 'react';
 
 import { useRef, useState } from 'react';
@@ -93,7 +95,10 @@ export function TeamBrandingForm({
         <div className="flex items-start gap-6">
           <div className="shrink-0">
             {previewUrl ? (
-              <img
+              <NextImage
+                width={96}
+                height={96}
+                unoptimized
                 ref={imgRef}
                 src={previewUrl}
                 alt="Team logo"

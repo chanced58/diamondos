@@ -9,11 +9,11 @@ describe('combinePlayerStats', () => {
           playerId: 'p1', playerName: 'A B', avg: 0.333, homeRuns: 2, plateAppearances: 30,
           hits: 10, doubles: 2, triples: 0, runs: 5, rbi: 7, walks: 4, obp: 0.4, slg: 0.5,
           ops: 0.9, qabPct: 0.5, hardHitPct: 0.3,
-        } as any,
+        },
       ],
     ]);
     const pitching = new Map([
-      ['p1', { playerId: 'p1', era: 2.5, whip: 1.1, strikeouts: 12, inningsPitchedOuts: 21 } as any],
+      ['p1', { playerId: 'p1', era: 2.5, whip: 1.1, strikeouts: 12, inningsPitchedOuts: 21 }],
     ]);
     const fielding = new Map();
     const teamOf = new Map([
@@ -31,7 +31,7 @@ describe('combinePlayerStats', () => {
   });
 
   it('skips players with no team attribution', () => {
-    const batting = new Map([['ghost', { hits: 1 } as any]]);
+    const batting = new Map([['ghost', { hits: 1 }]]);
     const rows = combinePlayerStats({
       batting, pitching: new Map(), fielding: new Map(), teamOf: new Map(), leagueId: 'L', season: 'S',
     });

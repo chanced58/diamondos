@@ -1,3 +1,4 @@
+import type { Database } from '@baseball/database';
 import { createClient } from '@supabase/supabase-js';
 import {
   buildLeaderboard,
@@ -17,7 +18,6 @@ import {
 } from '@baseball/shared';
 import {
   groupStandingsByDivision,
-  type LeagueDivisionRef,
   type StandingsDivisionGroup,
 } from './standings-divisions';
 import { getStatValue } from './stat-value';
@@ -43,7 +43,7 @@ export interface RecentGame {
   id: string;
   team: string;
   team_id: string;
-  opponent: string;
+  opponent: string | null;
   ourScore: number;
   theirScore: number;
   result: 'W' | 'L' | 'T';
@@ -54,9 +54,18 @@ export function resolveVisibility(visibility: string, isAuthed: boolean): 'ok' |
   return 'ok';
 }
 
+type PlayerSnapshot = Database['public']['Tables']['league_player_stat_snapshot']['Row'];
+
+export type TeamPlayerSnapshot = Pick<PlayerSnapshot,
+  'player_id' | 'first_name' | 'last_name' | 'public_opt_out' | 'stats' |
+  'plate_appearances' | 'innings_pitched_outs'
+>;
+
+type LeaderPlayerSnapshot = TeamPlayerSnapshot & Pick<PlayerSnapshot, 'team_id' | 'team_name'>;
+
 /** Map player snapshot rows to leaderboard rows, masking names + honoring opt-out for public viewers. */
-export function toLeaderRows(snap: any[], statKey: string, isAuthed: boolean): LeaderRow[] {
-  const def = getStatDef(statKey as any);
+export function toLeaderRows(snap: LeaderPlayerSnapshot[], statKey: StatKey, isAuthed: boolean): LeaderRow[] {
+  const def = getStatDef(statKey);
   return snap
     .filter((r) => isAuthed || !r.public_opt_out)
     .map((r) => ({
@@ -74,7 +83,7 @@ export function toLeaderRows(snap: any[], statKey: string, isAuthed: boolean): L
 /** Raw `games` row fields needed to summarize a completed game from our side. */
 export interface RawRecentGame {
   id: string;
-  opponent_name: string;
+  opponent_name: string | null;
   home_score: number;
   away_score: number;
   location_type: string;
@@ -171,7 +180,7 @@ export type LeagueHomeData =
         special: LeaderBoardResult[];
       };
       customBoards: LeaderBoardResult[];
-      spotlights: any[];
+      spotlights: Database['public']['Tables']['league_spotlight_snapshot']['Row'][];
       recent: RecentGame[];
       upcoming: Array<{ id: string; label: string }>;
       counters: { teams: number; games: number };
@@ -181,7 +190,7 @@ export type LeagueHomeData =
 
 /** Minimal league identity/visibility lookup for metadata (no snapshot reads). */
 export async function getLeagueMeta(slug: string): Promise<{ name: string; visibility: string } | null> {
-  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const db = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
   const { data, error } = await db.from('leagues').select('name, visibility').eq('slug', slug).maybeSingle();
   if (error) {
     console.error(`[league-home] meta lookup failed slug=${slug}: ${error.message}`);
@@ -208,7 +217,7 @@ export interface PublicLeagueListItem {
  * so the directory page never 500s.
  */
 export async function listPublicLeagues(): Promise<PublicLeagueListItem[]> {
-  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const db = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
   const { data, error } = await db
     .from('leagues')
     .select('slug, name, logo_url, state_code, league_type, level')
@@ -234,7 +243,7 @@ export async function getLeagueHomeData(
   seasonParam?: string,
   activeTeam?: ActiveTeamRef | null,
 ): Promise<LeagueHomeData> {
-  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const db = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
   const { data: league, error: leagueErr } = await db
     .from('leagues')
@@ -286,16 +295,16 @@ export async function getLeagueHomeData(
     throw new Error('Failed to load league data. Please try again.');
   }
 
-  const standingsSorted = ((standings ?? []) as StandingRow[]).sort((a, b) => b.win_pct - a.win_pct);
+  const standingsSorted = (standings ?? []).sort((a, b) => b.win_pct - a.win_pct);
   // Per-division breakdown for the public page. Empty when the league has no
   // divisions; unassigned rows appear only in the overall table.
-  const divisions = groupStandingsByDivision(standingsSorted, (leagueDivisions ?? []) as LeagueDivisionRef[]);
+  const divisions = groupStandingsByDivision(standingsSorted, leagueDivisions ?? []);
   // Opponent rows (team_id null) aggregate games against multiple platform teams,
   // so derive games-played metrics from platform rows only — otherwise leaderboard
   // qualifiers and game counts inflate.
-  const platformStandings = standingsSorted.filter((r: any) => r.team_id);
+  const platformStandings = standingsSorted.filter((r): r is typeof r & { team_id: string } => Boolean(r.team_id));
   const leagueGames = platformStandings.reduce(
-    (max: number, r: any) => Math.max(max, r.wins + r.losses + r.ties),
+    (max, r) => Math.max(max, r.wins + r.losses + r.ties),
     0,
   );
   const { paMin, ipOutsMin } = leaderQualifierMinimums(
@@ -307,11 +316,11 @@ export async function getLeagueHomeData(
   // "Your team" marking only applies to authenticated viewers with an active team.
   const ourRef: ActiveTeamRef | null = isAuthed ? activeTeam ?? null : null;
 
-  const board = (statKey: string, label?: string, limit = 10): LeaderBoardResult => {
-    const def = getStatDef(statKey as any);
+  const board = (statKey: StatKey, label?: string, limit = 10): LeaderBoardResult => {
+    const def = getStatDef(statKey);
     const rows: LeaderRow[] =
       def.subject === 'team'
-        ? (teamSnap ?? []).map((t: any) => ({
+        ? (teamSnap ?? []).map((t) => ({
             id: t.team_id,
             name: t.team_name,
             teamId: t.team_id,
@@ -329,11 +338,11 @@ export async function getLeagueHomeData(
 
   // Recent results + upcoming — only platform teams record their own games;
   // opponent teams (team_id null) appear in standings but never as games.team_id.
-  const teamIds = platformStandings.map((r: any) => r.team_id);
+  const teamIds = platformStandings.map((r) => r.team_id);
   let recent: RecentGame[] = [];
   let upcoming: Array<{ id: string; label: string }> = [];
   if (teamIds.length) {
-    const teamNameById = new Map<string, string>(standingsSorted.map((r: any) => [r.team_id, r.team_name]));
+    const teamNameById = new Map<string, string>(platformStandings.map((r) => [r.team_id, r.team_name]));
     const [
       { data: recentGames, error: recentErr },
       { data: upcomingGames, error: upcomingErr },
@@ -363,8 +372,8 @@ export async function getLeagueHomeData(
         `[league-home] games read failed league=${league.id} season=${season} teams=${teamIds.length}: ${(recentErr ?? upcomingErr)!.message}`,
       );
     }
-    recent = (recentGames ?? []).map((g: any) => mapRecentGame(g, teamNameById.get(g.team_id) ?? 'Team', g.team_id));
-    upcoming = (upcomingGames ?? []).map((g: any) => ({
+    recent = (recentGames ?? []).map((g) => mapRecentGame(g, teamNameById.get(g.team_id) ?? 'Team', g.team_id));
+    upcoming = (upcomingGames ?? []).map((g) => ({
       id: g.id,
       label: `${teamNameById.get(g.team_id) ?? 'Team'} vs ${g.opponent_name} — ${new Date(g.scheduled_at).toLocaleDateString()}`,
     }));
@@ -373,14 +382,14 @@ export async function getLeagueHomeData(
   // Count games from platform rows only (each league matchup is recorded by both
   // platform teams, hence the /2 below). Opponent inverse records would double-count.
   const totalGames = platformStandings.reduce(
-    (s: number, r: any) => s + r.wins + r.losses + r.ties,
+    (s, r) => s + r.wins + r.losses + r.ties,
     0,
   );
 
   // Most-recent snapshot write across the loaded tables, for the "Updated N ago" pill.
   const updatedAt =
     [...(standings ?? []), ...(playerSnap ?? []), ...(teamSnap ?? [])]
-      .map((r: any) => r.updated_at as string | undefined)
+      .map((r) => r.updated_at)
       .filter((t): t is string => !!t)
       .sort((a, b) => b.localeCompare(a))[0] ?? null;
 

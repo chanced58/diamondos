@@ -3,11 +3,11 @@
 import { revalidatePath } from 'next/cache';
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import type { AdminDatabase } from '../database-types';
 
 type ActionResult = { error: string } | { ok: true };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AdminCtx = { db: SupabaseClient<any>; user: User };
+type AdminCtx = { db: SupabaseClient<AdminDatabase>; user: User };
 
 async function requirePlatformAdmin(): Promise<{ error: string } | AdminCtx> {
   const auth = createServerClient();
@@ -16,7 +16,7 @@ async function requirePlatformAdmin(): Promise<{ error: string } | AdminCtx> {
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) return { error: 'Server is not configured.' };
-  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey);
+  const db = createClient<AdminDatabase>(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey);
 
   const { data: profile } = await db
     .from('user_profiles')

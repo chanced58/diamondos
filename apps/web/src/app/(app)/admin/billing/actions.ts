@@ -3,13 +3,14 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import type { AdminDatabase } from '../database-types';
 
 async function getAdminClient() {
   const authClient = createServerClient();
   const { data: { user }, error: authError } = await authClient.auth.getUser();
   if (authError || !user) throw new Error('Not authenticated');
 
-  const supabase = createClient(
+  const supabase = createClient<AdminDatabase>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
@@ -43,8 +44,10 @@ export async function createSubscription(formData: FormData) {
     const teamId = (formData.get('teamId') as string | null)?.trim() || null;
     const leagueId = (formData.get('leagueId') as string | null)?.trim() || null;
     const userId = (formData.get('userId') as string | null)?.trim() || null;
-    const tier = formData.get('tier') as string;
-    const status = formData.get('status') as string;
+    const tierInput = formData.get('tier') as string;
+    const tier = VALID_TIERS.find((value) => value === tierInput);
+    const statusInput = formData.get('status') as string;
+    const status = VALID_STATUSES.find((value) => value === statusInput);
 
     if (entityType !== 'team' && entityType !== 'league' && entityType !== 'player') {
       return { error: `Invalid entity type: ${entityType}` };
@@ -52,8 +55,8 @@ export async function createSubscription(formData: FormData) {
     if (entityType === 'team' && !teamId) return { error: 'Team is required when entity type is team' };
     if (entityType === 'league' && !leagueId) return { error: 'League is required when entity type is league' };
     if (entityType === 'player' && !userId) return { error: 'Player is required when entity type is player' };
-    if (!VALID_TIERS.includes(tier as any)) return { error: `Invalid tier: ${tier}` };
-    if (!VALID_STATUSES.includes(status as any)) return { error: `Invalid status: ${status}` };
+    if (!tier) return { error: `Invalid tier: ${tierInput}` };
+    if (!status) return { error: `Invalid status: ${statusInput}` };
 
     const billingContactName = (formData.get('billingContactName') as string) || null;
     const billingContactEmail = (formData.get('billingContactEmail') as string) || null;
@@ -64,7 +67,7 @@ export async function createSubscription(formData: FormData) {
     const monthlyPriceCents = dollarsToCents(formData.get('monthlyPriceDollars') as string | null);
     const notes = (formData.get('notes') as string) || null;
 
-    const { error } = await (supabase as any).from('subscriptions').insert({
+    const { error } = await supabase.from('subscriptions').insert({
       entity_type: entityType,
       team_id: entityType === 'team' ? teamId : null,
       league_id: entityType === 'league' ? leagueId : null,
@@ -98,11 +101,13 @@ export async function updateSubscription(formData: FormData) {
     const id = ((formData.get('id') as string) || '').trim();
     if (!id) return { error: 'Missing or invalid subscription id' };
 
-    const tier = formData.get('tier') as string;
-    const status = formData.get('status') as string;
+    const tierInput = formData.get('tier') as string;
+    const tier = VALID_TIERS_FOR_UPDATE.find((value) => value === tierInput);
+    const statusInput = formData.get('status') as string;
+    const status = VALID_STATUSES.find((value) => value === statusInput);
 
-    if (!VALID_TIERS_FOR_UPDATE.includes(tier as any)) return { error: `Invalid tier: ${tier}` };
-    if (!VALID_STATUSES.includes(status as any)) return { error: `Invalid status: ${status}` };
+    if (!tier) return { error: `Invalid tier: ${tierInput}` };
+    if (!status) return { error: `Invalid status: ${statusInput}` };
 
     const billingContactName = (formData.get('billingContactName') as string) || null;
     const billingContactEmail = (formData.get('billingContactEmail') as string) || null;
@@ -113,7 +118,7 @@ export async function updateSubscription(formData: FormData) {
     const monthlyPriceCents = dollarsToCents(formData.get('monthlyPriceDollars') as string | null);
     const notes = (formData.get('notes') as string) || null;
 
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from('subscriptions')
       .update({
         tier,

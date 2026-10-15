@@ -1,4 +1,6 @@
 'use client';
+
+import NextImage from 'next/image';
 import type { JSX } from 'react';
 import { useState, useTransition } from 'react';
 import { uploadProfilePhotoAction } from './actions';
@@ -28,7 +30,14 @@ export function PhotoUpload({ currentUrl, isPro, initials }: Props): JSX.Element
       <div className="flex items-center gap-5">
         <div className="w-24 h-24 rounded-full overflow-hidden bg-brand-100 flex items-center justify-center text-brand-700 text-3xl font-bold shrink-0">
           {currentUrl ? (
-            <img src={currentUrl} alt="Profile" className="w-full h-full object-cover" />
+            <NextImage
+              width={96}
+              height={96}
+              unoptimized
+              src={currentUrl}
+              alt="Profile"
+              className="w-full h-full object-cover"
+            />
           ) : (
             initials
           )}

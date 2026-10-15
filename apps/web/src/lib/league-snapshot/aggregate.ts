@@ -1,3 +1,5 @@
+import type { BattingStats, PitchingStats, FieldingStats } from '@baseball/shared';
+
 export interface PlayerTeamInfo {
   teamId: string;
   teamName: string;
@@ -7,9 +9,9 @@ export interface PlayerTeamInfo {
 }
 
 export interface CombineInput {
-  batting: Map<string, any>;
-  pitching: Map<string, any>;
-  fielding: Map<string, any>;
+  batting: ReadonlyMap<string, Partial<BattingStats>>;
+  pitching: ReadonlyMap<string, Partial<PitchingStats>>;
+  fielding: ReadonlyMap<string, Partial<FieldingStats>>;
   teamOf: Map<string, PlayerTeamInfo>;
   leagueId: string;
   season: string;

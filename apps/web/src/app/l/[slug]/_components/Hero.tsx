@@ -1,3 +1,5 @@
+import NextImage from 'next/image';
+
 export function Hero({
   name,
   logoUrl,
@@ -25,7 +27,14 @@ export function Hero({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           {logoUrl ? (
-            <img src={logoUrl} alt="" className="h-16 w-16 rounded-full bg-white/20 object-cover" />
+            <NextImage
+              width={64}
+              height={64}
+              unoptimized
+              src={logoUrl}
+              alt=""
+              className="h-16 w-16 rounded-full bg-white/20 object-cover"
+            />
           ) : null}
           <div>
             <h1 className="display text-3xl font-bold drop-shadow">{theme.heroTitle || name}</h1>

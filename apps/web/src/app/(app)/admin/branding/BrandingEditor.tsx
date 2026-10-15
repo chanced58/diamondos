@@ -1,5 +1,6 @@
 'use client';
 
+import NextImage from 'next/image';
 import type { JSX } from 'react';
 import { useState, useRef } from 'react';
 
@@ -138,7 +139,14 @@ export function BrandingEditor({ initialSettings }: { initialSettings: SiteSetti
           {/* Preview */}
           <div className="shrink-0 w-24 h-24 rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50 overflow-hidden">
             {previewLogo ? (
-              <img src={previewLogo} alt="Site logo" className="w-full h-full object-contain p-2" />
+              <NextImage
+                width={96}
+                height={96}
+                unoptimized
+                src={previewLogo}
+                alt="Site logo"
+                className="w-full h-full object-contain p-2"
+              />
             ) : (
               <span className="text-3xl text-gray-300">&#x1f4f7;</span>
             )}
@@ -208,7 +216,14 @@ export function BrandingEditor({ initialSettings }: { initialSettings: SiteSetti
           <div className="p-4" style={{ backgroundColor: settings.accent_color }}>
             <div className="flex items-center gap-3">
               {previewLogo && (
-                <img src={previewLogo} alt="" className="w-8 h-8 object-contain" />
+                <NextImage
+                  width={32}
+                  height={32}
+                  unoptimized
+                  src={previewLogo}
+                  alt=""
+                  className="w-8 h-8 object-contain"
+                />
               )}
               <span className="font-semibold" style={{ color: settings.primary_color }}>
                 {settings.site_name}

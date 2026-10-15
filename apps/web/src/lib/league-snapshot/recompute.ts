@@ -1,3 +1,4 @@
+import type { Database } from '@baseball/database';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   deriveBattingStats,
@@ -5,11 +6,12 @@ import {
   selectSpotlights,
   filterResetAndReverted,
   EventType,
+  type GameEvent,
 } from '@baseball/shared';
 import { fetchAllEventsForGames } from '@/lib/stats/fetch-events';
 import { buildLineupsByGameId } from '@/lib/stats/lineups';
 import { resolveLeagueSeasonGameIds } from './season';
-import { computeStandings, computeOpponentStandings, type GameRow } from './standings';
+import { computeStandings, computeOpponentStandings } from './standings';
 import { combinePlayerStats, type PlayerTeamInfo } from './aggregate';
 
 const NIL = '00000000-0000-0000-0000-000000000000';
@@ -24,7 +26,7 @@ function assertOk(error: { message: string } | null, what: string, leagueId: str
 }
 
 /** Remove all snapshot rows for one league-season. */
-async function clearLeagueSeasonSnapshots(db: SupabaseClient, leagueId: string, season: string): Promise<void> {
+async function clearLeagueSeasonSnapshots(db: SupabaseClient<Database>, leagueId: string, season: string): Promise<void> {
   await db.from('league_player_stat_snapshot').delete().eq('league_id', leagueId).eq('season', season);
   await db.from('league_standings_snapshot').delete().eq('league_id', leagueId).eq('season', season);
   await db.from('league_team_stat_snapshot').delete().eq('league_id', leagueId).eq('season', season);
@@ -40,7 +42,7 @@ async function clearLeagueSeasonSnapshots(db: SupabaseClient, leagueId: string, 
  * surfaced on the home page in v1, so fielding aggregation is skipped.
  */
 export async function recomputeLeagueSnapshot(
-  db: SupabaseClient,
+  db: SupabaseClient<Database>,
   leagueId: string,
   season: string,
 ): Promise<void> {
@@ -103,9 +105,9 @@ export async function recomputeLeagueSnapshot(
   assertOk(optOutsErr, 'league_players', leagueId, season);
   assertOk(playerRowsErr, 'players', leagueId, season);
 
-  const teamName = new Map<string, string>((teams ?? []).map((t: any) => [t.id, t.name]));
-  const opponentName = new Map<string, string>((opponentTeams ?? []).map((t: any) => [t.id, t.name]));
-  const optOut = new Map<string, boolean>((optOuts ?? []).map((o: any) => [o.player_id, o.public_opt_out]));
+  const teamName = new Map<string, string>((teams ?? []).map((t) => [t.id, t.name]));
+  const opponentName = new Map<string, string>((opponentTeams ?? []).map((t) => [t.id, t.name]));
+  const optOut = new Map<string, boolean>((optOuts ?? []).map((o) => [o.player_id, o.public_opt_out]));
 
   // 4) events: paginated fetch (past Supabase's 1000-row cap) + drop
   //    reverted/voided/reset events — same pipeline the compliance stats use.
@@ -114,16 +116,18 @@ export async function recomputeLeagueSnapshot(
   const events = filterResetAndReverted(await fetchAllEventsForGames(db, gameIds, SNAPSHOT_EVENT_TYPES));
 
   // 5) name list + team attribution from the league roster
-  const players = (playerRows ?? []).map((p: any) => ({
+  const players = (playerRows ?? []).map((p) => ({
     id: p.id,
     firstName: p.first_name,
     lastName: p.last_name,
   }));
   const teamOf = new Map<string, PlayerTeamInfo>();
   for (const p of playerRows ?? []) {
+    // The roster query filters team_id with IN, which excludes NULL/free agents.
+    const teamId = p.team_id!;
     teamOf.set(p.id, {
-      teamId: p.team_id,
-      teamName: teamName.get(p.team_id) ?? '',
+      teamId,
+      teamName: teamName.get(teamId) ?? '',
       firstName: p.first_name,
       lastName: p.last_name,
       optOut: optOut.get(p.id) ?? false,
@@ -134,7 +138,7 @@ export async function recomputeLeagueSnapshot(
   //    shared helper used across the stats pages.
   const battingCtx = await buildLineupsByGameId(
     db,
-    (games ?? []).map((g: any) => ({
+    (games ?? []).map((g) => ({
       id: g.id,
       location_type: g.location_type,
       neutral_home_team: g.neutral_home_team,
@@ -142,7 +146,8 @@ export async function recomputeLeagueSnapshot(
   );
 
   // 7) run reducers
-  const evts = events as any;
+  // Reducers accept persisted snake_case event rows as well as domain events.
+  const evts = events as unknown as GameEvent[];
   const batting = deriveBattingStats(evts, players, battingCtx);
   const pitching = derivePitchingStats(evts, players);
 
@@ -157,8 +162,8 @@ export async function recomputeLeagueSnapshot(
 
   // 8) standings — platform teams from their own perspective, opponent teams
   //    from the inverse of games recorded against them.
-  const standings = computeStandings((games ?? []) as GameRow[], teamIds);
-  const opponentStandings = computeOpponentStandings((games ?? []) as GameRow[], opponentTeamIds);
+  const standings = computeStandings(games ?? [], teamIds);
+  const opponentStandings = computeOpponentStandings(games ?? [], opponentTeamIds);
 
   // 9) team stats — team AVG (hits/AB) and team ERA (ER*7 / IP) from the reducer maps
   const teamStatRows = Array.from(standings.entries()).map(([teamId, rec]) => {
@@ -266,7 +271,7 @@ export async function recomputeLeagueSnapshot(
       blurb: 'Best run differential',
       window_days: 7,
     },
-  ].filter(Boolean) as Array<Record<string, unknown>>;
+  ].filter((row): row is NonNullable<typeof row> => row !== null);
 
   // 11) replace snapshot rows for this league-season.
   // NOTE: not a single transaction (supabase-js limitation) — a mid-write

@@ -1,9 +1,10 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { listLeagueSeasons, resolveLeagueSeasonGameIds } from '../season';
 
 function fakeDb(seasonsRows: { id?: string; name?: string; season_id?: string }[]) {
   return {
     from(table: string) {
-      const query: any = {
+      const query = {
         select() {
           return query;
         },
@@ -19,7 +20,7 @@ function fakeDb(seasonsRows: { id?: string; name?: string; season_id?: string }[
       };
       return query;
     },
-  } as any;
+  } as unknown as SupabaseClient;
 }
 
 describe('listLeagueSeasons', () => {

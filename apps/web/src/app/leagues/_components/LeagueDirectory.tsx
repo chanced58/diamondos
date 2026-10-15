@@ -1,5 +1,6 @@
 'use client';
 
+import NextImage from 'next/image';
 import { useMemo, useState, type JSX } from 'react';
 import Link from 'next/link';
 import { BrandMark } from '@/components/ui/BrandMark';
@@ -88,7 +89,10 @@ export function LeagueDirectory({ leagues }: { leagues: PublicLeagueListItem[] }
                 className="flex h-full items-center gap-3 rounded-xl border border-app-border bg-app-surface px-4 py-3.5 transition-colors hover:border-turf-500"
               >
                 {league.logoUrl ? (
-                  <img
+                  <NextImage
+                    width={40}
+                    height={40}
+                    unoptimized
                     src={league.logoUrl}
                     alt=""
                     className="h-10 w-10 flex-shrink-0 rounded-lg object-contain"
