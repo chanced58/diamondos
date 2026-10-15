@@ -19,6 +19,7 @@ interface SidebarProps {
   primaryColor?: string;
   secondaryColor?: string;
   isPlatformAdmin?: boolean;
+  tournamentModeEnabled?: boolean;
   leagueId?: string;
   leagueName?: string;
   leagueSlug?: string;
@@ -83,6 +84,7 @@ export function Sidebar({
         } as NavItem]
       : []),
     { href: '/messages',   label: 'Messages', icon: <Icon.msg /> },
+    { href: '/tournaments', label: 'Tournaments', icon: <Icon.admin /> },
     {
       href: teamId ? `/teams/${teamId}/admin` : '/teams',
       label: 'Roster',

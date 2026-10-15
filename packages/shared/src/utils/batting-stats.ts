@@ -1,6 +1,14 @@
 import { EventType, HitType, HitTrajectory, type GameEvent, type HitPayload, type OutPayload } from '../types/game-event';
 import { OUTS_PER_INNING } from '../constants/baseball';
 import type { BattingStats } from '../types/batting';
+import {
+  applyLinkedAdvance,
+  applyPlayToRunners,
+  applyRunnerOut,
+  collectLinkedRunnerOutcomes,
+  type Bases,
+} from '../rules/play-runners';
+import { createActiveBattingOrderReducer, effectiveBattingOrderEvents, initialBattingOrderSlots } from './active-batting-order';
 
 /**
  * A batted ball is a "Hard Hit Ball" when:
@@ -171,40 +179,52 @@ export function deriveBattingStats(
     gameMap.get(gameId)!.push(event);
   }
 
-  for (const [gameId, gameEvents] of gameMap.entries()) {
-    gameEvents.sort((a, b) => {
+  for (const [gameId, rawGameEvents] of gameMap.entries()) {
+    rawGameEvents.sort((a, b) => {
       const aSeq = (a as any).sequence_number ?? a.sequenceNumber;
       const bSeq = (b as any).sequence_number ?? b.sequenceNumber;
       return aSeq - bSeq;
     });
 
+    const normalizedEvents = rawGameEvents.map((event, index) => {
+      const raw = event as unknown as Record<string, unknown>;
+      const sequenceNumber = Number(raw.sequence_number ?? raw.sequenceNumber ?? index + 1);
+      return {
+        id: String(raw.id ?? `${gameId}:${sequenceNumber}`),
+        gameId: String(raw.game_id ?? raw.gameId ?? gameId),
+        sequenceNumber,
+        eventType: String(raw.event_type ?? raw.eventType) as EventType,
+        inning: Number(raw.inning ?? 1),
+        isTopOfInning: Boolean(raw.is_top_of_inning ?? raw.isTopOfInning ?? true),
+        payload: (raw.payload ?? {}) as GameEvent['payload'],
+        occurredAt: String(raw.occurred_at ?? raw.occurredAt ?? ''),
+        createdBy: String(raw.created_by ?? raw.createdBy ?? ''),
+        deviceId: String(raw.device_id ?? raw.deviceId ?? ''),
+      } satisfies GameEvent;
+    });
+    const gameEvents = effectiveBattingOrderEvents(normalizedEvents);
+
     currentExcluded = lineupsByGameId?.get(gameId)?.excludedPlayerIds ?? new Set<string>();
     const appearedThisGame = new Set<string>();
 
-    function markAppeared(playerId: string) {
+    const markAppeared = (playerId: string) => {
       if (!appearedThisGame.has(playerId)) {
         appearedThisGame.add(playerId);
         getStats(playerId).gamesAppeared += 1;
       }
-    }
+    };
 
     // ── Lineup-based batter inference (only if caller supplied context) ────
-    // Store the lineup as an array of { playerId, battingOrder } objects
-    // sorted by battingOrder ascending. Keeping the original battingOrder
-    // value (not just position in the array) matters for substitutions that
-    // carry `battingOrderPosition` — legacy lineups can have gaps (slot 2
-    // missing, etc.), so looking up by array index would attribute the sub
-    // to the wrong slot. We dense-pack for cycling (baseball batting order
-    // skips empty slots), but match by value for substitutions.
+    // Stable slot positions make lineup changes replayable without shifting
+    // the cursor when a slot before the next batter is contracted.
     const lineupInfo = lineupsByGameId?.get(gameId);
-    const orderedLineup: { playerId: string; battingOrder: number }[] = lineupInfo
+    const orderedLineup = lineupInfo
       ? lineupInfo.ourLineup
           .filter((e) => e.playerId && typeof e.battingOrder === 'number')
           .slice()
           .sort((a, b) => a.battingOrder - b.battingOrder)
           .map((e) => ({ playerId: e.playerId, battingOrder: e.battingOrder }))
       : [];
-    let ourCompletedPAs = 0;
 
     // Our team is batting during the "top" of the inning when we're the
     // visitor and during the "bottom" when we're the home team. Matches the
@@ -214,25 +234,30 @@ export function deriveBattingStats(
       return lineupInfo.isHome ? !isTop : isTop;
     };
 
-    // Resolve the batter for a PA-closing event:
-    //   • prefer the payload id (but treat the 'unknown-batter' stub as missing)
-    //   • when our team is batting and we have a lineup, infer from the
-    //     batting-order slot implied by `ourCompletedPAs`
-    //   • otherwise return null and let the caller drop the event
+    const lineupReducer = lineupInfo
+      ? createActiveBattingOrderReducer(initialBattingOrderSlots(orderedLineup, normalizedEvents), { batsOnTop: !lineupInfo.isHome })
+      : null;
+    const inferredBatterByEventId = new Map<string, string | null>();
+    if (lineupReducer) {
+      for (const event of gameEvents) {
+        if (isOurHalfInning(event.isTopOfInning)) {
+          inferredBatterByEventId.set(event.id, lineupReducer.snapshot().nextBatterId);
+        }
+        lineupReducer.apply(event);
+      }
+    }
+    let inferredBatterForCurrentEvent: string | null = null;
+
+    // Resolve from the event payload first, then use the stable cursor replay
+    // for legacy/scorer events that did not persist a batter id.
     const resolveBatterId = (
       rawId: unknown,
       isTop: boolean,
     ): string | null => {
       const normalized = normalizeBatterId(rawId as string | null | undefined);
       if (normalized) return normalized;
-      if (!isOurHalfInning(isTop) || orderedLineup.length === 0) return null;
-      return orderedLineup[ourCompletedPAs % orderedLineup.length]?.playerId ?? null;
-    };
-
-    // Called after every PA-closing handler to advance the batting order
-    // pointer that resolveBatterId uses for the next inference.
-    const creditOurPA = (isTop: boolean): void => {
-      if (isOurHalfInning(isTop)) ourCompletedPAs += 1;
+      if (!isOurHalfInning(isTop)) return null;
+      return inferredBatterForCurrentEvent;
     };
 
     // ── Base-runner tracking (player IDs) for run attribution ──────────────
@@ -240,7 +265,7 @@ export function deriveBattingStats(
     let r2: string | null = null; // runner on 2nd
     let r3: string | null = null; // runner on 3rd
 
-    function clearBases() { r1 = null; r2 = null; r3 = null; }
+    const clearBases = () => { r1 = null; r2 = null; r3 = null; };
 
     // ── QAB tracking state ───────────────────────────────────────────────
     //
@@ -283,55 +308,37 @@ export function deriveBattingStats(
       // start of the next PA-closing event handler.
     };
 
-    function scoreRunner(runnerId: string | null) {
+    const scoreRunner = (runnerId: string | null) => {
       if (runnerId) {
         getStats(runnerId).runs += 1;
       }
-    }
+    };
 
     /** Force-advance all runners (walk / HBP / error reach). Batter goes to 1st. */
-    function forceAdvance(batterId: string) {
+    const forceAdvance = (batterId: string) => {
       if (r1 && r2 && r3) scoreRunner(r3); // bases loaded → runner on 3rd scores
       if (r1 && r2) r3 = r2;
       else if (!r3 && r2) { /* r2 stays */ }
       if (r1) r2 = r1;
       r1 = batterId;
-    }
-
-    // Pre-pass: map any BASERUNNER_OUT / BASERUNNER_ADVANCE events with
-    // `relatedEventId` to their parent play. The HIT branch below consults
-    // this to skip default run-scoring and base placement for any runner
-    // whose outcome on the play is captured by a linked outcome event.
-    const overridesByParentId = new Map<string, { outIds: Set<string>; advIds: Set<string> }>();
-    for (const ev of gameEvents) {
-      const etype = (ev as any).event_type ?? ev.eventType;
-      if (etype !== 'baserunner_out' && etype !== 'baserunner_advance') continue;
-      const p = ev.payload as any;
-      const parentId: string | undefined = p?.relatedEventId;
-      const runnerId: string | undefined = p?.runnerId;
-      if (!parentId || !runnerId) continue;
-      let entry = overridesByParentId.get(parentId);
-      if (!entry) {
-        entry = { outIds: new Set(), advIds: new Set() };
-        overridesByParentId.set(parentId, entry);
-      }
-      if (etype === 'baserunner_out') entry.outIds.add(runnerId);
-      else entry.advIds.add(runnerId);
-    }
-    const isOverriddenRunner = (runnerId: string | null, parentId: string): boolean => {
-      if (!runnerId) return false;
-      const o = overridesByParentId.get(parentId);
-      if (!o) return false;
-      return o.outIds.has(runnerId) || o.advIds.has(runnerId);
     };
+
+    // A hit's linked runner outcomes (BASERUNNER_OUT / BASERUNNER_ADVANCE with
+    // relatedEventId), matched by starting base when recorded, and the shared
+    // rule that applies them (rules/play-runners — the one deriveGameState uses).
+    const linkedOutcomes = collectLinkedRunnerOutcomes(gameEvents as { eventType?: string; event_type?: string; payload?: unknown }[]);
+    const runnerIdOf = (runner: string) => runner;
+    const currentBases = (): Bases<string> => ({ first: r1, second: r2, third: r3 });
+    const setBases = (next: Bases<string>) => { r1 = next.first; r2 = next.second; r3 = next.third; };
 
     for (const event of gameEvents) {
       const etype: string = (event as any).event_type ?? event.eventType;
       const payload = event.payload as any;
       // `is_top_of_inning` is stored on every game_events row (snake_case in
-      // DB, camelCase in TS GameEvent type). Read it once per event so
-      // resolveBatterId and creditOurPA share the same half-inning answer.
+      // DB, camelCase in TS GameEvent type). Read it once per event so batter
+      // inference uses the same half-inning as the event.
       const isTop: boolean = (event as any).is_top_of_inning ?? event.isTopOfInning ?? true;
+      inferredBatterForCurrentEvent = inferredBatterByEventId.get(event.id) ?? null;
 
       // ── INNING_CHANGE ──────────────────────────────────────────────────────
       if (etype === 'inning_change') {
@@ -369,7 +376,6 @@ export function deriveBattingStats(
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
-        creditOurPA(isTop);
         s.atBats += 1;
         s.battedBalls += 1;
 
@@ -411,54 +417,19 @@ export function deriveBattingStats(
             : hitType === 'double' ? 2
             : 1;
 
-          // Runners with a linked BASERUNNER_OUT / BASERUNNER_ADVANCE (same
-          // parent id) are excluded from default scoring and base placement;
-          // the linked event handles them. Lets the scorer record "R2 held
-          // at 3B on a double" or "R1 thrown out at 3B advancing" without
-          // double-counting runs.
-          const parentId = event.id;
-          const r1Override = isOverriddenRunner(r1, parentId);
-          const r2Override = isOverriddenRunner(r2, parentId);
-          const r3Override = isOverriddenRunner(r3, parentId);
-
-          let runsScored = 0;
-          if (bases === 4) {
-            if (r3 && !r3Override) { scoreRunner(r3); runsScored += 1; }
-            if (r2 && !r2Override) { scoreRunner(r2); runsScored += 1; }
-            if (r1 && !r1Override) { scoreRunner(r1); runsScored += 1; }
-            scoreRunner(batterId);
-            runsScored += 1;
-            // Clear bases; the linked BASERUNNER_OUT will no-op against an
-            // empty slot (still increments outs); BASERUNNER_ADVANCE places
-            // the runner on toBase.
-            clearBases();
-          } else {
-            // Determine which runners score
-            if (r3 && !r3Override)                    { scoreRunner(r3); runsScored += 1; }
-            if (r2 && 2 + bases >= 4 && !r2Override)  { scoreRunner(r2); runsScored += 1; }
-            if (r1 && 1 + bases >= 4 && !r1Override)  { scoreRunner(r1); runsScored += 1; }
-
-            // Snapshot runners we'd otherwise place by default, then skip
-            // overridden ones so the linked event can place them correctly.
-            // (Overridden R3 was suppressed from scoring above and is being
-            // overwritten by the auto-advance assignment below; the linked
-            // BASERUNNER_ADVANCE — if any — runs after this HIT and places
-            // the runner at their actual end base.)
-            const prevR1 = r1, prevR2 = r2;
-            if (bases === 1) {
-              r3 = r2 && !r2Override ? prevR2 : null;
-              r2 = r1 && !r1Override ? prevR1 : null;
-              r1 = batterId;
-            } else if (bases === 2) {
-              r3 = r1 && !r1Override ? prevR1 : null;
-              r2 = batterId;
-              r1 = null;
-            } else if (bases === 3) {
-              r3 = batterId;
-              r2 = null;
-              r1 = null;
-            }
-          }
+          // Runners with a linked outcome are left to it: no default run or
+          // base. Lets the scorer record "R2 held at 3B on a double" or "R1
+          // thrown out at 3B advancing" without double-counting runs.
+          const played = applyPlayToRunners(
+            currentBases(),
+            { kind: 'hit', bases: bases as 1 | 2 | 3 | 4 },
+            batterId,
+            linkedOutcomes.get(event.id),
+            runnerIdOf,
+          );
+          for (const runner of played.scoring) scoreRunner(runner);
+          const runsScored = played.runs;
+          setBases(played.runners);
 
           // Explicit payload.rbis (including 0) overrides derivation — scorer
           // may use this for OBR 9.04(b)(3) judgment calls where a run scored
@@ -477,8 +448,8 @@ export function deriveBattingStats(
 
         // Capture pre-PA state for productive-out detection before we mutate.
         const preOuts = outsThisInning;
-        const preR2 = r2;
-        const preR3 = r3;
+        const preR2: string | null = r2;
+        const preR3: string | null = r3;
 
         productiveOutPending = null;
         qabCreditedThisPA = false;
@@ -486,7 +457,6 @@ export function deriveBattingStats(
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
-        creditOurPA(isTop);
 
         const isStrikeout = outType === 'strikeout';
         if (isStrikeout) {
@@ -534,7 +504,6 @@ export function deriveBattingStats(
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
-        creditOurPA(isTop);
         s.atBats += 1;
         s.strikeouts += 1;
 
@@ -560,7 +529,6 @@ export function deriveBattingStats(
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
-        creditOurPA(isTop);
         s.atBats += 1;
         s.strikeouts += 1;
         if ((pitchesInPA.get(batterId) ?? 0) >= QAB_PITCH_THRESHOLD) {
@@ -585,7 +553,6 @@ export function deriveBattingStats(
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
-        creditOurPA(isTop);
         s.walks += 1;
         creditQAB(batterId);
         // Per OBR 9.04(a)(2): a base on balls with the bases loaded forces
@@ -607,7 +574,6 @@ export function deriveBattingStats(
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
-        creditOurPA(isTop);
         creditQAB(batterId);
         // Per OBR 9.02(a)(4) CI does NOT count as an at-bat.
         // Per OBR 9.04(a)(2), a bases-loaded CI forces a run and credits RBI.
@@ -628,7 +594,6 @@ export function deriveBattingStats(
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
-        creditOurPA(isTop);
         s.hitByPitch += 1;
         creditQAB(batterId);
         // Per OBR 9.04(a)(2): HBP with the bases loaded forces in a run.
@@ -649,7 +614,6 @@ export function deriveBattingStats(
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
-        creditOurPA(isTop);
         s.sacrificeFlies += 1;
         s.battedBalls += 1;
         creditQAB(batterId);
@@ -673,7 +637,6 @@ export function deriveBattingStats(
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
-        creditOurPA(isTop);
         s.sacrificeHits += 1;
         s.battedBalls += 1;
         creditQAB(batterId);
@@ -700,7 +663,6 @@ export function deriveBattingStats(
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
-        creditOurPA(isTop);
         s.atBats += 1;
         s.battedBalls += 1;
         const traj = payload?.trajectory as string | undefined;
@@ -726,7 +688,6 @@ export function deriveBattingStats(
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
-        creditOurPA(isTop);
         s.atBats += 1;
         // Double plays can technically be long enough to earn the 8-pitch
         // QAB, but by definition end the rally — never count as productive.
@@ -759,7 +720,6 @@ export function deriveBattingStats(
         markAppeared(batterId);
         const s = getStats(batterId);
         s.plateAppearances += 1;
-        creditOurPA(isTop);
         s.atBats += 1;
         outsThisInning += 3;
         resetPAState(batterId);
@@ -824,10 +784,7 @@ export function deriveBattingStats(
       // retired first). Track the out locally so the HIT handler above can
       // short-circuit run attribution when this was the 3rd out.
       if (etype === 'baserunner_out') {
-        const runnerId: string | undefined = payload?.runnerId;
-        if (r1 === runnerId) r1 = null;
-        else if (r2 === runnerId) r2 = null;
-        else if (r3 === runnerId) r3 = null;
+        if (typeof payload?.runnerId === 'string') setBases(applyRunnerOut(currentBases(), payload, runnerIdOf));
         outsThisInning += 1;
         continue;
       }
@@ -852,13 +809,8 @@ export function deriveBattingStats(
         ) {
           creditQAB(productiveOutPending.batterId);
         }
-        if (r1 === runnerId) r1 = null;
-        else if (r2 === runnerId) r2 = null;
-        else if (r3 === runnerId) r3 = null;
-        // toBase 4 = scored; run credited by SCORE event
-        if (toBase === 3) r3 = runnerId;
-        else if (toBase === 2) r2 = runnerId;
-        else if (toBase === 1) r1 = runnerId;
+        // toBase 4 places nothing — the SCORE event credits the run.
+        setBases(applyLinkedAdvance(currentBases(), payload, runnerId, runnerIdOf));
         continue;
       }
 
@@ -866,44 +818,11 @@ export function deriveBattingStats(
       if (etype === 'substitution') {
         const inId: string | undefined = payload?.inPlayerId;
         const outId: string | undefined = payload?.outPlayerId;
-        const isOpponentSub = payload?.isOpponentSubstitution === true;
         if (inId && outId) {
           // If the substituted player is on base, replace them
           if (r1 === outId) r1 = inId;
           if (r2 === outId) r2 = inId;
           if (r3 === outId) r3 = inId;
-        }
-        // Keep the inferred-lineup order in sync with our substitutions so a
-        // pinch hitter's PA still resolves to the real player. Only apply for
-        // our team's subs — opponent subs are tracked separately in
-        // opponent-batting-stats and don't affect our batting-order pointer.
-        //
-        // Match by playerId when outPlayerId is given (the canonical swap).
-        // Match by battingOrder value when only battingOrderPosition is
-        // given (slot had no known prior occupant). We match by *value* —
-        // not array index — because dense-packed lineups with gaps (e.g.
-        // battingOrders [1, 3, 5]) would otherwise attribute a sub at
-        // position 3 to the third entry (battingOrder 5) instead of the
-        // real slot 3. Fall back to index-based lookup only if no slot
-        // with that battingOrder exists (defensive; preserves prior
-        // behavior for callers whose lineups don't include the slot yet).
-        if (!isOpponentSub && orderedLineup.length > 0 && inId) {
-          if (outId) {
-            const idx = orderedLineup.findIndex((e) => e.playerId === outId);
-            if (idx >= 0) orderedLineup[idx].playerId = inId;
-          } else if (typeof payload?.battingOrderPosition === 'number') {
-            const pos = payload.battingOrderPosition;
-            const byBatOrder = orderedLineup.findIndex((e) => e.battingOrder === pos);
-            if (byBatOrder >= 0) {
-              orderedLineup[byBatOrder].playerId = inId;
-            } else {
-              // Slot doesn't exist yet — this is a lineup extension (e.g. adding
-              // a 10th batter mid-game). Append and re-sort so the rotation at
-              // `ourCompletedPAs % orderedLineup.length` walks the new slot.
-              orderedLineup.push({ playerId: inId, battingOrder: pos });
-              orderedLineup.sort((a, b) => a.battingOrder - b.battingOrder);
-            }
-          }
         }
         continue;
       }

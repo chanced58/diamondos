@@ -10,53 +10,84 @@ import { AddGameForm } from './AddGameForm';
 
 export const metadata: Metadata = { title: 'Add Game' };
 
-export default async function NewGamePage(): Promise<JSX.Element | null> {
+export default async function NewGamePage({
+  searchParams,
+}: {
+  searchParams?: { tournamentId?: string };
+}): Promise<JSX.Element | null> {
   const auth = createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return null;
 
-  const activeTeam = await getActiveTeam(auth, user.id);
-
-  if (!activeTeam) {
-    return (
-      <div className="p-8">
-        <p className="text-gray-500">
-          No team found.{' '}
-          <Link href="/admin/create-team" className="text-brand-700 hover:underline">
-            Create a team
-          </Link>{' '}
-          first.
-        </p>
-      </div>
-    );
-  }
-
-  const { isCoach } = await getUserAccess(activeTeam.id, user.id);
-
-  if (!isCoach) {
-    return (
-      <div className="p-8">
-        <p className="text-gray-500">Only coaches can schedule games.</p>
-      </div>
-    );
-  }
-
-  // Fetch opponent teams available to this team (team-owned + league opponent teams)
   const db = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
+  const tournamentId = searchParams?.tournamentId?.trim() || null;
+  let selectedTeam: { id: string; name: string } | null = null;
+  let tournamentName: string | null = null;
+
+  if (tournamentId) {
+    const { data: tournament } = await db
+      .from('tournaments')
+      .select('id, name')
+      .eq('id', tournamentId)
+      .maybeSingle();
+    const { data: tournamentTeam } = await db
+      .from('tournament_teams')
+      .select('team_id')
+      .eq('tournament_id', tournamentId)
+      .maybeSingle();
+
+    if (tournament && tournamentTeam) {
+      const [teamResult, access] = await Promise.all([
+        db.from('teams').select('id, name').eq('id', tournamentTeam.team_id).maybeSingle(),
+        getUserAccess(tournamentTeam.team_id, user.id),
+      ]);
+      if (teamResult.data && access.isCoach) {
+        selectedTeam = teamResult.data;
+        tournamentName = tournament.name;
+      }
+    }
+  } else {
+    const activeTeam = await getActiveTeam(auth, user.id);
+    if (activeTeam) {
+      const { isCoach } = await getUserAccess(activeTeam.id, user.id);
+      if (isCoach) selectedTeam = { id: activeTeam.id, name: activeTeam.name };
+    }
+  }
+
+  if (!selectedTeam) {
+    return (
+      <div className="p-8">
+        <p className="text-gray-500">
+          {tournamentId
+            ? 'Tournament not found or you are not a coach for its team.'
+            : 'No team found, or you are not a coach for the active team.'}{' '}
+          {!tournamentId && (
+            <>
+              <Link href="/admin/create-team" className="text-brand-700 hover:underline">
+                Create a team
+              </Link>{' '}
+              first.
+            </>
+          )}
+        </p>
+      </div>
+    );
+  }
+
   // Team-owned opponent teams
   const { data: teamOpponents } = await db
     .from('opponent_teams')
     .select('id, name, city')
-    .eq('team_id', activeTeam.id)
+    .eq('team_id', selectedTeam.id)
     .order('name');
 
   // League opponent teams (if team is in a league)
   let leagueOpponents: { id: string; name: string; city: string | null }[] = [];
-  const league = await getActiveLeague(activeTeam.id);
+  const league = tournamentId ? null : await getActiveLeague(selectedTeam.id);
   if (league) {
     const { data: leagueMembers } = await db
       .from('league_members')
@@ -80,13 +111,13 @@ export default async function NewGamePage(): Promise<JSX.Element | null> {
   return (
     <div className="p-8 max-w-lg">
       <div className="mb-6">
-        <Link href="/games" className="text-sm text-brand-700 hover:underline">
-          &larr; Back to schedule
+        <Link href={tournamentId ? `/tournaments/${tournamentId}` : '/games'} className="text-sm text-brand-700 hover:underline">
+          &larr; Back to {tournamentId ? 'tournament' : 'schedule'}
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900 mt-2">Schedule a Game</h1>
-        <p className="text-gray-500 text-sm">{activeTeam.name}</p>
+        <h1 className="text-2xl font-bold text-gray-900 mt-2">{tournamentId ? 'Schedule Tournament Game' : 'Schedule a Game'}</h1>
+        <p className="text-gray-500 text-sm">{selectedTeam.name}{tournamentName ? ` · ${tournamentName}` : ''}</p>
       </div>
-      <AddGameForm teamId={activeTeam.id} opponentTeams={uniqueOpponentTeams} />
+      <AddGameForm teamId={selectedTeam.id} tournamentId={tournamentId ?? undefined} opponentTeams={uniqueOpponentTeams} />
     </div>
   );
 }

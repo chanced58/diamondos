@@ -58,22 +58,69 @@ export function applyLineupSubstitutions(
 }
 
 /**
- * Which batter is due up, cycling the lineup by index (not slot number) so
- * non-contiguous batting orders — e.g. slots 1,2,3,5,… after a removal —
- * still rotate through every batter. Mirrors the web ScoringBoard's
- * `effectiveStarters[completedTeamPAs % length]` derivation.
+ * Every player who has held a batting slot this game, mapped to that slot's
+ * batting order — including players since substituted out, so the batter
+ * who completed an earlier PA can still be placed in the order. Applies the
+ * same SUBSTITUTION rules as applyLineupSubstitutions; events must be
+ * void/revert-filtered and sorted by sequence number.
+ */
+export function battingOrderHistory(
+  slots: BattingSlot[],
+  events: LineupEvent[],
+  opts?: { forOpponent?: boolean },
+): Map<string, number> {
+  const forOpponent = opts?.forOpponent ?? false;
+  const history = new Map(slots.map((s) => [s.playerId, s.battingOrder]));
+
+  for (const event of events) {
+    if (event.eventType !== EventType.SUBSTITUTION) continue;
+    const p = (event.payload ?? {}) as Partial<SubstitutionPayload>;
+    if (Boolean(p.isOpponentSubstitution) !== forOpponent) continue;
+    if (p.substitutionType === SubstitutionType.POSITION_CHANGE) continue;
+    const inId = p.inPlayerId;
+    if (!inId) continue;
+
+    if (!p.outPlayerId && typeof p.battingOrderPosition === 'number') {
+      history.set(inId, p.battingOrderPosition);
+      continue;
+    }
+
+    const outOrder = p.outPlayerId ? history.get(p.outPlayerId) : undefined;
+    if (outOrder !== undefined) history.set(inId, outOrder);
+  }
+
+  return history;
+}
+
+/**
+ * Which batter is due up.
  *
- * `completedTeamPAs` is the offensive team's cumulative completed plate
- * appearances (completedTopHalfPAs / completedBottomHalfPAs from
- * deriveGameState, picked by which half the team bats in).
+ * Anchored on `lastBatterOrder` — the batting order of whoever completed the
+ * offensive team's most recent PA (battingOrderHistory, keyed by
+ * lastCompletedTopHalfBatterId / lastCompletedBottomHalfBatterId from
+ * deriveGameState): the next slot after it, wrapping to the top. Anchoring
+ * on the last batter rather than a PA count keeps the rotation in place when
+ * the order grows or shrinks mid-game — a batter added after the first time
+ * through bats after the current last slot instead of shifting everyone.
+ *
+ * With no anchor (no PA yet, or the last batter never held a slot), cycles
+ * by index: `completedTeamPAs % slots.length`, so non-contiguous batting
+ * orders — e.g. slots 1,2,3,5,… after a removal — still rotate through
+ * every batter. `completedTeamPAs` is the offensive team's cumulative
+ * completed plate appearances (completedTopHalfPAs / completedBottomHalfPAs).
  */
 export function deriveDueBatter(
   slots: BattingSlot[],
   completedTeamPAs: number,
+  lastBatterOrder?: number | null,
 ): { playerId: string; battingOrder: number; index: number } | null {
   if (slots.length === 0) return null;
   const sorted = [...slots].sort((a, b) => a.battingOrder - b.battingOrder);
-  const index = completedTeamPAs % sorted.length;
+  const index =
+    lastBatterOrder == null
+      ? completedTeamPAs % sorted.length
+      : // No later slot (-1) → the order turns over to the top.
+        Math.max(0, sorted.findIndex((s) => s.battingOrder > lastBatterOrder));
   const slot = sorted[index];
   return { playerId: slot.playerId, battingOrder: slot.battingOrder, index };
 }
@@ -144,4 +191,44 @@ export function attributePlayersForHalf(args: {
   }
 
   return result;
+}
+
+/** An order shorter than this is treated as still being built as batters come up. */
+export const COMPLETE_BATTING_ORDER_LENGTH = 9;
+
+export type DueBatterResolution =
+  | { kind: 'due'; playerId: string; battingOrder: number; index: number }
+  /** The scorer must say who is up: add the next new batter, or go back to
+   *  `topOfOrder` (null when the order is empty). */
+  | { kind: 'ask'; topOfOrder: BattingSlot | null };
+
+/**
+ * deriveDueBatter, plus the cases where the app must not guess who is up:
+ *
+ * - The order is empty — no one has been entered yet.
+ * - The order is still being built (fewer than
+ *   COMPLETE_BATTING_ORDER_LENGTH batters) and its last batter has just
+ *   batted. The next man up is either a new batter the scorer adds or the
+ *   top of the order; only the scorer knows which. A complete order wraps to
+ *   the top on its own.
+ */
+export function resolveDueBatter(
+  slots: BattingSlot[],
+  completedTeamPAs: number,
+  lastBatterOrder?: number | null,
+): DueBatterResolution {
+  const due = deriveDueBatter(slots, completedTeamPAs, lastBatterOrder);
+  if (!due) return { kind: 'ask', topOfOrder: null };
+
+  // With an anchor, the order has turned over only when no slot comes after
+  // the last batter — an anchor below every slot (slot 1 removed after he
+  // batted) just means the first remaining slot is due.
+  const turnedOver =
+    lastBatterOrder == null
+      ? due.index === 0 && completedTeamPAs > 0
+      : !slots.some((s) => s.battingOrder > lastBatterOrder);
+  if (turnedOver && slots.length < COMPLETE_BATTING_ORDER_LENGTH) {
+    return { kind: 'ask', topOfOrder: { playerId: due.playerId, battingOrder: due.battingOrder } };
+  }
+  return { kind: 'due', ...due };
 }

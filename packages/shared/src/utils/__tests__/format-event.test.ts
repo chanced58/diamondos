@@ -35,6 +35,21 @@ describe('formatEventDescription', () => {
     ).toBe('Bob out on the basepaths');
   });
 
+  it('should append the putout sequence to a runner out when one was recorded', () => {
+    expect(
+      formatEventDescription(
+        { eventType: EventType.BASERUNNER_OUT, payload: { runnerId: 'bob', fieldingSequence: [8, 6, 2] } },
+        resolve,
+      ),
+    ).toBe('Bob out on the basepaths (8-6-2)');
+    expect(
+      formatEventDescription(
+        { eventType: EventType.BASERUNNER_OUT, payload: { fieldingSequence: [9, 5] } },
+        resolve,
+      ),
+    ).toBe('Runner out (9-5)');
+  });
+
   it('returns null for correction marker events', () => {
     expect(
       formatEventDescription({ eventType: EventType.PITCH_REVERTED, payload: { revertToSequenceNumber: 3 } }, resolve),

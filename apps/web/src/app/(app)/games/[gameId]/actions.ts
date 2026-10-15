@@ -261,14 +261,7 @@ export async function startGameAction(_prevState: string | null | undefined, for
 
   // Insert GAME_START event BEFORE updating game status so that a failure here
   // leaves the game in its current state and the coach can simply retry.
-  const { error: eventError } = await supabase.from('game_events').insert({
-    id: crypto.randomUUID(),
-    game_id: gameId,
-    sequence_number: nextSeq,
-    event_type: 'game_start',
-    inning: 1,
-    is_top_of_inning: true,
-    payload: {
+  const eventPayload = {
       // Home team pitches in the TOP; away team pitches in the BOTTOM.
       // Store both pitchers AND both leadoffs in the correct home/away slots
       // so game-state.deriveGameState can restore currentBatterId on every
@@ -292,7 +285,29 @@ export async function startGameAction(_prevState: string | null | undefined, for
       pitchTypeEnabled,
       pitchLocationEnabled,
       sprayChartEnabled,
-    },
+  };
+
+  if (game.tournament_id) {
+    const { error: tournamentStartError } = await supabase.rpc('start_tournament_game', {
+      p_game_id: gameId,
+      p_user_id: user.id,
+      p_payload: eventPayload,
+      p_occurred_at: now,
+    });
+    if (tournamentStartError) {
+      return `Failed to start tournament game: ${tournamentStartError.message}`;
+    }
+    redirect(`/games/${gameId}/score`);
+  }
+
+  const { error: eventError } = await supabase.from('game_events').insert({
+    id: crypto.randomUUID(),
+    game_id: gameId,
+    sequence_number: nextSeq,
+    event_type: 'game_start',
+    inning: 1,
+    is_top_of_inning: true,
+    payload: eventPayload,
     occurred_at: now,
     created_by: user.id,
     device_id: 'web',

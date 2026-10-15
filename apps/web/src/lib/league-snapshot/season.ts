@@ -3,9 +3,22 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 /** Distinct season names across the league's teams, newest-name first. */
 export async function listLeagueSeasons(db: SupabaseClient, teamIds: string[]): Promise<string[]> {
   if (teamIds.length === 0) return [];
-  const { data, error } = await db.from('seasons').select('name').in('team_id', teamIds);
+  const { data: tournamentSeasonRows, error: tournamentSeasonsErr } = await db
+    .from('tournament_teams')
+    .select('season_id')
+    .in('team_id', teamIds);
+  if (tournamentSeasonsErr) throw new Error(`list tournament seasons failed: ${tournamentSeasonsErr.message}`);
+  const tournamentSeasonIds = new Set(
+    (tournamentSeasonRows ?? []).map((row: { season_id: string }) => row.season_id),
+  );
+
+  const { data, error } = await db.from('seasons').select('id, name').in('team_id', teamIds);
   if (error) throw new Error(`listLeagueSeasons failed: ${error.message}`);
-  const names = Array.from(new Set((data ?? []).map((r: { name: string }) => r.name)));
+  const names = Array.from(new Set(
+    (data ?? [])
+      .filter((row: { id: string }) => !tournamentSeasonIds.has(row.id))
+      .map((row: { name: string }) => row.name),
+  ));
   return names.sort((a, b) => b.localeCompare(a));
 }
 
@@ -31,7 +44,8 @@ export async function resolveLeagueSeasonGameIds(
     .from('games')
     .select('id')
     .in('season_id', seasonIds)
-    .eq('status', 'completed');
+    .eq('status', 'completed')
+    .is('tournament_id', null);
   if (gErr) throw new Error(`resolve games failed: ${gErr.message}`);
   return (gameRows ?? []).map((r: { id: string }) => r.id);
 }

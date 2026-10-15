@@ -47,8 +47,13 @@ export async function addOpponentBatterFromRoster(args: {
   opponentPlayerRemoteId: string;
   startingPosition?: string | null;
   maxBatters: number;
+  extension?: { battingOrder: number; record: (playerId: string, battingOrder: number) => Promise<void> };
 }): Promise<AddOpponentBatterResult> {
   const { gameRemoteId, opponentPlayerRemoteId, startingPosition, maxBatters } = args;
+  if (args.extension) {
+    await args.extension.record(opponentPlayerRemoteId, args.extension.battingOrder);
+    return { ok: true, opponentPlayerId: opponentPlayerRemoteId, battingOrder: args.extension.battingOrder };
+  }
   let result: AddOpponentBatterResult = { ok: false, message: 'Could not add batter.' };
 
   await database.write(async () => {
@@ -109,6 +114,7 @@ export async function addNewOpponentBatter(args: {
   jerseyNumber?: string | null;
   startingPosition?: string | null;
   maxBatters: number;
+  extension?: { battingOrder: number; record: (playerId: string, battingOrder: number) => Promise<void> };
 }): Promise<AddOpponentBatterResult> {
   const {
     gameRemoteId, opponentTeamId, firstName, lastName,
@@ -128,8 +134,8 @@ export async function addNewOpponentBatter(args: {
   let result: AddOpponentBatterResult = { ok: false, message: 'Could not add batter.' };
 
   await database.write(async () => {
-    const battingOrder = await nextOpponentBattingOrder(gameRemoteId);
-    if (battingOrder > maxBatters) {
+    const battingOrder = args.extension?.battingOrder ?? await nextOpponentBattingOrder(gameRemoteId);
+    if (!args.extension && battingOrder > maxBatters) {
       result = { ok: false, message: `The order is full at ${maxBatters} batters.` };
       return;
     }
@@ -153,7 +159,7 @@ export async function addNewOpponentBatter(args: {
         r.updatedAt = Date.now();
         r.syncedAt = undefined;
       }),
-      database.get<OpponentGameLineup>('opponent_game_lineups').prepareCreate((r) => {
+      ...(args.extension ? [] : [database.get<OpponentGameLineup>('opponent_game_lineups').prepareCreate((r) => {
         r._raw.id = lineupId;
         r.remoteId = lineupId;
         r.gameRemoteId = gameRemoteId;
@@ -163,11 +169,14 @@ export async function addNewOpponentBatter(args: {
         r.isStarter = false;
         r.updatedAt = Date.now();
         r.syncedAt = undefined;
-      }),
+      })]),
     );
 
     result = { ok: true, opponentPlayerId: playerId, battingOrder };
   });
+
+  const completed = result as AddOpponentBatterResult;
+  if (completed.ok && args.extension) await args.extension.record(completed.opponentPlayerId, completed.battingOrder);
 
   return result;
 }

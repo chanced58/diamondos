@@ -4,7 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
-import { getLeagueSettingsForTeam } from '@/lib/league-settings';
+import { getScoringSettingsForGame } from '@/lib/game-scoring-settings';
 import { ScoringBoard } from './ScoringBoard';
 
 export const metadata: Metadata = { title: 'Scoring' };
@@ -29,7 +29,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
 
   const { data: game } = await db
     .from('games')
-    .select('id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, season_id, opponent_team_id')
+    .select('id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, season_id, opponent_team_id, tournament_id, scoring_settings_snapshot')
     .eq('id', params.gameId)
     .single();
 
@@ -260,7 +260,11 @@ export default async function ScorePage({ params }: { params: { gameId: string }
     sprayChart:    gsp.sprayChartEnabled    !== false,
   };
 
-  const leagueSettings = await getLeagueSettingsForTeam(db, game.team_id);
+  const leagueSettings = await getScoringSettingsForGame(db, {
+    teamId: game.team_id,
+    tournamentId: game.tournament_id,
+    scoringSettingsSnapshot: game.scoring_settings_snapshot,
+  });
 
   return (
     <ScoringBoard
@@ -275,7 +279,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       opponentLineup={opponentLineup}
       teamRoster={teamRoster}
       opponentRoster={opponentRoster}
-      initialEvents={activeEvents}
+      initialEvents={allEvents}
       minNextSequenceNumber={allEventsMaxSeq + 1}
       currentUserId={user.id}
       isCoach={isCoach}

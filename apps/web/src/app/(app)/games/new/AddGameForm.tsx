@@ -33,9 +33,11 @@ type OpponentTeamOption = {
 
 export function AddGameForm({
   teamId,
+  tournamentId,
   opponentTeams = [],
 }: {
   teamId: string;
+  tournamentId?: string;
   opponentTeams?: OpponentTeamOption[];
 }): JSX.Element | null {
   const [error, formAction] = useFormState(createGameAction, null);
@@ -64,6 +66,7 @@ export function AddGameForm({
   return (
     <form action={formAction} className="space-y-5">
       <input type="hidden" name="teamId" value={teamId} />
+      {tournamentId && <input type="hidden" name="tournamentId" value={tournamentId} />}
       <input type="hidden" name="opponentTeamId" value={selectedOpponentTeamId} />
       <input type="hidden" name="opponentTbd" value={opponentTbd ? 'on' : ''} />
 

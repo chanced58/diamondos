@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getMaxBattingOrder } from '@baseball/shared';
-import { getLeagueSettingsForTeam } from '@/lib/league-settings';
+import { getScoringSettingsForGame } from '@/lib/game-scoring-settings';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
@@ -38,7 +38,7 @@ async function getCoachContext(gameId: string) {
   const db = serviceClient();
   const { data: game } = await db
     .from('games')
-    .select('id, team_id, opponent_name, opponent_team_id')
+    .select('id, team_id, opponent_name, opponent_team_id, tournament_id, scoring_settings_snapshot')
     .eq('id', gameId)
     .single();
   if (!game) return null;
@@ -269,7 +269,11 @@ export async function saveOpponentLineupAction(
   if (!ctx) return 'Not authorized.';
 
   const { db, game } = ctx;
-  const leagueSettings = await getLeagueSettingsForTeam(db, game.team_id);
+  const leagueSettings = await getScoringSettingsForGame(db, {
+    teamId: game.team_id,
+    tournamentId: game.tournament_id,
+    scoringSettingsSnapshot: game.scoring_settings_snapshot,
+  });
   const maxBatters = getMaxBattingOrder(leagueSettings);
 
   // Parse entries: player_{id}_order and player_{id}_position

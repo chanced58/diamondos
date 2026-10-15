@@ -57,8 +57,8 @@ export function FieldLocationModal({
     >
       <View className="flex-1 items-center justify-center bg-black/50 px-4">
         <View className="bg-white rounded-2xl p-4 w-full" style={{ maxWidth: 560 }}>
-          <Text className="text-lg font-bold text-gray-900">Where did it go?</Text>
-          <Text className="text-sm text-gray-500 mb-3">
+          <Text className="text-score-lg font-bold text-gray-900">Where did it go?</Text>
+          <Text className="text-score-sm text-gray-500 mb-3">
             {!fielderApplies
               ? 'Tap where the ball left the park.'
               : location

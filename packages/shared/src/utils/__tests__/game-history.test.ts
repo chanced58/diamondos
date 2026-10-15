@@ -324,3 +324,64 @@ describe('buildGameHistoryTree — HIT with linked runner outcomes', () => {
     expect(atBat.result?.label).toBe('Single');
   });
 });
+
+describe('buildGameHistoryTree — running score with linked runner outcomes', () => {
+  beforeEach(resetSeq);
+
+  /** A pitch in play then a hit; returns [pitch, hit]. */
+  function hitBy(batterId: string, hitType: HitType, extra: Record<string, unknown> = {}): GameEvent[] {
+    return [
+      mkEvent(EventType.PITCH_THROWN, { batterId, pitcherId: 'pit1', outcome: PitchOutcome.IN_PLAY }),
+      mkEvent(EventType.HIT, { batterId, pitcherId: 'pit1', hitType, ...extra }),
+    ];
+  }
+
+  it('should score a held runner only when a later hit brings him in', () => {
+    const [p1, d1] = hitBy('p1', HitType.DOUBLE);
+    const [p2, d2] = hitBy('p2', HitType.DOUBLE);
+    const held = mkEvent(EventType.BASERUNNER_ADVANCE, { runnerId: 'p1', fromBase: 2, toBase: 3, reason: 'on_play', relatedEventId: d2.id });
+    const [p3, s3] = hitBy('p3', HitType.SINGLE);
+    const tree = buildGameHistoryTree([p1, d1, p2, d2, held, p3, s3], players);
+    // p1 scores on p3's single; p2 (on 2nd) only reaches 3rd.
+    expect(tree.innings[0].top!.awayScore).toBe(1);
+  });
+
+  it('should not leave a ghost runner behind after a runner advances home', () => {
+    const [p1, d1] = hitBy('p1', HitType.DOUBLE);
+    const [p2, s2] = hitBy('p2', HitType.SINGLE, { rbis: 1 });
+    const home = mkEvent(EventType.BASERUNNER_ADVANCE, { runnerId: 'p1', fromBase: 2, toBase: 4, reason: 'on_play', relatedEventId: s2.id });
+    const score = mkEvent(EventType.SCORE, { scoringPlayerId: 'p1', rbis: 0, relatedEventId: s2.id });
+    const [p3, s3] = hitBy('p3', HitType.SINGLE);
+    const tree = buildGameHistoryTree([p1, d1, p2, s2, home, score, p3, s3], players);
+    // Only p1's run: the next single moves p2 from 1st to 2nd, nobody scores.
+    expect(tree.innings[0].top!.awayScore).toBe(1);
+  });
+
+  it('should label an advance past the standard base as taking it, not held', () => {
+    const [p1, s1] = hitBy('p1', HitType.SINGLE);
+    const [p2, s2] = hitBy('p2', HitType.SINGLE);
+    const took = mkEvent(EventType.BASERUNNER_ADVANCE, { runnerId: 'p1', fromBase: 1, toBase: 3, reason: 'on_play', relatedEventId: s2.id });
+    const tree = buildGameHistoryTree([p1, s1, p2, s2, took], players);
+    const atBat = tree.innings[0].top!.items[1];
+    if (atBat?.type !== 'at-bat') throw new Error('expected at-bat node');
+    expect(atBat.result?.label).toContain('Alice Atbat took 3B');
+    expect(atBat.result?.label).not.toContain('held');
+  });
+
+  it('should label an advance home as scored', () => {
+    const [p1, d1] = hitBy('p1', HitType.DOUBLE);
+    const [p2, s2] = hitBy('p2', HitType.SINGLE, { rbis: 1 });
+    const home = mkEvent(EventType.BASERUNNER_ADVANCE, { runnerId: 'p1', fromBase: 2, toBase: 4, reason: 'on_play', relatedEventId: s2.id });
+    const tree = buildGameHistoryTree([p1, d1, p2, s2, home], players);
+    const atBat = tree.innings[0].top!.items[1];
+    if (atBat?.type !== 'at-bat') throw new Error('expected at-bat node');
+    expect(atBat.result?.label).toContain('Alice Atbat scored');
+  });
+
+  it('should score the runner from 3rd on a sac bunt (squeeze), like every other consumer', () => {
+    const [p1, t1] = hitBy('p1', HitType.TRIPLE);
+    const bunt = mkEvent(EventType.SACRIFICE_BUNT, { batterId: 'p2', pitcherId: 'pit1' });
+    const tree = buildGameHistoryTree([p1, t1, bunt], players);
+    expect(tree.innings[0].top!.awayScore).toBe(1);
+  });
+});

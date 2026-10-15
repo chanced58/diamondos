@@ -67,7 +67,9 @@ export type RosterPlayer = {
  *                Recorded as a linked BASERUNNER_ADVANCE, plus a SCORE when
  *                they reach home — the advance never credits the run itself.
  * - `thrown_out` — runner is thrown out advancing. Recorded as a
- *                BASERUNNER_OUT event linked via relatedEventId.
+ *                BASERUNNER_OUT event linked via relatedEventId, carrying
+ *                the putout order (e.g. [8, 6, 2]) when the scorer entered
+ *                one; absent when skipped.
  */
 export type RunnerOutcome = {
   runnerId: string;
@@ -76,7 +78,7 @@ export type RunnerOutcome = {
   | { kind: 'auto' }
   | { kind: 'held'; toBase: 2 | 3 }
   | { kind: 'advanced'; toBase: 3 | 4 }
-  | { kind: 'thrown_out' }
+  | { kind: 'thrown_out'; fieldingSequence?: number[] }
 );
 
 interface PitchInputProps {
@@ -146,8 +148,9 @@ interface PitchInputProps {
   onRecordSacBuntFromOut?: (outType: BattedOutType) => void;
   onRecordFieldersChoice: (runnerId: string, fromBase: Base) => void;
   /** Runner thrown out advancing during a play (e.g., on a hit, sac fly,
-   *  wild pitch). Records BASERUNNER_OUT for the chosen runner. */
-  onRecordRunnerOut: (runnerId: string, fromBase: Base) => void;
+   *  wild pitch). Records BASERUNNER_OUT for the chosen runner, with the
+   *  putout order the scorer entered (empty when skipped). */
+  onRecordRunnerOut: (runnerId: string, fromBase: Base, fieldingSequence: number[]) => void;
   onRecordWildPitch: () => void;
   onRecordPassedBall: () => void;
   onRecordBalk: () => void;
@@ -325,10 +328,12 @@ export function PitchInput({
   const [showRunnerOutModal, setShowRunnerOutModal] = useState(false);
   // Pending HIT awaiting per-runner outcome confirmation (2B/3B with
   // runners on). null = modal closed; non-null = modal open for that hit
-  // type. The choices map is keyed by runnerId.
+  // type. The choices map is keyed by the runner's base, not runnerId: two
+  // runners can share an id (e.g. hits credited to one batter when no batting
+  // order is set), but never a base.
   const [pendingHitWithRunners, setPendingHitWithRunners] = useState<HitType | null>(null);
   const [runnerOutcomeChoices, setRunnerOutcomeChoices] = useState<
-    Record<string, RunnerOutcome>
+    Partial<Record<Base, RunnerOutcome>>
   >({});
   const [showOutModal, setShowOutModal] = useState(false);
   // Two-step Out modal: step 1 picks trajectory, step 2 asks "was this a sac?".
@@ -364,6 +369,14 @@ export function PitchInput({
   const [pendingThrow, setPendingThrow] = useState<null | {
     firstFielder: number;
     finish: (throws: number[]) => void;
+  }>(null);
+  // The putout-order step for a runner thrown out on a play — one runner at a
+  // time; `finish` moves on to the next runner or records the play.
+  const [putoutStep, setPutoutStep] = useState<null | {
+    runnerId: string;
+    fromBase: Base;
+    firstFielder: number | null;
+    finish: (sequence: number[]) => void;
   }>(null);
   const [showRunnersSheet, setShowRunnersSheet] = useState(false);
   const [showSubsSheet, setShowSubsSheet] = useState(false);
@@ -508,11 +521,48 @@ export function PitchInput({
     commitInPlay(EventType.HIT, () => onRecordFieldersChoice(runnerId, fromBase));
   }
 
+  /** Runner Out sheet → the putout-order step for that runner → record. */
   function handleRunnerOutPick(runnerId: string, fromBase: Base) {
     setShowRunnerOutModal(false);
-    onRecordRunnerOut(runnerId, fromBase);
+    // No batted ball belongs to this out, so there is no fielder to start from.
+    setPutoutStep({
+      runnerId,
+      fromBase,
+      firstFielder: null,
+      finish: (sequence) => onRecordRunnerOut(runnerId, fromBase, sequence),
+    });
   }
 
+  /**
+   * Ask for the putout order of each thrown-out runner in turn, lead runner
+   * first, then hand back every sequence at once so the play is recorded in
+   * one go. The batted ball's first fielder seeds each sequence — the relay
+   * almost always starts with whoever fielded the hit.
+   */
+  function askPutoutOrder(
+    runners: { runnerId: string; fromBase: Base }[],
+    firstFielder: number | null,
+    done: (sequencesByBase: Map<Base, number[]>) => void,
+    collected: Map<Base, number[]> = new Map(),
+  ) {
+    const [next, ...rest] = runners;
+    if (!next) {
+      done(collected);
+      return;
+    }
+    setPutoutStep({
+      ...next,
+      firstFielder,
+      finish: (sequence) =>
+        askPutoutOrder(rest, firstFielder, done, new Map(collected).set(next.fromBase, sequence)),
+    });
+  }
+
+  /**
+   * A single, double or triple. With runners on, opens the per-runner outcome
+   * prompt (every runner seeded to the standard advance); otherwise records
+   * the hit straight through.
+   */
   function handleHitTap(hitType: HitType) {
     const supportsOutcomes = !!onRecordHitWithRunnerOutcomes;
     const needsPrompt =
@@ -524,20 +574,21 @@ export function PitchInput({
       return;
     }
     // Seed every runner with the default "auto" choice.
-    const seed: Record<string, RunnerOutcome> = {};
+    const seed: Partial<Record<Base, RunnerOutcome>> = {};
     for (const r of runnersOnBase) {
-      seed[r.runnerId] = { runnerId: r.runnerId, fromBase: r.base, kind: 'auto' };
+      seed[r.base] = { runnerId: r.runnerId, fromBase: r.base, kind: 'auto' };
     }
     setRunnerOutcomeChoices(seed);
     setPendingHitWithRunners(hitType);
   }
 
+  /** Sets one runner's outcome in the prompt, keyed by base (ids can repeat). */
   function setRunnerChoice(
     runnerId: string,
     fromBase: Base,
-    choice: { kind: 'auto' } | { kind: 'held'; toBase: 3 } | { kind: 'advanced'; toBase: 3 | 4 } | { kind: 'thrown_out' },
+    choice: { kind: 'auto' } | { kind: 'held'; toBase: 2 | 3 } | { kind: 'advanced'; toBase: 3 | 4 } | { kind: 'thrown_out' },
   ) {
-    setRunnerOutcomeChoices((prev) => ({ ...prev, [runnerId]: { runnerId, fromBase, ...choice } }));
+    setRunnerOutcomeChoices((prev) => ({ ...prev, [fromBase]: { runnerId, fromBase, ...choice } }));
   }
 
   // Whether the choices on screen can all be true on one play. Recomputed
@@ -547,25 +598,44 @@ export function PitchInput({
   const runnerEvaluation = pendingHitWithRunners
     ? evaluateHitRunnerOutcomes(
         pendingHitWithRunners,
-        runnersOnBase.map(({ base, runnerId }) => ({
+        runnersOnBase.map(({ base }) => ({
           fromBase: base,
-          choice: runnerOutcomeChoices[runnerId] ?? { kind: 'auto' as const },
+          choice: runnerOutcomeChoices[base] ?? { kind: 'auto' as const },
         })),
       )
     : null;
 
+  /**
+   * Confirm on the runner-outcome prompt: asks the putout order for each
+   * thrown-out runner, then records the hit with every outcome at once.
+   */
   function confirmHitWithRunners() {
     if (runnerEvaluation?.error) return;
     if (!pendingHitWithRunners || !onRecordHitWithRunnerOutcomes) {
       setPendingHitWithRunners(null);
       return;
     }
-    const outcomes = Object.values(runnerOutcomeChoices);
+    const outcomes = Object.values(runnerOutcomeChoices).filter(
+      (o): o is RunnerOutcome => o !== undefined,
+    );
     const hitType = pendingHitWithRunners;
     const recordWithOutcomes = onRecordHitWithRunnerOutcomes;
-    commitInPlay(EventType.HIT, () => recordWithOutcomes(hitType, outcomes));
     setPendingHitWithRunners(null);
     setRunnerOutcomeChoices({});
+
+    const thrownOut = outcomes
+      .filter((o) => o.kind === 'thrown_out')
+      .sort((a, b) => b.fromBase - a.fromBase)
+      .map(({ runnerId, fromBase }) => ({ runnerId, fromBase }));
+    askPutoutOrder(thrownOut, battedBallRef.current?.firstFielder ?? null, (sequences) => {
+      const withSequences = outcomes.map((o) => {
+        const sequence = sequences.get(o.fromBase);
+        return o.kind === 'thrown_out' && sequence && sequence.length > 0
+          ? { ...o, fieldingSequence: sequence }
+          : o;
+      });
+      commitInPlay(EventType.HIT, () => recordWithOutcomes(hitType, withSequences));
+    });
   }
 
   function cancelHitWithRunners() {
@@ -670,7 +740,7 @@ export function PitchInput({
           >
             {trackPitchType && (
               <View className="mb-3">
-                <Text className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
+                <Text className="text-score-11px font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
                   Pitch type
                 </Text>
                 <View className="flex-row flex-wrap gap-1.5">
@@ -685,7 +755,7 @@ export function PitchInput({
                         onPress={() => setSelectedPitchType(selected ? null : value)}
                       >
                         <Text
-                          className={`text-xs font-bold tracking-wide ${
+                          className={`text-score-xs font-bold tracking-wide ${
                             selected ? 'text-white' : 'text-slate-600'
                           }`}
                         >
@@ -700,7 +770,7 @@ export function PitchInput({
 
             {trackPitchLocation && (
               <View className="mb-2">
-                <Text className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
+                <Text className="text-score-11px font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
                   Location
                 </Text>
                 <StrikeZoneGrid selected={selectedZone} onSelect={setSelectedZone} />
@@ -720,7 +790,7 @@ export function PitchInput({
               testID="modifiers-scroll-hint"
             >
               <View className="bg-slate-800/90 rounded-full px-3 py-1">
-                <Text className="text-white text-[11px] font-semibold">
+                <Text className="text-white text-score-11px font-semibold">
                   ▾ Scroll for more
                 </Text>
               </View>
@@ -845,7 +915,7 @@ export function PitchInput({
           )}
         </View>
         {!fcEligible && (
-          <Text className="text-slate-400 text-xs mt-3">
+          <Text className="text-slate-400 text-score-xs mt-3">
             Runner plays appear here once someone is on base.
           </Text>
         )}
@@ -882,10 +952,10 @@ export function PitchInput({
       >
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
-            <Text className="text-lg font-bold text-gray-900 mb-1">
+            <Text className="text-score-lg font-bold text-gray-900 mb-1">
               Third Strike
             </Text>
-            <Text className="text-sm text-gray-500 mb-4">
+            <Text className="text-score-sm text-gray-500 mb-4">
               Did the catcher catch it, or did it get away?
             </Text>
 
@@ -898,7 +968,7 @@ export function PitchInput({
                 }}
               >
                 <Text className="text-slate-800 font-semibold">Caught (regular K)</Text>
-                <Text className="text-slate-500 text-xs mt-0.5">
+                <Text className="text-slate-500 text-score-xs mt-0.5">
                   Catcher caught the third strike — batter is out
                 </Text>
               </TouchableOpacity>
@@ -911,7 +981,7 @@ export function PitchInput({
                 })}
               >
                 <Text className="text-slate-800 font-semibold">Batter Out (K 2-3)</Text>
-                <Text className="text-slate-500 text-xs mt-0.5">
+                <Text className="text-slate-500 text-score-xs mt-0.5">
                   Catcher threw batter out at first
                 </Text>
               </TouchableOpacity>
@@ -924,7 +994,7 @@ export function PitchInput({
                 })}
               >
                 <Text className="text-slate-800 font-semibold">Safe - Error</Text>
-                <Text className="text-slate-500 text-xs mt-0.5">
+                <Text className="text-slate-500 text-score-xs mt-0.5">
                   Batter reached on fielding error
                 </Text>
               </TouchableOpacity>
@@ -937,7 +1007,7 @@ export function PitchInput({
                 })}
               >
                 <Text className="text-slate-800 font-semibold">Safe - Wild Pitch</Text>
-                <Text className="text-slate-500 text-xs mt-0.5">
+                <Text className="text-slate-500 text-score-xs mt-0.5">
                   Batter reached on wild pitch
                 </Text>
               </TouchableOpacity>
@@ -950,7 +1020,7 @@ export function PitchInput({
                 })}
               >
                 <Text className="text-slate-800 font-semibold">Safe - Passed Ball</Text>
-                <Text className="text-slate-500 text-xs mt-0.5">
+                <Text className="text-slate-500 text-score-xs mt-0.5">
                   Batter reached on passed ball
                 </Text>
               </TouchableOpacity>
@@ -975,8 +1045,8 @@ export function PitchInput({
       >
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
-            <Text className="text-lg font-bold text-gray-900 mb-1">Double Play</Text>
-            <Text className="text-sm text-gray-500 mb-4">
+            <Text className="text-score-lg font-bold text-gray-900 mb-1">Double Play</Text>
+            <Text className="text-score-sm text-gray-500 mb-4">
               Batter is out. Which runner was retired on the second out?
             </Text>
             <View className="gap-3">
@@ -1008,8 +1078,8 @@ export function PitchInput({
       >
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
-            <Text className="text-lg font-bold text-gray-900 mb-1">Error</Text>
-            <Text className="text-sm text-gray-500 mb-4">
+            <Text className="text-score-lg font-bold text-gray-900 mb-1">Error</Text>
+            <Text className="text-score-sm text-gray-500 mb-4">
               Which fielder committed the error?
             </Text>
             <View className="flex-row flex-wrap gap-2">
@@ -1043,14 +1113,14 @@ export function PitchInput({
       >
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '90%' }}>
-            <Text className="text-lg font-bold text-gray-900 mb-1">
+            <Text className="text-score-lg font-bold text-gray-900 mb-1">
               {subModal === 'pinch_hitter'   ? 'Pinch Hitter' :
                subModal === 'pitching_change' ? 'Pitching Change' :
                subModal === 'defensive'       ? 'Defensive Substitution' :
                subModal === 'position_change' ? 'Position Change' :
                subModal === 'add_batter'      ? 'Add Batter' : ''}
             </Text>
-            <Text className="text-sm text-gray-500 mb-4">
+            <Text className="text-score-sm text-gray-500 mb-4">
               {subModal === 'pinch_hitter'
                 ? 'Who is coming in to bat?'
                 : subModal === 'pitching_change'
@@ -1079,7 +1149,7 @@ export function PitchInput({
                   : roster;
                 if (filteredRoster.length === 0) {
                   return (
-                    <Text className="text-gray-500 text-sm py-4">
+                    <Text className="text-gray-500 text-score-sm py-4">
                       {subModal === 'add_batter'
                         ? 'Every roster player is already in the order.'
                         : 'No players loaded. Sync the roster first.'}
@@ -1106,7 +1176,7 @@ export function PitchInput({
                           className={`${buttonColor} rounded-xl px-4 py-3 flex-row items-center`}
                           onPress={() => handleSubPick(p.id)}
                         >
-                          <Text className="flex-1 text-slate-800 font-semibold text-base">
+                          <Text className="flex-1 text-slate-800 font-semibold text-score-base">
                             {p.jerseyNumber !== undefined ? `#${p.jerseyNumber} ` : ''}
                             {p.name}
                           </Text>
@@ -1121,7 +1191,7 @@ export function PitchInput({
                               }`}
                             >
                               <Text
-                                className={`text-xs font-semibold ${
+                                className={`text-score-xs font-semibold ${
                                   badge.level === 'over' || badge.level === 'danger'
                                     ? 'text-red-900'
                                     : badge.level === 'warning'
@@ -1226,8 +1296,8 @@ export function PitchInput({
                 : { sacFly: false, sacBunt: false };
               return pendingOutType === null ? (
               <>
-                <Text className="text-lg font-bold text-gray-900 mb-1">Out</Text>
-                <Text className="text-sm text-gray-500 mb-4">
+                <Text className="text-score-lg font-bold text-gray-900 mb-1">Out</Text>
+                <Text className="text-score-sm text-gray-500 mb-4">
                   How was the batter retired?
                 </Text>
 
@@ -1255,10 +1325,10 @@ export function PitchInput({
               </>
             ) : (
               <>
-                <Text className="text-lg font-bold text-gray-900 mb-1">
+                <Text className="text-score-lg font-bold text-gray-900 mb-1">
                   {outTypeLabel(pendingOutType)} — sacrifice?
                 </Text>
-                <Text className="text-sm text-gray-500 mb-4">
+                <Text className="text-score-sm text-gray-500 mb-4">
                   Tag this {outTypeLabel(pendingOutType).toLowerCase()} as a
                   sacrifice fly or bunt, or record it as a regular out.
                 </Text>
@@ -1269,7 +1339,7 @@ export function PitchInput({
                     onPress={confirmRegularOut}
                   >
                     <Text className="text-slate-800 font-semibold">Regular out</Text>
-                    <Text className="text-slate-500 text-xs mt-0.5">
+                    <Text className="text-slate-500 text-score-xs mt-0.5">
                       Records a normal {outTypeLabel(pendingOutType).toLowerCase()} (counts as an at-bat)
                     </Text>
                   </TouchableOpacity>
@@ -1280,7 +1350,7 @@ export function PitchInput({
                       onPress={confirmSacFlyFromOut}
                     >
                       <Text className="text-slate-800 font-semibold">Sacrifice fly</Text>
-                      <Text className="text-slate-500 text-xs mt-0.5">
+                      <Text className="text-slate-500 text-score-xs mt-0.5">
                         Runner scored from 3rd on the catch — PA but not an AB
                       </Text>
                     </TouchableOpacity>
@@ -1292,7 +1362,7 @@ export function PitchInput({
                       onPress={confirmSacBuntFromOut}
                     >
                       <Text className="text-slate-800 font-semibold">Sacrifice bunt</Text>
-                      <Text className="text-slate-500 text-xs mt-0.5">
+                      <Text className="text-slate-500 text-score-xs mt-0.5">
                         Bunt out that intentionally advanced a runner — PA but not an AB
                       </Text>
                     </TouchableOpacity>
@@ -1323,10 +1393,10 @@ export function PitchInput({
       >
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
-            <Text className="text-lg font-bold text-gray-900 mb-1">
+            <Text className="text-score-lg font-bold text-gray-900 mb-1">
               Fielder's Choice
             </Text>
-            <Text className="text-sm text-gray-500 mb-4">
+            <Text className="text-score-sm text-gray-500 mb-4">
               Which runner was retired? Batter reaches first base.
             </Text>
 
@@ -1365,10 +1435,10 @@ export function PitchInput({
       >
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
-            <Text className="text-lg font-bold text-gray-900 mb-1">
+            <Text className="text-score-lg font-bold text-gray-900 mb-1">
               Runner Thrown Out
             </Text>
-            <Text className="text-sm text-gray-500 mb-4">
+            <Text className="text-score-sm text-gray-500 mb-4">
               Which runner was thrown out advancing during the play?
             </Text>
 
@@ -1408,29 +1478,42 @@ export function PitchInput({
       >
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5">
-            <Text className="text-lg font-bold text-gray-900 mb-1">
+            <Text className="text-score-lg font-bold text-gray-900 mb-1">
               {hitName(pendingHitWithRunners)} — Runner Outcomes
             </Text>
-            <Text className="text-sm text-gray-500 mb-4">
+            <Text className="text-score-sm text-gray-500 mb-4">
               For each runner on base, choose what happened. Default is the
               standard advance.
             </Text>
 
             <ScrollView className="max-h-96">
               {runnersOnBase.map(({ base, runnerId }) => {
-                const choice = runnerOutcomeChoices[runnerId];
+                const choice = runnerOutcomeChoices[base];
                 const kind = choice?.kind ?? 'auto';
                 // Standard, the one hold (if any), and each base beyond the
                 // standard advance — all from hitRunnerOptions. The batter
                 // takes a base too, so none of this is simply fromBase + n.
+                // Occupancy decides who is forced: an unforced runner may
+                // also hold right where he is (stayBase). A runner already
+                // marked thrown out forces no one (OBR 5.09(b)(6)) — the same
+                // occupancy evaluateHitRunnerOutcomes uses.
                 const options = pendingHitWithRunners
-                  ? hitRunnerOptions(base, pendingHitWithRunners)
+                  ? hitRunnerOptions(
+                      base,
+                      pendingHitWithRunners,
+                      runnersOnBase
+                        .filter((r) => runnerOutcomeChoices[r.base]?.kind !== 'thrown_out')
+                        .map((r) => r.base),
+                    )
                   : null;
-                const heldBase = options?.heldBase ?? null;
+                const holdBases = [options?.stayBase ?? null, options?.heldBase ?? null].filter(
+                  (b): b is 2 | 3 => b !== null,
+                );
+                const heldToBase = choice?.kind === 'held' ? choice.toBase : null;
                 const advancedToBase = choice?.kind === 'advanced' ? choice.toBase : null;
                 return (
-                  <View key={runnerId} className="mb-4 border border-gray-200 rounded-xl p-3">
-                    <Text className="text-sm font-semibold text-gray-700 mb-2">
+                  <View key={base} className="mb-4 border border-gray-200 rounded-xl p-3">
+                    <Text className="text-score-sm font-semibold text-gray-700 mb-2">
                       Runner on {baseLabel(base)}
                     </Text>
                     <View className="flex-row flex-wrap gap-2">
@@ -1442,16 +1525,17 @@ export function PitchInput({
                           Standard: {options ? (options.standardBase === 4 ? 'scores' : finishLabel(options.standardBase)) : '—'}
                         </Text>
                       </TouchableOpacity>
-                      {heldBase !== null && (
+                      {holdBases.map((toBase) => (
                         <TouchableOpacity
-                          className={`px-3 py-2 rounded-lg ${kind === 'held' ? 'bg-amber-600' : 'bg-slate-100'}`}
-                          onPress={() => setRunnerChoice(runnerId, base, { kind: 'held', toBase: heldBase })}
+                          key={`held-${toBase}`}
+                          className={`px-3 py-2 rounded-lg ${heldToBase === toBase ? 'bg-amber-600' : 'bg-slate-100'}`}
+                          onPress={() => setRunnerChoice(runnerId, base, { kind: 'held', toBase })}
                         >
-                          <Text className={kind === 'held' ? 'text-white font-semibold' : 'text-gray-700'}>
-                            Held at {heldBase}B
+                          <Text className={heldToBase === toBase ? 'text-white font-semibold' : 'text-gray-700'}>
+                            Held at {toBase}B
                           </Text>
                         </TouchableOpacity>
-                      )}
+                      ))}
                       {options?.advancedBases.map((toBase) => (
                         <TouchableOpacity
                           key={toBase}
@@ -1478,7 +1562,7 @@ export function PitchInput({
             </ScrollView>
 
             {runnerEvaluation?.error ? (
-              <Text className="text-sm text-rose-700 mt-2">{runnerEvaluation.error}</Text>
+              <Text className="text-score-sm text-rose-700 mt-2">{runnerEvaluation.error}</Text>
             ) : null}
             <TouchableOpacity
               className={`rounded-xl px-5 py-4 mt-2 ${runnerEvaluation?.error ? 'bg-slate-300' : 'bg-slate-800'}`}
@@ -1515,6 +1599,25 @@ export function PitchInput({
           pending?.finish(throws);
         }}
       />
+
+      {/* Keyed per runner so two thrown-out runners on one hit each start fresh. */}
+      <ThrowSequenceModal
+        key={`putout-${putoutStep?.fromBase ?? 'none'}`}
+        visible={putoutStep !== null}
+        firstFielder={putoutStep?.firstFielder ?? null}
+        title={
+          putoutStep
+            ? `Runner on ${baseLabel(putoutStep.fromBase)} thrown out — who made the play?`
+            : undefined
+        }
+        subtitle="Tap each fielder in order. A gray number is a guess until you tap. Not sure? Just tap Done."
+        lockFirstFielder={false}
+        onDone={(sequence) => {
+          const step = putoutStep;
+          setPutoutStep(null);
+          step?.finish(sequence);
+        }}
+      />
     </View>
   );
 }
@@ -1532,8 +1635,8 @@ export function PitchInput({
 const TONES = {
   ball: { box: 'bg-emerald-50 border-emerald-300', text: 'text-emerald-900' },
   foul: { box: 'bg-amber-50 border-amber-300', text: 'text-amber-900' },
-  strike: { box: 'bg-rose-50 border-rose-300', text: 'text-rose-900' },
-  inPlay: { box: 'bg-slate-100 border-slate-400', text: 'text-slate-900' },
+  strike: { box: 'bg-blue-50 border-blue-300', text: 'text-blue-900' },
+  inPlay: { box: 'bg-slate-200 border-slate-500', text: 'text-slate-900' },
 } as const;
 
 function PrimaryAction({
@@ -1559,9 +1662,9 @@ function PrimaryAction({
       activeOpacity={0.7}
       onPress={onPress}
     >
-      <Text className={`${text} text-lg font-bold tracking-tight`}>{label}</Text>
+      <Text className={`${text} text-score-lg font-bold tracking-tight`}>{label}</Text>
       {caption ? (
-        <Text className={`${text} opacity-60 text-[11px] mt-0.5`}>{caption}</Text>
+        <Text className={`${text} opacity-60 text-score-11px mt-0.5`}>{caption}</Text>
       ) : null}
     </TouchableOpacity>
   );
@@ -1574,7 +1677,7 @@ function BranchButton({ label, onPress }: { label: string; onPress: () => void }
       className="flex-1 bg-white border border-slate-300 rounded-xl py-3 items-center"
       onPress={onPress}
     >
-      <Text className="text-slate-700 font-semibold text-sm">{label}</Text>
+      <Text className="text-slate-700 font-semibold text-score-sm">{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -1598,9 +1701,9 @@ function ActionSheet({
       <View className="flex-1 justify-end bg-black/50">
         <View className="bg-white rounded-t-2xl" style={{ maxHeight: '85%' }}>
           <View className="px-5 pt-5 pb-3">
-            <Text className="text-xl font-bold text-slate-900">{title}</Text>
+            <Text className="text-score-xl font-bold text-slate-900">{title}</Text>
             {subtitle ? (
-              <Text className="text-sm text-slate-500 mt-0.5">{subtitle}</Text>
+              <Text className="text-score-sm text-slate-500 mt-0.5">{subtitle}</Text>
             ) : null}
           </View>
           {/* flexShrink is required — RN defaults it to 0, which would push
@@ -1624,7 +1727,7 @@ function ActionSheet({
 function SheetGroup({ label, children }: { label: string; children: ReactNode }) {
   return (
     <View className="mb-5">
-      <Text className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-2">
+      <Text className="text-score-11px font-semibold text-slate-400 uppercase tracking-widest mb-2">
         {label}
       </Text>
       {children}
@@ -1667,7 +1770,7 @@ function StrikeZoneGrid({
                   onPress={() => onSelect(isSelected ? null : zone)}
                 >
                   <Text
-                    className={`text-xs font-semibold ${
+                    className={`text-score-xs font-semibold ${
                       isSelected ? 'text-white' : 'text-gray-400'
                     }`}
                   >
@@ -1686,7 +1789,7 @@ function StrikeZoneGrid({
         onPress={() => onSelect(selected === 0 ? null : 0)}
       >
         <Text
-          className={`text-xs font-semibold ${
+          className={`text-score-xs font-semibold ${
             selected === 0 ? 'text-white' : 'text-gray-700'
           }`}
         >
@@ -1747,7 +1850,7 @@ function OutcomeButton({
     >
       <View className={`${color} w-2.5 h-2.5 rounded-full`} />
       <Text className="text-slate-800 font-semibold">{label}</Text>
-      <Text className="text-slate-400 text-xs">{emoji}</Text>
+      <Text className="text-slate-400 text-score-xs">{emoji}</Text>
     </TouchableOpacity>
   );
 }
@@ -1765,9 +1868,9 @@ function PlayerPickerSection({
 }) {
   return (
     <View className="mb-4">
-      <Text className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">{label}</Text>
+      <Text className="text-score-xs text-gray-400 uppercase tracking-wide mb-1.5">{label}</Text>
       {roster.length === 0 ? (
-        <Text className="text-gray-500 text-sm py-2">No players available.</Text>
+        <Text className="text-gray-500 text-score-sm py-2">No players available.</Text>
       ) : (
         <View className="flex-row flex-wrap gap-2">
           {roster.map((p) => {
@@ -1780,7 +1883,7 @@ function PlayerPickerSection({
                   selected ? 'bg-brand-700 border-brand-500' : 'bg-white border-gray-300'
                 }`}
               >
-                <Text className={`text-sm font-medium ${selected ? 'text-white' : 'text-gray-700'}`}>
+                <Text className={`text-score-sm font-medium ${selected ? 'text-white' : 'text-gray-700'}`}>
                   {p.jerseyNumber !== undefined ? `#${p.jerseyNumber} ` : ''}
                   {p.name}
                 </Text>
@@ -1807,7 +1910,7 @@ function PositionPickerSection({
   const positions = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH'];
   return (
     <View className="mb-4">
-      <Text className="text-xs text-gray-400 uppercase tracking-wide mb-1.5">{label}</Text>
+      <Text className="text-score-xs text-gray-400 uppercase tracking-wide mb-1.5">{label}</Text>
       <View className="flex-row flex-wrap gap-2">
         {optional && (
           <TouchableOpacity
@@ -1816,7 +1919,7 @@ function PositionPickerSection({
               selectedAbbr === '' ? 'bg-gray-700 border-gray-800' : 'bg-white border-gray-300'
             }`}
           >
-            <Text className={`text-sm font-medium ${selectedAbbr === '' ? 'text-white' : 'text-gray-500'}`}>
+            <Text className={`text-score-sm font-medium ${selectedAbbr === '' ? 'text-white' : 'text-gray-500'}`}>
               keep
             </Text>
           </TouchableOpacity>
@@ -1831,7 +1934,7 @@ function PositionPickerSection({
                 selected ? 'bg-brand-700 border-brand-500' : 'bg-white border-gray-300'
               }`}
             >
-              <Text className={`text-sm font-semibold ${selected ? 'text-white' : 'text-gray-700'}`}>
+              <Text className={`text-score-sm font-semibold ${selected ? 'text-white' : 'text-gray-700'}`}>
                 {p}
               </Text>
             </TouchableOpacity>

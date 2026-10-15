@@ -1,6 +1,6 @@
 import { Alert } from 'react-native';
 import { render, fireEvent, screen } from '@testing-library/react-native';
-import { PlayFeed, toFeedItems } from '../PlayFeed';
+import { PlayFeed, PlayFeedSheet, toFeedItems } from '../PlayFeed';
 import type { PlayFeedRow } from '../use-play-feed';
 
 /**
@@ -234,5 +234,34 @@ describe('PlayFeed grouping and key uniqueness', () => {
     expect(firstHeader.key).toBe('header-evt-100');
     expect(firstRow.key).toBe('evt-100');
     expect(firstHeader.key).not.toBe(firstRow.key);
+  });
+});
+
+describe('PlayFeedSheet', () => {
+  it('should render the feed under a Play-by-Play title when open', () => {
+    render(<PlayFeedSheet visible onClose={jest.fn()} rows={[actionableRow()]} />);
+    expect(screen.getByText('Play-by-Play')).toBeTruthy();
+    expect(screen.getByTestId('play-feed')).toBeTruthy();
+  });
+
+  it('should call onClose when Done is pressed', () => {
+    const onClose = jest.fn();
+    render(<PlayFeedSheet visible onClose={onClose} rows={[actionableRow()]} />);
+    fireEvent.press(screen.getByText('Done'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('should only show the void hint when plays can be voided', () => {
+    const { rerender } = render(
+      <PlayFeedSheet visible onClose={jest.fn()} rows={[actionableRow()]} onVoid={jest.fn()} />,
+    );
+    expect(screen.getByText('Long-press a play to void it.')).toBeTruthy();
+    rerender(<PlayFeedSheet visible onClose={jest.fn()} rows={[actionableRow()]} />);
+    expect(screen.queryByText('Long-press a play to void it.')).toBeNull();
+  });
+
+  it('should show an empty state before any plays are recorded', () => {
+    render(<PlayFeedSheet visible onClose={jest.fn()} rows={[]} />);
+    expect(screen.getByText('No plays recorded yet.')).toBeTruthy();
   });
 });

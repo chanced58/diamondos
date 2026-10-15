@@ -63,7 +63,7 @@ function PositionPill({
       }}
     >
       <Text
-        className="text-white text-[10px] font-semibold text-center"
+        className="text-white text-score-10px font-semibold text-center"
         numberOfLines={1}
       >
         {text}
@@ -84,7 +84,7 @@ export function DefensiveDiamond({ lineup, teamLabel }: DefensiveDiamondProps) {
   return (
     <View>
       {teamLabel && (
-        <Text className="text-xs text-gray-400 uppercase tracking-wide mb-1">
+        <Text className="text-score-xs text-gray-400 uppercase tracking-wide mb-1">
           {teamLabel} — current alignment
         </Text>
       )}
@@ -132,11 +132,11 @@ export function DefensiveDiamond({ lineup, teamLabel }: DefensiveDiamondProps) {
       </View>
 
       <View className="flex-row items-center mt-2 gap-2">
-        <Text className="text-xs text-gray-400 uppercase tracking-wide w-8">DH</Text>
+        <Text className="text-score-xs text-gray-400 uppercase tracking-wide w-8">DH</Text>
         {lineup.DH ? (
-          <Text className="text-sm text-gray-700 font-medium">{fielderLabel(lineup.DH)}</Text>
+          <Text className="text-score-sm text-gray-700 font-medium">{fielderLabel(lineup.DH)}</Text>
         ) : (
-          <Text className="text-sm text-gray-400">—</Text>
+          <Text className="text-score-sm text-gray-400">—</Text>
         )}
       </View>
     </View>

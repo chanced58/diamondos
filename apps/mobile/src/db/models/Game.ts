@@ -27,6 +27,9 @@ export class Game extends Model {
   @field('is_top_of_inning') isTopOfInning!: boolean;
   @field('outs') outs!: number;
   @field('synced_at') syncedAt!: number | undefined;
+  @field('tournament_id') tournamentId!: string | undefined;
+  @field('tournament_scoring_settings') tournamentScoringSettings!: string | undefined;
+  @field('tournament_rules_version') tournamentRulesVersion!: number | undefined;
 
   @children('game_events') events!: import('@nozbe/watermelondb').Query<InstanceType<typeof GameEvent>>;
 }

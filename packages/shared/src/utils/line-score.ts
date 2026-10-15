@@ -4,7 +4,18 @@
  *
  * Events should already be filtered through applyPitchReverted / game_reset
  * before being passed to this function.
+ *
+ * Runner movement on a hit and its linked runner outcomes follows the shared
+ * rule in rules/play-runners (the same one deriveGameState uses), so a runner
+ * held, advanced or thrown out on a hit is never counted as scoring by default.
  */
+import {
+  applyLinkedAdvance,
+  applyPlayToRunners,
+  applyRunnerOut,
+  collectLinkedRunnerOutcomes,
+  type Bases,
+} from '../rules/play-runners';
 
 export interface LineScoreData {
   awayRunsByInning: number[];
@@ -36,6 +47,13 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
   let first: string | null = null;
   let second: string | null = null;
   let third: string | null = null;
+
+  const linkedOutcomes = collectLinkedRunnerOutcomes(events as { event_type?: string; payload?: unknown }[]);
+  const runnerId = (runner: string) => runner;
+  const currentBases = (): Bases<string> => ({ first, second, third });
+  const setBases = (next: Bases<string>) => {
+    first = next.first; second = next.second; third = next.third;
+  };
 
   const awayRunsByInning: number[] = [0];
   const homeRunsByInning: number[] = [0];
@@ -73,13 +91,6 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
     first = null; second = null; third = null;
   }
 
-  // Remove a runner by ID from whichever base they occupy
-  function removeRunner(runnerId: string) {
-    if (first === runnerId) first = null;
-    else if (second === runnerId) second = null;
-    else if (third === runnerId) third = null;
-  }
-
   // Clear runner at a specific base number
   function clearBase(base: number) {
     if (base === 1) first = null;
@@ -107,32 +118,16 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
       else homeHits++;
 
       const batterId = (payload.batterId ?? payload.opponentBatterId ?? 'unknown') as string;
-      const bases = hitBases(payload.hitType as string);
-      if (bases === 4) {
-        // Home run: everyone scores
-        let runners = 0;
-        if (first) runners++;
-        if (second) runners++;
-        if (third) runners++;
-        scoreRun(runners + 1);
-        clearBases();
-      } else {
-        // Count runners who score: runner scores if their base + hit bases >= 4
-        let runs = 0;
-        if (third) runs++;                           // 3 + any hit >= 4
-        if (second && 2 + bases >= 4) runs++;        // double or triple
-        if (first && 1 + bases >= 4) runs++;         // triple only
-        scoreRun(runs);
-        // Simplified base advancement
-        const newFirst = bases === 1 ? batterId : null;
-        const newSecond = bases === 2 ? batterId : (bases === 1 && first) ? first : null;
-        const newThird = bases === 3 ? batterId
-          : (bases === 2 && second) ? second
-          : (bases === 2 && first) ? first
-          : (bases === 1 && second) ? second
-          : null;
-        first = newFirst; second = newSecond; third = newThird;
-      }
+      const bases = hitBases(payload.hitType as string) as 1 | 2 | 3 | 4;
+      const played = applyPlayToRunners(
+        currentBases(),
+        { kind: 'hit', bases },
+        batterId,
+        linkedOutcomes.get(event.id as string),
+        runnerId,
+      );
+      scoreRun(played.runs);
+      setBases(played.runners);
     } else if (etype === 'walk' || etype === 'hit_by_pitch') {
       const batterId = (payload.batterId ?? payload.opponentBatterId ?? 'unknown') as string;
       forceAdvance(batterId);
@@ -202,7 +197,11 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
       if (fromBase === 3) third = null;
       else if (fromBase === 2) second = null;
       else if (fromBase === 1) first = null;
+    } else if (etype === 'baserunner_advance' && typeof payload.runnerId === 'string') {
+      // Toward home places nothing — the accompanying 'score' event counts the run.
+      setBases(applyLinkedAdvance(currentBases(), payload, payload.runnerId, runnerId));
     } else if (etype === 'baserunner_advance') {
+      // Legacy advance with no runner id: clear the named base, place a stand-in.
       const toBase = payload.toBase as number | undefined;
       const fromBase = payload.fromBase as number | undefined;
       const runnerId = payload.runnerId as string | undefined;
@@ -217,8 +216,7 @@ export function computeLineScore(events: Record<string, unknown>[]): LineScoreDa
       }
     } else if (etype === 'baserunner_out') {
       outs++;
-      const runnerId = payload.runnerId as string | undefined;
-      if (runnerId) removeRunner(runnerId);
+      if (typeof payload.runnerId === 'string') setBases(applyRunnerOut(currentBases(), payload, runnerId));
     } else if (etype === 'pickoff_attempt') {
       const outcome = payload.outcome as string | undefined;
       if (outcome === 'out') {

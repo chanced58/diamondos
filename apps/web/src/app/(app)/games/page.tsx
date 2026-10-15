@@ -84,6 +84,7 @@ export default async function SchedulePage({
         .from('games')
         .select('id, team_id, opponent_name, scheduled_at, location_type, neutral_home_team, status')
         .in('team_id', scopeTeamIds)
+        .is('tournament_id', null)
         .neq('status', 'cancelled')
         .gte('scheduled_at', rangeStart)
         .lt('scheduled_at', rangeEnd)

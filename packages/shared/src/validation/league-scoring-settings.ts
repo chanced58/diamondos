@@ -12,6 +12,7 @@ const lineupSchema = z
     allowExpanded: z.boolean(),
     maxBatters: z.number().int().min(MIN_BATTERS_CAP).max(MAX_BATTERS_CAP),
     allowMidGameExtension: z.boolean(),
+    allowMidGameContraction: z.boolean(),
     continuousBattingOrder: z.boolean(),
   })
   .strict();
@@ -99,6 +100,7 @@ export function defaultLeagueScoringSettings(): LeagueScoringSettings {
       allowExpanded: true,
       maxBatters: MAX_BATTERS_CAP,
       allowMidGameExtension: true,
+      allowMidGameContraction: false,
       continuousBattingOrder: false,
     },
     guests: {
@@ -157,6 +159,7 @@ function tolerantSchema(defaults: LeagueScoringSettings) {
         .max(MAX_BATTERS_CAP)
         .catch(defaults.lineup.maxBatters),
       allowMidGameExtension: z.boolean().catch(defaults.lineup.allowMidGameExtension),
+      allowMidGameContraction: z.boolean().catch(defaults.lineup.allowMidGameContraction),
       continuousBattingOrder: z.boolean().catch(defaults.lineup.continuousBattingOrder),
     })
     .catch(defaults.lineup);

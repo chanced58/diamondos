@@ -342,6 +342,7 @@ export async function getLeagueHomeData(
         .from('games')
         .select('id, team_id, opponent_name, home_score, away_score, location_type, neutral_home_team, scheduled_at')
         .in('team_id', teamIds)
+        .is('tournament_id', null)
         .eq('status', 'completed')
         .order('scheduled_at', { ascending: false })
         .limit(6),
@@ -349,6 +350,7 @@ export async function getLeagueHomeData(
         .from('games')
         .select('id, team_id, opponent_name, scheduled_at')
         .in('team_id', teamIds)
+        .is('tournament_id', null)
         .eq('status', 'scheduled')
         .order('scheduled_at', { ascending: true })
         .limit(6),

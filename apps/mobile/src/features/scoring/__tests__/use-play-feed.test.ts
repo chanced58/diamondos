@@ -140,6 +140,19 @@ describe('usePlayFeed', () => {
     expect(result.current[0].description).toBe('Alice — double (Bob thrown out advancing)');
   });
 
+  it('should add the putout sequence to a linked thrown-out runner when one was recorded', () => {
+    const hit = mkEvent(EventType.HIT, { batterId: 'alice', hitType: HitType.DOUBLE });
+    const outcome = mkEvent(EventType.BASERUNNER_OUT, {
+      runnerId: 'bob',
+      fromBase: 1,
+      relatedEventId: hit.id,
+      reason: AdvanceReason.ON_PLAY,
+      fieldingSequence: [8, 6, 2],
+    });
+    const { result } = renderHook(() => usePlayFeed([hit, outcome], names));
+    expect(result.current[0].description).toBe('Alice — double (Bob thrown out advancing, 8-6-2)');
+  });
+
   it('CRITICAL 1: reflects a voided linked runner-outcome in the parent row instead of showing stale text', () => {
     const hit = mkEvent(EventType.HIT, { batterId: 'alice', hitType: HitType.DOUBLE });
     const outcome = mkEvent(EventType.BASERUNNER_OUT, {

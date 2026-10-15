@@ -5,7 +5,7 @@ import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { DB_TO_POSITION, getMaxBattingOrder, isCoachRole, weAreHome } from '@baseball/shared';
-import { getLeagueSettingsForTeam } from '@/lib/league-settings';
+import { getScoringSettingsForGame } from '@/lib/game-scoring-settings';
 import { LineupBuilder } from './LineupBuilder';
 
 export const metadata: Metadata = { title: 'Set Lineup' };
@@ -22,7 +22,7 @@ export default async function LineupPage({ params }: { params: { gameId: string 
 
   const { data: game } = await db
     .from('games')
-    .select('id, team_id, opponent_name, location_type, neutral_home_team, status')
+    .select('id, team_id, opponent_name, location_type, neutral_home_team, status, tournament_id, scoring_settings_snapshot')
     .eq('id', params.gameId)
     .single();
 
@@ -38,6 +38,7 @@ export default async function LineupPage({ params }: { params: { gameId: string 
   if (!membership || !isCoachRole(membership.role)) {
     redirect(`/games/${params.gameId}`);
   }
+  if (game.tournament_id && game.status !== 'scheduled') redirect(`/games/${params.gameId}/score`);
 
   const [playersResult, lineupResult, guestsResult, leagueSettings] = await Promise.all([
     db
@@ -57,7 +58,11 @@ export default async function LineupPage({ params }: { params: { gameId: string 
       .eq('game_id', params.gameId)
       .eq('is_guest', true)
       .order('batting_order', { ascending: true, nullsFirst: false }),
-    getLeagueSettingsForTeam(db, game.team_id),
+    getScoringSettingsForGame(db, {
+      teamId: game.team_id,
+      tournamentId: game.tournament_id,
+      scoringSettingsSnapshot: game.scoring_settings_snapshot,
+    }),
   ]);
 
   const maxBatters = getMaxBattingOrder(leagueSettings);
