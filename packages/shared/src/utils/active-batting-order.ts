@@ -24,11 +24,12 @@ export function getLineupExtensionHistory(
   const canceledIds = new Set(events.flatMap((event) => {
     const payload = (event.payload ?? {}) as Record<string, unknown>;
     return event.eventType === EventType.EVENT_VOIDED && payload.cancelledBeforeSync === true
-      ? [String(payload.voidedEventId)] : [];
+      && typeof payload.voidedEventId === 'string'
+      ? [payload.voidedEventId] : [];
   }));
   for (const event of events) {
     const payload = (event.payload ?? {}) as Record<string, unknown>;
-    if (canceledIds.has(String(event.id)) || event.eventType !== EventType.SUBSTITUTION
+    if ((event.id !== undefined && canceledIds.has(event.id)) || event.eventType !== EventType.SUBSTITUTION
       || payload.substitutionType !== SubstitutionType.LINEUP_EXTENSION
       || Boolean(payload.isOpponentSubstitution) !== Boolean(options.forOpponent)) continue;
     if (typeof payload.inPlayerId === 'string') playerIds.add(payload.inPlayerId);
@@ -47,12 +48,13 @@ export function initialBattingOrderSlots<T extends ActiveBattingSlot>(
   const cancelledBeforeSync = new Set(events.flatMap((event) => {
     const payload = (event.payload ?? {}) as Record<string, unknown>;
     return event.eventType === EventType.EVENT_VOIDED && payload.cancelledBeforeSync === true
-      ? [String(payload.voidedEventId)] : [];
+      && typeof payload.voidedEventId === 'string'
+      ? [payload.voidedEventId] : [];
   }));
   const projected = new Set(events.flatMap((event) => {
     const payload = (event.payload ?? {}) as Record<string, unknown>;
     if (event.eventType !== EventType.SUBSTITUTION || payload.substitutionType !== SubstitutionType.LINEUP_EXTENSION
-      || ('id' in event && cancelledBeforeSync.has(String(event.id)))
+      || (event.id !== undefined && cancelledBeforeSync.has(event.id))
       || Boolean(payload.isOpponentSubstitution) !== Boolean(options.forOpponent)) return [];
     return [`${payload.inPlayerId}:${payload.battingOrderPosition}`];
   }));

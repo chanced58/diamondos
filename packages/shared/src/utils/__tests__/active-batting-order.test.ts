@@ -231,3 +231,14 @@ it('reserves accepted extension identities after a normal undo', () => {
   expect(result.maxRecordedPosition).toBe(4);
   expect(result.playerIds.has('late')).toBe(true);
 });
+
+
+it('ignores malformed cancellation IDs instead of canceling an extension with no ID', () => {
+  const history = [
+    { eventType: EventType.SUBSTITUTION, payload: { substitutionType: SubstitutionType.LINEUP_EXTENSION, inPlayerId: 'late', battingOrderPosition: 4 } },
+    { eventType: EventType.EVENT_VOIDED, payload: { cancelledBeforeSync: true } },
+  ];
+  const result = getLineupExtensionHistory(initialSlots, history);
+  expect(result.maxRecordedPosition).toBe(4);
+  expect(result.playerIds.has('late')).toBe(true);
+});
