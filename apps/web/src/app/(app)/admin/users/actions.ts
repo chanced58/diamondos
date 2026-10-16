@@ -70,12 +70,20 @@ export async function togglePlatformAdminAction(
   const currentValue = formData.get('currentValue') === 'true';
 
   // When promoting to platform admin, remove all team memberships first.
-  // Platform admins access teams implicitly and must not hold team_members rows.
+  // Platform admins access teams implicitly and must not hold team_members rows,
+  // except as head coach of a tournament-only team they created.
   if (!currentValue) {
-    const { error: memberError } = await supabase
-      .from('team_members')
-      .delete()
-      .eq('user_id', userId);
+    const { data: createdTournamentTeams, error: tournamentError } = await supabase
+      .from('tournament_teams')
+      .select('team_id, tournaments!inner(created_by)')
+      .eq('is_tournament_only', true)
+      .eq('tournaments.created_by', userId);
+    if (tournamentError) return `Failed to check tournament teams: ${tournamentError.message}`;
+
+    const keptTeamIds = (createdTournamentTeams ?? []).map((row) => row.team_id);
+    let deleteQuery = supabase.from('team_members').delete().eq('user_id', userId);
+    if (keptTeamIds.length) deleteQuery = deleteQuery.not('team_id', 'in', `(${keptTeamIds.join(',')})`);
+    const { error: memberError } = await deleteQuery;
     if (memberError) return `Failed to remove team memberships: ${memberError.message}`;
   }
 

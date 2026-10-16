@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(23);
+SELECT plan(24);
 
 INSERT INTO auth.users (id, instance_id, email, aud, role, created_at, updated_at)
 VALUES
@@ -138,12 +138,19 @@ SELECT lives_ok(
 RESET ROLE;
 SELECT is(
  (SELECT count(*) FROM public.teams t
+  JOIN public.tournament_teams tt ON tt.team_id = t.id AND tt.is_tournament_only
+  JOIN public.team_members tm ON tm.team_id = t.id
+    AND tm.user_id = '51000000-0000-4000-8000-000000000004' AND tm.role = 'head_coach' AND tm.is_active
   JOIN public.channels c ON c.team_id = t.id AND c.name = 'Announcements'
-  JOIN public.tournament_teams tt ON tt.team_id = t.id
-  WHERE t.name = 'Admin Cup Team'
-    AND NOT EXISTS (SELECT 1 FROM public.team_members tm WHERE tm.team_id = t.id)
-    AND NOT EXISTS (SELECT 1 FROM public.channel_members cm WHERE cm.channel_id = c.id)),
+  JOIN public.channel_members cm ON cm.channel_id = c.id
+    AND cm.user_id = '51000000-0000-4000-8000-000000000004' AND cm.can_post
+  WHERE t.name = 'Admin Cup Team'),
  1::bigint,
- 'the admin-created team, channel and registration exist without admin membership rows');
+ 'a platform admin creator is head coach and Announcements poster of their tournament team');
+SELECT throws_ok(
+ $$ INSERT INTO public.team_members (team_id, user_id, role)
+    VALUES ('52000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000004', 'head_coach') $$,
+ 'P0001', 'Platform administrators cannot be members of a team',
+ 'platform admins still cannot hold a seat on a regular team');
 SELECT * FROM finish();
 ROLLBACK;
