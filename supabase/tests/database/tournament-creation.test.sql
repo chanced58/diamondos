@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(20);
+SELECT plan(21);
 
 INSERT INTO auth.users (id, instance_id, email, aud, role, created_at, updated_at)
 VALUES
@@ -44,6 +44,11 @@ SELECT throws_ok(
 SELECT lives_ok(
   $$ SELECT * FROM public.create_tournament('{"name":"Open Cup","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000001","team":{"type":"new","name":"Open Cup Team"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}'::jsonb) $$,
   'any signed-in user can create a separate tournament team without a tournament mode grant'
+);
+
+SELECT throws_ok(
+  $$ SELECT * FROM public.create_tournament('{"name":"No End Date","startDate":"2026-10-20","requestId":"54000000-0000-4000-8000-000000000008","team":{"type":"new","name":"No End Date Team"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}'::jsonb) $$,
+  '22023', 'Tournament details are invalid', 'a direct request without an end date is rejected as invalid input'
 );
 
 SELECT set_config('request.jwt.claim.sub', '51000000-0000-4000-8000-000000000001', true);

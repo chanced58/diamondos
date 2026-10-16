@@ -10,6 +10,9 @@
 -- The tournament_mode_enabled column, set_tournament_mode_permission RPC and
 -- tournament_mode_permission_audit table are left in place to preserve the
 -- grant history; nothing reads the flag any more.
+--
+-- Also rejects a missing endDate as invalid input (22023) instead of letting
+-- it reach the NOT NULL constraint on tournaments.end_date.
 
 CREATE OR REPLACE FUNCTION public.create_tournament(p_input jsonb)
 RETURNS TABLE (tournament_id uuid, team_id uuid, season_id uuid)
@@ -37,7 +40,8 @@ BEGIN
   IF p_input IS NULL OR jsonb_typeof(p_input) <> 'object'
      OR jsonb_typeof(p_input->'name') IS DISTINCT FROM 'string'
      OR v_name IS NULL OR length(v_name) NOT BETWEEN 1 AND 100
-     OR v_request_id IS NULL OR v_start_date IS NULL OR v_end_date < v_start_date
+     OR v_request_id IS NULL OR v_start_date IS NULL OR v_end_date IS NULL
+     OR v_end_date < v_start_date
      OR v_team_type IS NULL OR v_team_type NOT IN ('existing', 'new') THEN
     RAISE EXCEPTION 'Tournament details are invalid' USING ERRCODE = '22023';
   END IF;
