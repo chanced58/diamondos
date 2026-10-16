@@ -88,3 +88,10 @@ Deployed to `diamondos-prod` on 2026-10-16 via MCP `apply_migration`. The record
 ## Platform-admin creation fix — 2026-10-16
 
 After #221 deployed, **Create Tournament Team** failed for a platform-admin account. `create_tournament` inserted the creator as head coach, and `prevent_platform_admin_team_membership` rejects any `team_members` row for a platform admin ("Platform administrators cannot be members of a team"), which rolled back the whole creation. `20261016000002_tournament_creation_platform_admin.sql` mirrors the `create-team` edge function: platform admins get no `team_members` / `channel_members` rows and reach the team through `is_platform_admin()`. Coaches are unaffected.
+
+Deployed to `diamondos-prod` on 2026-10-16 via MCP `apply_migration`, and the version was reset to `20261016000002`. The deployed body matched the repository before (`2dd7bf7e…`) and after (`ce850a25…`). The failure was reproduced first as the platform-admin account in a block that always rolls back. After the fix, the same block showed:
+
+- The admin created a separate team and can read the tournament. No `team_members` / `channel_members` rows were written for the admin.
+- A head coach still gets their head-coach row on a new team, and can still attach their existing team.
+
+Afterwards there were 0 tournaments and no smoke rows. The new pgTAP cases were not run locally (no Docker).
