@@ -108,7 +108,7 @@ pnpm --filter mobile build:android
 #### Local iOS Release builds (Xcode / physical device)
 ```bash
 # CocoaPods fails on non-UTF-8 locales
-cd apps/mobile/ios && LANG=en_US.UTF-8 pod install
+(cd apps/mobile/ios && LANG=en_US.UTF-8 pod install)
 
 # Reproduce Xcode's "Bundle React Native code and images" phase outside Xcode
 cd apps/mobile && env -u NODE_PATH node "$(node -p "require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })")" \
