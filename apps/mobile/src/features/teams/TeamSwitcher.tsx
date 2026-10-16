@@ -24,9 +24,7 @@ export function TeamSwitcher() {
               accessibilityState={{ selected }}
               accessibilityLabel={team.isTournamentTeam ? `${team.teamName}, tournament team` : team.teamName}
               onPress={() => {
-                setActiveTeamId(team.teamId).catch((err: unknown) =>
-                  console.warn('TeamSwitcher: could not save active team', err),
-                );
+                void setActiveTeamId(team.teamId);
               }}
               className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-full border ${
                 selected ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300'

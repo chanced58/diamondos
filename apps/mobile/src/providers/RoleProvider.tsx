@@ -75,30 +75,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       }
 
       const rows = (membershipsResult.data ?? []) as unknown as TeamMemberRow[];
-
-      // Tournament-only teams get a "Tournament" tag in the team switcher.
-      // Online-only and non-fatal: on failure the teams still load, untagged.
-      const tournamentOnlyTeamIds = new Set<string>();
-      if (rows.length > 0) {
-        try {
-          const tournamentTeamsResult = await supabase
-            .from('tournament_teams')
-            .select('team_id')
-            .eq('is_tournament_only', true)
-            .in('team_id', rows.map((r) => r.team_id));
-          if (tournamentTeamsResult.error) {
-            console.warn('RoleProvider: tournament_teams fetch failed', tournamentTeamsResult.error);
-          }
-          for (const t of (tournamentTeamsResult.data ?? []) as Array<{ team_id: string }>) {
-            tournamentOnlyTeamIds.add(t.team_id);
-          }
-        } catch (err) {
-          console.warn('RoleProvider: tournament_teams fetch threw', err);
-        }
-        if (cancelled) return;
-      }
-
-      const mapped = mapTeamMemberships(rows, playerIdByTeam, tournamentOnlyTeamIds);
+      const mapped = mapTeamMemberships(rows, playerIdByTeam, new Set());
 
       const initialActive =
         mapped.find((m) => m.teamId === storedActiveId)?.teamId ?? mapped[0]?.teamId ?? null;
@@ -106,6 +83,33 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       setMemberships(mapped);
       setActiveTeamIdState(initialActive);
       setLoading(false);
+
+      if (rows.length > 0) {
+        void applyTournamentTeamTags(rows, playerIdByTeam);
+      }
+    }
+
+    // Tournament-only teams get a "Tournament" tag in the team switcher.
+    // Fetched after the teams are published so a slow or failed lookup never
+    // holds the Games and Schedule tabs on their loading state; on failure the
+    // teams simply stay untagged.
+    async function applyTournamentTeamTags(rows: TeamMemberRow[], playerIdByTeam: Map<string, string>) {
+      try {
+        const { data, error } = await getSupabaseClient()
+          .from('tournament_teams')
+          .select('team_id')
+          .eq('is_tournament_only', true)
+          .in('team_id', rows.map((r) => r.team_id));
+        if (error) {
+          console.warn('RoleProvider: tournament_teams fetch failed', error);
+          return;
+        }
+        const tournamentOnlyTeamIds = new Set(((data ?? []) as Array<{ team_id: string }>).map((t) => t.team_id));
+        if (cancelled || tournamentOnlyTeamIds.size === 0) return;
+        setMemberships(mapTeamMemberships(rows, playerIdByTeam, tournamentOnlyTeamIds));
+      } catch (err) {
+        console.warn('RoleProvider: tournament_teams fetch threw', err);
+      }
     }
 
     hydrate().catch((err) => {
@@ -121,9 +125,15 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user?.id]);
 
+  // Switch immediately; persisting the choice is best-effort so a SecureStore
+  // failure never strands the user on the previous team.
   const setActiveTeamId = useCallback(async (id: string) => {
-    await SecureStore.setItemAsync(ACTIVE_TEAM_KEY, id);
     setActiveTeamIdState(id);
+    try {
+      await SecureStore.setItemAsync(ACTIVE_TEAM_KEY, id);
+    } catch (err) {
+      console.warn('RoleProvider: could not save active team', err);
+    }
   }, []);
 
   const activeTeam = useMemo(
