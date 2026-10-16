@@ -339,6 +339,7 @@ export default function ScoringScreen() {
   const [showAddOurBatter, setShowAddOurBatter] = useState(false);
   const [contractionSide, setContractionSide] = useState<'us' | 'opponent'>('us');
   const [showRemoveBatter, setShowRemoveBatter] = useState(false);
+  const [removingBatter, setRemovingBatter] = useState(false);
   const contractionOrder = contractionSide === 'us' ? activeTeamOrder : activeOpponentOrder;
   const [caughtStealingFor, setCaughtStealingFor] =
     useState<{ base: 1 | 2 | 3; runnerId: string; name: string } | null>(null);
@@ -2232,8 +2233,19 @@ export default function ScoringScreen() {
                   betweenPlateAppearances,
                 }),
         })) : []}
-        saving={lineupChangeLockRef.current}
-        onRemove={(slot) => void handleContractBatter(slot, contractionSide === 'opponent')}
+        saving={removingBatter}
+        onRemove={(slot) => {
+          setRemovingBatter(true);
+          handleContractBatter(slot, contractionSide === 'opponent')
+            .catch((err: unknown) => {
+              console.warn(
+                `[score] remove batter failed game=${gameId} player=${slot.playerId} slot=${slot.battingOrder}:`,
+                err,
+              );
+              Alert.alert('Batter not removed', 'The lineup change could not be saved. Please try again.');
+            })
+            .finally(() => setRemovingBatter(false));
+        }}
         onCancel={() => setShowRemoveBatter(false)}
       />
       {/* An empty order still needs its Add control — the batter buttons live
