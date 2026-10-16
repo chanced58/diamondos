@@ -1,7 +1,7 @@
 # Tournament implementation verification
 
 Branch: `feature/tournament`; worktree: `.worktrees/tournament`.
-Verified on 2026-10-14. Production migrations have not been deployed.
+Verified on 2026-10-14. Production migrations deployed 2026-10-15 (see [Production deployment](#production-deployment--2026-10-15)).
 
 ## Implemented
 
@@ -25,7 +25,7 @@ This is a team-centered first release. Contraction removes an occupied slot betw
 
 ## Remaining acceptance and deployment prerequisites
 
-Physical/emulated iOS and Android airplane-mode → lineup changes → reload → reconnect smoke tests remain pending. No devices were connected or booted, and no native build artifacts were available. Automated cache, queue, transport and replay tests passed; these do not replace native device acceptance.
+Physical iOS lineup-extension acceptance passed on 2026-10-16 (see [iPad acceptance](#ipad-acceptance--2026-10-16)). Airplane-mode → lineup changes → reload → reconnect on iOS, and all Android device checks, remain pending. Automated cache, queue, transport and replay tests passed; these do not replace native device acceptance.
 
 Normal local Supabase startup is blocked by two pre-existing migrations sharing `20260523000001`. Deployed history was preserved. The isolated test harness copies every SQL file unchanged and adjusts only local version labels. Resolve the historical version collision against the target environment's migration history before deployment.
 
@@ -54,3 +54,25 @@ Commits `9e10575` and `31fe3d9` address all six GitHub review threads:
 - Clear a linked advancing runner from every base before placing them or recording that they scored.
 
 Regression tests reproduced the cache/history and SQL failures before the fixes. The final cancellation-ID guard also distinguishes absent IDs from string IDs, including for optional-ID inputs.
+
+## Production deployment — 2026-10-15
+
+The six tournament migrations were applied to `diamondos-prod` through the Supabase MCP `apply_migration` tool, one transaction per file, in filename order. Each recorded version was then reset to its repository timestamp (`20261013000001`–`20261014000002`). Do not use `supabase db push` against prod: most historical prod versions were recorded under apply-time timestamps rather than repository filenames.
+
+- Pre-flight: no tournament objects existed; every referenced function, column, enum value and unique key was present; no file uses `CONCURRENTLY` or enum additions.
+- The `20260523000001` version collision is local-only. Prod recorded those two files as `20260523142822` and `20260523201608`, so it did not block deployment.
+- Verification: all 16 deployed function bodies match the repository byte-for-byte (`md5(prosrc)`), along with the 3 RLS-enabled tables, 3 policies, 10 triggers, 6 constraints and the RPC `EXECUTE` grants. All 29 existing games remain non-tournament.
+- Advisors: no blocking findings. The trigger functions are reported as RPC-callable, but Postgres rejects direct calls to trigger functions. Explicit `REVOKE`s remain a hygiene follow-up, along with `(select auth.uid())` in the two read policies.
+- Not deployed by this change: `20260420000001`, `20260730000001` and `20260801000001`–`04` are still missing from prod and are tracked separately.
+
+## iPad acceptance — 2026-10-16
+
+A signed Release build of this branch ran on an iPad mini (A17 Pro, iPadOS 26.5, landscape) against prod. It scored a SHAKEDOWN tournament game (11-batter cap, mid-game changes on) through an XCUITest that drove the real UI. The test lived in a local UI-test target in the generated `ios/` project and was not committed. Both teams started with 10 batters and added an 11th during the second time through the order:
+
+- **Opponent:** a new player was created in-app right after Away02's second plate appearance. Away03 was still due, and Away11 batted after Away10 in each later trip.
+- **Us:** Home11 (on the roster) was added right after Home10 finished the second trip. Home11 batted next, before Home01.
+- **Event log:** 342 events, no sequence gaps, two `lineup_extension` substitutions (slot 11 each), no voids or rejections. The server projected both slot-11 lineup rows as non-starters. Every plate appearance recorded a batter. The opponent's sequence was 1–10, 1–10, 11, 1–10, 11, 1–7 and ours 1–10, 1–10, 11, 1–10, 11, 1.
+- **Stats:** replaying the log through the shared reducers credits 11 batters and 33 PAs on our side. Home11 had 2 PA (1 BB, 1 K), and pitch counts match the pitches thrown.
+- **Found during the run:** in landscape the Add Batter sheet sits fully behind the keyboard once a field is focused, so the coach must dismiss the keyboard to reach the other fields and "Add to order". This is being fixed separately.
+
+The game and every row it created were deleted from prod afterwards, and the tournament-mode grant was revoked. Both the grant and the revoke are in `tournament_mode_permission_audit`.

@@ -341,6 +341,8 @@ export default function ScoringScreen() {
   const [showAddOpponentBatter, setShowAddOpponentBatter] = useState(false);
   const [showAddOurBatter, setShowAddOurBatter] = useState(false);
   const [contractionSide, setContractionSide] = useState<'us' | 'opponent'>('us');
+  const [showRemoveBatter, setShowRemoveBatter] = useState(false);
+  const [removingBatter, setRemovingBatter] = useState(false);
   const contractionOrder = contractionSide === 'us' ? activeTeamOrder : activeOpponentOrder;
   const [caughtStealingFor, setCaughtStealingFor] =
     useState<{ base: 1 | 2 | 3; runnerId: string; name: string } | null>(null);
@@ -1583,6 +1585,7 @@ export default function ScoringScreen() {
         removedBattingOrderPosition: slot.battingOrder,
         isOpponentSubstitution: forOpponent,
       });
+      setShowRemoveBatter(false);
     } finally {
       lineupChangeLockRef.current = false;
     }
@@ -2187,62 +2190,70 @@ export default function ScoringScreen() {
                   + Batter
                 </Text>
               </TouchableOpacity>
+              {gameScoringSettings.status === 'ready' &&
+                leagueSettings.lineup.allowMidGameContraction && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setContractionSide(weBat ? 'us' : 'opponent');
+                      setShowRemoveBatter(true);
+                    }}
+                    className={`px-3 py-1 rounded-full ${weBat ? 'bg-emerald-100' : 'bg-slate-200'}`}
+                  >
+                    <Text
+                      className={`text-score-xs font-semibold ${weBat ? 'text-emerald-800' : 'text-slate-700'}`}
+                    >
+                      − Batter
+                    </Text>
+                  </TouchableOpacity>
+                )}
             </View>
           }
         />
       )}
-      {gameStarted &&
-        gameScoringSettings.status === 'ready' &&
-        leagueSettings.lineup.allowMidGameContraction && (
-          <View className="mx-4 mt-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-            <Text className="text-score-sm font-semibold text-emerald-950">
-              Remove a batting slot
-            </Text>
-            <Text className="mt-1 text-score-xs text-emerald-800">
-              {betweenPlateAppearances
-                ? 'Choose an inactive batter to remove. Prior plate appearances remain in the game record.'
-                : 'Finish the current plate appearance before changing the batting order.'}
-            </Text>
-            <View className="mt-2 flex-row gap-3">
-              <TouchableOpacity onPress={() => setContractionSide('us')}><Text className="font-semibold text-emerald-900">Our lineup{contractionSide === 'us' ? ' ✓' : ''}</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => setContractionSide('opponent')}><Text className="font-semibold text-emerald-900">Opponent lineup{contractionSide === 'opponent' ? ' ✓' : ''}</Text></TouchableOpacity>
-            </View>
-            {contractionOrder.slots.map((slot) => {
-              const reason = !lineupLoaded
-                ? 'Wait for the lineup to load.'
-                : contractionOrder.slots.length <= 1
-                  ? 'At least one batter must remain.'
-                  : validateLineupContraction({
-                      slot,
-                      settings: leagueSettings,
-                      currentBatterId: contractionOrder.nextBatterId,
-                      runnersOnBase: gameState
-                        ? Object.values(gameState.runnersOnBase).filter(
-                            (id): id is string => id !== null,
-                          )
-                        : [],
-                      betweenPlateAppearances,
-                    });
-              return (
-                <TouchableOpacity
-                  key={slot.battingOrder}
-                  disabled={!!reason || lineupChangeLockRef.current}
-                  onPress={() => void handleContractBatter(slot, contractionSide === 'opponent')}
-                  className={`mt-2 flex-row items-center justify-between rounded-lg border px-3 py-2 ${reason ? 'border-emerald-100 bg-white/60' : 'border-emerald-300 bg-white'}`}
-                >
-                  <Text className="text-score-xs text-gray-900">
-                    {contractionSide === 'us' ? batterName(slot.playerId) : (opponentNameById.get(slot.playerId) ?? 'Opponent batter')} · slot {slot.battingOrder}
-                  </Text>
-                  <Text
-                    className={`text-score-xs font-semibold ${reason ? 'text-gray-500' : 'text-emerald-800'}`}
-                  >
-                    {reason ?? 'Remove'}
-                  </Text>
-                </TouchableOpacity>
+      <RemoveBatterModal
+        visible={showRemoveBatter}
+        side={contractionSide}
+        onSideChange={setContractionSide}
+        betweenPlateAppearances={betweenPlateAppearances}
+        rows={showRemoveBatter ? contractionOrder.slots.map((slot) => ({
+          slot,
+          name: contractionSide === 'us'
+            ? batterName(slot.playerId)
+            : (opponentNameById.get(slot.playerId) ?? 'Opponent batter'),
+          reason: !lineupLoaded
+            ? 'Wait for the lineup to load.'
+            : contractionOrder.slots.length <= 1
+              ? 'At least one batter must remain.'
+              : validateLineupContraction({
+                  slot,
+                  settings: leagueSettings,
+                  currentBatterId: contractionOrder.nextBatterId,
+                  runnersOnBase: gameState
+                    ? Object.values(gameState.runnersOnBase).filter(
+                        (id): id is string => id !== null,
+                      )
+                    : [],
+                  betweenPlateAppearances,
+                }),
+        })) : []}
+        saving={removingBatter}
+        onRemove={(slot) => {
+          // A second tap before the rows re-render as disabled must not clear
+          // the first removal's saving state when its no-op call returns.
+          if (lineupChangeLockRef.current) return;
+          setRemovingBatter(true);
+          handleContractBatter(slot, contractionSide === 'opponent')
+            .catch((err: unknown) => {
+              console.warn(
+                `[score] remove batter failed game=${gameId} player=${slot.playerId} slot=${slot.battingOrder}:`,
+                err,
               );
-            })}
-          </View>
-        )}
+              Alert.alert('Batter not removed', 'The lineup change could not be saved. Please try again.');
+            })
+            .finally(() => setRemovingBatter(false));
+        }}
+        onCancel={() => setShowRemoveBatter(false)}
+      />
       {/* An empty order still needs its Add control — the batter buttons live
           in the card header, and the opponent's book starts empty, so without
           this there is no way to enter the first one. */}
@@ -3279,6 +3290,89 @@ function OpponentBatterPickerModal({
                   </TouchableOpacity>
                 );
               })}
+            </View>
+          </ScrollView>
+          <TouchableOpacity
+            className="mt-4 rounded-xl px-5 py-3 bg-gray-100 items-center"
+            onPress={onCancel}
+          >
+            <Text className="text-gray-700 font-semibold">Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/**
+ * Remove a batting slot mid-game (tournament lineup contraction) — either
+ * side's. Kept behind the lineup header's "− Batter" control rather than
+ * always on screen, so a scroll past the lineup can't remove someone. Each
+ * row carries the reason it is disabled (due up, on base, last batter,
+ * mid plate appearance); the sheet closes once a removal is recorded.
+ */
+function RemoveBatterModal({
+  visible,
+  side,
+  onSideChange,
+  betweenPlateAppearances,
+  rows,
+  saving,
+  onRemove,
+  onCancel,
+}: {
+  visible: boolean;
+  side: 'us' | 'opponent';
+  onSideChange: (side: 'us' | 'opponent') => void;
+  betweenPlateAppearances: boolean;
+  rows: { slot: { playerId: string; battingOrder: number }; name: string; reason: string | null }[];
+  saving: boolean;
+  onRemove: (slot: { playerId: string; battingOrder: number }) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+      <View className="flex-1 justify-end bg-black/50">
+        <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '75%' }}>
+          <Text className="text-score-lg font-bold text-gray-900 mb-1">Remove a batter</Text>
+          <Text className="text-score-sm text-gray-500 mb-4">
+            {betweenPlateAppearances
+              ? 'The order closes up around the removed slot. Their earlier plate appearances stay in the game record.'
+              : 'Finish the current plate appearance before changing the batting order.'}
+          </Text>
+          <View className="flex-row mb-3 rounded-xl bg-gray-100 p-1">
+            {(['us', 'opponent'] as const).map((option) => (
+              <TouchableOpacity
+                key={option}
+                onPress={() => onSideChange(option)}
+                className={`flex-1 items-center rounded-lg py-2 ${side === option ? 'bg-white' : ''}`}
+              >
+                <Text className={`font-semibold ${side === option ? 'text-gray-900' : 'text-gray-500'}`}>
+                  {option === 'us' ? 'Our lineup' : 'Opponent lineup'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <ScrollView className="max-h-96">
+            <View className="gap-2">
+              {rows.map(({ slot, name, reason }) => (
+                <TouchableOpacity
+                  key={slot.battingOrder}
+                  disabled={!!reason || saving}
+                  onPress={() => onRemove(slot)}
+                  className={`flex-row items-center rounded-xl px-4 py-3 border ${
+                    reason ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-300'
+                  }`}
+                >
+                  <Text className="w-8 font-bold text-gray-400">{slot.battingOrder}</Text>
+                  <Text className={`flex-1 font-semibold ${reason ? 'text-gray-400' : 'text-gray-900'}`}>
+                    {name}
+                  </Text>
+                  <Text className={`text-score-xs font-semibold ${reason ? 'text-gray-400' : 'text-red-600'}`}>
+                    {reason ?? 'Remove'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </ScrollView>
           <TouchableOpacity
