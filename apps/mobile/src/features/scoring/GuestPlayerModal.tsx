@@ -6,6 +6,8 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Q } from '@nozbe/watermelondb';
 import { database, GameLineup, LeaguePlayer, Player } from '../../db';
@@ -214,7 +216,13 @@ export function GuestPlayerModal({
         }
       }}
     >
-      <View className="flex-1 justify-end bg-black/50">
+      {/* Keeps the sheet above the keyboard — without it the keyboard covers the
+          whole sheet on an iPad in landscape. Android's Modal window already
+          resizes for the keyboard (adjustResize), so it needs no behavior. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        className="flex-1 justify-end bg-black/50"
+      >
         <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '85%' }}>
           <Text className="text-score-lg font-bold text-gray-900 mb-1">Add Guest Player</Text>
           <Text className="text-score-sm text-gray-500 mb-3">
@@ -375,7 +383,7 @@ export function GuestPlayerModal({
             </View>
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
