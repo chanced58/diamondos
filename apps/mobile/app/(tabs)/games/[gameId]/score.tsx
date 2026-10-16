@@ -2238,6 +2238,9 @@ export default function ScoringScreen() {
         })) : []}
         saving={removingBatter}
         onRemove={(slot) => {
+          // A second tap before the rows re-render as disabled must not clear
+          // the first removal's saving state when its no-op call returns.
+          if (lineupChangeLockRef.current) return;
           setRemovingBatter(true);
           handleContractBatter(slot, contractionSide === 'opponent')
             .catch((err: unknown) => {
