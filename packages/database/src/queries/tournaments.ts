@@ -51,15 +51,3 @@ export async function createTournament(
     seasonId: data.season_id,
   };
 }
-
-export async function setTournamentModePermission(
-  client: TypedSupabaseClient,
-  userId: string,
-  enabled: boolean,
-): Promise<void> {
-  const { error } = await client.rpc('set_tournament_mode_permission', {
-    p_user_id: userId,
-    p_enabled: enabled,
-  });
-  if (error) throw error;
-}

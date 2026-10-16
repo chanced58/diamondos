@@ -22,6 +22,8 @@ Recommended: dedicated tournament records linked to existing teams and games. Th
 
 ## Permission and ownership
 
+> **Superseded 2026-10-16** (`20261016000001_open_tournament_creation_to_coaches.sql`): the per-user tournament mode grant was removed. Any signed-in user may create a tournament with **Create Tournament Team**; attaching an existing team still requires an active head coach or athletic director membership. The column, grant RPC and audit table remain only as history; nothing reads the flag. The paragraphs below describe the original design.
+
 Add `user_profiles.tournament_mode_enabled`, default false. Only platform-admin-controlled server/database operations may grant or revoke it; a user must not be able to set their own permission through profile updates. Audit grant changes with actor, target, timestamp, and old/new values using a dedicated permission audit table.
 
 Check the authenticated identity, grant, and active team-admin membership on every creation attempt, including inside the database transaction. Hide the creation entry point when unauthorized, but enforce it through RLS and RPC authorization. Revocation prevents new tournament creation; existing tournament access continues to follow ownership and team membership so scheduled games are not stranded. Revocation is not an automatic removal from existing teams.

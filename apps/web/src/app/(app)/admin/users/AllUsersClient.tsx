@@ -6,7 +6,6 @@ import { useFormState, useFormStatus } from 'react-dom';
 import {
   updateUserProfileAction,
   togglePlatformAdminAction,
-  setTournamentModeAction,
   removeFromTeamAction,
   deleteUserAction,
 } from './actions';
@@ -38,7 +37,6 @@ type UserRow = {
   email: string | null;
   phone: string | null;
   isPlatformAdmin: boolean;
-  hasTournamentMode: boolean;
   teamRoles: TeamRole[];
 };
 
@@ -128,20 +126,6 @@ function ToggleAdminForm({ userId, currentValue }: { userId: string; currentValu
       {error && <p className="text-xs text-red-600 mb-1">{error}</p>}
       <SubmitButton variant={currentValue ? 'danger' : 'default'}>
         {currentValue ? 'Revoke Admin' : 'Make Admin'}
-      </SubmitButton>
-    </form>
-  );
-}
-
-function ToggleTournamentModeForm({ userId, currentValue }: { userId: string; currentValue: boolean }) {
-  const [error, action] = useFormState(setTournamentModeAction, null);
-  return (
-    <form action={action} className="inline">
-      <input type="hidden" name="userId" value={userId} />
-      <input type="hidden" name="enabled" value={String(!currentValue)} />
-      {error && <p className="text-xs text-red-600 mb-1">{error}</p>}
-      <SubmitButton variant={currentValue ? 'danger' : 'default'}>
-        {currentValue ? 'Revoke Tournament Mode' : 'Grant Tournament Mode'}
       </SubmitButton>
     </form>
   );
@@ -278,16 +262,6 @@ export function AllUsersTable({
                       <span className="text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded-full inline-block w-fit">
                         Platform Admin
                       </span>
-                    )}
-                    <span className={`text-xs px-2 py-0.5 rounded-full border w-fit ${
-                      u.hasTournamentMode
-                        ? 'bg-amber-50 text-amber-800 border-amber-200'
-                        : 'bg-gray-50 text-gray-500 border-gray-200'
-                    }`}>
-                      {u.hasTournamentMode ? 'Tournament Mode' : 'No Tournament Mode'}
-                    </span>
-                    {u.id !== currentUserId && (
-                      <ToggleTournamentModeForm userId={u.id} currentValue={u.hasTournamentMode} />
                     )}
                     {u.id !== currentUserId && (
                       <ToggleAdminForm userId={u.id} currentValue={u.isPlatformAdmin} />

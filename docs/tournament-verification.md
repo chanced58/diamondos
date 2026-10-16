@@ -76,3 +76,9 @@ A signed Release build of this branch ran on an iPad mini (A17 Pro, iPadOS 26.5,
 - **Found during the run:** in landscape the Add Batter sheet sits fully behind the keyboard once a field is focused, so the coach must dismiss the keyboard to reach the other fields and "Add to order". This is being fixed separately.
 
 The game and every row it created were deleted from prod afterwards, and the tournament-mode grant was revoked. Both the grant and the revoke are in `tournament_mode_permission_audit`.
+
+## Open creation to all coaches — 2026-10-16
+
+No user in prod held the tournament mode grant after the iPad acceptance revoke, so nobody could see **New Tournament**. Product decision: drop the grant. `20261016000001_open_tournament_creation_to_coaches.sql` replaces `create_tournament` without the `tournament_mode_enabled` check; the existing-team branch still requires an active head coach / athletic director membership, and the new-team branch is open to any signed-in user, matching regular team creation. The web app no longer reads the flag (tournaments list, New Tournament page, server action, sidebar) and the Admin → Users grant toggle is removed. The column, `set_tournament_mode_permission` and `tournament_mode_permission_audit` stay as history.
+
+The form now labels the choices **Use my existing team** (tournament season on the current roster; regular-season stats stay separate) and **Create Tournament Team** (a separate team with its own roster, schedule and stats).

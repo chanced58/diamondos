@@ -32,7 +32,7 @@ export default async function PlatformAdminUsersPage(): Promise<JSX.Element | nu
   const [profilesResult, membershipsResult] = await Promise.all([
     db
       .from('user_profiles')
-      .select('id, first_name, last_name, email, phone, is_platform_admin, tournament_mode_enabled')
+      .select('id, first_name, last_name, email, phone, is_platform_admin')
       .order('last_name', { ascending: true }),
     db
       .from('team_members')
@@ -66,7 +66,6 @@ export default async function PlatformAdminUsersPage(): Promise<JSX.Element | nu
     email: p.email as string | null,
     phone: p.phone as string | null,
     isPlatformAdmin: p.is_platform_admin === true,
-    hasTournamentMode: p.tournament_mode_enabled === true,
     teamRoles: teamRolesMap.get(p.id) ?? [],
   }));
 
