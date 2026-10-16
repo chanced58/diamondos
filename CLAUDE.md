@@ -105,6 +105,19 @@ pnpm --filter mobile build:ios
 pnpm --filter mobile build:android
 ```
 
+#### Local iOS Release builds (Xcode / physical device)
+```bash
+# CocoaPods fails on non-UTF-8 locales
+cd apps/mobile/ios && LANG=en_US.UTF-8 pod install
+
+# Reproduce Xcode's "Bundle React Native code and images" phase outside Xcode
+cd apps/mobile && env -u NODE_PATH node "$(node -p "require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })")" \
+  export:embed --platform ios --dev false --entry-file index.js \
+  --bundle-output /tmp/main.jsbundle --assets-dest /tmp/assets
+```
+- Xcode runs the Expo CLI with plain `node` from `apps/mobile/ios` (then `cd ..`), **not** through pnpm's `.bin` shim. The shim adds `node_modules/.pnpm/node_modules` to `NODE_PATH`, so `npx expo export:embed` can succeed while the Xcode build fails.
+- Under pnpm's isolated layout, anything Metro/Babel resolves from the app directory must be a direct dependency of `apps/mobile` — currently `expo-asset`, `@react-native/assets-registry`, `babel-preset-expo`, and `@babel/plugin-proposal-decorators`. Don't remove them because nothing `import`s them. Never work around a missing one by symlinking into `apps/mobile/node_modules`; the next `pnpm install` erases it.
+
 ### Lint / Format
 ```bash
 pnpm lint
