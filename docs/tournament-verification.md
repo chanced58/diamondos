@@ -84,3 +84,7 @@ No user in prod held the tournament mode grant after the iPad acceptance revoke,
 The form now labels the choices **Use my existing team** (tournament season on the current roster; regular-season stats stay separate) and **Create Tournament Team** (a separate team with its own roster, schedule and stats).
 
 Deployed to `diamondos-prod` on 2026-10-16 via MCP `apply_migration`. The recorded version was reset to `20261016000001`. Pre-flight: the deployed `create_tournament` body matched the repository (`md5(prosrc)` `d25e1f3b…`). After the change it is `2dd7bf7e…`, matching the new migration. Smoke test as a real head coach with no grant, in a block that always rolls back: a separate tournament team was created, the coach's own team was attached, a team they don't coach was denied (`42501`), and a missing end date was rejected (`22023`). Afterwards there were 0 tournaments and no smoke rows. The pgTAP suite was updated but not run (no local Docker).
+
+## Platform-admin creation fix — 2026-10-16
+
+After #221 deployed, **Create Tournament Team** failed for a platform-admin account. `create_tournament` inserted the creator as head coach, and `prevent_platform_admin_team_membership` rejects any `team_members` row for a platform admin ("Platform administrators cannot be members of a team"), which rolled back the whole creation. `20261016000002_tournament_creation_platform_admin.sql` mirrors the `create-team` edge function: platform admins get no `team_members` / `channel_members` rows and reach the team through `is_platform_admin()`. Coaches are unaffected.

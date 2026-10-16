@@ -1,12 +1,16 @@
 BEGIN;
-SELECT plan(21);
+SELECT plan(23);
 
 INSERT INTO auth.users (id, instance_id, email, aud, role, created_at, updated_at)
 VALUES
   ('51000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000000', 'tournament-enabled@example.test', 'authenticated', 'authenticated', now(), now()),
   ('51000000-0000-4000-8000-000000000002', '00000000-0000-0000-0000-000000000000', 'tournament-disabled@example.test', 'authenticated', 'authenticated', now(), now()),
-  ('51000000-0000-4000-8000-000000000003', '00000000-0000-0000-0000-000000000000', 'other-coach@example.test', 'authenticated', 'authenticated', now(), now())
+  ('51000000-0000-4000-8000-000000000003', '00000000-0000-0000-0000-000000000000', 'other-coach@example.test', 'authenticated', 'authenticated', now(), now()),
+  ('51000000-0000-4000-8000-000000000004', '00000000-0000-0000-0000-000000000000', 'platform-admin@example.test', 'authenticated', 'authenticated', now(), now())
 ON CONFLICT (id) DO NOTHING;
+
+UPDATE public.user_profiles SET is_platform_admin = true
+WHERE id = '51000000-0000-4000-8000-000000000004';
 
 UPDATE public.user_profiles SET tournament_mode_enabled = true
 WHERE id = '51000000-0000-4000-8000-000000000001';
@@ -126,5 +130,20 @@ SELECT set_config('request.jwt.claim.sub', '51000000-0000-4000-8000-000000000001
 SELECT throws_ok(
  $$ SELECT * FROM public.create_tournament('{"name":"Inactive membership","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000007","team":{"type":"existing","teamId":"52000000-0000-4000-8000-000000000001"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}') $$,
  '42501', NULL, 'inactive team administration cannot create a tournament');
+
+SELECT set_config('request.jwt.claim.sub', '51000000-0000-4000-8000-000000000004', true);
+SELECT lives_ok(
+ $$ SELECT * FROM public.create_tournament('{"name":"Admin Cup","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000009","team":{"type":"new","name":"Admin Cup Team"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}') $$,
+ 'a platform admin can create a separate tournament team');
+RESET ROLE;
+SELECT is(
+ (SELECT count(*) FROM public.teams t
+  JOIN public.channels c ON c.team_id = t.id AND c.name = 'Announcements'
+  JOIN public.tournament_teams tt ON tt.team_id = t.id
+  WHERE t.name = 'Admin Cup Team'
+    AND NOT EXISTS (SELECT 1 FROM public.team_members tm WHERE tm.team_id = t.id)
+    AND NOT EXISTS (SELECT 1 FROM public.channel_members cm WHERE cm.channel_id = c.id)),
+ 1::bigint,
+ 'the admin-created team, channel and registration exist without admin membership rows');
 SELECT * FROM finish();
 ROLLBACK;
