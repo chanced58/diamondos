@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,9 @@ import {
   ScrollView,
   Alert,
   TextInput,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   useWindowDimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
@@ -3416,6 +3419,37 @@ function AddBatterModal({
   const [jersey, setJersey] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const newBatterOffsetY = useRef(0);
+  const isTypingNewBatter = useRef(false);
+
+  // With the keyboard up the sheet shrinks to the space above it — on an iPad
+  // in landscape that is only a few rows — and the scroll would still sit at
+  // the top, showing "back to the top" with the fields being typed into below
+  // the fold. Scroll the fields and their button to the top instead (the
+  // section label goes just out of view, so the button is not clipped).
+  // Called on focus and again once the keyboard has finished showing: the
+  // shrink lands after the focus, and a scroll issued before it is clamped to
+  // the taller, pre-keyboard scroll range.
+  const revealNewBatterFields = useCallback(() => {
+    if (!isTypingNewBatter.current) return;
+    scrollRef.current?.scrollTo({ y: newBatterOffsetY.current, animated: true });
+  }, []);
+  const newBatterFieldFocusProps = {
+    onFocus: () => {
+      isTypingNewBatter.current = true;
+      revealNewBatterFields();
+    },
+    onBlur: () => {
+      isTypingNewBatter.current = false;
+    },
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    const subscription = Keyboard.addListener('keyboardDidShow', revealNewBatterFields);
+    return () => subscription.remove();
+  }, [visible, revealNewBatterFields]);
 
   // Clear between openings so a previous entry (or error) never bleeds into
   // the next batter the scorer adds.
@@ -3449,7 +3483,13 @@ function AddBatterModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
-      <View className="flex-1 justify-end bg-black/50">
+      {/* Keeps the sheet above the keyboard — without it the keyboard covers the
+          whole sheet on an iPad in landscape. Android's Modal window already
+          resizes for the keyboard (adjustResize), so it needs no behavior. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        className="flex-1 justify-end bg-black/50"
+      >
         <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '85%' }}>
           <Text className="text-score-lg font-bold text-gray-900 mb-1">{title}</Text>
           <Text className="text-score-sm text-gray-500 mb-4">
@@ -3463,7 +3503,11 @@ function AddBatterModal({
             </View>
           )}
 
-          <ScrollView className="max-h-96">
+          <ScrollView
+            ref={scrollRef}
+            className="max-h-96"
+            keyboardShouldPersistTaps="handled"
+          >
             {topOfOrder && (
               <>
                 <Text className="text-score-xs font-semibold text-gray-500 mb-2">BACK TO THE TOP</Text>
@@ -3478,39 +3522,48 @@ function AddBatterModal({
               </>
             )}
             <Text className="text-score-xs font-semibold text-gray-500 mb-2">NEW BATTER</Text>
-            <View className="flex-row gap-2">
-              <TextInput
-                value={jersey}
-                onChangeText={setJersey}
-                placeholder="##"
-                keyboardType="number-pad"
-                className="w-16 rounded-xl border border-gray-300 px-3 py-3 text-score-base text-gray-900"
-              />
-              <TextInput
-                value={firstName}
-                onChangeText={setFirstName}
-                placeholder="First"
-                autoCapitalize="words"
-                className="flex-1 rounded-xl border border-gray-300 px-3 py-3 text-score-base text-gray-900"
-              />
-              <TextInput
-                value={lastName}
-                onChangeText={setLastName}
-                placeholder="Last"
-                autoCapitalize="words"
-                className="flex-1 rounded-xl border border-gray-300 px-3 py-3 text-score-base text-gray-900"
-              />
-            </View>
-            <TouchableOpacity
-              disabled={busy}
-              onPress={() => run({ kind: 'new', firstName, lastName, jerseyNumber: jersey })}
-              className={`mt-3 rounded-xl py-3 items-center ${busy ? 'bg-slate-300' : 'bg-slate-700'}`}
+            <View
+              onLayout={(event) => {
+                newBatterOffsetY.current = event.nativeEvent.layout.y;
+              }}
             >
-              <Text className="text-white font-semibold">Add to order</Text>
-            </TouchableOpacity>
-            <Text className="text-score-xs text-gray-400 mt-2">
-              A jersey number on its own is enough — you can add the name later.
-            </Text>
+              <View className="flex-row gap-2">
+                <TextInput
+                  value={jersey}
+                  onChangeText={setJersey}
+                  placeholder="##"
+                  {...newBatterFieldFocusProps}
+                  keyboardType="number-pad"
+                  className="w-16 rounded-xl border border-gray-300 px-3 py-3 text-score-base text-gray-900"
+                />
+                <TextInput
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  placeholder="First"
+                  {...newBatterFieldFocusProps}
+                  autoCapitalize="words"
+                  className="flex-1 rounded-xl border border-gray-300 px-3 py-3 text-score-base text-gray-900"
+                />
+                <TextInput
+                  value={lastName}
+                  onChangeText={setLastName}
+                  placeholder="Last"
+                  {...newBatterFieldFocusProps}
+                  autoCapitalize="words"
+                  className="flex-1 rounded-xl border border-gray-300 px-3 py-3 text-score-base text-gray-900"
+                />
+              </View>
+              <TouchableOpacity
+                disabled={busy}
+                onPress={() => run({ kind: 'new', firstName, lastName, jerseyNumber: jersey })}
+                className={`mt-3 rounded-xl py-3 items-center ${busy ? 'bg-slate-300' : 'bg-slate-700'}`}
+              >
+                <Text className="text-white font-semibold">Add to order</Text>
+              </TouchableOpacity>
+              <Text className="text-score-xs text-gray-400 mt-2">
+                A jersey number on its own is enough — you can add the name later.
+              </Text>
+            </View>
 
             {roster.length > 0 && (
               <>
@@ -3540,7 +3593,7 @@ function AddBatterModal({
             <Text className="text-gray-700 font-semibold">Cancel</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
