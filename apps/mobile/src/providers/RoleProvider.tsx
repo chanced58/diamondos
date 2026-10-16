@@ -7,27 +7,17 @@ import React, {
   useState,
 } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { isCoachRole } from '@baseball/shared';
 import { getSupabaseClient } from '../lib/supabase';
+import {
+  mapTeamMemberships,
+  type TeamMemberRow,
+  type TeamMembership,
+} from '../features/teams/team-memberships';
 import { useAuth } from './AuthProvider';
 
+export type { TeamMembership, TeamRole } from '../features/teams/team-memberships';
+
 const ACTIVE_TEAM_KEY = 'diamondos.activeTeamId';
-
-export type TeamRole =
-  | 'head_coach'
-  | 'assistant_coach'
-  | 'scorekeeper'
-  | 'player'
-  | 'parent'
-  | 'athletic_director';
-
-export interface TeamMembership {
-  teamId: string;
-  teamName: string;
-  role: TeamRole;
-  playerId?: string;
-  isCoach: boolean;
-}
 
 interface RoleContextValue {
   loading: boolean;
@@ -84,22 +74,31 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
         playerIdByTeam.set(p.team_id, p.id);
       }
 
-      const rows = (membershipsResult.data ?? []) as unknown as Array<{
-        team_id: string;
-        role: string;
-        teams: { name: string } | { name: string }[] | null;
-      }>;
+      const rows = (membershipsResult.data ?? []) as unknown as TeamMemberRow[];
 
-      const mapped: TeamMembership[] = rows.map((r) => {
-        const team = Array.isArray(r.teams) ? r.teams[0] ?? null : r.teams;
-        return {
-          teamId: r.team_id,
-          teamName: team?.name ?? 'Team',
-          role: r.role as TeamRole,
-          playerId: playerIdByTeam.get(r.team_id),
-          isCoach: isCoachRole(r.role),
-        };
-      });
+      // Tournament-only teams get a "Tournament" tag in the team switcher.
+      // Online-only and non-fatal: on failure the teams still load, untagged.
+      const tournamentOnlyTeamIds = new Set<string>();
+      if (rows.length > 0) {
+        try {
+          const tournamentTeamsResult = await supabase
+            .from('tournament_teams')
+            .select('team_id')
+            .eq('is_tournament_only', true)
+            .in('team_id', rows.map((r) => r.team_id));
+          if (tournamentTeamsResult.error) {
+            console.warn('RoleProvider: tournament_teams fetch failed', tournamentTeamsResult.error);
+          }
+          for (const t of (tournamentTeamsResult.data ?? []) as Array<{ team_id: string }>) {
+            tournamentOnlyTeamIds.add(t.team_id);
+          }
+        } catch (err) {
+          console.warn('RoleProvider: tournament_teams fetch threw', err);
+        }
+        if (cancelled) return;
+      }
+
+      const mapped = mapTeamMemberships(rows, playerIdByTeam, tournamentOnlyTeamIds);
 
       const initialActive =
         mapped.find((m) => m.teamId === storedActiveId)?.teamId ?? mapped[0]?.teamId ?? null;

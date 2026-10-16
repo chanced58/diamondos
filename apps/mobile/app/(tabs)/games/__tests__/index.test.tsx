@@ -99,7 +99,7 @@ describe('games/index — team scoping (final review Blocking 1)', () => {
   });
 
   it('does not run an unscoped query and falls back to the empty state when there is no active team', () => {
-    mockUseRole.mockReturnValue({ activeTeam: null, loading: false });
+    mockUseRole.mockReturnValue({ activeTeam: null, memberships: [], loading: false });
 
     render(<GamesScreen />);
 
@@ -108,7 +108,7 @@ describe('games/index — team scoping (final review Blocking 1)', () => {
   });
 
   it('shows a loading indicator (not the empty state) while team membership is still resolving', () => {
-    mockUseRole.mockReturnValue({ activeTeam: null, loading: true });
+    mockUseRole.mockReturnValue({ activeTeam: null, memberships: [], loading: true });
 
     render(<GamesScreen />);
 

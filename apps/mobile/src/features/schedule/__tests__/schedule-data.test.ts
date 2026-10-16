@@ -84,6 +84,16 @@ describe('mapGameToScheduleItem', () => {
   });
 });
 
+describe('mapGameToScheduleItem — tournament games', () => {
+  it('tags a tournament game so it stands out from regular-season games', () => {
+    expect(mapGameToScheduleItem(mkGame({ tournamentId: 'cup-1' })).tag).toBe('Tournament');
+  });
+
+  it('leaves a regular game untagged', () => {
+    expect(mapGameToScheduleItem(mkGame()).tag).toBeNull();
+  });
+});
+
 describe('buildScheduleState', () => {
   it('a failed games read surfaces the full-page error, not the empty copy', () => {
     const state = buildScheduleState({

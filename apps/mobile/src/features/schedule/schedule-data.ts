@@ -36,6 +36,9 @@ export interface ScheduleItem {
   startsAt: string;
   title: string;
   detail: string | null;
+  /** Short badge shown beside the item, e.g. "Tournament" for a game played
+   * in a tournament, so it stands out from regular-season games. */
+  tag?: string | null;
   href?: Href;
 }
 
@@ -47,6 +50,8 @@ export interface ScheduleGameRow {
   /** Unix ms — `Game.scheduledAt`'s WatermelonDB type. */
   scheduledAt: number;
   status: string;
+  /** Set when the game belongs to a tournament (`Game.tournamentId`). */
+  tournamentId?: string | null;
 }
 
 export interface SchedulePracticeRow {
@@ -74,6 +79,7 @@ export function mapGameToScheduleItem(game: ScheduleGameRow): ScheduleItem {
     startsAt: new Date(game.scheduledAt).toISOString(),
     title: `Game vs ${game.opponentName || 'TBD'}`,
     detail: game.status,
+    tag: game.tournamentId ? 'Tournament' : null,
     href: OPENABLE_GAME_STATUSES.includes(game.status)
       ? ({
           pathname: '/(tabs)/games/[gameId]/score',

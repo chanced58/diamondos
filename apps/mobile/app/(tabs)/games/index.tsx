@@ -10,6 +10,8 @@ import { formatDate, formatTime, type GameRsvpStatus } from '@baseball/shared';
 import { useRole } from '../../../src/providers/RoleProvider';
 import { useGameRsvps } from '../../../src/features/rsvp/useGameRsvps';
 import { sortGamesForList } from '../../../src/features/games/sort-games-for-list';
+import { TeamSwitcher } from '../../../src/features/teams/TeamSwitcher';
+import { TournamentTag } from '../../../src/features/tournaments/TournamentTag';
 
 interface GamesListProps {
   games: Game[];
@@ -78,8 +80,11 @@ function GamesList({ games }: GamesListProps) {
           }}
         >
           <View className="flex-row justify-between items-start mb-1">
-            <Text className="font-semibold text-gray-900 text-base">vs {game.opponentName || 'TBD'}</Text>
-            <StatusBadge status={game.status} />
+            <Text className="font-semibold text-gray-900 text-base flex-1 mr-2">vs {game.opponentName || 'TBD'}</Text>
+            <View className="flex-row items-center gap-1.5">
+              {game.tournamentId ? <TournamentTag /> : null}
+              <StatusBadge status={game.status} />
+            </View>
           </View>
           <Text className="text-gray-500 text-sm">
             {formatDate(new Date(game.scheduledAt))} at {formatTime(new Date(game.scheduledAt))}
@@ -227,6 +232,7 @@ export default function GamesScreen() {
 
   return (
     <View className="flex-1 bg-gray-50">
+      <TeamSwitcher />
       {/* No active team (still resolving membership, or none) — render the
           empty state rather than falling back to an unscoped, all-teams
           query. */}

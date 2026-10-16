@@ -5,6 +5,8 @@ import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from 'react
 import { database, Game } from '../../src/db';
 import { getSupabaseClient } from '../../src/lib/supabase';
 import { useRole } from '../../src/providers/RoleProvider';
+import { TeamSwitcher } from '../../src/features/teams/TeamSwitcher';
+import { TournamentTag } from '../../src/features/tournaments/TournamentTag';
 import {
   buildScheduleState,
   SCHEDULE_FULL_PAGE_ERROR,
@@ -63,6 +65,7 @@ export default function ScheduleScreen() {
             opponentName: g.opponentName,
             scheduledAt: g.scheduledAt,
             status: g.status,
+            tournamentId: g.tournamentId ?? null,
           })),
           failed: false,
         };
@@ -134,6 +137,7 @@ export default function ScheduleScreen() {
     return (
       <>
         <Stack.Screen options={{ title: 'Schedule' }} />
+        <TeamSwitcher />
         <View className="flex-1 items-center justify-center bg-gray-50 px-6">
           <View className="w-full bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
             <Text className="text-sm text-red-700">{fullPageError}</Text>
@@ -154,6 +158,7 @@ export default function ScheduleScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Schedule' }} />
+      <TeamSwitcher />
       <FlatList
         className="bg-gray-50"
         contentContainerStyle={{ padding: 16 }}
@@ -176,7 +181,10 @@ export default function ScheduleScreen() {
         renderItem={({ item }) => {
           const content = (
             <>
-              <Text className="text-xs font-semibold uppercase text-gray-500">{item.kind}</Text>
+              <View className="flex-row items-center gap-1.5">
+                <Text className="text-xs font-semibold uppercase text-gray-500">{item.kind}</Text>
+                {item.tag === 'Tournament' ? <TournamentTag /> : null}
+              </View>
               <Text className="mt-1 font-semibold text-gray-900">{item.title}</Text>
               <Text className="mt-1 text-sm text-gray-600">
                 {new Date(item.startsAt).toLocaleString()}
