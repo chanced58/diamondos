@@ -1,8 +1,6 @@
 import { createTournamentAction } from '../../app/(app)/tournaments/actions';
-import { setTournamentModeAction } from '../../app/(app)/admin/users/actions';
-import { getTournamentAccess } from '../tournament-access';
+import { getTournamentTeamOptions } from '@baseball/database';
 
-const mockProfile = jest.fn();
 const mockRpcResult = jest.fn();
 const mockRpc = jest.fn(() => ({ single: mockRpcResult }));
 const mockGetUser = jest.fn();
@@ -11,7 +9,6 @@ const mockClient = {
   from: jest.fn(() => {
     const query = {
       select: () => query, eq: () => query, in: () => Promise.resolve({ data: mockTeams, error: null }),
-      maybeSingle: mockProfile,
     };
     return query;
   }),
@@ -38,7 +35,6 @@ function form(teamType = 'existing') {
 beforeEach(() => {
   jest.clearAllMocks();
   mockGetUser.mockResolvedValue({ data: { user: { id: 'coach' } } });
-  mockProfile.mockResolvedValue({ data: { tournament_mode_enabled: true }, error: null });
   mockRpc.mockImplementation(() => ({ single: mockRpcResult }));
   mockRpcResult.mockResolvedValue({ data: { tournament_id: 'cup', team_id: 'team', season_id: 'season' }, error: null });
   mockTeams = [];
@@ -52,20 +48,20 @@ describe('createTournamentAction', () => {
     }));
   });
 
-  it('rejects a grant revoked after page load without submitting a transaction', async () => {
-    mockProfile.mockResolvedValue({ data: { tournament_mode_enabled: false }, error: null });
-    expect(await createTournamentAction(null, form())).toContain('Tournament mode access is required');
+  it('lets any signed-in coach create a tournament without a per-user grant', async () => {
+    await expect(createTournamentAction(null, form('new'))).rejects.toThrow('/tournaments/cup');
+    expect(mockClient.from).not.toHaveBeenCalledWith('user_profiles');
+  });
+
+  it('asks a signed-out user to sign in without submitting a transaction', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } });
+    expect(await createTournamentAction(null, form())).toContain('sign in');
     expect(mockRpc).not.toHaveBeenCalled();
   });
 
   it('reports the database denial for a forged or inactive team membership', async () => {
     mockRpcResult.mockResolvedValue({ data: null, error: { code: '42501', message: 'You must be an active head coach or athletic director for the selected team' } });
     expect(await createTournamentAction(null, form())).toBe('You must be an active head coach or athletic director for the selected team.');
-  });
-
-  it('reports a grant revoked inside the transaction', async () => {
-    mockRpcResult.mockResolvedValue({ data: null, error: { code: '42501', message: 'Tournament mode permission is required' } });
-    expect(await createTournamentAction(null, form())).toBe('Tournament mode access is required to create a tournament.');
   });
 
   it('returns field validation errors before issuing an RPC', async () => {
@@ -87,18 +83,10 @@ describe('createTournamentAction', () => {
   });
 });
 
-describe('permission and team access', () => {
+describe('team access', () => {
   it('lists all eligible memberships independently of the active team', async () => {
     mockTeams = ['first', 'second'].map((id) => ({ role: 'head_coach', teams: { id, name: id, organization: null, state_code: null } }));
-    const access = await getTournamentAccess(mockClient as never, 'coach');
-    expect(access.teams.map((team) => team.id)).toEqual(['first', 'second']);
-  });
-
-  it('propagates the database denial of a non-admin permission grant', async () => {
-    mockRpc.mockImplementationOnce(() => Promise.resolve({ error: { message: 'Only platform administrators can change tournament mode permission' } }) as never);
-    const input = new FormData();
-    input.set('userId', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
-    input.set('enabled', 'true');
-    expect(await setTournamentModeAction(null, input)).toContain('Only platform administrators');
+    const teams = await getTournamentTeamOptions(mockClient as never, 'coach');
+    expect(teams.map((team) => team.id)).toEqual(['first', 'second']);
   });
 });

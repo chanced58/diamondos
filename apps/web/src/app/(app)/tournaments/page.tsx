@@ -11,12 +11,9 @@ export default async function TournamentsPage(): Promise<JSX.Element> {
   const { data: { user } } = await client.auth.getUser();
   if (!user) redirect('/login');
 
-  const [{ data: tournaments, error }, { data: profile }] = await Promise.all([
-    client.from('tournaments')
-      .select('id, name, start_date, end_date, status')
-      .order('start_date', { ascending: false }),
-    client.from('user_profiles').select('tournament_mode_enabled').eq('id', user.id).maybeSingle(),
-  ]);
+  const { data: tournaments, error } = await client.from('tournaments')
+    .select('id, name, start_date, end_date, status')
+    .order('start_date', { ascending: false });
   if (error) throw error;
 
   return (
@@ -27,20 +24,16 @@ export default async function TournamentsPage(): Promise<JSX.Element> {
           <h1 className="mt-1 text-3xl font-bold text-gray-950">Tournaments</h1>
           <p className="mt-2 text-gray-600">Create a tournament workspace and manage its games.</p>
         </div>
-        {profile?.tournament_mode_enabled && (
-          <Link href="/tournaments/new" className="rounded-lg bg-brand-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-800">
-            New Tournament
-          </Link>
-        )}
+        <Link href="/tournaments/new" className="rounded-lg bg-brand-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-800">
+          New Tournament
+        </Link>
       </div>
 
       {!tournaments?.length ? (
         <section className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
           <h2 className="text-lg font-semibold text-gray-900">No tournaments yet</h2>
           <p className="mt-2 text-sm text-gray-600">
-            {profile?.tournament_mode_enabled
-              ? 'Start a tournament with a team you administer or create a team for the event.'
-              : 'You do not have tournament mode access yet.'}
+            Enter a team you coach or create a separate tournament team with its own roster, schedule and stats.
           </p>
         </section>
       ) : (

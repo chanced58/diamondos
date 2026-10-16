@@ -90,31 +90,6 @@ export async function togglePlatformAdminAction(
   return null;
 }
 
-export async function setTournamentModeAction(
-  _prevState: string | null | undefined,
-  formData: FormData,
-): Promise<string | null> {
-  const authClient = createServerClient();
-  const { data: { user } } = await authClient.auth.getUser();
-  if (!user) return 'Not authenticated — please log in again.';
-
-  const userId = String(formData.get('userId') ?? '');
-  const enabledValue = formData.get('enabled');
-  if (!/^[0-9a-f-]{36}$/i.test(userId) || !['true', 'false'].includes(String(enabledValue))) {
-    return 'Choose a valid user and tournament mode setting.';
-  }
-
-  const { error } = await authClient.rpc('set_tournament_mode_permission', {
-    p_user_id: userId,
-    p_enabled: enabledValue === 'true',
-  });
-  if (error) return `Failed to update tournament mode access: ${error.message}`;
-
-  revalidatePath('/admin/users');
-  revalidatePath('/tournaments/new');
-  return null;
-}
-
 export async function removeFromTeamAction(
   _prevState: string | null | undefined,
   formData: FormData,

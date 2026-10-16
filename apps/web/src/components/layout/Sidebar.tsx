@@ -19,7 +19,6 @@ interface SidebarProps {
   primaryColor?: string;
   secondaryColor?: string;
   isPlatformAdmin?: boolean;
-  tournamentModeEnabled?: boolean;
   leagueId?: string;
   leagueName?: string;
   leagueSlug?: string;

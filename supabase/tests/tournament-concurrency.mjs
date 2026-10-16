@@ -79,7 +79,6 @@ assert.equal(state.eventCount, 3);
 assert.deepEqual(state.score, [0, 0]);
 console.log('PASS: two concurrent connections serialize the final slot; one extension succeeds, the retry respects the cap, and historical events/scores remain intact.');
 
-await run(`UPDATE public.user_profiles SET tournament_mode_enabled = true WHERE id = '${coachId}';`);
 const request = JSON.stringify({ name: 'Concurrent Creation', startDate: '2026-10-20', endDate: '2026-10-22',
   requestId: '79000000-0000-4000-8000-000000000001',
   team: { type: 'existing', teamId: '72000000-0000-4000-8000-000000000001' },

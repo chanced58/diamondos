@@ -2,6 +2,8 @@
 
 Status: implemented on `feature/tournament`. See [verification and remaining acceptance checks](../../tournament-verification.md).
 
+> **Amended 2026-10-16:** the tournament mode permission described throughout this spec (requested outcome, scope, permission section and acceptance list) was removed. Any signed-in user can now create a tournament. See [Permission and ownership](#permission-and-ownership).
+
 ## Requested outcome
 
 A user with an explicit **tournament mode** permission can start a new tournament, select a current team they administer or choose **Create Tournament Team**, and specify whether more than nine batters and mid-game lineup expansion/contraction are allowed.
@@ -21,6 +23,8 @@ The repository already has `leagues.league_type = 'tournament'`, league scoring 
 Recommended: dedicated tournament records linked to existing teams and games. This keeps one team's regular league rules intact and supports overlapping tournament participation. Treating each tournament as a league would reuse administration but would conflict with the current first-active-league settings lookup. A games-only tag would be cheaper but would leave ownership, permission, lifecycle, and rules without a coherent boundary.
 
 ## Permission and ownership
+
+> **Superseded 2026-10-16** (`20261016000001_open_tournament_creation_to_coaches.sql`): the per-user tournament mode grant was removed. Any signed-in user may create a tournament with **Create Tournament Team**; attaching an existing team still requires an active head coach or athletic director membership. The column, grant RPC and audit table remain only as history; nothing reads the flag. The paragraphs below describe the original design.
 
 Add `user_profiles.tournament_mode_enabled`, default false. Only platform-admin-controlled server/database operations may grant or revoke it; a user must not be able to set their own permission through profile updates. Audit grant changes with actor, target, timestamp, and old/new values using a dedicated permission audit table.
 

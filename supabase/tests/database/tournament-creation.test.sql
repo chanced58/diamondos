@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(20);
+SELECT plan(21);
 
 INSERT INTO auth.users (id, instance_id, email, aud, role, created_at, updated_at)
 VALUES
@@ -41,15 +41,20 @@ SELECT throws_ok(
   $$ UPDATE public.user_profiles SET tournament_mode_enabled = true WHERE id = '51000000-0000-4000-8000-000000000002' $$,
   '42501', NULL, 'users cannot grant tournament mode to themselves'
 );
+SELECT lives_ok(
+  $$ SELECT * FROM public.create_tournament('{"name":"Open Cup","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000001","team":{"type":"new","name":"Open Cup Team"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}'::jsonb) $$,
+  'any signed-in user can create a separate tournament team without a tournament mode grant'
+);
+
 SELECT throws_ok(
-  $$ SELECT * FROM public.create_tournament('{"name":"Denied","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000001","team":{"type":"new","name":"Denied Team"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}'::jsonb) $$,
-  '42501', NULL, 'users without tournament mode cannot create tournaments'
+  $$ SELECT * FROM public.create_tournament('{"name":"No End Date","startDate":"2026-10-20","requestId":"54000000-0000-4000-8000-000000000008","team":{"type":"new","name":"No End Date Team"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}'::jsonb) $$,
+  '22023', 'Tournament details are invalid', 'a direct request without an end date is rejected as invalid input'
 );
 
 SELECT set_config('request.jwt.claim.sub', '51000000-0000-4000-8000-000000000001', true);
 SELECT throws_ok(
   $$ SELECT * FROM public.create_tournament('{"name":"Foreign Team Cup","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000004","team":{"type":"existing","teamId":"52000000-0000-4000-8000-000000000002"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}'::jsonb) $$,
-  '42501', NULL, 'tournament-enabled users still need an active admin role on the selected team'
+  '42501', NULL, 'creators still need an active admin role on the selected team'
 );
 SELECT isnt(
   (SELECT season_id FROM public.create_tournament('{"name":"Existing Team Cup","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000002","team":{"type":"existing","teamId":"52000000-0000-4000-8000-000000000001"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}'::jsonb)),
@@ -105,11 +110,11 @@ SELECT set_config('request.jwt.claim.sub', '', true);
 UPDATE public.user_profiles SET tournament_mode_enabled = false WHERE id = '51000000-0000-4000-8000-000000000001';
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub', '51000000-0000-4000-8000-000000000001', true);
-SELECT throws_ok(
- $$ SELECT * FROM public.create_tournament('{"name":"Revoked grant","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000006","team":{"type":"new","name":"Denied team"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}') $$,
- '42501', NULL, 'revoking the grant prevents new creation');
+SELECT lives_ok(
+ $$ SELECT * FROM public.create_tournament('{"name":"Revoked grant","startDate":"2026-10-20","endDate":"2026-10-22","requestId":"54000000-0000-4000-8000-000000000006","team":{"type":"new","name":"Revoked grant team"},"lineup":{"allowExpanded":false,"allowMidGameChanges":false}}') $$,
+ 'the legacy tournament mode flag no longer gates creation');
 SELECT is((SELECT count(*) FROM public.tournaments WHERE name = 'Existing Team Cup'), 1::bigint,
- 'grant revocation preserves access to the existing tournament');
+ 'clearing the legacy flag preserves access to the existing tournament');
 RESET ROLE;
 SELECT set_config('request.jwt.claim.sub', '', true);
 UPDATE public.user_profiles SET tournament_mode_enabled = true WHERE id = '51000000-0000-4000-8000-000000000001';

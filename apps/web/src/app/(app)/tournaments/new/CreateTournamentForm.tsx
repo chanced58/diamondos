@@ -55,18 +55,22 @@ export function CreateTournamentForm({ teams, requestId }: { teams: TournamentTe
       <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <div>
           <h2 className="text-lg font-semibold text-gray-950">Tournament team</h2>
-          <p className="mt-1 text-sm text-gray-600">Select an active team you administer or create a team for this tournament.</p>
+          <p className="mt-1 text-sm text-gray-600">Enter your existing team, or create a separate tournament team that is kept completely apart from it.</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className={`cursor-pointer rounded-lg border p-4 ${teamType === 'existing' ? 'border-brand-500 bg-brand-50' : 'border-gray-200'}`}>
             <input type="radio" name="teamType" value="existing" checked={teamType === 'existing'} onChange={() => setTeamType('existing')} disabled={!teams.length} className="mr-2 accent-brand-700" />
-            <span className="font-medium text-gray-900">Use a current team</span>
-            <span className="mt-1 block pl-6 text-xs text-gray-600">For teams where you are head coach or athletic director.</span>
+            <span className="font-medium text-gray-900">Use my existing team</span>
+            <span className="mt-1 block pl-6 text-xs text-gray-600">
+              {teams.length
+                ? 'Your current roster plays the tournament. Games get their own tournament season, so regular-season stats stay separate.'
+                : 'Only available for teams where you are head coach or athletic director.'}
+            </span>
           </label>
           <label className={`cursor-pointer rounded-lg border p-4 ${teamType === 'new' ? 'border-brand-500 bg-brand-50' : 'border-gray-200'}`}>
             <input type="radio" name="teamType" value="new" checked={teamType === 'new'} onChange={() => setTeamType('new')} className="mr-2 accent-brand-700" />
             <span className="font-medium text-gray-900">Create Tournament Team</span>
-            <span className="mt-1 block pl-6 text-xs text-gray-600">Creates a separate team and roster for this event.</span>
+            <span className="mt-1 block pl-6 text-xs text-gray-600">A separate tournament with its own roster, schedule and stats. Nothing is shared with your current team.</span>
           </label>
         </div>
 
