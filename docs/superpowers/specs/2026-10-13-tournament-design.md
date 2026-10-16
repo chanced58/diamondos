@@ -2,6 +2,8 @@
 
 Status: implemented on `feature/tournament`. See [verification and remaining acceptance checks](../../tournament-verification.md).
 
+> **Amended 2026-10-16:** the tournament mode permission described throughout this spec (requested outcome, scope, permission section and acceptance list) was removed. Any signed-in user can now create a tournament. See [Permission and ownership](#permission-and-ownership).
+
 ## Requested outcome
 
 A user with an explicit **tournament mode** permission can start a new tournament, select a current team they administer or choose **Create Tournament Team**, and specify whether more than nine batters and mid-game lineup expansion/contraction are allowed.
