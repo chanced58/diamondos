@@ -1,7 +1,7 @@
 # Tournament implementation verification
 
 Branch: `feature/tournament`; worktree: `.worktrees/tournament`.
-Verified on 2026-10-14. Production migrations have not been deployed.
+Verified on 2026-10-14. Production migrations deployed 2026-10-15 (see [Production deployment](#production-deployment--2026-10-15)).
 
 ## Implemented
 
@@ -54,3 +54,13 @@ Commits `9e10575` and `31fe3d9` address all six GitHub review threads:
 - Clear a linked advancing runner from every base before placing them or recording that they scored.
 
 Regression tests reproduced the cache/history and SQL failures before the fixes. The final cancellation-ID guard also distinguishes absent IDs from string IDs, including for optional-ID inputs.
+
+## Production deployment — 2026-10-15
+
+The six tournament migrations were applied to `diamondos-prod` through the Supabase MCP `apply_migration` tool, one transaction per file, in filename order. Each recorded version was then reset to its repository timestamp (`20261013000001`–`20261014000002`). Do not use `supabase db push` against prod: most historical prod versions were recorded under apply-time timestamps rather than repository filenames.
+
+- Pre-flight: no tournament objects existed; every referenced function, column, enum value and unique key was present; no file uses `CONCURRENTLY` or enum additions.
+- The `20260523000001` version collision is local-only. Prod recorded those two files as `20260523142822` and `20260523201608`, so it did not block deployment.
+- Verification: all 16 deployed function bodies match the repository byte-for-byte (`md5(prosrc)`), along with the 3 RLS-enabled tables, 3 policies, 10 triggers, 6 constraints and the RPC `EXECUTE` grants. All 29 existing games remain non-tournament.
+- Advisors: no blocking findings. The trigger functions are reported as RPC-callable, but Postgres rejects direct calls to trigger functions. Explicit `REVOKE`s remain a hygiene follow-up, along with `(select auth.uid())` in the two read policies.
+- Not deployed by this change: `20260420000001`, `20260730000001` and `20260801000001`–`04` are still missing from prod and are tracked separately.
