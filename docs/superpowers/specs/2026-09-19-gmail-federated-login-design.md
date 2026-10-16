@@ -106,35 +106,42 @@ memory); `packages/database/src/types/supabase.ts` regenerated and
 
 ### Mobile (Expo)
 
-- New deps: `expo-web-browser`, `expo-auth-session`.
-- [`apps/mobile/src/providers/AuthProvider.tsx`](../../../apps/mobile/src/providers/AuthProvider.tsx):
-  add `signInWithGoogle()` — builds a redirect URI from the app's existing
-  `scheme: "baseballcoaches"` (`app.json`), calls `signInWithOAuth` with
-  `skipBrowserRedirect: true`, opens the result with
-  `WebBrowser.openAuthSessionAsync`, and on success either exchanges the
-  returned `code` for a session or surfaces the `error` param as a thrown
-  error the sign-in screen displays.
+- New dep: `expo-web-browser` (`expo-linking` is already installed and is
+  used to parse the returned URL).
+- [`apps/mobile/src/lib/supabase.ts`](../../../apps/mobile/src/lib/supabase.ts):
+  the client sets `flowType: 'pkce'` so GoTrue returns `?code=` (a query
+  string) rather than implicit-flow tokens in a URL fragment.
 - [`apps/mobile/app/(auth)/sign-in.tsx`](../../../apps/mobile/app/(auth)/sign-in.tsx):
-  add the Google button, and an inline error message matching the web copy
-  when `signInWithGoogle()` throws.
-- Requires `baseballcoaches://auth/callback` on Supabase's Redirect URLs
+  `handleGoogleSignIn` follows this screen's existing pattern of calling the
+  Supabase client directly (no `AuthProvider` method). It calls
+  `signInWithOAuth` with `skipBrowserRedirect: true` and the existing
+  `baseballcoaches://auth-callback` redirect (shared with magic link — no new
+  scheme), opens the result with `WebBrowser.openAuthSessionAsync`, then
+  either exchanges the returned `code` or maps the `error` param to an inline
+  message. Every exit path resets the loading state in a `finally`.
+- The email path on this screen passes `shouldCreateUser: false`, matching the
+  web `send-magic-link` route: invited users already have an auth account, and
+  letting an unknown email self-register here would let it link a Google
+  identity afterwards and sidestep the invite check.
+- Requires `baseballcoaches://auth-callback` on Supabase's Redirect URLs
   allow-list (external setup, alongside the Google Cloud OAuth client).
 
 ## Error handling
 
 | Condition | Web | Mobile |
 |---|---|---|
-| Uninvited Google account | Redirect to `/login?error=google_not_invited` | Inline error, same copy |
+| Signup rejected (`server_error`, e.g. uninvited Google account) | Redirect to `/login?error=google_not_invited` | Inline error, same copy |
 | User cancels Google consent | No-op, back on `/login` | `WebBrowser` result `type !== 'success'`, no-op |
-| Other GoTrue error | Existing `auth_failed` fallback | Same fallback copy |
+| Other GoTrue error | Existing `auth_failed` fallback | Generic "Google sign-in failed" copy |
 
-Copy: *"That Google account isn't associated with an invite. Contact your
-coach, or sign in with the email your invite was sent to."*
+Copy for a rejected signup: *"We couldn't sign you in with that Google
+account. If you haven't been invited yet, contact your coach or use the email
+your invite was sent to. Otherwise, please try again."*
 
 `server_error` is GoTrue's generic bucket for any trigger exception during
 signup — there's no distinct error code for "rejected by our trigger" vs.
-some other Postgres-level failure, so the message is intentionally generic
-rather than implying a specific cause.
+some other Postgres-level failure, so the copy deliberately does not assert
+that an invite is missing; it names the likely cause conditionally.
 
 ## External setup (outside the repo)
 
@@ -144,7 +151,7 @@ rather than implying a specific cause.
    Client ID/Secret.
 3. Supabase Dashboard → Authentication → URL Configuration: confirm the
    Redirect URLs allow-list includes both `/auth/callback` (web) and
-   `baseballcoaches://auth/callback` (mobile).
+   `baseballcoaches://auth-callback` (mobile).
 
 ## Testing
 

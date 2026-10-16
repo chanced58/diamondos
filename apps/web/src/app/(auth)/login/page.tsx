@@ -14,8 +14,20 @@ const ERROR_MESSAGES: Record<string, string> = {
     'It looks like you opened the sign-in link in a different browser or app. Please request a new link below.',
   session_expired: 'Your session has expired. Please sign in again.',
   google_not_invited:
-    "That Google account isn't associated with an invite. Contact your coach, or sign in with the email your invite was sent to.",
+    "We couldn't sign you in with that Google account. If you haven't been invited yet, contact your coach or use the email your invite was sent to. Otherwise, please try again.",
 };
+
+/**
+ * Only same-origin relative paths may ride through the OAuth round trip as
+ * the post-login destination. Backslashes are rejected because the URL
+ * parser treats `/\host` like `//host`.
+ */
+function toSafeDestination(raw: string | undefined): string | undefined {
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) {
+    return undefined;
+  }
+  return raw;
+}
 
 export default async function LoginPage({
   searchParams,
@@ -49,7 +61,7 @@ export default async function LoginPage({
               <p className="text-sm text-red-700">{errorMessage}</p>
             </div>
           )}
-          <LoginForm />
+          <LoginForm next={toSafeDestination(params.redirectTo)} />
         </div>
       </div>
     </div>

@@ -23,14 +23,24 @@ import SignInScreen from '../sign-in';
 
 const mockSignInWithOtp = jest.fn();
 const mockVerifyOtp = jest.fn();
+const mockSignInWithOAuth = jest.fn();
+const mockExchangeCodeForSession = jest.fn();
+const mockOpenAuthSession = jest.fn();
 
 jest.mock('../../../src/lib/supabase', () => ({
   getSupabaseClient: () => ({
     auth: {
       signInWithOtp: (...args: unknown[]) => mockSignInWithOtp(...args),
       verifyOtp: (...args: unknown[]) => mockVerifyOtp(...args),
+      signInWithOAuth: (...args: unknown[]) => mockSignInWithOAuth(...args),
+      exchangeCodeForSession: (...args: unknown[]) => mockExchangeCodeForSession(...args),
     },
   }),
+}));
+
+jest.mock('expo-web-browser', () => ({
+  __esModule: true,
+  openAuthSessionAsync: (...args: unknown[]) => mockOpenAuthSession(...args),
 }));
 
 jest.mock('expo-router', () => ({
@@ -172,5 +182,132 @@ describe('SignInScreen — submit buttons stay disabled on empty input', () => {
 
     fireEvent.changeText(screen.getByPlaceholderText('Enter code'), '1234');
     expect(touchableByTestId('verify-code-button').props.disabled).toBe(false);
+  });
+});
+
+describe('SignInScreen — email sign-in stays invite-only', () => {
+  it('never lets an unknown email self-register', async () => {
+    render(<SignInScreen />);
+    await goToSentBranch('new@example.com');
+
+    // An account created here could later link a Google identity and skip the
+    // invite-only trigger, so account creation must be refused at the source.
+    expect(mockSignInWithOtp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'new@example.com',
+        options: expect.objectContaining({ shouldCreateUser: false }),
+      }),
+    );
+  });
+
+  it('shows the not-registered copy when Supabase refuses to create the user', async () => {
+    render(<SignInScreen />);
+    fireEvent.changeText(screen.getByPlaceholderText('coach@school.edu'), 'new@example.com');
+    mockSignInWithOtp.mockResolvedValueOnce({ error: { message: 'Signups not allowed for otp' } });
+    fireEvent.press(touchableByTestId('send-magic-link-button'));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('This email is not registered on the platform. Contact your coach for an invite.'),
+      ).toBeTruthy(),
+    );
+    expect(screen.queryByText('Check your email')).toBeNull();
+  });
+});
+
+describe('SignInScreen — Google sign-in', () => {
+  const GOOGLE_URL = 'https://project.supabase.co/auth/v1/authorize?provider=google';
+  const REDIRECT = 'baseballcoaches://auth-callback';
+
+  beforeEach(() => {
+    mockSignInWithOAuth.mockResolvedValue({ data: { url: GOOGLE_URL }, error: null });
+  });
+
+  function pressGoogle() {
+    fireEvent.press(touchableByTestId('google-sign-in-button'));
+  }
+
+  function googleButtonEnabled() {
+    return touchableByTestId('google-sign-in-button').props.disabled === false;
+  }
+
+  it('exchanges the PKCE code from the redirect for a session', async () => {
+    mockOpenAuthSession.mockResolvedValueOnce({ type: 'success', url: `${REDIRECT}?code=pkce-code` });
+    mockExchangeCodeForSession.mockResolvedValueOnce({ error: null });
+    render(<SignInScreen />);
+
+    pressGoogle();
+
+    await waitFor(() => expect(mockExchangeCodeForSession).toHaveBeenCalledWith('pkce-code'));
+    expect(mockSignInWithOAuth).toHaveBeenCalledWith({
+      provider: 'google',
+      options: { redirectTo: REDIRECT, skipBrowserRedirect: true },
+    });
+    expect(mockOpenAuthSession).toHaveBeenCalledWith(GOOGLE_URL, REDIRECT);
+    await waitFor(() => expect(googleButtonEnabled()).toBe(true));
+  });
+
+  it('does not claim the invite is missing when the signup is rejected', async () => {
+    mockOpenAuthSession.mockResolvedValueOnce({
+      type: 'success',
+      url: `${REDIRECT}?error=server_error&error_description=Database+error+saving+new+user`,
+    });
+    render(<SignInScreen />);
+
+    pressGoogle();
+
+    await waitFor(() =>
+      expect(screen.getByText(/We couldn't sign you in with that Google account/)).toBeTruthy(),
+    );
+    expect(screen.getByText(/If you haven't been invited yet, contact your coach/)).toBeTruthy();
+    expect(mockExchangeCodeForSession).not.toHaveBeenCalled();
+    await waitFor(() => expect(googleButtonEnabled()).toBe(true));
+  });
+
+  it('uses the generic failure copy for any other OAuth error', async () => {
+    mockOpenAuthSession.mockResolvedValueOnce({ type: 'success', url: `${REDIRECT}?error=access_denied` });
+    render(<SignInScreen />);
+
+    pressGoogle();
+
+    await waitFor(() => expect(screen.getByText('Google sign-in failed. Please try again.')).toBeTruthy());
+    expect(screen.queryByText(/haven't been invited/)).toBeNull();
+  });
+
+  it('treats a cancelled browser session as a no-op, not an error', async () => {
+    mockOpenAuthSession.mockResolvedValueOnce({ type: 'cancel' });
+    render(<SignInScreen />);
+
+    pressGoogle();
+
+    await waitFor(() => expect(mockOpenAuthSession).toHaveBeenCalled());
+    await waitFor(() => expect(googleButtonEnabled()).toBe(true));
+    expect(screen.queryByText(/Google sign-in failed/)).toBeNull();
+    expect(screen.queryByText(/Something went wrong/)).toBeNull();
+    expect(mockExchangeCodeForSession).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an error when the redirect carries neither a code nor an error', async () => {
+    mockOpenAuthSession.mockResolvedValueOnce({ type: 'success', url: REDIRECT });
+    render(<SignInScreen />);
+
+    pressGoogle();
+
+    await waitFor(() =>
+      expect(screen.getByText('Something went wrong signing in with Google. Please try again.')).toBeTruthy(),
+    );
+    expect(mockExchangeCodeForSession).not.toHaveBeenCalled();
+  });
+
+  it('re-enables the button and shows an error when the browser session rejects', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockOpenAuthSession.mockRejectedValueOnce(new Error('browser unavailable'));
+    render(<SignInScreen />);
+
+    pressGoogle();
+
+    await waitFor(() => expect(screen.getByText('Google sign-in failed. Please try again.')).toBeTruthy());
+    expect(googleButtonEnabled()).toBe(true);
+    consoleError.mockRestore();
   });
 });

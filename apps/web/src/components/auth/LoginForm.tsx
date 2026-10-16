@@ -6,7 +6,12 @@ import { createBrowserClient } from '@/lib/supabase/client';
 
 type Mode = 'email' | 'sent';
 
-export function LoginForm(): JSX.Element | null {
+interface LoginFormProps {
+  /** Validated same-origin path to land on after sign-in (from `?redirectTo=`). */
+  next?: string;
+}
+
+export function LoginForm({ next }: LoginFormProps): JSX.Element | null {
   const [mode, setMode] = useState<Mode>('email');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -17,18 +22,27 @@ export function LoginForm(): JSX.Element | null {
     setGoogleLoading(true);
     setError(null);
 
-    const supabase = createBrowserClient();
-    const { error: oauthError } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    });
+    try {
+      const callbackUrl = new URL('/auth/callback', window.location.origin);
+      if (next) callbackUrl.searchParams.set('next', next);
 
-    if (oauthError) {
-      setError(oauthError.message);
+      const supabase = createBrowserClient();
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: callbackUrl.toString() },
+      });
+
+      if (oauthError) {
+        setError(oauthError.message);
+        setGoogleLoading(false);
+      }
+      // On success the browser navigates away to Google's consent screen, so
+      // the button intentionally stays disabled rather than flickering back.
+    } catch (err) {
+      console.error('[LoginForm] signInWithOAuth failed:', err);
+      setError(err instanceof Error ? err.message : 'Unable to start Google sign-in.');
       setGoogleLoading(false);
     }
-    // On success the browser navigates away to Google's consent screen —
-    // no further local state change needed.
   }
 
   async function handleMagicLink(e: React.FormEvent) {

@@ -24,9 +24,15 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OTP_PATTERN = /^\d+$/;
 
 const GOOGLE_REDIRECT_URI = 'baseballcoaches://auth-callback';
-const GOOGLE_NOT_INVITED_MESSAGE =
-  "That Google account isn't associated with an invite. Contact your coach, or sign in with the email your invite was sent to.";
+// Supabase reports a signup rejected by the invite-only DB trigger as a generic
+// `server_error`, so this copy must not assert that an invite is missing. Keep
+// it identical to `google_not_invited` in apps/web/src/app/(auth)/login/page.tsx.
+const GOOGLE_SIGNUP_REJECTED_MESSAGE =
+  "We couldn't sign you in with that Google account. If you haven't been invited yet, contact your coach or use the email your invite was sent to. Otherwise, please try again.";
 const GOOGLE_SIGNIN_FAILED_MESSAGE = 'Google sign-in failed. Please try again.';
+const GOOGLE_NO_CODE_MESSAGE = 'Something went wrong signing in with Google. Please try again.';
+const EMAIL_NOT_REGISTERED_MESSAGE =
+  'This email is not registered on the platform. Contact your coach for an invite.';
 
 /**
  * Shared by both branches of this screen so the form stays vertically
@@ -65,15 +71,23 @@ export default function SignInScreen() {
     setLoading(true);
     setError(null);
 
+    // Invite-only, matching the web `send-magic-link` route: invited users
+    // already have an auth account, so an unknown email must not self-register
+    // here (it could then link a Google identity and bypass the invite check).
     const { error: signInError } = await supabase.auth.signInWithOtp({
       email: normalizedEmail,
       options: {
+        shouldCreateUser: false,
         emailRedirectTo: 'baseballcoaches://auth-callback',
       },
     });
 
     if (signInError) {
-      setError(signInError.message);
+      setError(
+        /signups not allowed/i.test(signInError.message)
+          ? EMAIL_NOT_REGISTERED_MESSAGE
+          : signInError.message,
+      );
     } else {
       setSent(true);
     }
@@ -84,41 +98,47 @@ export default function SignInScreen() {
     setGoogleLoading(true);
     setError(null);
 
-    const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: GOOGLE_REDIRECT_URI, skipBrowserRedirect: true },
-    });
+    try {
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: GOOGLE_REDIRECT_URI, skipBrowserRedirect: true },
+      });
 
-    if (oauthError || !data?.url) {
-      setError(oauthError?.message ?? 'Unable to start Google sign-in.');
-      setGoogleLoading(false);
-      return;
-    }
+      if (oauthError || !data?.url) {
+        setError(oauthError?.message ?? 'Unable to start Google sign-in.');
+        return;
+      }
 
-    const result = await WebBrowser.openAuthSessionAsync(data.url, GOOGLE_REDIRECT_URI);
+      const result = await WebBrowser.openAuthSessionAsync(data.url, GOOGLE_REDIRECT_URI);
 
-    if (result.type !== 'success') {
       // User cancelled or dismissed the browser — not an error.
-      setGoogleLoading(false);
-      return;
-    }
+      if (result.type !== 'success') return;
 
-    const { queryParams } = Linking.parse(result.url);
+      const { queryParams } = Linking.parse(result.url);
 
-    if (queryParams?.error) {
-      setError(queryParams.error === 'server_error' ? GOOGLE_NOT_INVITED_MESSAGE : GOOGLE_SIGNIN_FAILED_MESSAGE);
-      setGoogleLoading(false);
-      return;
-    }
+      if (queryParams?.error) {
+        setError(
+          queryParams.error === 'server_error'
+            ? GOOGLE_SIGNUP_REJECTED_MESSAGE
+            : GOOGLE_SIGNIN_FAILED_MESSAGE,
+        );
+        return;
+      }
 
-    const oauthCode = queryParams?.code;
-    if (typeof oauthCode === 'string') {
+      const oauthCode = queryParams?.code;
+      if (typeof oauthCode !== 'string') {
+        setError(GOOGLE_NO_CODE_MESSAGE);
+        return;
+      }
+
       const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(oauthCode);
       if (exchangeError) setError(exchangeError.message);
-    } else {
-      setError('Something went wrong signing in with Google. Please try again.');
+    } catch (err) {
+      console.error('[sign-in] Google sign-in failed:', err);
+      setError(GOOGLE_SIGNIN_FAILED_MESSAGE);
+    } finally {
+      setGoogleLoading(false);
     }
-    setGoogleLoading(false);
   }
 
   async function handleVerifyCode() {
@@ -232,6 +252,7 @@ export default function SignInScreen() {
         <Text className="text-blue-300 mb-10">Sign in to your account</Text>
 
         <TouchableOpacity
+          testID="google-sign-in-button"
           className={`w-full bg-white rounded-xl py-3.5 items-center mb-4 ${
             googleLoading ? 'opacity-50' : ''
           }`}

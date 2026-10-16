@@ -61,7 +61,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL(`/login?error=${errorCode}`, origin));
   }
 
-  const next = (nextParam.startsWith('/') && !nextParam.startsWith('//'))
+  // Same-origin relative paths only. A backslash is rejected too: the URL
+  // parser treats `/\host` like `//host`, which would redirect off-site.
+  const next = (nextParam.startsWith('/') && !nextParam.startsWith('//') && !nextParam.includes('\\'))
     ? nextParam
     : '/dashboard';
 
