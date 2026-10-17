@@ -5,8 +5,8 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getUserAccess } from '@/lib/user-access';
-import { weAreHome } from '@baseball/shared';
 import { CalendarView, CalendarEvent } from './CalendarView';
+import { buildGameCalendarEntries } from '@/lib/schedule-calendar';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueTeamIds } from '@baseball/database';
 
@@ -82,9 +82,8 @@ export default async function SchedulePage({
     const [gamesResult, practicesResult, teamEventsResult] = await Promise.all([
       db
         .from('games')
-        .select('id, team_id, opponent_name, scheduled_at, location_type, neutral_home_team, status')
+        .select('id, team_id, opponent_name, scheduled_at, location_type, neutral_home_team, status, tournament_id')
         .in('team_id', scopeTeamIds)
-        .is('tournament_id', null)
         .neq('status', 'cancelled')
         .gte('scheduled_at', rangeStart)
         .lt('scheduled_at', rangeEnd)
@@ -109,19 +108,13 @@ export default async function SchedulePage({
     const access = await getUserAccess(activeTeam.id, user.id);
     isCoach = access.isCoach;
 
-    for (const g of gamesResult.data ?? []) {
-      const loc = weAreHome(g.location_type, g.neutral_home_team) ? 'vs' : '@';
-      const teamLabel = isLeagueView && g.team_id !== activeTeam.id ? teamNameMap[g.team_id] : null;
-      const opponent = g.opponent_name ?? 'TBD';
-      events.push({
-        id:      g.id,
-        type:    'game',
-        title:   teamLabel ? `${teamLabel}: ${loc} ${opponent}` : `${loc} ${opponent}`,
-        dateKey: toDateKey(g.scheduled_at),
-        time:    toTimeLabel(g.scheduled_at),
-        url:     `/games/${g.id}`,
-        detail:  g.status !== 'scheduled' ? g.status.replace('_', ' ') : undefined,
-      });
+    const gameEntries = buildGameCalendarEntries(gamesResult.data ?? [], {
+      activeTeamId: activeTeam.id,
+      isLeagueView,
+      teamNameMap,
+    });
+    for (const { scheduledAt, ...entry } of gameEntries) {
+      events.push({ ...entry, dateKey: toDateKey(scheduledAt), time: toTimeLabel(scheduledAt) });
     }
 
     for (const p of practicesResult.data ?? []) {
