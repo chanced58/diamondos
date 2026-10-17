@@ -33,7 +33,7 @@ export function buildGameCalendarEntries(
       const loc = weAreHome(g.location_type, g.neutral_home_team) ? 'vs' : '@';
       const teamLabel = isLeagueView && g.team_id !== activeTeamId ? teamNameMap[g.team_id] : null;
       const opponent = g.opponent_name ?? 'TBD';
-      const status = g.status !== 'scheduled' ? g.status.replace('_', ' ') : undefined;
+      const status = g.status !== 'scheduled' ? g.status.replace(/_/g, ' ') : undefined;
       const detailParts = [g.tournament_id ? 'Tournament' : null, status].filter(Boolean);
       return {
         id: g.id,
