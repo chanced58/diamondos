@@ -47,6 +47,7 @@ function mkTeam(overrides: Partial<TeamMembership> = {}): TeamMembership {
     teamName: 'Wildcats',
     role: 'head_coach',
     isCoach: true,
+    isTournamentTeam: false,
     ...overrides,
   };
 }

@@ -7,27 +7,17 @@ import React, {
   useState,
 } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { isCoachRole } from '@baseball/shared';
 import { getSupabaseClient } from '../lib/supabase';
+import {
+  mapTeamMemberships,
+  type TeamMemberRow,
+  type TeamMembership,
+} from '../features/teams/team-memberships';
 import { useAuth } from './AuthProvider';
 
+export type { TeamMembership, TeamRole } from '../features/teams/team-memberships';
+
 const ACTIVE_TEAM_KEY = 'diamondos.activeTeamId';
-
-export type TeamRole =
-  | 'head_coach'
-  | 'assistant_coach'
-  | 'scorekeeper'
-  | 'player'
-  | 'parent'
-  | 'athletic_director';
-
-export interface TeamMembership {
-  teamId: string;
-  teamName: string;
-  role: TeamRole;
-  playerId?: string;
-  isCoach: boolean;
-}
 
 interface RoleContextValue {
   loading: boolean;
@@ -84,22 +74,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
         playerIdByTeam.set(p.team_id, p.id);
       }
 
-      const rows = (membershipsResult.data ?? []) as unknown as Array<{
-        team_id: string;
-        role: string;
-        teams: { name: string } | { name: string }[] | null;
-      }>;
-
-      const mapped: TeamMembership[] = rows.map((r) => {
-        const team = Array.isArray(r.teams) ? r.teams[0] ?? null : r.teams;
-        return {
-          teamId: r.team_id,
-          teamName: team?.name ?? 'Team',
-          role: r.role as TeamRole,
-          playerId: playerIdByTeam.get(r.team_id),
-          isCoach: isCoachRole(r.role),
-        };
-      });
+      const rows = (membershipsResult.data ?? []) as unknown as TeamMemberRow[];
+      const mapped = mapTeamMemberships(rows, playerIdByTeam, new Set());
 
       const initialActive =
         mapped.find((m) => m.teamId === storedActiveId)?.teamId ?? mapped[0]?.teamId ?? null;
@@ -107,6 +83,33 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       setMemberships(mapped);
       setActiveTeamIdState(initialActive);
       setLoading(false);
+
+      if (rows.length > 0) {
+        void applyTournamentTeamTags(rows, playerIdByTeam);
+      }
+    }
+
+    // Tournament-only teams get a "Tournament" tag in the team switcher.
+    // Fetched after the teams are published so a slow or failed lookup never
+    // holds the Games and Schedule tabs on their loading state; on failure the
+    // teams simply stay untagged.
+    async function applyTournamentTeamTags(rows: TeamMemberRow[], playerIdByTeam: Map<string, string>) {
+      try {
+        const { data, error } = await getSupabaseClient()
+          .from('tournament_teams')
+          .select('team_id')
+          .eq('is_tournament_only', true)
+          .in('team_id', rows.map((r) => r.team_id));
+        if (error) {
+          console.warn('RoleProvider: tournament_teams fetch failed', error);
+          return;
+        }
+        const tournamentOnlyTeamIds = new Set(((data ?? []) as Array<{ team_id: string }>).map((t) => t.team_id));
+        if (cancelled || tournamentOnlyTeamIds.size === 0) return;
+        setMemberships(mapTeamMemberships(rows, playerIdByTeam, tournamentOnlyTeamIds));
+      } catch (err) {
+        console.warn('RoleProvider: tournament_teams fetch threw', err);
+      }
     }
 
     hydrate().catch((err) => {
@@ -122,9 +125,15 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user?.id]);
 
+  // Switch immediately; persisting the choice is best-effort so a SecureStore
+  // failure never strands the user on the previous team.
   const setActiveTeamId = useCallback(async (id: string) => {
-    await SecureStore.setItemAsync(ACTIVE_TEAM_KEY, id);
     setActiveTeamIdState(id);
+    try {
+      await SecureStore.setItemAsync(ACTIVE_TEAM_KEY, id);
+    } catch (err) {
+      console.warn('RoleProvider: could not save active team', err);
+    }
   }, []);
 
   const activeTeam = useMemo(

@@ -95,3 +95,31 @@ Deployed to `diamondos-prod` on 2026-10-16 via MCP `apply_migration`, and the ve
 - A head coach still gets their head-coach row on a new team, and can still attach their existing team.
 
 Afterwards there were 0 tournaments and no smoke rows. The new pgTAP cases were not run locally (no Docker).
+
+## Creator head-coach seat and mobile tournament path — 2026-10-16
+
+After the previous fix, the platform-admin creator of **Arizona 40+ 2026** (team Idaho Natives) could not schedule. The Add Game page admits platform admins via `getUserAccess`, but `createGameAction` checks `team_members` only. The same seat-only checks exist in web lineups, opponents and guests, `game_events` / opponent-lineup RLS, the tournament lineup guards and the mobile team list, so an admin creator could not score either.
+
+`20261016000003_tournament_creator_head_coach.sql`:
+
+- Lets a platform admin hold a seat on a tournament-only team registered to a tournament they created.
+- Seats every creator as head coach and Announcements poster. The seat is inserted after `tournament_teams`, so the exception can see it.
+- Backfills existing tournament-only teams.
+
+Promoting a user to platform admin keeps those seats.
+
+The mobile app had no team switcher, so a second team's games were unreachable. The Games and Schedule tabs now show a `TeamSwitcher` for users on two or more teams, with tournament-only teams tagged **Tournament**. Tournament games carry the same tag in both lists. There is no WatermelonDB schema change.
+
+Deployed to `diamondos-prod` on 2026-10-16 via MCP `apply_migration`, and the version was reset to `20261016000003`. Pre-flight:
+
+- `create_tournament` matched `20261016000002` (`ce850a25…`) and the platform-admin trigger matched its original.
+- The backfill had exactly one target, Idaho Natives.
+
+Afterwards the deployed body matched the repository (`b3243950…`), and the creator account was an active `head_coach` and Announcements poster on Idaho Natives. In a block that always rolls back, that account, authenticated through RLS, completed four steps:
+
+1. Scheduled an Arizona 40+ 2026 game.
+2. Saved a 9-batter lineup.
+3. Started the game through `start_tournament_game_for_user`, with rules frozen and status `in_progress`.
+4. Recorded a `pitch_thrown` event.
+
+The same account was still refused a seat on a regular team. No smoke rows remained afterwards.
