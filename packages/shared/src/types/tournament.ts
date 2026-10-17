@@ -1,4 +1,4 @@
-export type TournamentStatus = 'draft' | 'active' | 'completed' | 'archived';
+export type TournamentStatus = 'active' | 'completed' | 'archived';
 
 export type TournamentTeamSelection =
   | { type: 'existing'; teamId: string }

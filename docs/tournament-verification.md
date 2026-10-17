@@ -123,3 +123,13 @@ Afterwards the deployed body matched the repository (`b3243950…`), and the cre
 4. Recorded a `pitch_thrown` event.
 
 The same account was still refused a seat on a regular team. No smoke rows remained afterwards.
+
+## Draft status removed — 2026-10-17
+
+New tournaments were created as `draft`, and nothing ever moved them out of it, so every tournament showed as a draft. Status is display-only: no function, policy or trigger reads `tournaments.status`. `20261017000001_remove_tournament_draft_status.sql` does three things:
+
+- Moves existing drafts to `active`.
+- Defaults new rows to `active`.
+- Limits the check constraint to `active / completed / archived`.
+
+`create_tournament` never set a status, so it needed no change.

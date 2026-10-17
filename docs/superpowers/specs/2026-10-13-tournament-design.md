@@ -32,7 +32,7 @@ Check the authenticated identity, grant, and active team-admin membership on eve
 
 ## Data model and creation transaction
 
-Add `tournaments` with ID, name, creator, status (`draft`, `active`, `completed`, `archived`), dates, validated scoring settings, and an idempotency request ID scoped to creator. Add `tournament_teams` with a unique tournament/team pair, a tournament-specific season ID, and `is_tournament_only`. Add nullable `games.tournament_id` plus a relational constraint ensuring the game's team and season are registered for that tournament. Retain the existing required `games.season_id`.
+Add `tournaments` with ID, name, creator, status (`active`, `completed`, `archived`; `draft` was dropped on 2026-10-17), dates, validated scoring settings, and an idempotency request ID scoped to creator. Add `tournament_teams` with a unique tournament/team pair, a tournament-specific season ID, and `is_tournament_only`. Add nullable `games.tournament_id` plus a relational constraint ensuring the game's team and season are registered for that tournament. Retain the existing required `games.season_id`.
 
 Use a separate season for tournament games even when selecting an existing team, without changing its active regular season. This separates tournament results from regular-season statistics; pitch-rest compliance must still consider all relevant games across seasons. Aggregate/public league loaders must explicitly exclude tournament games from regular-league results unless the product later opts in.
 
@@ -47,7 +47,7 @@ Use a fixed `search_path`, qualified objects, restricted EXECUTE grants, and exp
 3. **Lineup rules**: explicitly answer **Allow more than 9 batters?** and **Allow lineup expansion/contraction during games?** Both default No for a new tournament and remain independent. Expanded lineups use a configurable cap of 10–30; otherwise the cap is 9. Mid-game changes can still be allowed for an order below the cap when expanded lineups are disabled.
 4. **Review and create**: show team and rules, disable duplicate submission, preserve entries after recoverable errors, and redirect to the tournament workspace with roster and Add Game actions.
 
-No automatic player import is implied by creating a tournament team. Existing roster management can populate it. Starting an instance creates a draft workspace; scheduling and starting games follow the existing game lifecycle.
+No automatic player import is implied by creating a tournament team. Existing roster management can populate it. Starting an instance creates an active workspace; scheduling and starting games follow the existing game lifecycle.
 
 ## Rule resolution and scoring
 
