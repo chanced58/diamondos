@@ -123,3 +123,19 @@ Afterwards the deployed body matched the repository (`b3243950…`), and the cre
 4. Recorded a `pitch_thrown` event.
 
 The same account was still refused a seat on a regular team. No smoke rows remained afterwards.
+
+## Draft status removed — 2026-10-17
+
+New tournaments were created as `draft`, and nothing ever moved them out of it, so every tournament showed as a draft. Status is display-only: no function, policy or trigger reads `tournaments.status`. `20261017000001_remove_tournament_draft_status.sql` does three things:
+
+- Moves existing drafts to `active`.
+- Defaults new rows to `active`.
+- Limits the check constraint to `active / completed / archived`.
+
+`create_tournament` never set a status, so it needed no change.
+
+Deployed to `diamondos-prod` on 2026-10-17 via MCP `apply_migration`, and the version was reset to `20261017000001`.
+
+- Arizona 40+ 2026 is now `active`, and no drafts remain.
+- The default is `'active'` and the check constraint allows only `active / completed / archived`.
+- A rolled-back `create_tournament` call returned an `active` tournament.

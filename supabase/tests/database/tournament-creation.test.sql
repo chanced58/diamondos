@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(24);
+SELECT plan(26);
 
 INSERT INTO auth.users (id, instance_id, email, aud, role, created_at, updated_at)
 VALUES
@@ -66,6 +66,8 @@ SELECT isnt(
   'existing-team tournament creates a dedicated season'
 );
 SELECT is((SELECT count(*) FROM public.tournaments WHERE name = 'Existing Team Cup'), 1::bigint, 'existing-team branch creates one tournament');
+SELECT is((SELECT status FROM public.tournaments WHERE name = 'Existing Team Cup'), 'active',
+ 'a new tournament starts active, not draft');
 SELECT ok(NOT has_function_privilege('anon', 'public.is_tournament_member(uuid,uuid)', 'EXECUTE'),
  'anonymous callers cannot invoke the membership lookup');
 SELECT ok(public.is_tournament_member((SELECT id FROM public.tournaments WHERE name = 'Existing Team Cup'),
@@ -152,5 +154,9 @@ SELECT throws_ok(
     VALUES ('52000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000004', 'head_coach') $$,
  'P0001', 'Platform administrators cannot be members of a team',
  'platform admins still cannot hold a seat on a regular team');
+RESET ROLE;
+SELECT throws_ok(
+ $$ UPDATE public.tournaments SET status = 'draft' WHERE name = 'Existing Team Cup' $$,
+ '23514', NULL, 'draft is no longer an allowed tournament status');
 SELECT * FROM finish();
 ROLLBACK;
