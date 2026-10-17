@@ -133,3 +133,9 @@ New tournaments were created as `draft`, and nothing ever moved them out of it, 
 - Limits the check constraint to `active / completed / archived`.
 
 `create_tournament` never set a status, so it needed no change.
+
+Deployed to `diamondos-prod` on 2026-10-17 via MCP `apply_migration`, and the version was reset to `20261017000001`.
+
+- Arizona 40+ 2026 is now `active`, and no drafts remain.
+- The default is `'active'` and the check constraint allows only `active / completed / archived`.
+- A rolled-back `create_tournament` call returned an `active` tournament.
