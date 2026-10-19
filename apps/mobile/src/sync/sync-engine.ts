@@ -1357,6 +1357,10 @@ export async function syncWithSupabase(): Promise<void> {
     // failure cannot cause the joined teams to be backfilled again.
     onDidPullChanges: async () => {
       if (pulledTeamIds == null) return;
+      // Notify before the save: the pulled rows are already applied, so the
+      // joined team should appear even if storage fails. A persistent save
+      // failure then costs a silent team-list reload per cycle, not a team
+      // that never shows up.
       if (teamMembershipChanged) notifyTeamMembershipChange();
       try {
         await database.localStorage.set(KNOWN_TEAMS_KEY, JSON.stringify(pulledTeamIds));
