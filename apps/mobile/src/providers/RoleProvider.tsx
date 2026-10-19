@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import * as SecureStore from 'expo-secure-store';
@@ -13,6 +14,7 @@ import {
   type TeamMemberRow,
   type TeamMembership,
 } from '../features/teams/team-memberships';
+import { subscribeToTeamMembershipChanges } from '../sync/team-backfill';
 import { useAuth } from './AuthProvider';
 
 export type { TeamMembership, TeamRole } from '../features/teams/team-memberships';
@@ -34,19 +36,32 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [memberships, setMemberships] = useState<TeamMembership[]>([]);
   const [activeTeamId, setActiveTeamIdState] = useState<string | null>(null);
+  // Bumped when the sync engine sees the user join or leave a team, so the
+  // list reloads without waiting for the next sign-in.
+  const [membershipVersion, setMembershipVersion] = useState(0);
+  // The user whose teams are already published; a reload for the same user
+  // refreshes in place instead of putting the tabs back on their spinner.
+  const hydratedUserIdRef = useRef<string | null>(null);
+
+  useEffect(
+    () => subscribeToTeamMembershipChanges(() => setMembershipVersion((version) => version + 1)),
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
 
     async function hydrate() {
       if (!user) {
+        hydratedUserIdRef.current = null;
         setMemberships([]);
         setActiveTeamIdState(null);
         setLoading(false);
         return;
       }
 
-      setLoading(true);
+      const isRefresh = hydratedUserIdRef.current === user.id;
+      if (!isRefresh) setLoading(true);
       const supabase = getSupabaseClient();
 
       const [membershipsResult, playersResult, storedActiveId] = await Promise.all([
@@ -63,6 +78,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
 
       if (membershipsResult.error) {
         console.warn('RoleProvider: team_members fetch failed', membershipsResult.error);
+        // A failed reload keeps the teams already shown.
+        if (isRefresh) return;
         setMemberships([]);
         setActiveTeamIdState(null);
         setLoading(false);
@@ -77,11 +94,20 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       const rows = (membershipsResult.data ?? []) as unknown as TeamMemberRow[];
       const mapped = mapTeamMemberships(rows, playerIdByTeam, new Set());
 
-      const initialActive =
-        mapped.find((m) => m.teamId === storedActiveId)?.teamId ?? mapped[0]?.teamId ?? null;
+      const pickActive = (current: string | null) =>
+        mapped.find((m) => m.teamId === current)?.teamId
+        ?? mapped.find((m) => m.teamId === storedActiveId)?.teamId
+        ?? mapped[0]?.teamId
+        ?? null;
 
-      setMemberships(mapped);
-      setActiveTeamIdState(initialActive);
+      hydratedUserIdRef.current = user.id;
+      // A reload carries the tags already known so the pills don't flicker
+      // off while the tag lookup below runs again.
+      setMemberships((current) => isRefresh
+        ? mapTeamMemberships(rows, playerIdByTeam, new Set(current.filter((m) => m.isTournamentTeam).map((m) => m.teamId)))
+        : mapped);
+      // A reload keeps the team the user is looking at, if they still have it.
+      setActiveTeamIdState((current) => pickActive(isRefresh ? current : null));
       setLoading(false);
 
       if (rows.length > 0) {
@@ -115,6 +141,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     hydrate().catch((err) => {
       if (cancelled) return;
       console.warn('RoleProvider: hydrate failed', err);
+      if (user && hydratedUserIdRef.current === user.id) return;
       setMemberships([]);
       setActiveTeamIdState(null);
       setLoading(false);
@@ -123,7 +150,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, [user?.id, membershipVersion]);
 
   // Switch immediately; persisting the choice is best-effort so a SecureStore
   // failure never strands the user on the previous team.

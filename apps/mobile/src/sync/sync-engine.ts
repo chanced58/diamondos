@@ -22,6 +22,17 @@ import type { Player } from '../db/models/Player';
 import { getSupabaseClient } from '../lib/supabase';
 import type { Database as RemoteDatabase, Json } from '@baseball/database';
 import { pushTournamentEventQueue, reconcilePendingSequences, type TournamentSyncRejection } from './tournament-event-sync';
+import {
+  EMPTY_TEAM_BACKFILL,
+  fetchAllByParentIds,
+  KNOWN_TEAMS_KEY,
+  loadTeamBackfill,
+  mergeRowsById,
+  notifyTeamMembershipChange,
+  parseKnownTeamIds,
+  planTeamBackfill,
+  type BackfillClient,
+} from './team-backfill';
 
 type GameEventInsert = RemoteDatabase['public']['Tables']['game_events']['Insert'];
 const TOURNAMENT_REJECTIONS_KEY = 'sync.tournamentRejections';
@@ -751,6 +762,10 @@ export async function syncWithSupabase(): Promise<void> {
   // whose events are not yet on the server).
   let eventsPushed = false;
   let syncOk = false;
+  // The user's active teams as of this pull, recorded once WatermelonDB has
+  // applied it (onDidPullChanges) so a failed backfill is retried.
+  let pulledTeamIds: string[] | null = null;
+  let teamMembershipChanged = false;
 
   try {
   await synchronize({
@@ -814,9 +829,54 @@ export async function syncWithSupabase(): Promise<void> {
         .find((e) => e != null);
       if (firstError) throw firstError;
 
+      // Rows of a team the user joined since the last pull predate the
+      // timestamp window, so read those teams in full (see team-backfill.ts).
+      // Best-effort, like deletion reconciliation: a failure here must not
+      // reject the pull and so block the push of queued events.
+      let backfill = EMPTY_TEAM_BACKFILL;
+      const membershipResult = await supabase
+        .from('team_members')
+        .select('team_id')
+        .eq('user_id', userId)
+        .eq('is_active', true);
+      if (membershipResult.error) {
+        console.warn('sync: team membership lookup failed; skipping team backfill this cycle', membershipResult.error);
+      } else {
+        const currentTeamIds = [...new Set((membershipResult.data ?? []).map((row) => row.team_id))];
+        // localStorage.get JSON-parses the stored value, so a corrupt register
+        // throws here; treat it as unknown (backfill every team) instead.
+        let storedKnownTeamIds: string | null = null;
+        try {
+          storedKnownTeamIds = (await database.localStorage.get<string>(KNOWN_TEAMS_KEY)) ?? null;
+        } catch (err) {
+          console.warn(`sync: ${KNOWN_TEAMS_KEY} is unreadable; backfilling every team`, err);
+        }
+        const { backfillTeamIds, membershipChanged } = planTeamBackfill({
+          knownTeamIds: parseKnownTeamIds(storedKnownTeamIds),
+          currentTeamIds,
+          isFirstPull: !lastPulledAt,
+        });
+        const loaded = await loadTeamBackfill(supabase as unknown as BackfillClient, {
+          currentTeamIds,
+          backfillTeamIds,
+          userId,
+        });
+        backfill = loaded.backfill;
+        pulledTeamIds = loaded.loadedTeamIds;
+        teamMembershipChanged = membershipChanged;
+      }
+
+      const pulledGameRows = mergeRowsById(backfill.games, gamesResult.data);
+      const pulledEventRows = mergeRowsById(backfill.gameEvents, eventsResult.data);
+      const pulledPlayerRows = mergeRowsById(backfill.players, playersResult.data);
+      const pulledChannelRows = mergeRowsById(backfill.channels, channelsResult.data);
+      const pulledMessageRows = mergeRowsById(backfill.messages, messagesResult.data);
+      const pulledLineupRows = mergeRowsById(backfill.gameLineups, lineupsResult.data);
+      const pulledOppPlayerRows = mergeRowsById(backfill.opponentPlayers, oppPlayersResult.data);
+
       const tournamentIds = [
         ...new Set(
-          (gamesResult.data ?? [])
+          pulledGameRows
             .map((game) => game.tournament_id)
             .filter((id): id is string => typeof id === 'string'),
         ),
@@ -841,7 +901,7 @@ export async function syncWithSupabase(): Promise<void> {
       // order, not a season), so a full read per touched game is cheap.
       const oppLineupGameIds = [
         ...new Set([
-          ...(gamesResult.data ?? []).map((g) => g.id as string),
+          ...pulledGameRows.map((g) => g.id as string),
           ...(
             await database
               .get<OpponentGameLineup>('opponent_game_lineups')
@@ -853,12 +913,14 @@ export async function syncWithSupabase(): Promise<void> {
       let oppLineupRows: Record<string, unknown>[] = [];
       let deletedOppLineupIds: string[] = [];
       if (oppLineupGameIds.length > 0) {
-        const oppLineupsResult = await supabase
-          .from('opponent_game_lineups')
-          .select('*')
-          .in('game_id', oppLineupGameIds);
-        if (oppLineupsResult.error) throw oppLineupsResult.error;
-        oppLineupRows = oppLineupsResult.data ?? [];
+        // Chunked and paged: a team backfill can put a whole history here,
+        // and a capped response would read as server-side deletions below.
+        oppLineupRows = await fetchAllByParentIds(supabase as unknown as BackfillClient, {
+          table: 'opponent_game_lineups',
+          select: '*',
+          parentColumn: 'game_id',
+          parentIds: oppLineupGameIds,
+        });
 
         // Rows the device holds for a refreshed game that the server no
         // longer has were deleted elsewhere; Postgres keeps no tombstones,
@@ -882,7 +944,7 @@ export async function syncWithSupabase(): Promise<void> {
       // coach's own roster is registered in the league too).
       const playerRowsById = new Map<string, Record<string, unknown>>();
       for (const row of leagueIdentitiesResult.data ?? []) playerRowsById.set(row.id, row);
-      for (const row of playersResult.data ?? []) playerRowsById.set(row.id, row);
+      for (const row of pulledPlayerRows) playerRowsById.set(row.id as string, row);
 
       // Lineups are mutable, so the pull needs two extra steps:
       //  1. Drop pulled rows for games with unsynced local lineup edits —
@@ -897,10 +959,10 @@ export async function syncWithSupabase(): Promise<void> {
       //    game's updated_at on every lineup change, so even a web save that
       //    EMPTIES a lineup re-pulls the game and its deletions propagate.
       const { dirtyGameIds } = pulledDirtyState;
-      const pulledLineups = (lineupsResult.data ?? []).filter(
+      const pulledLineups = pulledLineupRows.filter(
         (r) => !dirtyGameIds.has(r.game_id),
       );
-      const pulledGameIds = (gamesResult.data ?? []).map((g) => g.id);
+      const pulledGameIds = pulledGameRows.map((g) => g.id as string);
       const gamesWithLocalLineups =
         pulledGameIds.length > 0
           ? (
@@ -915,16 +977,21 @@ export async function syncWithSupabase(): Promise<void> {
       ].filter((id) => !dirtyGameIds.has(id));
       let deletedLineupIds: string[] = [];
       if (touchedGameIds.length > 0) {
-        const [serverIdsResult, localRows] = await Promise.all([
-          supabase.from('game_lineups').select('id').in('game_id', touchedGameIds),
+        // Chunked and paged for the same reason as the opponent lineups.
+        const [serverIdRows, localRows] = await Promise.all([
+          fetchAllByParentIds(supabase as unknown as BackfillClient, {
+            table: 'game_lineups',
+            select: 'id',
+            parentColumn: 'game_id',
+            parentIds: touchedGameIds,
+          }),
           database
             .get<GameLineup>('game_lineups')
             .query(Q.where('game_remote_id', Q.oneOf(touchedGameIds)))
             .fetch(),
         ]);
-        if (serverIdsResult.error) throw serverIdsResult.error;
         deletedLineupIds = computeLineupDeletes(
-          (serverIdsResult.data ?? []).map((r) => r.id),
+          serverIdRows.map((r) => String(r.id)),
           localRows.map((r) => r.id),
         );
       }
@@ -972,14 +1039,14 @@ export async function syncWithSupabase(): Promise<void> {
         changes: {
           games: {
             created: [],
-            updated: (gamesResult.data ?? []).map((game) =>
+            updated: pulledGameRows.map((game) =>
               mapGame(game, tournamentSettingsById),
             ),
             deleted: deletions.games,
           },
           game_events: {
             created: [],
-            updated: (eventsResult.data ?? []).map(mapGameEvent),
+            updated: pulledEventRows.map(mapGameEvent),
             deleted: deletions.gameEvents,
           },
           players: {
@@ -989,12 +1056,12 @@ export async function syncWithSupabase(): Promise<void> {
           },
           channels: {
             created: [],
-            updated: (channelsResult.data ?? []).map(mapChannel),
+            updated: pulledChannelRows.map(mapChannel),
             deleted: deletions.channels,
           },
           messages: {
             created: [],
-            updated: (messagesResult.data ?? []).map(mapMessage),
+            updated: pulledMessageRows.map(mapMessage),
             deleted: deletions.messages,
           },
           game_lineups: {
@@ -1016,7 +1083,7 @@ export async function syncWithSupabase(): Promise<void> {
           },
           opponent_players: {
             created: [],
-            updated: (oppPlayersResult.data ?? []).map(mapOpponentPlayer),
+            updated: pulledOppPlayerRows.map(mapOpponentPlayer),
             deleted: deletions.opponentPlayers,
           },
           opponent_game_lineups: {
@@ -1299,6 +1366,22 @@ export async function syncWithSupabase(): Promise<void> {
       }
       if (deferredErrors.length > 0) {
         throw new Error(`sync: deferred push failures — ${deferredErrors.join('; ')}`);
+      }
+    },
+
+    // Runs after the pulled rows are applied and before push, so a push
+    // failure cannot cause the joined teams to be backfilled again.
+    onDidPullChanges: async () => {
+      if (pulledTeamIds == null) return;
+      // Notify before the save: the pulled rows are already applied, so the
+      // joined team should appear even if storage fails. A persistent save
+      // failure then costs a silent team-list reload per cycle, not a team
+      // that never shows up.
+      if (teamMembershipChanged) notifyTeamMembershipChange();
+      try {
+        await database.localStorage.set(KNOWN_TEAMS_KEY, JSON.stringify(pulledTeamIds));
+      } catch (err) {
+        console.warn('sync: could not record synced teams; they will be backfilled again', err);
       }
     },
 
