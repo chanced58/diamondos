@@ -24,6 +24,7 @@ import type { Database as RemoteDatabase, Json } from '@baseball/database';
 import { pushTournamentEventQueue, reconcilePendingSequences, type TournamentSyncRejection } from './tournament-event-sync';
 import {
   EMPTY_TEAM_BACKFILL,
+  fetchAllByParentIds,
   KNOWN_TEAMS_KEY,
   loadTeamBackfill,
   mergeRowsById,
@@ -842,8 +843,16 @@ export async function syncWithSupabase(): Promise<void> {
         console.warn('sync: team membership lookup failed; skipping team backfill this cycle', membershipResult.error);
       } else {
         const currentTeamIds = [...new Set((membershipResult.data ?? []).map((row) => row.team_id))];
+        // localStorage.get JSON-parses the stored value, so a corrupt register
+        // throws here; treat it as unknown (backfill every team) instead.
+        let storedKnownTeamIds: string | null = null;
+        try {
+          storedKnownTeamIds = (await database.localStorage.get<string>(KNOWN_TEAMS_KEY)) ?? null;
+        } catch (err) {
+          console.warn(`sync: ${KNOWN_TEAMS_KEY} is unreadable; backfilling every team`, err);
+        }
         const { backfillTeamIds, membershipChanged } = planTeamBackfill({
-          knownTeamIds: parseKnownTeamIds((await database.localStorage.get<string>(KNOWN_TEAMS_KEY)) ?? null),
+          knownTeamIds: parseKnownTeamIds(storedKnownTeamIds),
           currentTeamIds,
           isFirstPull: !lastPulledAt,
         });
@@ -904,12 +913,14 @@ export async function syncWithSupabase(): Promise<void> {
       let oppLineupRows: Record<string, unknown>[] = [];
       let deletedOppLineupIds: string[] = [];
       if (oppLineupGameIds.length > 0) {
-        const oppLineupsResult = await supabase
-          .from('opponent_game_lineups')
-          .select('*')
-          .in('game_id', oppLineupGameIds);
-        if (oppLineupsResult.error) throw oppLineupsResult.error;
-        oppLineupRows = oppLineupsResult.data ?? [];
+        // Chunked and paged: a team backfill can put a whole history here,
+        // and a capped response would read as server-side deletions below.
+        oppLineupRows = await fetchAllByParentIds(supabase as unknown as BackfillClient, {
+          table: 'opponent_game_lineups',
+          select: '*',
+          parentColumn: 'game_id',
+          parentIds: oppLineupGameIds,
+        });
 
         // Rows the device holds for a refreshed game that the server no
         // longer has were deleted elsewhere; Postgres keeps no tombstones,
@@ -966,16 +977,21 @@ export async function syncWithSupabase(): Promise<void> {
       ].filter((id) => !dirtyGameIds.has(id));
       let deletedLineupIds: string[] = [];
       if (touchedGameIds.length > 0) {
-        const [serverIdsResult, localRows] = await Promise.all([
-          supabase.from('game_lineups').select('id').in('game_id', touchedGameIds),
+        // Chunked and paged for the same reason as the opponent lineups.
+        const [serverIdRows, localRows] = await Promise.all([
+          fetchAllByParentIds(supabase as unknown as BackfillClient, {
+            table: 'game_lineups',
+            select: 'id',
+            parentColumn: 'game_id',
+            parentIds: touchedGameIds,
+          }),
           database
             .get<GameLineup>('game_lineups')
             .query(Q.where('game_remote_id', Q.oneOf(touchedGameIds)))
             .fetch(),
         ]);
-        if (serverIdsResult.error) throw serverIdsResult.error;
         deletedLineupIds = computeLineupDeletes(
-          (serverIdsResult.data ?? []).map((r) => r.id),
+          serverIdRows.map((r) => String(r.id)),
           localRows.map((r) => r.id),
         );
       }

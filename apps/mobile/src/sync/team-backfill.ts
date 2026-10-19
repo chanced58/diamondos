@@ -132,21 +132,20 @@ export async function fetchTeamBackfill(
 ): Promise<TeamBackfill> {
   if (teamIds.length === 0) return EMPTY_TEAM_BACKFILL;
 
-  const byParent = (table: string, column: string, parentIds: readonly string[], select = '*') =>
-    fetchAllByParent(client, table, select, column, parentIds, pageSize);
+  const byParent = (table: string, parentColumn: string, parentIds: readonly string[], select = '*') =>
+    fetchAllByParentIds(client, { table, select, parentColumn, parentIds, pageSize });
 
   const [games, players, channels, opponentTeams] = await Promise.all([
     byParent('games', 'team_id', teamIds),
     byParent('players', 'team_id', teamIds),
-    fetchAllByParent(
-      client,
-      'channels',
-      '*, channel_members!inner(user_id, can_post)',
-      'team_id',
-      teamIds,
+    fetchAllByParentIds(client, {
+      table: 'channels',
+      select: '*, channel_members!inner(user_id, can_post)',
+      parentColumn: 'team_id',
+      parentIds: teamIds,
       pageSize,
-      (query) => query.eq('channel_members.user_id', userId),
-    ),
+      refine: (query) => query.eq('channel_members.user_id', userId),
+    }),
     byParent('opponent_teams', 'team_id', teamIds, 'id'),
   ]);
 
@@ -190,14 +189,29 @@ export async function loadTeamBackfill(
   }
 }
 
-async function fetchAllByParent(
+/**
+ * Reads every row of `table` whose `parentColumn` is one of `parentIds`: the
+ * ids go out in chunks (URL length) and each chunk is keyset-paged by `id`
+ * (PostgREST row cap). Use it wherever a missing row would be read as a
+ * server-side deletion. Throws on any failed page.
+ */
+export async function fetchAllByParentIds(
   client: BackfillClient,
-  table: string,
-  select: string,
-  parentColumn: string,
-  parentIds: readonly string[],
-  pageSize: number,
-  refine: (query: BackfillQuery) => BackfillQuery = (query) => query,
+  {
+    table,
+    select,
+    parentColumn,
+    parentIds,
+    pageSize = BACKFILL_PAGE_SIZE,
+    refine = (query) => query,
+  }: {
+    table: string;
+    select: string;
+    parentColumn: string;
+    parentIds: readonly string[];
+    pageSize?: number;
+    refine?: (query: BackfillQuery) => BackfillQuery;
+  },
 ): Promise<Row[]> {
   const rows: Row[] = [];
   for (let start = 0; start < parentIds.length; start += ID_CHUNK_SIZE) {

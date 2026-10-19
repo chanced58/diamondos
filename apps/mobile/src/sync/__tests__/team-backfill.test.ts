@@ -1,5 +1,6 @@
 import {
   EMPTY_TEAM_BACKFILL,
+  fetchAllByParentIds,
   fetchTeamBackfill,
   loadTeamBackfill,
   mergeRowsById,
@@ -175,6 +176,28 @@ describe('fetchTeamBackfill', () => {
   it('throws when any query fails, so the sync retries rather than recording the team as loaded', async () => {
     await expect(fetchTeamBackfill(fakeClient(tables, 'game_events'), ['new'], 'me'))
       .rejects.toThrow(/game_events/);
+  });
+});
+
+describe('fetchAllByParentIds', () => {
+  // 150 games, two lineup rows each: more parent ids than one request carries
+  // and more rows than one page returns.
+  const gameIds = Array.from({ length: 150 }, (_, i) => `g${String(i).padStart(3, '0')}`);
+  const lineups = gameIds.flatMap((id) => [{ id: `${id}-a`, game_id: id }, { id: `${id}-b`, game_id: id }]);
+
+  it('returns every matching row across id chunks and pages, so a capped response is never read as deletions', async () => {
+    const client = fakeClient({ game_lineups: [...lineups, { id: 'other', game_id: 'not-asked' }] });
+    const rows = await fetchAllByParentIds(client, {
+      table: 'game_lineups', select: 'id', parentColumn: 'game_id', parentIds: gameIds, pageSize: 7,
+    });
+    expect(rows.map((r) => r.id).sort()).toEqual(lineups.map((r) => r.id).sort());
+    expect(client.calls.filter((c) => c.startsWith('game_lineups')).every((c) => /:(100|50)\)$/.test(c))).toBe(true);
+  });
+
+  it('throws when a page fails, as the unpaged reads it replaces did', async () => {
+    await expect(fetchAllByParentIds(fakeClient({ game_lineups: lineups }, 'game_lineups'), {
+      table: 'game_lineups', select: 'id', parentColumn: 'game_id', parentIds: gameIds,
+    })).rejects.toThrow(/game_lineups/);
   });
 });
 
