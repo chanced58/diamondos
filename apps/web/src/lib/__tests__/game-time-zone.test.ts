@@ -18,9 +18,9 @@ describe('resolveGameTimeZone', () => {
     expect(resolveGameTimeZone({ latitude: null, longitude: null, browserTimeZone: 'America/Boise' })).toBe('America/Boise');
   });
 
-  it('ignores junk zones and bad coordinates, ending at UTC', () => {
+  it('ignores junk zones and bad coordinates, resolving no zone', () => {
     expect(
       resolveGameTimeZone({ latitude: Number.NaN, longitude: 200, existingTimeZone: 'nope', browserTimeZone: '' }),
-    ).toBe('UTC');
+    ).toBeNull();
   });
 });

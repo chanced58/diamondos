@@ -450,7 +450,7 @@ export async function updateGameAction(
   });
   let scheduledAt: string;
   try {
-    scheduledAt = zonedDateTimeToUtc(date, time, timeZone);
+    scheduledAt = zonedDateTimeToUtc(date, time, timeZone ?? 'UTC');
   } catch {
     return 'Invalid game date or time.';
   }

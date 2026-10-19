@@ -86,6 +86,11 @@ export function zonedDateTimeToUtc(date: string, time: string, timeZone: string)
   if (!isValidTimeZone(timeZone)) throw new Error(`Unknown time zone: ${timeZone}`);
 
   const wallAsUtc = Date.UTC(Number(dm[1]), Number(dm[2]) - 1, Number(dm[3]), Number(tm[1]), Number(tm[2]));
+  // Date.UTC silently rolls Feb 31 into March and 25:00 into tomorrow; refuse
+  // anything that doesn't round-trip rather than save a different day.
+  if (new Date(wallAsUtc).toISOString().slice(0, 16) !== `${date}T${tm[1]}:${tm[2]}`) {
+    throw new Error(`Invalid date/time: ${date} ${time}`);
+  }
   // Near a DST change the offset at wallAsUtc can differ from the offset at
   // the real instant, so try both offsets and keep the one that reproduces
   // the typed wall clock. In a spring-forward gap neither does; the later

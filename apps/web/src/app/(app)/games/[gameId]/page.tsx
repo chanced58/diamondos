@@ -298,6 +298,8 @@ export default async function GameDetailPage({
             opponentTeams={uniqueOpponentTeams}
             scheduledDate={scheduledDate}
             scheduledTime={scheduledTime}
+            scheduledAt={game.scheduled_at}
+            timeZone={game.time_zone}
             locationType={game.location_type}
             neutralHomeTeam={game.neutral_home_team ?? ''}
             venueName={game.venue_name ?? ''}

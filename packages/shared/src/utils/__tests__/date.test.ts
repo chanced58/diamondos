@@ -44,6 +44,14 @@ describe('zonedDateTimeToUtc', () => {
     expect(() => zonedDateTimeToUtc('10/19/2026', '12:30', 'UTC')).toThrow();
     expect(() => zonedDateTimeToUtc('2026-10-19', 'noon', 'UTC')).toThrow();
   });
+
+  it('rejects impossible calendar dates and times instead of rolling them over', () => {
+    expect(() => zonedDateTimeToUtc('2026-02-31', '12:00', 'America/Boise')).toThrow();
+    expect(() => zonedDateTimeToUtc('2026-13-01', '12:00', 'America/Boise')).toThrow();
+    expect(() => zonedDateTimeToUtc('2026-10-19', '25:00', 'America/Boise')).toThrow();
+    expect(() => zonedDateTimeToUtc('2026-10-19', '12:60', 'America/Boise')).toThrow();
+    expect(zonedDateTimeToUtc('2028-02-29', '12:00', 'UTC')).toBe('2028-02-29T12:00:00.000Z');
+  });
 });
 
 describe('utcToZonedDateTime', () => {

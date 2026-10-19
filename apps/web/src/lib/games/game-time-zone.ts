@@ -24,13 +24,15 @@ function venueTimeZone(latitude: number | null, longitude: number | null): strin
 
 /**
  * The zone a game's typed start time means: the venue's zone, else the zone
- * already saved on the game, else the coach's browser. The server itself runs
- * in UTC, so it is never a sensible default — UTC is the last resort only.
+ * already saved on the game, else the coach's browser. Null when none is
+ * known: callers read the time as UTC for now but save a null zone, so a later
+ * edit from a real browser (or with a venue) can still resolve one. The server
+ * itself runs in UTC, so its zone is never a sensible saved value.
  */
-export function resolveGameTimeZone(inputs: GameTimeZoneInputs): string {
+export function resolveGameTimeZone(inputs: GameTimeZoneInputs): string | null {
   const venue = venueTimeZone(inputs.latitude, inputs.longitude);
   if (venue) return venue;
   if (isValidTimeZone(inputs.existingTimeZone)) return inputs.existingTimeZone;
   if (isValidTimeZone(inputs.browserTimeZone)) return inputs.browserTimeZone;
-  return 'UTC';
+  return null;
 }
