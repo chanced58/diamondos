@@ -2,6 +2,7 @@ import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import * as SecureStore from 'expo-secure-store';
 import { RoleProvider, useRole } from '../RoleProvider';
+import { notifyTeamMembershipChange } from '../../sync/team-backfill';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
@@ -52,6 +53,30 @@ describe('RoleProvider', () => {
       expect(result.current.memberships.find((m) => m.teamId === 'cup-team')?.isTournamentTeam).toBe(true),
     );
     expect(result.current.activeTeam?.teamId).toBe('regular');
+  });
+
+  it('reloads the team list when the sync reports a joined team, keeping the selection and no spinner', async () => {
+    const loadingHistory: boolean[] = [];
+    const { result } = renderHook(() => {
+      const role = useRole();
+      loadingHistory.push(role.loading);
+      return role;
+    }, { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => { await result.current.setActiveTeamId('cup-team'); });
+    const settledAt = loadingHistory.length;
+
+    memberRows.push({ team_id: 'joined-team', role: 'assistant_coach', teams: { name: 'Joined' } });
+    try {
+      await act(async () => notifyTeamMembershipChange());
+      await waitFor(() =>
+        expect(result.current.memberships.map((m) => m.teamId)).toEqual(['regular', 'cup-team', 'joined-team']),
+      );
+      expect(result.current.activeTeam?.teamId).toBe('cup-team');
+      expect(loadingHistory.slice(settledAt)).not.toContain(true);
+    } finally {
+      memberRows.pop();
+    }
   });
 
   it('still switches teams when saving the choice on the device fails', async () => {
