@@ -279,7 +279,7 @@ Copy `.env.example` to `.env.local` in each app directory. Never commit `.env` f
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `apps/web/.env.local` | Supabase anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only (never client) | Supabase service role key |
 | `EXPO_PUBLIC_SUPABASE_URL` | `apps/mobile/.env.local` | Supabase project URL (mobile) |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `apps/mobile/.env.local` | Supabase anon key (mobile) |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `apps/mobile/.env.local` | Supabase anon key (mobile). This and `EXPO_PUBLIC_SUPABASE_URL` are inlined at build time; EAS builds fail fast without either (`apps/mobile/build-env.js`, run from `app.config.js`), so set them in the EAS environment for every build profile |
 | `EXPO_PUBLIC_API_BASE_URL` | `apps/mobile/.env.local` | Deployed web app base URL — the mobile sync engine calls `POST {base}/api/games/:id/finalize` to complete games ended offline |
 | `EXPO_ACCESS_TOKEN` | Supabase secrets | Expo push notification API token |
 | `APP_URL` | Supabase secrets | Base URL for invite redirect |
