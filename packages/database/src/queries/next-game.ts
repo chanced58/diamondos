@@ -38,6 +38,7 @@ interface RawGameRow {
   opponent_name: string | null;
   opponent_team_id: string | null;
   scheduled_at: string;
+  time_zone: string | null;
   location_type: string;
   neutral_home_team: string | null;
   venue_name: string | null;
@@ -63,6 +64,7 @@ function mapGame(row: RawGameRow): Game {
     opponentName: row.opponent_name,
     opponentTeamId: row.opponent_team_id ?? undefined,
     scheduledAt: row.scheduled_at,
+    timeZone: row.time_zone ?? undefined,
     locationType: row.location_type as Game['locationType'],
     neutralHomeTeam: row.neutral_home_team,
     venueName: row.venue_name ?? undefined,

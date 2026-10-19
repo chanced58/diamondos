@@ -1,10 +1,12 @@
 'use client';
 import type { JSX } from 'react';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
+import { utcToZonedDateTime } from '@baseball/shared';
 import { updateGameAction } from './actions';
 import { AddressAutocomplete } from '@/components/maps/AddressAutocomplete';
+import { BrowserTimeZoneInput } from '@/components/game/BrowserTimeZoneInput';
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -37,6 +39,9 @@ type Props = {
   defaultOpponentTeamId: string;
   defaultDate: string;   // YYYY-MM-DD
   defaultTime: string;   // HH:MM
+  scheduledAt: string;
+  /** The game's saved zone; null for games saved before zones were recorded. */
+  timeZone: string | null;
   defaultLocationType: string;
   defaultNeutralHomeTeam: string;
   defaultVenue: string;
@@ -51,6 +56,8 @@ export function EditGameForm({
   defaultOpponentTeamId,
   defaultDate,
   defaultTime,
+  scheduledAt,
+  timeZone,
   defaultLocationType,
   defaultNeutralHomeTeam,
   defaultVenue,
@@ -62,6 +69,18 @@ export function EditGameForm({
   const [locationType, setLocationType] = useState(defaultLocationType);
   const [selectedOpponentTeamId, setSelectedOpponentTeamId] = useState(defaultOpponentTeamId);
   const [opponentName, setOpponentName] = useState(defaultOpponent);
+  const [date, setDate] = useState(defaultDate);
+  const [time, setTime] = useState(defaultTime);
+
+  // A game with no saved zone was prefilled on the (UTC) server, but the save
+  // will read the fields in this browser's zone. Re-derive them here so an
+  // unchanged save keeps the same start time.
+  useEffect(() => {
+    if (timeZone) return;
+    const local = utcToZonedDateTime(scheduledAt, Intl.DateTimeFormat().resolvedOptions().timeZone);
+    setDate(local.date);
+    setTime(local.time);
+  }, [scheduledAt, timeZone]);
   // Pre-check the TBD toggle when the existing game has no opponent set,
   // so the editor reflects the current state without forcing the coach to re-toggle.
   const [opponentTbd, setOpponentTbd] = useState(!defaultOpponent);
@@ -88,6 +107,7 @@ export function EditGameForm({
       <input type="hidden" name="gameId" value={gameId} />
       <input type="hidden" name="opponentTeamId" value={selectedOpponentTeamId} />
       <input type="hidden" name="opponentTbd" value={opponentTbd ? 'on' : ''} />
+      <BrowserTimeZoneInput />
 
       {/* TBD opponent toggle — for playoff brackets where the opponent isn't decided yet */}
       <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -156,11 +176,11 @@ export function EditGameForm({
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Date <span className="text-red-500">*</span>
           </label>
-          <input type="date" name="date" required defaultValue={defaultDate} className={inputClass} />
+          <input type="date" name="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-          <input type="time" name="time" defaultValue={defaultTime} className={inputClass} />
+          <input type="time" name="time" value={time} onChange={(e) => setTime(e.target.value)} className={inputClass} />
         </div>
       </div>
 

@@ -32,7 +32,7 @@ import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
 import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, battingOrderHistory, deriveActiveBattingOrder, deriveDueBatter, resolveDueBatter, isBetweenPlateAppearances, validateLineupContraction, defaultLeagueScoringSettings, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
-import { SubstitutionType } from '@baseball/shared';
+import { SubstitutionType, isValidTimeZone, utcToZonedDateTime } from '@baseball/shared';
 import { useLeagueContext } from '../../../../src/lib/league-settings';
 import { useGameScoringSettings } from '../../../../src/lib/game-scoring-settings';
 import { initialBattingOrderSlots, lineupExtensionError, getLineupExtensionHistory } from '@baseball/shared';
@@ -726,7 +726,13 @@ export default function ScoringScreen() {
   // survives inning changes); on offense it's the opponent's. The compliance
   // chip is shown only for our own pitcher — applying our league's rule to
   // the opponent's pitcher would be meaningless.
-  const gameDateIso = game ? new Date(game.scheduledAt).toISOString() : new Date().toISOString();
+  // Rest days count from the game's local calendar day — the UTC day when the
+  // zone is unknown, matching the server's gameLocalDate. Noon UTC on that day
+  // keeps getEligibleDate's local-zone arithmetic on the same date in every
+  // US zone, DST included.
+  const gameDateIso = game
+    ? `${utcToZonedDateTime(new Date(game.scheduledAt), isValidTimeZone(game.timeZone) ? game.timeZone : 'UTC').date}T12:00:00.000Z`
+    : new Date().toISOString();
   const displayPitcherId = weBat
     ? (gameState?.currentPitcherId ?? null)
     : (ourPitcherId ?? gameState?.currentPitcherId ?? null);

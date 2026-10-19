@@ -6,13 +6,17 @@ export type ScheduleGame = {
   team_id: string;
   opponent_name: string | null;
   scheduled_at: string;
+  time_zone?: string | null;
   location_type: string;
   neutral_home_team: string | null;
   status: string;
   tournament_id: string | null;
 };
 
-export type GameCalendarEntry = Omit<CalendarEvent, 'dateKey' | 'time'> & { scheduledAt: string };
+export type GameCalendarEntry = Omit<CalendarEvent, 'dateKey' | 'time'> & {
+  scheduledAt: string;
+  timeZone: string | null;
+};
 
 /**
  * Turns the Schedule page's games into calendar entries. Tournament games
@@ -42,6 +46,7 @@ export function buildGameCalendarEntries(
         url: `/games/${g.id}`,
         detail: detailParts.length ? detailParts.join(' · ') : undefined,
         scheduledAt: g.scheduled_at,
+        timeZone: g.time_zone ?? null,
       };
     });
 }

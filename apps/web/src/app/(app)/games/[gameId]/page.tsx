@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveLeague } from '@/lib/active-league';
 import { getUserAccess } from '@/lib/user-access';
-import { formatDate, formatTime, weAreHome, type GameRsvpStatus } from '@baseball/shared';
+import { formatDate, formatTime, utcToZonedDateTime, weAreHome, type GameRsvpStatus } from '@baseball/shared';
 import { CancelGameForm } from './CancelGameForm';
 import { StartGameForm } from './StartGameForm';
 import { LocationMap } from '@/components/maps/LocationMap';
@@ -204,11 +204,9 @@ export default async function GameDetailPage({
     }
   }
 
-  // Parse date and time for the edit form using local timezone so the form
-  // shows the coach's local time, not the UTC equivalent.
-  const scheduled    = new Date(game.scheduled_at);
-  const scheduledDate = scheduled.toLocaleDateString('en-CA');                              // YYYY-MM-DD
-  const scheduledTime = scheduled.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); // HH:MM
+  // Prefill the edit form with the game-local wall clock. This page renders on
+  // a UTC server, so the host zone is never the right one.
+  const { date: scheduledDate, time: scheduledTime } = utcToZonedDateTime(game.scheduled_at, game.time_zone);
 
   // Dual scorekeeper: surface the reconciliation panel once the game is done.
   const reconciliation = isCompleted ? await loadReconciliationForGame(db, params.gameId) : null;
@@ -228,7 +226,7 @@ export default async function GameDetailPage({
               {vsAt} {opponentDisplay}
             </h1>
             <p className="text-gray-500 text-sm mt-1">
-              {formatDate(game.scheduled_at)} · {formatTime(game.scheduled_at)}
+              {formatDate(game.scheduled_at, game.time_zone)} · {formatTime(game.scheduled_at, game.time_zone)}
             </p>
           </div>
           <span
@@ -300,6 +298,8 @@ export default async function GameDetailPage({
             opponentTeams={uniqueOpponentTeams}
             scheduledDate={scheduledDate}
             scheduledTime={scheduledTime}
+            scheduledAt={game.scheduled_at}
+            timeZone={game.time_zone}
             locationType={game.location_type}
             neutralHomeTeam={game.neutral_home_team ?? ''}
             venueName={game.venue_name ?? ''}
@@ -364,13 +364,13 @@ export default async function GameDetailPage({
           <div className="flex px-5 py-3 gap-4">
             <dt className="text-sm text-gray-500 w-32 shrink-0">Date</dt>
             <dd className="text-sm font-medium text-gray-900">
-              {formatDate(game.scheduled_at)}
+              {formatDate(game.scheduled_at, game.time_zone)}
             </dd>
           </div>
           <div className="flex px-5 py-3 gap-4">
             <dt className="text-sm text-gray-500 w-32 shrink-0">Time</dt>
             <dd className="text-sm font-medium text-gray-900">
-              {formatTime(game.scheduled_at)}
+              {formatTime(game.scheduled_at, game.time_zone)}
             </dd>
           </div>
           <div className="flex px-5 py-3 gap-4">

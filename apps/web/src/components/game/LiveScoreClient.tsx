@@ -7,6 +7,7 @@ import type { Database } from '@baseball/database';
 import {
   deriveGameState,
   filterResetAndReverted,
+  formatInTimeZone,
   weAreHome,
   type EventType,
   type GameEvent,
@@ -241,7 +242,7 @@ export function LiveScoreClient({
           </div>
           <div style={{ color: 'rgba(255,255,255,.7)', marginTop: 4, fontSize: 13 }}>
             {game.venue_name ?? 'Venue TBD'} ·{' '}
-            {new Date(game.scheduled_at).toLocaleString([], {
+            {formatInTimeZone(game.scheduled_at, game.time_zone, {
               weekday: 'short',
               month: 'short',
               day: 'numeric',

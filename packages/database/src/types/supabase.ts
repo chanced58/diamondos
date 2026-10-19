@@ -788,6 +788,7 @@ export type Database = {
           started_at: string | null
           status: Database["public"]["Enums"]["game_status"]
           team_id: string
+          time_zone: string | null
           tournament_id: string | null
           updated_at: string
           venue_name: string | null
@@ -819,6 +820,7 @@ export type Database = {
           started_at?: string | null
           status?: Database["public"]["Enums"]["game_status"]
           team_id: string
+          time_zone?: string | null
           tournament_id?: string | null
           updated_at?: string
           venue_name?: string | null
@@ -850,6 +852,7 @@ export type Database = {
           started_at?: string | null
           status?: Database["public"]["Enums"]["game_status"]
           team_id?: string
+          time_zone?: string | null
           tournament_id?: string | null
           updated_at?: string
           venue_name?: string | null

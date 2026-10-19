@@ -20,6 +20,9 @@ type GameEditProps = {
   opponentTeams: OpponentTeamOption[];
   scheduledDate: string;   // YYYY-MM-DD
   scheduledTime: string;   // HH:MM
+  scheduledAt: string;
+  /** Null for games saved before zones were recorded. */
+  timeZone: string | null;
   locationType: string;
   neutralHomeTeam: string;
   venueName: string;
@@ -73,6 +76,8 @@ export function EditGameButton(props: GameEditProps): JSX.Element {
               defaultOpponentTeamId={props.opponentTeamId}
               defaultDate={props.scheduledDate}
               defaultTime={props.scheduledTime}
+              scheduledAt={props.scheduledAt}
+              timeZone={props.timeZone}
               defaultLocationType={props.locationType}
               defaultNeutralHomeTeam={props.neutralHomeTeam}
               defaultVenue={props.venueName}

@@ -23,6 +23,8 @@ export interface Game {
   /** Optional FK to a structured opponent_teams record. */
   opponentTeamId?: string;
   scheduledAt: string;
+  /** IANA zone scheduledAt is shown in (venue's, else the scheduler's browser). Absent = unknown. */
+  timeZone?: string;
   locationType: GameLocationType;
   /** When location_type is 'neutral', which team is designated home: 'us' or 'opponent'. */
   neutralHomeTeam?: string | null;

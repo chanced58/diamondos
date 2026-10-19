@@ -7,6 +7,7 @@ interface CreatedGame {
   team_id: string;
   opponent_team_id: string | null;
   scheduled_at: string;
+  time_zone?: string | null;
   location_type: string;
   neutral_home_team: string | null;
   venue_name: string | null;
@@ -125,6 +126,7 @@ export async function provisionMirrorGame(
         opponent_name: homeTeam?.name ?? 'Opponent',
         opponent_team_id: null,
         scheduled_at: game.scheduled_at,
+        time_zone: game.time_zone ?? null,
         location_type: mirrorLocationType,
         neutral_home_team: mirrorNeutralHomeTeam,
         venue_name: game.venue_name,

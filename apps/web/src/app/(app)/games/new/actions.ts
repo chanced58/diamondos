@@ -3,9 +3,10 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { formatDate, formatTime } from '@baseball/shared';
+import { formatDate, formatTime, zonedDateTimeToUtc } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
 import { provisionMirrorGame } from '@/lib/dual-scorekeeper/provision';
+import { resolveGameTimeZone } from '@/lib/games/game-time-zone';
 
 export async function createGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
@@ -38,7 +39,20 @@ export async function createGameAction(_prevState: string | null | undefined, fo
   if (!opponentTbd && !opponent) return 'Opponent name is required.';
   if (!date)                     return 'Game date is required.';
 
-  const scheduledAt = new Date(`${date}T${time}`).toISOString();
+  // The typed time is wall-clock at the venue (or the coach's browser when no
+  // venue was picked). This action runs in UTC, so never let `new Date()`
+  // interpret it.
+  const timeZone = resolveGameTimeZone({
+    latitude,
+    longitude,
+    browserTimeZone: formData.get('browserTimeZone') as string | null,
+  });
+  let scheduledAt: string;
+  try {
+    scheduledAt = zonedDateTimeToUtc(date, time, timeZone ?? 'UTC');
+  } catch {
+    return 'Invalid game date or time.';
+  }
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -138,6 +152,7 @@ export async function createGameAction(_prevState: string | null | undefined, fo
       opponent_name: opponentTbd ? null : opponent,
       opponent_team_id: opponentTbd ? null : validatedOpponentTeamId,
       scheduled_at:  scheduledAt,
+      time_zone:     timeZone,
       location_type:     locationType,
       neutral_home_team: neutralHomeTeam,
       venue_name:        venue,
@@ -165,7 +180,7 @@ export async function createGameAction(_prevState: string | null | undefined, fo
   if (!opponentTbd && formData.get('notifyTeam') === 'on') {
     const locationLabel =
       locationType === 'home' ? 'Home' : locationType === 'away' ? 'Away' : 'Neutral site';
-    const msg = `📅 New game scheduled: vs. ${opponent} — ${formatDate(scheduledAt)} at ${formatTime(scheduledAt)} (${locationLabel})`;
+    const msg = `📅 New game scheduled: vs. ${opponent} — ${formatDate(scheduledAt, timeZone)} at ${formatTime(scheduledAt, timeZone)} (${locationLabel})`;
     await postEventAlert(supabase, teamId, user.id, msg);
   }
 

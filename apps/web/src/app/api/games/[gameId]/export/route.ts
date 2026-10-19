@@ -15,6 +15,7 @@ import JSZip from 'jszip';
 import {
   toHomeTeamPlayerStatsCsv,
   toHomeTeamTeamStatsCsv,
+  utcToZonedDateTime,
   type HomeTeamPlayerExportRow,
 } from '@baseball/shared';
 import { createServerClient } from '@/lib/supabase/server';
@@ -97,7 +98,7 @@ export async function GET(
 
   const { game, teamName, isHome, lineScore } = bundle;
   const opponent = game.opponentName ?? '';
-  const date = game.scheduledAt ? game.scheduledAt.slice(0, 10) : null;
+  const date = game.scheduledAt ? utcToZonedDateTime(game.scheduledAt, game.timeZone).date : null;
 
   // ── Merge batting / pitching / fielding into one row per player ──────────────
   const rosterById = new Map(bundle.roster.map((p) => [p.id, p]));

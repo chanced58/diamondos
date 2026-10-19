@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import {
   formatDate,
+  zonedDateTimeToUtc,
   weAreHome,
   EventType,
   conflictKey,
@@ -23,6 +24,7 @@ import {
   deriveScoresFromEvents,
   finalizeGame,
 } from '@/lib/games/finalize';
+import { resolveGameTimeZone } from '@/lib/games/game-time-zone';
 
 export async function cancelGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
@@ -40,7 +42,7 @@ export async function cancelGameAction(_prevState: string | null | undefined, fo
   // Verify user is a coach on this team
   const { data: game } = await supabase
     .from('games')
-    .select('team_id, opponent_name, scheduled_at')
+    .select('team_id, opponent_name, scheduled_at, time_zone')
     .eq('id', gameId)
     .single();
 
@@ -69,7 +71,7 @@ export async function cancelGameAction(_prevState: string | null | undefined, fo
 
   // Skip the announcement when opponent is TBD — "Game vs. null" helps no one.
   if (game.opponent_name && formData.get('notifyTeam') === 'on') {
-    const msg = `⚠️ Game vs. ${game.opponent_name} on ${formatDate(game.scheduled_at)} has been cancelled.`;
+    const msg = `⚠️ Game vs. ${game.opponent_name} on ${formatDate(game.scheduled_at, game.time_zone)} has been cancelled.`;
     await postEventAlert(supabase, game.team_id, user.id, msg);
   }
 
@@ -346,7 +348,7 @@ export async function updateGameAction(
 
   const { data: game } = await supabase
     .from('games')
-    .select('team_id, status')
+    .select('team_id, status, time_zone')
     .eq('id', gameId)
     .single();
   if (!game) return 'Game not found.';
@@ -424,9 +426,6 @@ export async function updateGameAction(
     }
   }
 
-  const [year, month, day] = date.split('-').map(Number);
-  const [hour, minute]     = time.split(':').map(Number);
-  const scheduledAt        = new Date(Date.UTC(year, month - 1, day, hour, minute)).toISOString();
   const locationType = (formData.get('locationType') as string) || 'home';
   const neutralHomeTeam = locationType === 'neutral'
     ? ((formData.get('neutralHomeTeam') as string) || 'us')
@@ -441,12 +440,28 @@ export async function updateGameAction(
   const latitude  = latRaw ? parseFloat(latRaw) : null;
   const longitude = lngRaw ? parseFloat(lngRaw) : null;
 
+  // Wall-clock at the venue; see createGameAction. Without new coordinates the
+  // game keeps the zone it was scheduled in.
+  const timeZone = resolveGameTimeZone({
+    latitude,
+    longitude,
+    existingTimeZone: game.time_zone,
+    browserTimeZone: formData.get('browserTimeZone') as string | null,
+  });
+  let scheduledAt: string;
+  try {
+    scheduledAt = zonedDateTimeToUtc(date, time, timeZone ?? 'UTC');
+  } catch {
+    return 'Invalid game date or time.';
+  }
+
   const { error } = await supabase
     .from('games')
     .update({
       opponent_name:     opponentTbd ? null : opponent,
       opponent_team_id:  opponentTbd ? null : opponentTeamId,
       scheduled_at:      scheduledAt,
+      time_zone:         timeZone,
       location_type:     locationType,
       neutral_home_team: neutralHomeTeam,
       venue_name:        venue,

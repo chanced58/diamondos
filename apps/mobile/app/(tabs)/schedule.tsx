@@ -7,6 +7,7 @@ import { getSupabaseClient } from '../../src/lib/supabase';
 import { useRole } from '../../src/providers/RoleProvider';
 import { TeamSwitcher } from '../../src/features/teams/TeamSwitcher';
 import { TournamentTag } from '../../src/features/tournaments/TournamentTag';
+import { formatInTimeZone } from '@baseball/shared';
 import {
   buildScheduleState,
   SCHEDULE_FULL_PAGE_ERROR,
@@ -64,6 +65,7 @@ export default function ScheduleScreen() {
             teamId: g.teamId,
             opponentName: g.opponentName,
             scheduledAt: g.scheduledAt,
+            timeZone: g.timeZone ?? null,
             status: g.status,
             tournamentId: g.tournamentId ?? null,
           })),
@@ -187,7 +189,13 @@ export default function ScheduleScreen() {
               </View>
               <Text className="mt-1 font-semibold text-gray-900">{item.title}</Text>
               <Text className="mt-1 text-sm text-gray-600">
-                {new Date(item.startsAt).toLocaleString()}
+                {formatInTimeZone(item.startsAt, item.timeZone, {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
               </Text>
               {item.detail ? <Text className="mt-1 text-xs text-gray-500">{item.detail}</Text> : null}
             </>

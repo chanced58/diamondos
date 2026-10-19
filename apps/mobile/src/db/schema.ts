@@ -11,7 +11,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
  * next launch.
  */
 export const schema = appSchema({
-  version: 4,
+  version: 5,
   tables: [
     tableSchema({
       name: 'games',
@@ -22,6 +22,7 @@ export const schema = appSchema({
         { name: 'opponent_name', type: 'string' },
         { name: 'opponent_team_id', type: 'string', isOptional: true, isIndexed: true },
         { name: 'scheduled_at', type: 'number' },           // Unix ms timestamp
+        { name: 'time_zone', type: 'string', isOptional: true }, // IANA zone scheduled_at is shown in
         { name: 'location_type', type: 'string' },
         { name: 'neutral_home_team', type: 'string', isOptional: true },
         { name: 'venue_name', type: 'string', isOptional: true },

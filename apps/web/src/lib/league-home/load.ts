@@ -9,6 +9,7 @@ import {
   mergeWithThemeDefaults,
   leagueLeaderConfigSchema,
   DEFAULT_LEADER_CONFIG,
+  formatDate,
   weAreHome,
   type LeaderRow,
   type RankedLeaderRow,
@@ -357,7 +358,7 @@ export async function getLeagueHomeData(
         .limit(6),
       db
         .from('games')
-        .select('id, team_id, opponent_name, scheduled_at')
+        .select('id, team_id, opponent_name, scheduled_at, time_zone')
         .in('team_id', teamIds)
         .is('tournament_id', null)
         .eq('status', 'scheduled')
@@ -375,7 +376,7 @@ export async function getLeagueHomeData(
     recent = (recentGames ?? []).map((g) => mapRecentGame(g, teamNameById.get(g.team_id) ?? 'Team', g.team_id));
     upcoming = (upcomingGames ?? []).map((g) => ({
       id: g.id,
-      label: `${teamNameById.get(g.team_id) ?? 'Team'} vs ${g.opponent_name} — ${new Date(g.scheduled_at).toLocaleDateString()}`,
+      label: `${teamNameById.get(g.team_id) ?? 'Team'} vs ${g.opponent_name} — ${formatDate(g.scheduled_at, g.time_zone)}`,
     }));
   }
 
