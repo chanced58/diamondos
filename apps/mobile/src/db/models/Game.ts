@@ -17,6 +17,8 @@ export class Game extends Model {
   /** Set when the opponent is a tracked opponent_teams row — the key to their roster. */
   @field('opponent_team_id') opponentTeamId!: string | undefined;
   @field('scheduled_at') scheduledAt!: number;
+  /** IANA zone to show scheduledAt in; undefined = unknown, use the device zone. */
+  @field('time_zone') timeZone!: string | undefined;
   @field('location_type') locationType!: string;
   @field('neutral_home_team') neutralHomeTeam!: string | undefined;
   @field('venue_name') venueName!: string | undefined;

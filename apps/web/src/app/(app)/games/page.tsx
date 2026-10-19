@@ -9,6 +9,7 @@ import { CalendarView, CalendarEvent } from './CalendarView';
 import { buildGameCalendarEntries } from '@/lib/schedule-calendar';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueTeamIds } from '@baseball/database';
+import { formatTime, utcToZonedDateTime } from '@baseball/shared';
 
 export const metadata: Metadata = { title: 'Schedule' };
 
@@ -21,16 +22,14 @@ function parseMonth(raw: string | undefined): { year: number; month: number } {
   return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
-function toTimeLabel(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+// This page renders on a UTC server: pass the game's zone so a 7 PM game
+// isn't labeled 2 AM and filed under the next day. Without one, the host zone.
+function toTimeLabel(iso: string, timeZone?: string | null) {
+  return formatTime(iso, timeZone);
 }
 
-function toDateKey(iso: string) {
-  const d = new Date(iso);
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${mo}-${day}`;
+function toDateKey(iso: string, timeZone?: string | null) {
+  return utcToZonedDateTime(iso, timeZone).date;
 }
 
 export default async function SchedulePage({
@@ -78,15 +77,22 @@ export default async function SchedulePage({
 
     const rangeStart = new Date(year, month - 1, 1).toISOString();
     const rangeEnd   = new Date(year, month, 1).toISOString();
+    // Games are filed by their game-local day, which can sit up to a day off
+    // the UTC month bounds above (a 7 PM Phoenix game on the 31st is the 1st
+    // in UTC). Fetch a day of slack each side, then keep this month's days.
+    const dayMs = 24 * 60 * 60 * 1000;
+    const gamesRangeStart = new Date(new Date(year, month - 1, 1).getTime() - dayMs).toISOString();
+    const gamesRangeEnd   = new Date(new Date(year, month, 1).getTime() + dayMs).toISOString();
+    const monthPrefix = `${year}-${String(month).padStart(2, '0')}-`;
 
     const [gamesResult, practicesResult, teamEventsResult] = await Promise.all([
       db
         .from('games')
-        .select('id, team_id, opponent_name, scheduled_at, location_type, neutral_home_team, status, tournament_id')
+        .select('id, team_id, opponent_name, scheduled_at, time_zone, location_type, neutral_home_team, status, tournament_id')
         .in('team_id', scopeTeamIds)
         .neq('status', 'cancelled')
-        .gte('scheduled_at', rangeStart)
-        .lt('scheduled_at', rangeEnd)
+        .gte('scheduled_at', gamesRangeStart)
+        .lt('scheduled_at', gamesRangeEnd)
         .order('scheduled_at'),
       db
         .from('practices')
@@ -113,8 +119,10 @@ export default async function SchedulePage({
       isLeagueView,
       teamNameMap,
     });
-    for (const { scheduledAt, ...entry } of gameEntries) {
-      events.push({ ...entry, dateKey: toDateKey(scheduledAt), time: toTimeLabel(scheduledAt) });
+    for (const { scheduledAt, timeZone, ...entry } of gameEntries) {
+      const dateKey = toDateKey(scheduledAt, timeZone);
+      if (!dateKey.startsWith(monthPrefix)) continue;
+      events.push({ ...entry, dateKey, time: toTimeLabel(scheduledAt, timeZone) });
     }
 
     for (const p of practicesResult.data ?? []) {

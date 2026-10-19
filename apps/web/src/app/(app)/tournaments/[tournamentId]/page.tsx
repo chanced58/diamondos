@@ -2,7 +2,7 @@ import type { JSX } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { mergeWithDefaults } from '@baseball/shared';
+import { formatInTimeZone, mergeWithDefaults } from '@baseball/shared';
 import { createServerClient } from '@/lib/supabase/server';
 
 export const metadata: Metadata = { title: 'Tournament — DiamondOS' };
@@ -26,7 +26,7 @@ export default async function TournamentWorkspacePage({
 
   const { data: games, error: gamesError } = await client
     .from('games')
-    .select('id, opponent_name, scheduled_at, status, location_type')
+    .select('id, opponent_name, scheduled_at, time_zone, status, location_type')
     .eq('tournament_id', tournament.id)
     .order('scheduled_at');
   if (gamesError) throw gamesError;
@@ -78,7 +78,7 @@ export default async function TournamentWorkspacePage({
               <li key={game.id}>
                 <Link href={`/games/${game.id}`} className="flex flex-wrap items-center justify-between gap-2 py-3 hover:text-brand-700">
                   <span className="font-medium">{game.opponent_name ?? 'Opponent TBD'}</span>
-                  <span className="text-sm text-gray-500">{new Date(game.scheduled_at).toLocaleString()} · {game.status.replace('_', ' ')}</span>
+                  <span className="text-sm text-gray-500">{formatInTimeZone(game.scheduled_at, game.time_zone, { dateStyle: 'short', timeStyle: 'short' })} · {game.status.replace('_', ' ')}</span>
                 </Link>
               </li>
             ))}

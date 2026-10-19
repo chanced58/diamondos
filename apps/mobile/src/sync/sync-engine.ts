@@ -1682,6 +1682,7 @@ function mapGame(
     opponent_name: r.opponent_name ?? '',
     opponent_team_id: r.opponent_team_id ?? null,
     scheduled_at: new Date(r.scheduled_at as string).getTime(),
+    time_zone: typeof r.time_zone === 'string' ? r.time_zone : null,
     location_type: r.location_type,
     neutral_home_team: r.neutral_home_team ?? null,
     venue_name: r.venue_name ?? null,

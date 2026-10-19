@@ -34,6 +34,8 @@ export interface ScheduleItem {
    * WatermelonDB as a Unix-ms number and must be normalised before reaching
    * this type, because the merged list is sorted with `localeCompare`. */
   startsAt: string;
+  /** IANA zone to show startsAt in (games only); absent = the device zone. */
+  timeZone?: string | null;
   title: string;
   detail: string | null;
   /** Short badge shown beside the item, e.g. "Tournament" for a game played
@@ -49,6 +51,8 @@ export interface ScheduleGameRow {
   opponentName: string;
   /** Unix ms — `Game.scheduledAt`'s WatermelonDB type. */
   scheduledAt: number;
+  /** `Game.timeZone` — the zone the coach scheduled the game in. */
+  timeZone?: string | null;
   status: string;
   /** Set when the game belongs to a tournament (`Game.tournamentId`). */
   tournamentId?: string | null;
@@ -77,6 +81,7 @@ export function mapGameToScheduleItem(game: ScheduleGameRow): ScheduleItem {
     id: `game:${game.remoteId}`,
     kind: 'game',
     startsAt: new Date(game.scheduledAt).toISOString(),
+    timeZone: game.timeZone ?? null,
     title: `Game vs ${game.opponentName || 'TBD'}`,
     detail: game.status,
     tag: game.tournamentId ? 'Tournament' : null,

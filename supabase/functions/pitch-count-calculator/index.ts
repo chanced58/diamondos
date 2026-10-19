@@ -17,6 +17,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { resolveEffectiveTier } from '../_shared/resolve-tier.ts';
+import { gameLocalDate } from '../_shared/game-local-date.ts';
 
 /** Stub stamped by pre-a071a02 scoring sessions when no active pitcher was selected. */
 const UNKNOWN_PITCHER_STUB = 'unknown-pitcher';
@@ -107,7 +108,7 @@ Deno.serve(async (req: Request) => {
   // 2. Fetch game date and season for compliance lookup
   const { data: game, error: gameError } = await supabase
     .from('games')
-    .select('season_id, scheduled_at, team_id')
+    .select('season_id, scheduled_at, time_zone, team_id')
     .eq('id', gameId)
     .single();
 
@@ -119,7 +120,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const gameDate = game.scheduled_at.split('T')[0];
+  const gameDate = gameLocalDate(game.scheduled_at, game.time_zone);
 
   // 3. Upsert pitch_counts row
   const { error: upsertError } = await supabase.from('pitch_counts').upsert(

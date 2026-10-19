@@ -80,6 +80,7 @@ async function persistTournamentCache(
       record.teamId = teamId;
       record.opponentName = String(gameRow.opponent_name ?? '');
       record.scheduledAt = new Date(String(gameRow.scheduled_at)).getTime();
+      record.timeZone = typeof gameRow.time_zone === 'string' ? gameRow.time_zone : undefined;
       record.locationType = String(gameRow.location_type ?? 'home');
       record.neutralHomeTeam =
         gameRow.neutral_home_team == null ? undefined : String(gameRow.neutral_home_team);
@@ -187,7 +188,7 @@ export function useGameScoringSettings(gameId: string | undefined): GameScoringS
         const { data: gameRow, error: gameError } = await supabase
           .from('games')
           .select(
-            'id, team_id, season_id, opponent_name, scheduled_at, location_type, neutral_home_team, venue_name, status, home_score, away_score, current_inning, is_top_of_inning, outs, tournament_id, scoring_settings_snapshot',
+            'id, team_id, season_id, opponent_name, scheduled_at, time_zone, location_type, neutral_home_team, venue_name, status, home_score, away_score, current_inning, is_top_of_inning, outs, tournament_id, scoring_settings_snapshot',
           )
           .eq('id', currentGameId)
           .maybeSingle();

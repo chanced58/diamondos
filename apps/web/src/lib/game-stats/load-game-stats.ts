@@ -47,6 +47,7 @@ export interface GameStatsBundle {
     seasonId: string | null;
     opponentTeamId: string | null;
     scheduledAt: string | null;
+    timeZone: string | null;
   };
   teamName: string;
   isHome: boolean;
@@ -72,7 +73,7 @@ export async function loadGameStats(
   const { data: game, error: gameError } = await db
     .from('games')
     .select(
-      'id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, season_id, opponent_team_id, scheduled_at',
+      'id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, season_id, opponent_team_id, scheduled_at, time_zone',
     )
     .eq('id', gameId)
     .single();
@@ -273,6 +274,7 @@ export async function loadGameStats(
       seasonId: game.season_id,
       opponentTeamId: game.opponent_team_id,
       scheduledAt: game.scheduled_at,
+      timeZone: game.time_zone,
     },
     teamName,
     isHome,

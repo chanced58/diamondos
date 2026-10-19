@@ -5,7 +5,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { createClient } from '@supabase/supabase-js';
 import { getActiveTeam } from '@/lib/active-team';
 import { getUserAccess } from '@/lib/user-access';
-import { formatTime, weAreHome } from '@baseball/shared';
+import { formatInTimeZone, formatTime, weAreHome } from '@baseball/shared';
 import { NewAnnouncementForm } from '../messages/NewAnnouncementForm';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueTeamIds, type Database } from '@baseball/database';
@@ -32,6 +32,8 @@ type UpcomingItem = {
   kind: 'game' | 'practice' | 'event';
   id: string;
   date: string;
+  /** Game's zone; null for practices/events and unknown-zone games (host zone). */
+  timeZone: string | null;
   label: string;
   sublabel: string | null;
   href: string;
@@ -40,6 +42,7 @@ type UpcomingItem = {
 type RecentGame = {
   id: string;
   date: string;
+  timeZone: string | null;
   opponent: string | null;
   ourScore: number;
   theirScore: number;
@@ -121,7 +124,7 @@ export default async function DashboardPage({
     announcementChannelsResult,
   ] = await Promise.all([
     db.from('games')
-      .select('id, team_id, opponent_name, scheduled_at, location_type, neutral_home_team, venue_name')
+      .select('id, team_id, opponent_name, scheduled_at, time_zone, location_type, neutral_home_team, venue_name')
       .in('team_id', scopeTeamIds)
       .eq('status', 'scheduled')
       .gte('scheduled_at', now)
@@ -146,7 +149,7 @@ export default async function DashboardPage({
       .lte('starts_at', fourWeeksOut)
       .order('starts_at'),
     db.from('games')
-      .select('id, team_id, opponent_name, scheduled_at, location_type, neutral_home_team, home_score, away_score, completed_at')
+      .select('id, team_id, opponent_name, scheduled_at, time_zone, location_type, neutral_home_team, home_score, away_score, completed_at')
       .in('team_id', scopeTeamIds)
       .eq('status', 'completed')
       .order('completed_at', { ascending: false })
@@ -229,6 +232,7 @@ export default async function DashboardPage({
         kind: 'game' as const,
         id: g.id,
         date: g.scheduled_at,
+        timeZone: g.time_zone,
         label: `${isHome ? 'vs' : '@'} ${g.opponent_name}`,
         sublabel: parts.join(' · '),
         href: `/games/${g.id}`,
@@ -238,6 +242,7 @@ export default async function DashboardPage({
       kind: 'practice' as const,
       id: p.id,
       date: p.scheduled_at,
+      timeZone: null,
       label: 'Practice',
       sublabel: p.location ?? (p.duration_minutes ? `${p.duration_minutes} min` : null),
       href: `/practices/${p.id}`,
@@ -246,6 +251,7 @@ export default async function DashboardPage({
       kind: 'event' as const,
       id: e.id,
       date: e.starts_at,
+      timeZone: null,
       label: e.title,
       sublabel: EVENT_TYPE_LABELS[e.event_type] ?? e.event_type,
       href: `/games/events/${e.id}`,
@@ -263,6 +269,7 @@ export default async function DashboardPage({
     return {
       id: g.id,
       date: g.completed_at ?? g.scheduled_at,
+      timeZone: g.time_zone,
       opponent: teamLabel ? `${teamLabel}: ${g.opponent_name}` : g.opponent_name,
       ourScore,
       theirScore,
@@ -382,7 +389,7 @@ export default async function DashboardPage({
                   <em className="display-it" style={{ color: 'var(--turf-200)' }}>{nextGame.opponent_name}</em>
                 </div>
                 <div style={{ color: 'rgba(255,255,255,.75)', marginTop: 6, fontSize: 13 }}>
-                  {new Date(nextGame.scheduled_at).toLocaleString([], {
+                  {formatInTimeZone(nextGame.scheduled_at, nextGame.time_zone, {
                     weekday: 'long',
                     month: 'short',
                     day: 'numeric',
@@ -521,7 +528,6 @@ export default async function DashboardPage({
               const lost = g.ourScore < g.theirScore;
               const result: 'W' | 'L' | 'T' = won ? 'W' : lost ? 'L' : 'T';
               const tone: 'safe' | 'danger' | 'info' = won ? 'safe' : lost ? 'danger' : 'info';
-              const d = new Date(g.date);
               return (
                 <li key={g.id} style={{ borderTop: '1px solid var(--app-border)' }}>
                   <Link
@@ -537,9 +543,9 @@ export default async function DashboardPage({
                   >
                     <div style={{ width: 44, textAlign: 'center', flexShrink: 0 }}>
                       <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--app-fg-muted)', textTransform: 'uppercase' }}>
-                        {d.toLocaleDateString('en-US', { month: 'short' })}
+                        {formatInTimeZone(g.date, g.timeZone, { month: 'short' })}
                       </div>
-                      <div className="display" style={{ fontSize: 22 }}>{d.getDate()}</div>
+                      <div className="display" style={{ fontSize: 22 }}>{formatInTimeZone(g.date, g.timeZone, { day: 'numeric' })}</div>
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 14 }}>
@@ -599,7 +605,6 @@ function UpcomingListCard({
       ) : (
         <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
           {items.map((item) => {
-            const d = new Date(item.date);
             const kindLabel = { game: 'Game', practice: 'Practice', event: item.sublabel ?? 'Event' };
             return (
               <li key={`${item.kind}-${item.id}`} style={{ borderTop: '1px solid var(--app-border)' }}>
@@ -625,19 +630,19 @@ function UpcomingListCard({
                         letterSpacing: 0.08,
                       }}
                     >
-                      {d.toLocaleDateString('en-US', { month: 'short' })}
+                      {formatInTimeZone(item.date, item.timeZone, { month: 'short' })}
                     </div>
                     <div
                       className="display"
                       style={{ fontSize: 22, color: 'var(--app-fg)', letterSpacing: '-0.02em' }}
                     >
-                      {d.getDate()}
+                      {formatInTimeZone(item.date, item.timeZone, { day: 'numeric' })}
                     </div>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{item.label}</div>
                     <div style={{ fontSize: 12, color: 'var(--app-fg-muted)' }}>
-                      {formatTime(item.date)}
+                      {formatTime(item.date, item.timeZone)}
                       {item.sublabel && <span> · {item.sublabel}</span>}
                     </div>
                   </div>

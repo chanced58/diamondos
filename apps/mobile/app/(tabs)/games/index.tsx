@@ -87,7 +87,7 @@ function GamesList({ games }: GamesListProps) {
             </View>
           </View>
           <Text className="text-gray-500 text-sm">
-            {formatDate(new Date(game.scheduledAt))} at {formatTime(new Date(game.scheduledAt))}
+            {formatDate(new Date(game.scheduledAt), game.timeZone)} at {formatTime(new Date(game.scheduledAt), game.timeZone)}
           </Text>
           {game.venueName && (
             <Text className="text-gray-400 text-xs mt-0.5">{game.venueName}</Text>

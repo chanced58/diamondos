@@ -14,6 +14,7 @@ import {
   deriveOpponentTendencies,
   generatePrepPractice,
   EventType,
+  formatInTimeZone,
   PracticeDrillDeficitPriority,
   type DerivedScoutingTag,
   type GameEvent,
@@ -110,7 +111,7 @@ export default async function PrepNewPage({ searchParams }: PageProps): Promise<
         <h1 className="text-2xl font-bold text-gray-900 mt-2">Prep for next game</h1>
         <p className="text-gray-500 text-sm mt-1">
           {activeTeam.name} vs{' '}
-          <strong className="text-gray-900">{nextGame.opponentName}</strong> · {formatGameDate(nextGame.scheduledAt)}
+          <strong className="text-gray-900">{nextGame.opponentName}</strong> · {formatGameDate(nextGame.scheduledAt, nextGame.timeZone)}
         </p>
       </div>
 
@@ -410,8 +411,7 @@ function computeDefaultScheduledAt(gameIso: string, now: Date): string {
   return target.toISOString();
 }
 
-function formatGameDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+function formatGameDate(iso: string, timeZone?: string): string {
+  return formatInTimeZone(iso, timeZone, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 

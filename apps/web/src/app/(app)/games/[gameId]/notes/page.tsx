@@ -90,7 +90,7 @@ export default async function GameNotesPage({
         {vsAt} {game.opponent_name} — Notes
       </h1>
       <p className="text-gray-500 text-sm mt-0.5">
-        {formatDate(game.scheduled_at)} · {formatTime(game.scheduled_at)}
+        {formatDate(game.scheduled_at, game.time_zone)} · {formatTime(game.scheduled_at, game.time_zone)}
       </p>
     </div>
   );

@@ -100,5 +100,16 @@ export const migrations = schemaMigrations({
         }),
       ],
     },
+    {
+      // v5: the zone a game's start time is shown in, so the phone shows the
+      // same game-local time as the web regardless of the device's zone.
+      toVersion: 5,
+      steps: [
+        addColumns({
+          table: 'games',
+          columns: [{ name: 'time_zone', type: 'string', isOptional: true }],
+        }),
+      ],
+    },
   ],
 });

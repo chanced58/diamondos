@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { updateGameAction } from './actions';
 import { AddressAutocomplete } from '@/components/maps/AddressAutocomplete';
+import { BrowserTimeZoneInput } from '@/components/game/BrowserTimeZoneInput';
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -88,6 +89,7 @@ export function EditGameForm({
       <input type="hidden" name="gameId" value={gameId} />
       <input type="hidden" name="opponentTeamId" value={selectedOpponentTeamId} />
       <input type="hidden" name="opponentTbd" value={opponentTbd ? 'on' : ''} />
+      <BrowserTimeZoneInput />
 
       {/* TBD opponent toggle — for playoff brackets where the opponent isn't decided yet */}
       <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
