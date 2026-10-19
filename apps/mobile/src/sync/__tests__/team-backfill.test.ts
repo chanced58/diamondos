@@ -1,5 +1,7 @@
 import {
+  EMPTY_TEAM_BACKFILL,
   fetchTeamBackfill,
+  loadTeamBackfill,
   mergeRowsById,
   notifyTeamMembershipChange,
   parseKnownTeamIds,
@@ -173,6 +175,39 @@ describe('fetchTeamBackfill', () => {
   it('throws when any query fails, so the sync retries rather than recording the team as loaded', async () => {
     await expect(fetchTeamBackfill(fakeClient(tables, 'game_events'), ['new'], 'me'))
       .rejects.toThrow(/game_events/);
+  });
+});
+
+describe('loadTeamBackfill', () => {
+  const tables: Record<string, Row[]> = { games: [{ id: 'g1', team_id: 'new' }] };
+
+  it('records every current team once the backfill succeeds', async () => {
+    const result = await loadTeamBackfill(fakeClient(tables), {
+      currentTeamIds: ['old', 'new'], backfillTeamIds: ['new'], userId: 'me',
+    });
+    expect(result.backfill.games.map((r) => r.id)).toEqual(['g1']);
+    expect(result.loadedTeamIds).toEqual(['old', 'new']);
+  });
+
+  it('skips the backfill without throwing, and leaves the failed teams unrecorded, so queued events still push', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = await loadTeamBackfill(fakeClient(tables, 'games'), {
+        currentTeamIds: ['old', 'new'], backfillTeamIds: ['new'], userId: 'me',
+      });
+      expect(result.backfill).toEqual(EMPTY_TEAM_BACKFILL);
+      expect(result.loadedTeamIds).toEqual(['old']);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('team backfill failed'), ['new'], expect.any(Error));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('makes no requests when no team needs a backfill', async () => {
+    const client = fakeClient(tables);
+    const result = await loadTeamBackfill(client, { currentTeamIds: ['old'], backfillTeamIds: [], userId: 'me' });
+    expect(result).toEqual({ backfill: EMPTY_TEAM_BACKFILL, loadedTeamIds: ['old'] });
+    expect(client.calls).toEqual([]);
   });
 });
 

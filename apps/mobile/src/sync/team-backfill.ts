@@ -11,7 +11,8 @@
  * Each pull compares the user's active teams against the set recorded after
  * the previous pull and re-reads every synced table from the beginning for
  * the teams that are new. The register is written only after WatermelonDB
- * has applied the pull, so a failed backfill is retried on the next cycle.
+ * has applied the pull, and a team whose backfill failed is left out of it,
+ * so the next cycle retries that team.
  */
 
 export const KNOWN_TEAMS_KEY = 'sync.knownTeamIds';
@@ -161,6 +162,32 @@ export async function fetchTeamBackfill(
   ]);
 
   return { games, gameEvents, gameLineups, players, channels, messages, opponentPlayers };
+}
+
+/**
+ * Best-effort wrapper around `fetchTeamBackfill` for the pull. A failure must
+ * not reject the pull: WatermelonDB would then skip the push, holding queued
+ * game events on the device for as long as a large backfill keeps failing on
+ * a weak connection. The failed teams are left out of `loadedTeamIds`, so
+ * they stay "new" and are retried next cycle.
+ */
+export async function loadTeamBackfill(
+  client: BackfillClient,
+  { currentTeamIds, backfillTeamIds, userId }: {
+    currentTeamIds: readonly string[];
+    backfillTeamIds: readonly string[];
+    userId: string;
+  },
+): Promise<{ backfill: TeamBackfill; loadedTeamIds: string[] }> {
+  if (backfillTeamIds.length === 0) return { backfill: EMPTY_TEAM_BACKFILL, loadedTeamIds: [...currentTeamIds] };
+  try {
+    const backfill = await fetchTeamBackfill(client, backfillTeamIds, userId);
+    return { backfill, loadedTeamIds: [...currentTeamIds] };
+  } catch (error) {
+    console.warn('sync: team backfill failed; retrying next cycle', backfillTeamIds, error);
+    const pending = new Set(backfillTeamIds);
+    return { backfill: EMPTY_TEAM_BACKFILL, loadedTeamIds: currentTeamIds.filter((id) => !pending.has(id)) };
+  }
 }
 
 async function fetchAllByParent(

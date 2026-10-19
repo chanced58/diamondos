@@ -24,8 +24,8 @@ import type { Database as RemoteDatabase, Json } from '@baseball/database';
 import { pushTournamentEventQueue, reconcilePendingSequences, type TournamentSyncRejection } from './tournament-event-sync';
 import {
   EMPTY_TEAM_BACKFILL,
-  fetchTeamBackfill,
   KNOWN_TEAMS_KEY,
+  loadTeamBackfill,
   mergeRowsById,
   notifyTeamMembershipChange,
   parseKnownTeamIds,
@@ -830,23 +830,32 @@ export async function syncWithSupabase(): Promise<void> {
 
       // Rows of a team the user joined since the last pull predate the
       // timestamp window, so read those teams in full (see team-backfill.ts).
+      // Best-effort, like deletion reconciliation: a failure here must not
+      // reject the pull and so block the push of queued events.
+      let backfill = EMPTY_TEAM_BACKFILL;
       const membershipResult = await supabase
         .from('team_members')
         .select('team_id')
         .eq('user_id', userId)
         .eq('is_active', true);
-      if (membershipResult.error) throw membershipResult.error;
-      const currentTeamIds = [...new Set((membershipResult.data ?? []).map((row) => row.team_id))];
-      const { backfillTeamIds, membershipChanged } = planTeamBackfill({
-        knownTeamIds: parseKnownTeamIds((await database.localStorage.get<string>(KNOWN_TEAMS_KEY)) ?? null),
-        currentTeamIds,
-        isFirstPull: !lastPulledAt,
-      });
-      const backfill = backfillTeamIds.length > 0
-        ? await fetchTeamBackfill(supabase as unknown as BackfillClient, backfillTeamIds, userId)
-        : EMPTY_TEAM_BACKFILL;
-      pulledTeamIds = currentTeamIds;
-      teamMembershipChanged = membershipChanged;
+      if (membershipResult.error) {
+        console.warn('sync: team membership lookup failed; skipping team backfill this cycle', membershipResult.error);
+      } else {
+        const currentTeamIds = [...new Set((membershipResult.data ?? []).map((row) => row.team_id))];
+        const { backfillTeamIds, membershipChanged } = planTeamBackfill({
+          knownTeamIds: parseKnownTeamIds((await database.localStorage.get<string>(KNOWN_TEAMS_KEY)) ?? null),
+          currentTeamIds,
+          isFirstPull: !lastPulledAt,
+        });
+        const loaded = await loadTeamBackfill(supabase as unknown as BackfillClient, {
+          currentTeamIds,
+          backfillTeamIds,
+          userId,
+        });
+        backfill = loaded.backfill;
+        pulledTeamIds = loaded.loadedTeamIds;
+        teamMembershipChanged = membershipChanged;
+      }
 
       const pulledGameRows = mergeRowsById(backfill.games, gamesResult.data);
       const pulledEventRows = mergeRowsById(backfill.gameEvents, eventsResult.data);
