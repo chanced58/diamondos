@@ -107,6 +107,7 @@ pnpm --filter mobile build:android
 - TestFlight builds use the `production` profile in `apps/mobile/eas.json` (EAS project `cd5813s-team/baseball-coaches-app`, linked via `app.json` `owner` + `extra.eas.projectId`). Build numbers live on EAS (`appVersionSource: remote`, `autoIncrement`). Ship one with `cd apps/mobile && eas build -p ios --profile production --auto-submit`.
 - The build image is pinned to the Xcode that builds the app locally (`macos-tahoe-26.5-xcode-26.6`). Don't use `latest` (it tracks Xcode release candidates) or the `sdk-51` alias (Xcode 15.4, too old for App Store uploads).
 - `EXPO_PUBLIC_*` values come from the EAS `production` environment, not `.env.local` (see Environment Variables).
+- `app.json` declares `ios.config.usesNonExemptEncryption: false` (the app uses only standard HTTPS/OS crypto), so TestFlight builds don't stop at "Missing Compliance". Revisit it if the app ever adds its own encryption.
 
 #### Local iOS Release builds (Xcode / physical device)
 ```bash
