@@ -83,7 +83,7 @@ describe('games/index — team scoping (final review Blocking 1)', () => {
 
     expect(mockQuery).toHaveBeenCalledWith(
       Q.where('team_id', 'huskies-team-id'),
-      Q.sortBy('scheduled_at', Q.desc),
+      Q.sortBy('scheduled_at', Q.asc),
     );
   });
 
@@ -92,10 +92,10 @@ describe('games/index — team scoping (final review Blocking 1)', () => {
 
     expect(mockQuery).toHaveBeenCalledWith(
       Q.where('team_id', 'jokers-team-id'),
-      Q.sortBy('scheduled_at', Q.desc),
+      Q.sortBy('scheduled_at', Q.asc),
     );
     // Never called with just the sort clause (the old, unscoped query).
-    expect(mockQuery).not.toHaveBeenCalledWith(Q.sortBy('scheduled_at', Q.desc));
+    expect(mockQuery).not.toHaveBeenCalledWith(Q.sortBy('scheduled_at', Q.asc));
   });
 
   it('does not run an unscoped query and falls back to the empty state when there is no active team', () => {
