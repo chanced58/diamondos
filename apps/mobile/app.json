@@ -2,6 +2,7 @@
   "expo": {
     "name": "DiamondOS",
     "slug": "baseball-coaches-app",
+    "owner": "cd5813s-team",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -48,6 +49,11 @@
     "scheme": "baseballcoaches",
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "574b8cd7-1f4e-4da7-9fdf-a7fd793eba01"
+      }
     }
   }
 }
