@@ -87,6 +87,9 @@ function mapRowToEvent(row: EventRow): GameEvent {
   };
 }
 
+/** Postgres unique_violation. */
+const UNIQUE_VIOLATION = '23505';
+
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
 function Dot({ filled, color }: { filled: boolean; color: string }) {
@@ -1013,6 +1016,14 @@ export function ScoringBoard({
         })
     : 'Choose an active batting slot.';
 
+  // Record the current opponent PA without a named batter (per-PA only).
+  function skipOpponentSlot() {
+    setSkippedSlots((prev) => new Set(prev).add(expectedOpponentSlot));
+    setAssignBatterPlayerId('');
+    setAssignBatterPosition('');
+    setAssignBatterError(null);
+  }
+
   // Clear skipped-slot dismissals when the active slot changes (skip is per-PA only)
   useEffect(() => {
     setSkippedSlots(new Set());
@@ -1262,11 +1273,33 @@ export function ScoringBoard({
       if (isDemo) return newRow.id as string;
 
       const supabase = createBrowserClient();
-      const { error: upsertError } = await supabase.from('game_events').upsert(
+      const persistRow = async () => (await supabase.from('game_events').upsert(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         newRow as any,
         { onConflict: 'id', ignoreDuplicates: true },
-      );
+      )).error;
+      let upsertError = await persistRow();
+      // Another scorer (e.g. the phone this game was started on) took this
+      // sequence number before its insert reached us over Realtime. Duplicate
+      // ids are ignored above, so a unique violation here is the
+      // (game_id, sequence_number) constraint: move past the server's highest
+      // number and retry, keeping the optimistic row in step.
+      for (let attempt = 0; upsertError?.code === UNIQUE_VIOLATION && attempt < 3; attempt++) {
+        const { data: latest } = await supabase
+          .from('game_events')
+          .select('sequence_number')
+          .eq('game_id', game.id)
+          .order('sequence_number', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const retrySeq = Math.max(nextSeqNum.current, ((latest?.sequence_number as number | undefined) ?? 0) + 1);
+        nextSeqNum.current = retrySeq + 1;
+        newRow.sequence_number = retrySeq;
+        setEventRows((prev) => prev
+          .map((row) => (row.id === newRow.id ? { ...newRow } : row))
+          .sort((a, b) => (a.sequence_number as number) - (b.sequence_number as number)));
+        upsertError = await persistRow();
+      }
       if (upsertError) {
         console.error('[ScoringBoard] Failed to persist event:', eventType, upsertError);
         // Roll back the optimistic insert so local state matches what is actually persisted.
@@ -1889,6 +1922,10 @@ export function ScoringBoard({
   }
 
   // Pitch outcome buttons are enabled once all enabled annotations are filled in
+  // The field location is required before an in-play result only while
+  // spray-chart capture is on (a phone game can turn hit location off).
+  const sprayPointMissing = localConfig.sprayChart && !sprayPoint;
+
   const pitchAnnotationsReady =
     (!localConfig.pitchType     || pitchType    !== null) &&
     (!localConfig.pitchLocation || zoneLocation !== null);
@@ -2170,7 +2207,16 @@ export function ScoringBoard({
                 <p className="text-xs text-red-600 mb-2">{assignBatterError}</p>
               )}
               {availablePlayers.length === 0 ? (
-                <p className="text-xs text-blue-700">No unassigned roster players remaining.</p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-xs text-blue-700">No unassigned roster players remaining.</p>
+                  <button
+                    type="button"
+                    onClick={skipOpponentSlot}
+                    className="text-sm text-blue-700 hover:text-blue-900 transition-colors"
+                  >
+                    Skip
+                  </button>
+                </div>
               ) : (
                 <div className="flex flex-wrap items-end gap-2">
                   <div>
@@ -2215,12 +2261,7 @@ export function ScoringBoard({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setSkippedSlots((prev) => new Set(prev).add(expectedOpponentSlot));
-                      setAssignBatterPlayerId('');
-                      setAssignBatterPosition('');
-                      setAssignBatterError(null);
-                    }}
+                    onClick={skipOpponentSlot}
                     className="text-sm text-blue-700 hover:text-blue-900 transition-colors"
                   >
                     Skip
@@ -2282,7 +2323,7 @@ export function ScoringBoard({
             ) : inPlayPending ? (
               <div className="space-y-3">
                 {/* Field spray chart — hidden during out-assignment step (already captured) */}
-                {!outAssignmentPending && (
+                {!outAssignmentPending && localConfig.sprayChart && (
                   <SprayChartPicker value={sprayPoint} onChange={setSprayPoint} />
                 )}
 
@@ -2709,7 +2750,7 @@ export function ScoringBoard({
                         <button
                           key={value}
                           onClick={() => setPendingResult(value)}
-                          disabled={!sprayPoint}
+                          disabled={sprayPointMissing}
                           className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:hover:bg-gray-50"
                         >
                           {label}
@@ -2717,13 +2758,13 @@ export function ScoringBoard({
                       ))}
                       <button
                         onClick={() => setPendingResult('error')}
-                        disabled={!sprayPoint}
+                        disabled={sprayPointMissing}
                         className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:hover:bg-red-50"
                       >
                         Error
                       </button>
                     </div>
-                    {!sprayPoint && (
+                    {sprayPointMissing && (
                       <p className="text-xs text-gray-400 mt-2">Tap the field above to mark where the ball was hit</p>
                     )}
                   </div>
