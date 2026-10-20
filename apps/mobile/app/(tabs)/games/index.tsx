@@ -214,7 +214,7 @@ function StatusBadge({ status }: { status: string }) {
 const GamesListEnhanced = withObservables(['teamId'], ({ teamId }: { teamId: string }) => ({
   games: database
     .get<Game>('games')
-    .query(Q.where('team_id', teamId), Q.sortBy('scheduled_at', Q.desc))
+    .query(Q.where('team_id', teamId), Q.sortBy('scheduled_at', Q.asc))
     .observe()
     .pipe(map(sortGamesForList)),
 }))((GamesListobs: { games: Game[] }) => <GamesList games={GamesListobs.games} />);
