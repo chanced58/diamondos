@@ -3,9 +3,20 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { formatInTimeZone, mergeWithDefaults } from '@baseball/shared';
+import type { StatTier } from '@baseball/shared';
 import { createServerClient } from '@/lib/supabase/server';
+import { getTeamTier } from '@/lib/team-tier';
+import { loadTournamentPlayerStats } from '@/lib/tournament-player-stats';
+import { BattingStatsTable } from '../../compliance/BattingStatsTable';
+import { PitchingStatsTable } from '../../compliance/PitchingStatsTable';
 
 export const metadata: Metadata = { title: 'Tournament — DiamondOS' };
+
+function statTierForTeamLevel(level: string | null | undefined): StatTier {
+  if (level === 'youth' || level === 'middle_school') return 'youth';
+  if (level === 'college' || level === 'pro') return 'college';
+  return 'high_school';
+}
 
 export default async function TournamentWorkspacePage({
   params,
@@ -18,7 +29,7 @@ export default async function TournamentWorkspacePage({
 
   const { data: tournament, error } = await client
     .from('tournaments')
-    .select('id, name, start_date, end_date, status, scoring_settings, tournament_teams(team_id, season_id, is_tournament_only, teams(id, name))')
+    .select('id, name, start_date, end_date, status, scoring_settings, tournament_teams(team_id, season_id, is_tournament_only, teams(id, name, level))')
     .eq('id', params.tournamentId)
     .maybeSingle();
   if (error) throw error;
@@ -35,6 +46,18 @@ export default async function TournamentWorkspacePage({
   if (!participant) notFound();
   const team = Array.isArray(participant.teams) ? participant.teams[0] : participant.teams;
   const settings = mergeWithDefaults(tournament.scoring_settings);
+
+  // Read through the viewer's RLS client: stats show only what the viewer
+  // could already see on the team's own pages.
+  const [playerStats, subscriptionTier] = await Promise.all([
+    loadTournamentPlayerStats(client, {
+      tournamentId: tournament.id,
+      teamId: participant.team_id,
+      seasonId: participant.season_id,
+    }),
+    getTeamTier(participant.team_id),
+  ]);
+  const statTier = statTierForTeamLevel(team?.level);
 
   return (
     <main className="mx-auto max-w-5xl p-8">
@@ -85,6 +108,34 @@ export default async function TournamentWorkspacePage({
           </ul>
         ) : (
           <p className="mt-4 text-sm text-gray-500">No games scheduled yet.</p>
+        )}
+      </section>
+      <section className="mt-8 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-950">Player stats</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          {playerStats.scoredGameCount === 0
+            ? 'Stats appear here once a tournament game is scored.'
+            : `From ${playerStats.scoredGameCount} scored ${playerStats.scoredGameCount === 1 ? 'game' : 'games'}. Tournament stats are kept separate from the regular season.`}
+        </p>
+        {playerStats.scoredGameCount > 0 && (
+          <div className="mt-5 space-y-6">
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-gray-900">Batting</h3>
+              {playerStats.batting.length ? (
+                <BattingStatsTable stats={playerStats.batting} tier={statTier} subscriptionTier={subscriptionTier} />
+              ) : (
+                <p className="text-sm text-gray-500">No plate appearances recorded yet.</p>
+              )}
+            </div>
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-gray-900">Pitching</h3>
+              {playerStats.pitching.length ? (
+                <PitchingStatsTable stats={playerStats.pitching} tier={statTier} subscriptionTier={subscriptionTier} />
+              ) : (
+                <p className="text-sm text-gray-500">No pitches recorded yet.</p>
+              )}
+            </div>
+          </div>
         )}
       </section>
     </main>

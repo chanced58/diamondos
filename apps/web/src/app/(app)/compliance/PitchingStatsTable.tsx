@@ -15,8 +15,9 @@ type ComplianceInfo = {
 
 type Props = {
   stats: PitchingStats[];
-  complianceMap: Record<string, ComplianceInfo>;
-  today: string;
+  /** Omit (with `today`) to hide the Rest column, e.g. outside the compliance page. */
+  complianceMap?: Record<string, ComplianceInfo>;
+  today?: string;
   tier?: StatTier;
   subscriptionTier?: SubscriptionTier;
 };
@@ -106,6 +107,7 @@ export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_s
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const isAdvanced = hasFeature(subscriptionTier, Feature.ADVANCED_PITCHING_STATS);
+  const rest = complianceMap && today ? { complianceMap, today } : null;
 
   const columns = useMemo(
     () => ALL_COLUMNS.filter((col) => {
@@ -158,13 +160,14 @@ export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_s
                 )}
               </th>
             ))}
-            <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-              Rest
-            </th>
+            {rest && (
+              <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                Rest
+              </th>
+            )}
           </tr>
         </thead>
         {sorted.map((s) => {
-          const compliance = complianceMap[s.playerId];
           const isExpanded = expandedId === s.playerId;
 
           return (
@@ -192,14 +195,16 @@ export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_s
                       )}
                     </td>
                   ))}
-                  <td className="px-3 py-3 whitespace-nowrap">
-                    <ComplianceBadge compliance={compliance} today={today} />
-                  </td>
+                  {rest && (
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      <ComplianceBadge compliance={rest.complianceMap[s.playerId]} today={rest.today} />
+                    </td>
+                  )}
                 </tr>
 
                 {isExpanded && (
                   <tr>
-                    <td colSpan={columns.length + 1} className="px-6 py-4 bg-gray-50 border-t border-gray-100">
+                    <td colSpan={columns.length + (rest ? 1 : 0)} className="px-6 py-4 bg-gray-50 border-t border-gray-100">
                       <BaByCountGrid stats={s} />
                     </td>
                   </tr>
@@ -219,7 +224,7 @@ export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_s
                 {col.key === 'playerName' ? 'Totals' : computePitchingTotal(sorted, col)}
               </td>
             ))}
-            <td className="px-3 py-3" />
+            {rest && <td className="px-3 py-3" />}
           </tr>
         </tfoot>
       </table>
