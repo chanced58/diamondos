@@ -25,6 +25,7 @@ import {
   finalizeGame,
 } from '@/lib/games/finalize';
 import { resolveGameTimeZone } from '@/lib/games/game-time-zone';
+import { ensureTournamentOpponentTeam } from '@/lib/games/tournament-opponent-team';
 
 export async function cancelGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
@@ -348,7 +349,7 @@ export async function updateGameAction(
 
   const { data: game } = await supabase
     .from('games')
-    .select('team_id, status, time_zone')
+    .select('team_id, status, time_zone, tournament_id')
     .eq('id', gameId)
     .single();
   if (!game) return 'Game not found.';
@@ -424,6 +425,18 @@ export async function updateGameAction(
 
       if (!opponentTeamId) return 'Selected opponent team not found or not accessible.';
     }
+  }
+
+  // Same as createGameAction: a typed-in tournament opponent (e.g. a TBD
+  // bracket slot being filled in) gets an opponent team record to sync.
+  if (!opponentTbd && !opponentTeamId && game.tournament_id) {
+    const ensured = await ensureTournamentOpponentTeam(supabase, {
+      teamId: game.team_id,
+      opponentName: opponent,
+      userId: user.id,
+    });
+    if ('error' in ensured) return ensured.error;
+    opponentTeamId = ensured.opponentTeamId;
   }
 
   const locationType = (formData.get('locationType') as string) || 'home';
