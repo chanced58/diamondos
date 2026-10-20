@@ -252,12 +252,15 @@ export default async function ScorePage({ params }: { params: { gameId: string }
 
   // ── Scoring config — read from the game_start event payload ─────────────────
   // Defaults to all-enabled for games started before this feature shipped.
+  // Games started on mobile carry `hitLocationEnabled` instead of
+  // `sprayChartEnabled` (same capture), so a web takeover inherits the
+  // phone's choice.
   const gameStartEvent = activeEvents.find((e) => e.event_type === 'game_start');
   const gsp = (gameStartEvent?.payload ?? {}) as Record<string, unknown>;
   const scoringConfig = {
     pitchType:     gsp.pitchTypeEnabled     !== false,
     pitchLocation: gsp.pitchLocationEnabled !== false,
-    sprayChart:    gsp.sprayChartEnabled    !== false,
+    sprayChart:    (gsp.sprayChartEnabled ?? gsp.hitLocationEnabled) !== false,
   };
 
   const leagueSettings = await getScoringSettingsForGame(db, {

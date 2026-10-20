@@ -37,6 +37,7 @@ import type { GameEvent } from '@baseball/shared';
 import { endGameAction } from '../actions';
 import { DefensiveDiamond } from './DefensiveDiamond';
 import { BattingOrderPanel, type BattingOrderPlayer } from './BattingOrderPanel';
+import { canRecordPlay } from './can-record';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1033,24 +1034,37 @@ export function ScoringBoard({
     let pitcher: { playerId: string; player: LineupEntry['player'] } | null = startingEntry
       ? { playerId: startingEntry.playerId, player: { ...startingEntry.player } }
       : null;
+    // No lineup row marked P (e.g. a game started on mobile, whose start
+    // wizard picks the starter without setting a position): fall back to the
+    // starter recorded in the GAME_START payload.
+    if (!pitcher) {
+      const startPayload = (effectiveEventRows.find((row) => row.event_type === 'game_start')?.payload ?? {}) as Record<string, unknown>;
+      const sideIsHome = forOpponent ? !isHome : isHome;
+      const starterId = startPayload[sideIsHome ? 'homeLineupPitcherId' : 'awayLineupPitcherId'] as string | null | undefined;
+      if (starterId) pitcher = { playerId: starterId, player: resolvePitcherName(starterId, baseLineup, roster) };
+    }
     for (const row of effectiveEventRows) {
       if ((row.event_type as string) !== 'pitching_change') continue;
       const p = (row.payload ?? {}) as Record<string, unknown>;
       if (Boolean(p.isOpponentChange) !== forOpponent) continue;
       const newId = p.newPitcherId as string;
       if (!newId) continue;
-      const rosterEntry = (roster ?? []).find((r) => r.id === newId);
-      const lineupEntry = baseLineup.find((l) => l.playerId === newId);
-      pitcher = {
-        playerId: newId,
-        player: rosterEntry
-          ? { id: newId, firstName: rosterEntry.firstName, lastName: rosterEntry.lastName, jerseyNumber: rosterEntry.jerseyNumber }
-          : lineupEntry
-            ? { ...lineupEntry.player }
-            : { id: newId, firstName: '', lastName: '?', jerseyNumber: null },
-      };
+      pitcher = { playerId: newId, player: resolvePitcherName(newId, baseLineup, roster) };
     }
     return pitcher;
+  }
+
+  function resolvePitcherName(
+    pitcherId: string,
+    baseLineup: LineupEntry[],
+    roster: RosterEntry[] | undefined,
+  ): LineupEntry['player'] {
+    const rosterEntry = (roster ?? []).find((r) => r.id === pitcherId);
+    if (rosterEntry) {
+      return { id: pitcherId, firstName: rosterEntry.firstName, lastName: rosterEntry.lastName, jerseyNumber: rosterEntry.jerseyNumber };
+    }
+    const lineupEntry = baseLineup.find((l) => l.playerId === pitcherId);
+    return lineupEntry ? { ...lineupEntry.player } : { id: pitcherId, firstName: '', lastName: '?', jerseyNumber: null };
   }
 
   // When opponent is batting → our team pitches; when our team is batting → opponent pitches.
@@ -1065,7 +1079,17 @@ export function ScoringBoard({
   // then silently drop the event with no attribution and no recovery path.
   // Gate the PA-closing handlers on both sides being resolved, and surface a
   // banner so the scorer fixes the lineup before logging new events.
-  const canRecord = activeBatterId != null && activePitcherId != null;
+  //
+  // The opponent side may be unattributed when the opponent is untracked
+  // (games started on mobile usually are), so a coach can take such a game
+  // over here — see canRecordPlay.
+  const canRecord = canRecordPlay({
+    isOpponentBatting,
+    activeBatterId,
+    activePitcherId,
+    opponentTracked: effectiveOpponentStarters.length > 0,
+    opponentSlotSkipped: skippedSlots.has(expectedOpponentSlot),
+  });
 
   // Count pitches thrown by the active pitcher from effectiveEventRows directly, so the
   // count is correct even before the first pitch of a new half-inning.
@@ -1195,6 +1219,11 @@ export function ScoringBoard({
           filter: `game_id=eq.${game.id}`,
         },
         (payload) => {
+          // Another scorer (e.g. the phone this game was started on) may still
+          // be writing; keep our next sequence number above theirs so the
+          // unique (game_id, sequence_number) constraint doesn't reject ours.
+          const incomingSeq = payload.new.sequence_number as number;
+          if (incomingSeq >= nextSeqNum.current) nextSeqNum.current = incomingSeq + 1;
           setEventRows((prev) => {
             if (prev.some((e) => e.id === payload.new.id)) return prev;
             return [...prev, payload.new].sort(
