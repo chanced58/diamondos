@@ -224,7 +224,7 @@ export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_s
                 {col.key === 'playerName' ? 'Totals' : computePitchingTotal(sorted, col)}
               </td>
             ))}
-            <td className="px-3 py-3" />
+            {rest && <td className="px-3 py-3" />}
           </tr>
         </tfoot>
       </table>

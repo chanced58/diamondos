@@ -81,6 +81,18 @@ describe('loadTournamentPlayerStats', () => {
     expect(stats.pitching[0].strikeouts).toBe(1);
   });
 
+  it('keeps a pitcher whose outcome was recorded without pitch events', async () => {
+    const rows = tournamentRows();
+    rows.players.push({ id: 'riley', team_id: 'team', first_name: 'Riley', last_name: 'Reliever' });
+    rows.game_events.push(event('tourney-game', EventType.STRIKEOUT, { pitcherId: 'riley', batterId: 'opp-batter-2' }, true));
+
+    const stats = await loadTournamentPlayerStats(fakeDb(rows) as never, SCOPE);
+
+    const riley = stats.pitching.find((s) => s.playerId === 'riley');
+    expect(riley?.strikeouts).toBe(1);
+    expect(riley?.totalPitches).toBe(0);
+  });
+
   it('returns empty lines when no tournament game has been scored', async () => {
     const rows = tournamentRows();
     rows.games = rows.games.filter((g) => g.id !== 'tourney-game');

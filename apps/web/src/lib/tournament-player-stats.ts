@@ -80,8 +80,10 @@ export async function loadTournamentPlayerStats(
     .filter((s) => teamPlayerIds.has(s.playerId) && s.plateAppearances > 0)
     .sort((a, b) => b.plateAppearances - a.plateAppearances || a.playerName.localeCompare(b.playerName));
 
+  // Keep pitchers with any recorded result, not only pitch-by-pitch ones: an
+  // outcome entered without PITCH_THROWN events still belongs on the line.
   const pitching = Array.from(derivePitchingStats(derivableEvents, playerList).values())
-    .filter((s) => teamPlayerIds.has(s.playerId) && s.totalPitches > 0)
+    .filter((s) => teamPlayerIds.has(s.playerId) && (s.totalPitches > 0 || s.totalPAs > 0 || s.inningsPitchedOuts > 0))
     .sort((a, b) => b.inningsPitchedOuts - a.inningsPitchedOuts || a.playerName.localeCompare(b.playerName));
 
   return { scoredGameCount: scoredGames.length, batting, pitching };
