@@ -1,7 +1,10 @@
 import {
   buildScheduleState,
   buildSchedulePartialError,
+  mapEventToScheduleItem,
   mapGameToScheduleItem,
+  mapPracticeToScheduleItem,
+  scheduleItemDateKey,
   SCHEDULE_FULL_PAGE_ERROR,
   type ScheduleEventRow,
   type ScheduleFetchOutcome,
@@ -208,5 +211,46 @@ describe('buildSchedulePartialError', () => {
     expect(buildSchedulePartialError(['games', 'practices', 'events'])).toBe(
       "Games, Practices, and Events couldn't be loaded.",
     );
+  });
+});
+
+describe('practice and event links', () => {
+  const practice = { id: 'p1', scheduled_at: '2026-10-22T00:30:00.000Z', location: 'Main field', run_status: 'planned' };
+
+  it('should open attendance for coaches and the practice card for everyone else', () => {
+    expect(mapPracticeToScheduleItem(practice, true).href).toEqual({
+      pathname: '/(tabs)/more/practices/[practiceId]/attendance',
+      params: { practiceId: 'p1' },
+    });
+    expect(mapPracticeToScheduleItem(practice).href).toMatchObject({ pathname: '/(tabs)/more/practices/[practiceId]/card' });
+  });
+
+  it('should open a team event on its detail screen', () => {
+    const event = { id: 'e1', starts_at: '2026-10-22T01:00:00.000Z', title: 'Dinner', location: null };
+    expect(mapEventToScheduleItem(event).href).toEqual({
+      pathname: '/(tabs)/schedule/events/[eventId]',
+      params: { eventId: 'e1' },
+    });
+  });
+
+  it('should pass the coach flag through buildScheduleState', () => {
+    const state = buildScheduleState({
+      games: { data: [], failed: false },
+      practices: { data: [practice], failed: false },
+      events: { data: [], failed: false },
+      isCoach: true,
+    });
+    expect(state.items[0].href).toMatchObject({ pathname: '/(tabs)/more/practices/[practiceId]/attendance' });
+  });
+});
+
+describe('scheduleItemDateKey', () => {
+  it("should file a game on its own zone's day and other items on the device's", () => {
+    const lateGame = mapGameToScheduleItem(mkGame({ scheduledAt: Date.UTC(2026, 9, 22, 4, 0), timeZone: 'America/Los_Angeles' }));
+    // 04:00 UTC Oct 22 is 9 PM Oct 21 in Los Angeles, whatever the device's zone.
+    expect(scheduleItemDateKey(lateGame, 'America/New_York')).toBe('2026-10-21');
+    const event = mapEventToScheduleItem({ id: 'e1', starts_at: '2026-10-22T04:00:00.000Z', title: 'Dinner', location: null });
+    expect(scheduleItemDateKey(event, 'America/New_York')).toBe('2026-10-22');
+    expect(scheduleItemDateKey(event, 'America/Denver')).toBe('2026-10-21');
   });
 });
