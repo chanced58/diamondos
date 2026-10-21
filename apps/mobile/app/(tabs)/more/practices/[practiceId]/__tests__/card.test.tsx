@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react-native';
 import PlayerCardScreen from '../card';
-import type { TeamMembership } from '../../../../../src/providers/RoleProvider';
+import type { TeamMembership } from '../../../../../../src/providers/RoleProvider';
 
 /**
  * Covers M3: a coach with no `playerId` used to see the player-roster
@@ -15,11 +15,11 @@ const mockUseRole = jest.fn();
 const mockUseLocalSearchParams = jest.fn();
 const mockRouterReplace = jest.fn();
 
-jest.mock('../../../../../src/providers/RoleProvider', () => ({
+jest.mock('../../../../../../src/providers/RoleProvider', () => ({
   useRole: () => mockUseRole(),
 }));
 
-jest.mock('../../../../../src/lib/supabase', () => ({
+jest.mock('../../../../../../src/lib/supabase', () => ({
   getSupabaseClient: jest.fn(),
 }));
 
@@ -110,7 +110,7 @@ describe('PlayerCardScreen — no playerId gate', () => {
     fireEvent.press(screen.getByText('Open attendance'));
 
     expect(mockRouterReplace).toHaveBeenCalledWith({
-      pathname: '/(tabs)/practices/[practiceId]/attendance',
+      pathname: '/(tabs)/more/practices/[practiceId]/attendance',
       params: { practiceId: 'practice-42' },
     });
   });

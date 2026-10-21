@@ -52,7 +52,7 @@ export interface GameIdentity {
 
 const FALLBACK_OPPONENT_NAME = 'Opponent';
 const FALLBACK_TEAM_NAME = 'Home';
-// Matches the convention `games/index.tsx` already uses for the same data
+// Matches the convention `GamesList.tsx` already uses for the same data
 // state (`game.opponentName || 'TBD'`) — reused here rather than inventing a
 // third spelling for "no opponent recorded."
 const NO_OPPONENT_RECORDED = 'TBD';

@@ -6,9 +6,9 @@ import {
   upsertPracticeAttendance,
 } from '@baseball/database';
 import type { PracticeAttendance, PracticeAttendanceStatus } from '@baseball/shared';
-import { getSupabaseClient } from '../../../../src/lib/supabase';
-import { useAuth } from '../../../../src/providers/AuthProvider';
-import { useRole } from '../../../../src/providers/RoleProvider';
+import { getSupabaseClient } from '../../../../../src/lib/supabase';
+import { useAuth } from '../../../../../src/providers/AuthProvider';
+import { useRole } from '../../../../../src/providers/RoleProvider';
 
 interface RosterRow {
   id: string;

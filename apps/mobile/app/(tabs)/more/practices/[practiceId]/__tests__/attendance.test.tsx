@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react-native';
 import AttendanceScreen from '../attendance';
-import type { TeamMembership } from '../../../../../src/providers/RoleProvider';
+import type { TeamMembership } from '../../../../../../src/providers/RoleProvider';
 
 /**
  * Covers the sibling half of M3: attendance.tsx has the identical
@@ -13,15 +13,15 @@ const mockUseRole = jest.fn();
 const mockUseAuth = jest.fn();
 const mockUseLocalSearchParams = jest.fn();
 
-jest.mock('../../../../../src/providers/RoleProvider', () => ({
+jest.mock('../../../../../../src/providers/RoleProvider', () => ({
   useRole: () => mockUseRole(),
 }));
 
-jest.mock('../../../../../src/providers/AuthProvider', () => ({
+jest.mock('../../../../../../src/providers/AuthProvider', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-jest.mock('../../../../../src/lib/supabase', () => ({
+jest.mock('../../../../../../src/lib/supabase', () => ({
   getSupabaseClient: jest.fn(),
 }));
 

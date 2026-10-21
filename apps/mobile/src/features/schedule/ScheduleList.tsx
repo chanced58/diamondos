@@ -1,12 +1,11 @@
 import { Q } from '@nozbe/watermelondb';
-import { Stack, router } from 'expo-router';
+import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from 'react-native';
-import { database, Game } from '../../src/db';
-import { getSupabaseClient } from '../../src/lib/supabase';
-import { useRole } from '../../src/providers/RoleProvider';
-import { TeamSwitcher } from '../../src/features/teams/TeamSwitcher';
-import { TournamentTag } from '../../src/features/tournaments/TournamentTag';
+import { database, Game } from '../../db';
+import { getSupabaseClient } from '../../lib/supabase';
+import { useRole } from '../../providers/RoleProvider';
+import { TournamentTag } from '../tournaments/TournamentTag';
 import { formatInTimeZone } from '@baseball/shared';
 import {
   buildScheduleState,
@@ -16,9 +15,14 @@ import {
   type ScheduleGameRow,
   type ScheduleItem,
   type SchedulePracticeRow,
-} from '../../src/features/schedule/schedule-data';
+} from './schedule-data';
 
-export default function ScheduleScreen() {
+/**
+ * Everything on the active team's calendar — games, practices and team
+ * events — for the Schedule tab's "Full schedule" segment. The tab screen
+ * (`app/(tabs)/schedule/index.tsx`) owns the header and team switcher.
+ */
+export function ScheduleList() {
   const { activeTeam, loading: roleLoading } = useRole();
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<ScheduleItem[]>([]);
@@ -138,8 +142,6 @@ export default function ScheduleScreen() {
   if (fullPageError) {
     return (
       <>
-        <Stack.Screen options={{ title: 'Schedule' }} />
-        <TeamSwitcher />
         <View className="flex-1 items-center justify-center bg-gray-50 px-6">
           <View className="w-full bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
             <Text className="text-sm text-red-700">{fullPageError}</Text>
@@ -159,8 +161,6 @@ export default function ScheduleScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Schedule' }} />
-      <TeamSwitcher />
       <FlatList
         className="bg-gray-50"
         contentContainerStyle={{ padding: 16 }}

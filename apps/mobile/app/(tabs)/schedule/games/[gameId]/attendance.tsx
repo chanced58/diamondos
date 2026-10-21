@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Text, View } from 'react-native';
 import { listGameRsvps } from '@baseball/database';
 import type { GameRsvp, GameRsvpStatus } from '@baseball/shared';
-import { getSupabaseClient } from '../../../../src/lib/supabase';
-import { useRole } from '../../../../src/providers/RoleProvider';
+import { getSupabaseClient } from '../../../../../src/lib/supabase';
+import { useRole } from '../../../../../src/providers/RoleProvider';
 
 interface RosterRow {
   id: string;

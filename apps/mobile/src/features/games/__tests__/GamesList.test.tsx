@@ -26,7 +26,7 @@ const mockQuery = jest.fn(() => ({
 }));
 const mockGet = jest.fn(() => ({ query: mockQuery }));
 
-jest.mock('../../../../src/db', () => ({
+jest.mock('../../../db', () => ({
   database: { get: mockGet },
 }));
 
@@ -41,11 +41,11 @@ jest.mock('@nozbe/with-observables', () => {
   };
 });
 
-jest.mock('../../../../src/providers/RoleProvider', () => ({
+jest.mock('../../../providers/RoleProvider', () => ({
   useRole: jest.fn(),
 }));
 
-jest.mock('../../../../src/features/rsvp/useGameRsvps', () => ({
+jest.mock('../../rsvp/useGameRsvps', () => ({
   useGameRsvps: () => ({
     myPlayers: [],
     rsvpByKey: new Map(),
@@ -62,16 +62,16 @@ jest.mock('expo-router', () => ({
 
 // Required (not statically imported) so these evaluate strictly after the
 // mock setup above: a static `import` would be hoisted by babel ahead of
-// `mockQuery`/`mockCapturedProducer`'s own declarations, letting `../index`
+// `mockQuery`/`mockCapturedProducer`'s own declarations, letting `../GamesList`
 // run (and `withObservables` capture the producer) before those `let`/`const`
 // bindings exist.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { useRole } = require('../../../../src/providers/RoleProvider');
+const { useRole } = require('../../../providers/RoleProvider');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const GamesScreen = require('../index').default;
+const { GamesScreen } = require('../GamesList');
 const mockUseRole = useRole as jest.Mock;
 
-describe('games/index — team scoping (final review Blocking 1)', () => {
+describe('GamesList — team scoping (final review Blocking 1)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });

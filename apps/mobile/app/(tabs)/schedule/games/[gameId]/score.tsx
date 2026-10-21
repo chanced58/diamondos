@@ -13,52 +13,52 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useGameIdentity } from '../../../../src/features/scoring/use-game-identity';
-import { useGameState } from '../../../../src/features/scoring/use-game-state';
-import { useRecordEvent } from '../../../../src/features/scoring/use-record-event';
-import { usePlayFeed } from '../../../../src/features/scoring/use-play-feed';
-import { PlayFeedSheet } from '../../../../src/features/scoring/PlayFeed';
-import { voidEvent as voidEventCascade } from '../../../../src/features/scoring/void-event';
-import { fetchGameEventsForGame } from '../../../../src/features/scoring/fetch-game-events';
-import { ScoreBoard } from '../../../../src/features/scoring/ScoreBoard';
-import { CountDisplay } from '../../../../src/features/scoring/CountDisplay';
-import { BaserunnerDisplay } from '../../../../src/features/scoring/BaserunnerDisplay';
-import { PitchInput, trajectoryForOutType } from '../../../../src/features/scoring/PitchInput';
-import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerModal';
-import { useDefensiveLineup } from '../../../../src/features/scoring/use-defensive-lineup';
-import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../src/features/scoring/in-play-pitch';
-import { createBattedBallSlot } from '../../../../src/features/scoring/batted-ball-fields';
+import { useGameIdentity } from '../../../../../src/features/scoring/use-game-identity';
+import { useGameState } from '../../../../../src/features/scoring/use-game-state';
+import { useRecordEvent } from '../../../../../src/features/scoring/use-record-event';
+import { usePlayFeed } from '../../../../../src/features/scoring/use-play-feed';
+import { PlayFeedSheet } from '../../../../../src/features/scoring/PlayFeed';
+import { voidEvent as voidEventCascade } from '../../../../../src/features/scoring/void-event';
+import { fetchGameEventsForGame } from '../../../../../src/features/scoring/fetch-game-events';
+import { ScoreBoard } from '../../../../../src/features/scoring/ScoreBoard';
+import { CountDisplay } from '../../../../../src/features/scoring/CountDisplay';
+import { BaserunnerDisplay } from '../../../../../src/features/scoring/BaserunnerDisplay';
+import { PitchInput, trajectoryForOutType } from '../../../../../src/features/scoring/PitchInput';
+import { GuestPlayerModal } from '../../../../../src/features/scoring/GuestPlayerModal';
+import { useDefensiveLineup } from '../../../../../src/features/scoring/use-defensive-lineup';
+import { makeInPlayPitchWrapper, wrapInPlayHandlers } from '../../../../../src/features/scoring/in-play-pitch';
+import { createBattedBallSlot } from '../../../../../src/features/scoring/batted-ball-fields';
 import { LoadingSpinner } from '@baseball/ui';
 import { Q } from '@nozbe/watermelondb';
 import { EventType, PitchOutcome, HitType, AdvanceReason, type PitchType, getMaxBattingOrder, getLineupSlotCap, isMidGameExtensionAllowed, isDroppedThirdStrikeAllowed, evaluateGameEnd, shouldEndHalfForRunCap, ghostRunnerBaseForHalf, battingOrderHistory, deriveActiveBattingOrder, deriveDueBatter, resolveDueBatter, isBetweenPlateAppearances, validateLineupContraction, defaultLeagueScoringSettings, attributePlayersForHalf, OUTS_PER_INNING, getPitchComplianceStatus, FIELDING_POSITION_NUMBERS, formatFieldingSequence, sacrificeEligibility, multipleOutEligibility, evaluateHitRunnerOutcomes } from '@baseball/shared';
 import type { PitchThrownPayload, HitPayload, OutPayload, DroppedThirdStrikePayload, DroppedThirdStrikeOutcome, BaserunnerMovePayload, PickoffPayload, ScorePayload, EventVoidedPayload, SubstitutionPayload, PitchingChangePayload, BattingSlot, HalfAttribution } from '@baseball/shared';
 import { SubstitutionType, isValidTimeZone, utcToZonedDateTime } from '@baseball/shared';
-import { useLeagueContext } from '../../../../src/lib/league-settings';
-import { useGameScoringSettings } from '../../../../src/lib/game-scoring-settings';
+import { useLeagueContext } from '../../../../../src/lib/league-settings';
+import { useGameScoringSettings } from '../../../../../src/lib/game-scoring-settings';
 import { initialBattingOrderSlots, lineupExtensionError, getLineupExtensionHistory } from '@baseball/shared';
-import { database } from '../../../../src/db';
-import type { GameEvent as WdbGameEvent } from '../../../../src/db/models/GameEvent';
-import type { Player } from '../../../../src/db/models/Player';
-import type { BattedOutType, RosterPlayer, RunnerOutcome } from '../../../../src/features/scoring/PitchInput';
-import { useSyncContext } from '../../../../src/providers/SyncProvider';
-import { isFinalizeConfigured, getFinalizeFailureCount } from '../../../../src/sync/sync-engine';
-import { describeFinalizeStatus } from '../../../../src/sync/finalize-status';
-import { addLineupRow, createLocalGuest, prepareLineupRow } from '../../../../src/features/lineup/local-guest';
-import { withLineupChangeLock } from '../../../../src/features/lineup/lineup-change-lock';
-import { useGameLineups } from '../../../../src/features/lineup/use-game-lineups';
-import { useOpponentLineup, type OpponentBatter } from '../../../../src/features/lineup/use-opponent-lineup';
+import { database } from '../../../../../src/db';
+import type { GameEvent as WdbGameEvent } from '../../../../../src/db/models/GameEvent';
+import type { Player } from '../../../../../src/db/models/Player';
+import type { BattedOutType, RosterPlayer, RunnerOutcome } from '../../../../../src/features/scoring/PitchInput';
+import { useSyncContext } from '../../../../../src/providers/SyncProvider';
+import { isFinalizeConfigured, getFinalizeFailureCount } from '../../../../../src/sync/sync-engine';
+import { describeFinalizeStatus } from '../../../../../src/sync/finalize-status';
+import { addLineupRow, createLocalGuest, prepareLineupRow } from '../../../../../src/features/lineup/local-guest';
+import { withLineupChangeLock } from '../../../../../src/features/lineup/lineup-change-lock';
+import { useGameLineups } from '../../../../../src/features/lineup/use-game-lineups';
+import { useOpponentLineup, type OpponentBatter } from '../../../../../src/features/lineup/use-opponent-lineup';
 import {
   addNewOpponentBatter,
   addOpponentBatterFromRoster,
   opponentDisplayName,
-} from '../../../../src/features/lineup/opponent-lineup';
+} from '../../../../../src/features/lineup/opponent-lineup';
 import {
   buildGameStartPayload,
   planLineupReplacement,
   toggleBattingOrderSlot,
   type ExistingLineupRow,
-} from '../../../../src/features/lineup/lineup-wizard';
-import type { GameLineup } from '../../../../src/db/models/GameLineup';
+} from '../../../../../src/features/lineup/lineup-wizard';
+import type { GameLineup } from '../../../../../src/db/models/GameLineup';
 
 /**
  * Live game scoring screen — the core feature of the mobile app.
@@ -1257,7 +1257,7 @@ export default function ScoringScreen() {
           {
             text: 'Open Lineup',
             onPress: () =>
-              router.push({ pathname: '/(tabs)/games/[gameId]/lineup', params: { gameId } }),
+              router.push({ pathname: '/(tabs)/schedule/games/[gameId]/lineup', params: { gameId } }),
           },
         ],
       );
@@ -2007,7 +2007,7 @@ export default function ScoringScreen() {
       <View className="flex-row items-center gap-2 px-4 pt-2">
         <TouchableOpacity
           onPress={() =>
-            router.push({ pathname: '/(tabs)/games/[gameId]/lineup', params: { gameId } })
+            router.push({ pathname: '/(tabs)/schedule/games/[gameId]/lineup', params: { gameId } })
           }
           className="px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200"
         >

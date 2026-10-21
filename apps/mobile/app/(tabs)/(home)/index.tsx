@@ -3,12 +3,13 @@ import { router } from 'expo-router';
 import { Q } from '@nozbe/watermelondb';
 import withObservables from '@nozbe/with-observables';
 import { weAreHome } from '@baseball/shared';
-import { useAuth } from '../../src/providers/AuthProvider';
-import { useSyncContext } from '../../src/providers/SyncProvider';
-import { useRole } from '../../src/providers/RoleProvider';
-import { useGameState } from '../../src/features/scoring/use-game-state';
-import { database } from '../../src/db';
-import type { Game } from '../../src/db/models/Game';
+import { useAuth } from '../../../src/providers/AuthProvider';
+import { useSyncContext } from '../../../src/providers/SyncProvider';
+import { useRole } from '../../../src/providers/RoleProvider';
+import { useGameState } from '../../../src/features/scoring/use-game-state';
+import { TeamSwitcher } from '../../../src/features/teams/TeamSwitcher';
+import { database } from '../../../src/db';
+import type { Game } from '../../../src/db/models/Game';
 
 /**
  * Resume control for a game being scored right now.
@@ -40,7 +41,7 @@ function LiveGameCard({ game }: { game: Game }) {
       className="bg-white rounded-xl border-2 border-red-200 p-5 mb-3"
       onPress={() =>
         router.push({
-          pathname: '/(tabs)/games/[gameId]/score',
+          pathname: '/(tabs)/schedule/games/[gameId]/score',
           params: {
             gameId: game.remoteId,
             teamId: game.teamId,
@@ -102,6 +103,7 @@ export default function HomeScreen() {
 
   return (
     <ScrollView className="flex-1 bg-gray-50">
+      <TeamSwitcher />
       <View className="px-5 pt-6 pb-4">
         <Text className="text-2xl font-bold text-gray-900">Dashboard</Text>
         <Text className="text-gray-500 text-sm mt-1">{user?.email}</Text>
@@ -120,7 +122,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           className="bg-white rounded-xl border border-gray-200 p-5"
-          onPress={() => router.push('/(tabs)/games')}
+          onPress={() => router.push('/(tabs)/schedule')}
         >
           <Text className="text-lg font-semibold text-gray-900 mb-1">Today's Games</Text>
           <Text className="text-gray-500 text-sm">View schedule and score a game</Text>
@@ -128,7 +130,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           className="bg-white rounded-xl border border-gray-200 p-5"
-          onPress={() => router.push('/(tabs)/schedule')}
+          onPress={() => router.push({ pathname: '/(tabs)/schedule', params: { view: 'all' } })}
         >
           <Text className="text-lg font-semibold text-gray-900 mb-1">Schedule</Text>
           <Text className="text-gray-500 text-sm">Upcoming games and RSVPs</Text>
@@ -136,7 +138,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           className="bg-white rounded-xl border border-gray-200 p-5"
-          onPress={() => router.push('/(tabs)/practices')}
+          onPress={() => router.push('/(tabs)/more/practices')}
         >
           <Text className="text-lg font-semibold text-gray-900 mb-1">Practices</Text>
           <Text className="text-gray-500 text-sm">Upcoming practices and attendance</Text>
@@ -144,7 +146,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           className="bg-white rounded-xl border border-gray-200 p-5"
-          onPress={() => router.push('/(tabs)/roster')}
+          onPress={() => router.push('/(tabs)/more/roster')}
         >
           <Text className="text-lg font-semibold text-gray-900 mb-1">Roster</Text>
           <Text className="text-gray-500 text-sm">Players and pitch counts</Text>

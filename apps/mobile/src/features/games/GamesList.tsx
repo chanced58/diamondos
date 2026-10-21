@@ -4,14 +4,13 @@ import { router } from 'expo-router';
 import { Q } from '@nozbe/watermelondb';
 import withObservables from '@nozbe/with-observables';
 import { map } from 'rxjs';
-import { database } from '../../../src/db';
-import type { Game } from '../../../src/db/models/Game';
+import { database } from '../../db';
+import type { Game } from '../../db/models/Game';
 import { formatDate, formatTime, type GameRsvpStatus } from '@baseball/shared';
-import { useRole } from '../../../src/providers/RoleProvider';
-import { useGameRsvps } from '../../../src/features/rsvp/useGameRsvps';
-import { sortGamesForList } from '../../../src/features/games/sort-games-for-list';
-import { TeamSwitcher } from '../../../src/features/teams/TeamSwitcher';
-import { TournamentTag } from '../../../src/features/tournaments/TournamentTag';
+import { useRole } from '../../providers/RoleProvider';
+import { useGameRsvps } from '../rsvp/useGameRsvps';
+import { sortGamesForList } from './sort-games-for-list';
+import { TournamentTag } from '../tournaments/TournamentTag';
 
 interface GamesListProps {
   games: Game[];
@@ -69,7 +68,7 @@ function GamesList({ games }: GamesListProps) {
             // games in the read-only Final view.
             if (['scheduled', 'in_progress', 'completed'].includes(game.status)) {
               router.push({
-                pathname: '/(tabs)/games/[gameId]/score',
+                pathname: '/(tabs)/schedule/games/[gameId]/score',
                 params: {
                   gameId: game.remoteId,
                   teamId: game.teamId,
@@ -111,7 +110,7 @@ function GamesList({ games }: GamesListProps) {
             <TouchableOpacity
               onPress={() =>
                 router.push({
-                  pathname: '/(tabs)/games/[gameId]/lineup',
+                  pathname: '/(tabs)/schedule/games/[gameId]/lineup',
                   params: { gameId: game.remoteId },
                 })
               }
@@ -125,7 +124,7 @@ function GamesList({ games }: GamesListProps) {
             <TouchableOpacity
               onPress={() =>
                 router.push({
-                  pathname: '/(tabs)/games/[gameId]/attendance',
+                  pathname: '/(tabs)/schedule/games/[gameId]/attendance',
                   params: { gameId: game.remoteId },
                 })
               }
@@ -209,7 +208,7 @@ function StatusBadge({ status }: { status: string }) {
 // `TO` clause on `public_view_in_progress_games` (20260220000010:186-189),
 // so an unscoped query mirrors every in-progress game platform-wide — W8's
 // pin-to-top then promotes a foreign team's live game to the top of the
-// list. Same fact `schedule.tsx`'s local games read and `game-identity.ts`
+// list. Same fact `ScheduleList.tsx`'s local games read and `game-identity.ts`
 // already handle; this applies the same team-id scoping here.
 const GamesListEnhanced = withObservables(['teamId'], ({ teamId }: { teamId: string }) => ({
   games: database
@@ -219,7 +218,12 @@ const GamesListEnhanced = withObservables(['teamId'], ({ teamId }: { teamId: str
     .pipe(map(sortGamesForList)),
 }))((GamesListobs: { games: Game[] }) => <GamesList games={GamesListobs.games} />);
 
-export default function GamesScreen() {
+/**
+ * The active team's games, for the Schedule tab's "Games" segment: start or
+ * resume scoring, open the lineup, RSVP. The tab screen
+ * (`app/(tabs)/schedule/index.tsx`) owns the header and team switcher.
+ */
+export function GamesScreen() {
   const { activeTeam, loading: roleLoading } = useRole();
 
   if (roleLoading) {
@@ -232,7 +236,6 @@ export default function GamesScreen() {
 
   return (
     <View className="flex-1 bg-gray-50">
-      <TeamSwitcher />
       {/* No active team (still resolving membership, or none) — render the
           empty state rather than falling back to an unscoped, all-teams
           query. */}

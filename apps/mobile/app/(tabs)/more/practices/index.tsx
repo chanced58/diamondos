@@ -1,8 +1,9 @@
 import { Link, Stack } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from 'react-native';
-import { getSupabaseClient } from '../../../src/lib/supabase';
-import { useRole } from '../../../src/providers/RoleProvider';
+import { getSupabaseClient } from '../../../../src/lib/supabase';
+import { useRole } from '../../../../src/providers/RoleProvider';
+import { TeamSwitcher } from '../../../../src/features/teams/TeamSwitcher';
 
 interface PracticeRow {
   id: string;
@@ -86,6 +87,7 @@ export default function PracticesIndex() {
     return (
       <>
         <Stack.Screen options={{ title: 'Practices' }} />
+        <TeamSwitcher />
         <View className="flex-1 items-center justify-center bg-gray-50 px-6">
           <View className="w-full bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
             <Text className="text-sm text-red-700">{error}</Text>
@@ -106,6 +108,7 @@ export default function PracticesIndex() {
   return (
     <>
       <Stack.Screen options={{ title: 'Practices' }} />
+      <TeamSwitcher />
       <FlatList
         className="bg-gray-50"
         contentContainerStyle={{ padding: 16 }}
@@ -114,11 +117,11 @@ export default function PracticesIndex() {
         renderItem={({ item }) => {
           const dest = activeTeam.isCoach
             ? ({
-                pathname: '/(tabs)/practices/[practiceId]/attendance',
+                pathname: '/(tabs)/more/practices/[practiceId]/attendance',
                 params: { practiceId: item.id },
               } as const)
             : ({
-                pathname: '/(tabs)/practices/[practiceId]/card',
+                pathname: '/(tabs)/more/practices/[practiceId]/card',
                 params: { practiceId: item.id },
               } as const);
           return (

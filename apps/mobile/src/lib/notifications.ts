@@ -92,7 +92,7 @@ export function setupNotificationDeepLinks(): void {
     if (!data) return;
 
     if (data.kind === 'pre_practice' && data.practiceId) {
-      router.push(`/(tabs)/practices/${data.practiceId}/card` as never);
+      router.push(`/(tabs)/more/practices/${data.practiceId}/card` as never);
     }
     if (data.kind === 'message' && data.channelId) {
       router.push({
@@ -102,7 +102,7 @@ export function setupNotificationDeepLinks(): void {
     }
     if (data.kind === 'game' && data.gameId) {
       router.push({
-        pathname: '/(tabs)/games/[gameId]/score',
+        pathname: '/(tabs)/schedule/games/[gameId]/score',
         params: { gameId: data.gameId },
       });
     }

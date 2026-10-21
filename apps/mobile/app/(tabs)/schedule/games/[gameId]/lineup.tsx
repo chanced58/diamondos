@@ -12,17 +12,17 @@ import {
   type PlayerPosition,
 } from '@baseball/shared';
 import { LoadingSpinner } from '@baseball/ui';
-import { database } from '../../../../src/db';
-import type { Game } from '../../../../src/db/models/Game';
-import type { GameLineup } from '../../../../src/db/models/GameLineup';
-import type { Player } from '../../../../src/db/models/Player';
-import { GuestPlayerModal } from '../../../../src/features/scoring/GuestPlayerModal';
-import { prepareLineupRow, removeLineupRow } from '../../../../src/features/lineup/local-guest';
-import { useGameLineups } from '../../../../src/features/lineup/use-game-lineups';
-import { useLeagueContext } from '../../../../src/lib/league-settings';
-import { useGameScoringSettings } from '../../../../src/lib/game-scoring-settings';
-import { useGameState } from '../../../../src/features/scoring/use-game-state';
-import { useSyncContext } from '../../../../src/providers/SyncProvider';
+import { database } from '../../../../../src/db';
+import type { Game } from '../../../../../src/db/models/Game';
+import type { GameLineup } from '../../../../../src/db/models/GameLineup';
+import type { Player } from '../../../../../src/db/models/Player';
+import { GuestPlayerModal } from '../../../../../src/features/scoring/GuestPlayerModal';
+import { prepareLineupRow, removeLineupRow } from '../../../../../src/features/lineup/local-guest';
+import { useGameLineups } from '../../../../../src/features/lineup/use-game-lineups';
+import { useLeagueContext } from '../../../../../src/lib/league-settings';
+import { useGameScoringSettings } from '../../../../../src/lib/game-scoring-settings';
+import { useGameState } from '../../../../../src/features/scoring/use-game-state';
+import { useSyncContext } from '../../../../../src/providers/SyncProvider';
 
 interface Assignment {
   /** 1-based batting slot, or null for Bench. */

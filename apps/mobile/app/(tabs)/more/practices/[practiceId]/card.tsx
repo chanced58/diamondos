@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { buildPlayerRotationView, type PlayerRotationStep } from '@baseball/shared';
 import { getPracticeWithBlocks } from '@baseball/database';
-import { getSupabaseClient } from '../../../../src/lib/supabase';
-import { useRole } from '../../../../src/providers/RoleProvider';
+import { getSupabaseClient } from '../../../../../src/lib/supabase';
+import { useRole } from '../../../../../src/providers/RoleProvider';
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -75,7 +75,7 @@ export default function PlayerCardScreen() {
               className="px-4 py-2 rounded-lg bg-brand-700"
               onPress={() =>
                 router.replace({
-                  pathname: '/(tabs)/practices/[practiceId]/attendance',
+                  pathname: '/(tabs)/more/practices/[practiceId]/attendance',
                   params: { practiceId },
                 })
               }
