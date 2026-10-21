@@ -4,6 +4,7 @@ import { Stack } from 'expo-router';
 import { DatabaseProvider } from '@nozbe/watermelondb/DatabaseProvider';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider, useAuth } from '../src/providers/AuthProvider';
+import { QueryProvider } from '../src/providers/QueryProvider';
 import { RoleProvider } from '../src/providers/RoleProvider';
 import { SyncProvider } from '../src/providers/SyncProvider';
 import { database } from '../src/db';
@@ -39,11 +40,13 @@ export default function RootLayout() {
   return (
     <DatabaseProvider database={database}>
       <AuthProvider>
-        <RoleProvider>
-          <SyncProvider>
-            <RootLayoutNav />
-          </SyncProvider>
-        </RoleProvider>
+        <QueryProvider>
+          <RoleProvider>
+            <SyncProvider>
+              <RootLayoutNav />
+            </SyncProvider>
+          </RoleProvider>
+        </QueryProvider>
       </AuthProvider>
     </DatabaseProvider>
   );

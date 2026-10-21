@@ -11,7 +11,14 @@
  * should still be able to evaluate the config.
  */
 
-const REQUIRED_BUILD_ENV = ['EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_ANON_KEY'];
+// EXPO_PUBLIC_API_BASE_URL is the deployed web app: without it the app still
+// launches, but games ended offline never finalize and every `/api/m/v1`
+// screen (bootstrap capabilities included) is dead.
+const REQUIRED_BUILD_ENV = [
+  'EXPO_PUBLIC_SUPABASE_URL',
+  'EXPO_PUBLIC_SUPABASE_ANON_KEY',
+  'EXPO_PUBLIC_API_BASE_URL',
+];
 
 function assertBuildEnv(env) {
   if (env.EAS_BUILD !== 'true') return;
@@ -21,7 +28,7 @@ function assertBuildEnv(env) {
 
   throw new Error(
     `EAS build is missing required environment variables: ${missing.join(', ')}.\n` +
-      'The app would crash on launch ("supabaseUrl is required"). Add them to this ' +
+      'Without them the app crashes on launch or cannot reach the web API. Add them to this ' +
       "build profile's EAS environment (expo.dev → Project → Environment variables, " +
       'or `eas env:create`) and rebuild.',
   );
