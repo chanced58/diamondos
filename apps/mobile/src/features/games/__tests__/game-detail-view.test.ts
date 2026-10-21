@@ -23,6 +23,8 @@ function detail(game: Partial<Game> = {}, isCoach = false): GameDetailResponse {
       locationType: 'home',
       neutralHomeTeam: null,
       venueName: null,
+      venueAddress: null,
+      placeId: null,
       notes: null,
       homeScore: 0,
       awayScore: 0,

@@ -7,7 +7,8 @@ jest.mock('expo-router', () => ({
   __esModule: true,
   router: { push: (...args: unknown[]) => mockPush(...args) },
   useLocalSearchParams: () => ({ gameId: 'game-1' }),
-  Stack: { Screen: () => null },
+  // Render the header's right button so tests can press it.
+  Stack: { Screen: ({ options }: { options?: { headerRight?: () => JSX.Element } }) => options?.headerRight?.() ?? null },
 }));
 
 const mockUseRole = jest.fn();
@@ -48,6 +49,8 @@ function detail(overrides: Partial<GameDetailResponse['game']> = {}, isCoach = f
       locationType: 'home',
       neutralHomeTeam: null,
       venueName: 'Field 2',
+      venueAddress: null,
+      placeId: null,
       notes: null,
       homeScore: 0,
       awayScore: 0,
@@ -214,4 +217,21 @@ it('should link coaches to pages not yet in the app', () => {
   fireEvent.press(screen.getByText('Play-by-play history'));
 
   expect(mockOpenOnWeb).toHaveBeenCalledWith('/games/game-1/history');
+});
+
+it('should give coaches a native Edit button instead of a web link', () => {
+  givenDetail(detail({}, true), 'head_coach');
+
+  render(<GameDetailScreen />);
+  fireEvent.press(screen.getByLabelText('Edit game'));
+
+  expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/schedule/games/[gameId]/edit', params: { gameId: 'game-1' } });
+  // The old "Edit game · Opens on the web" row is gone (the header button reads "Edit").
+  expect(screen.queryByText('Edit game')).toBeNull();
+});
+
+it('should not offer players an Edit button', () => {
+  givenDetail(detail());
+  render(<GameDetailScreen />);
+  expect(screen.queryByLabelText('Edit game')).toBeNull();
 });

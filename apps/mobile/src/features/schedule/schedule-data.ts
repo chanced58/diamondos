@@ -1,4 +1,5 @@
 import type { Href } from 'expo-router';
+import { utcToZonedDateTime } from '@baseball/shared';
 import { matchupLabel } from '../games/game-detail-view';
 
 /**
@@ -90,13 +91,18 @@ export function mapGameToScheduleItem(game: ScheduleGameRow): ScheduleItem {
   };
 }
 
-export function mapPracticeToScheduleItem(practice: SchedulePracticeRow): ScheduleItem {
+/** Coaches open a practice's attendance; everyone else their practice card. */
+export function mapPracticeToScheduleItem(practice: SchedulePracticeRow, isCoach = false): ScheduleItem {
   return {
     id: `practice:${practice.id}`,
     kind: 'practice',
     startsAt: practice.scheduled_at,
     title: 'Practice',
     detail: practice.location ?? practice.run_status,
+    href: {
+      pathname: isCoach ? '/(tabs)/more/practices/[practiceId]/attendance' : '/(tabs)/more/practices/[practiceId]/card',
+      params: { practiceId: practice.id },
+    } as const,
   };
 }
 
@@ -107,7 +113,13 @@ export function mapEventToScheduleItem(event: ScheduleEventRow): ScheduleItem {
     startsAt: event.starts_at,
     title: event.title,
     detail: event.location,
+    href: { pathname: '/(tabs)/schedule/events/[eventId]', params: { eventId: event.id } } as const,
   };
+}
+
+/** The calendar day an item falls on, in its own zone (games) or the device's. */
+export function scheduleItemDateKey(item: ScheduleItem, deviceZone: string | null): string {
+  return utcToZonedDateTime(item.startsAt, item.timeZone ?? deviceZone).date;
 }
 
 /** One source's resolved outcome: the rows it produced (empty on failure)
@@ -123,6 +135,8 @@ export interface BuildScheduleStateParams {
   games: ScheduleFetchOutcome<ScheduleGameRow>;
   practices: ScheduleFetchOutcome<SchedulePracticeRow>;
   events: ScheduleFetchOutcome<ScheduleEventRow>;
+  /** Decides where a practice opens (see `mapPracticeToScheduleItem`). */
+  isCoach?: boolean;
 }
 
 export interface ScheduleState {
@@ -168,10 +182,11 @@ export function buildScheduleState({
   games,
   practices,
   events,
+  isCoach = false,
 }: BuildScheduleStateParams): ScheduleState {
   const items = [
     ...games.data.map(mapGameToScheduleItem),
-    ...practices.data.map(mapPracticeToScheduleItem),
+    ...practices.data.map((practice) => mapPracticeToScheduleItem(practice, isCoach)),
     ...events.data.map(mapEventToScheduleItem),
   ].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
 

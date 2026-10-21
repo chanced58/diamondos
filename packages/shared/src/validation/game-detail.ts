@@ -43,6 +43,9 @@ export const gameDetailGameSchema = z.object({
   locationType: z.enum(['home', 'away', 'neutral']),
   neutralHomeTeam: z.enum(['us', 'opponent']).nullable(),
   venueName: z.string().nullable(),
+  /** Venue street address and Places id; absent from older servers. */
+  venueAddress: z.string().nullish().transform((value) => value ?? null),
+  placeId: z.string().nullish().transform((value) => value ?? null),
   notes: z.string().nullable(),
   homeScore: z.number(),
   awayScore: z.number(),

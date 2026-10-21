@@ -3,199 +3,26 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { formatDate, formatTime, zonedDateTimeToUtc } from '@baseball/shared';
-import { postEventAlert } from '@/app/(app)/messages/notify';
-import { provisionMirrorGame } from '@/lib/dual-scorekeeper/provision';
-import { resolveGameTimeZone } from '@/lib/games/game-time-zone';
-import { ensureTournamentOpponentTeam } from '@/lib/games/tournament-opponent-team';
+import { createGame } from '@/lib/services/games/create-game';
+import { gameFormFieldsFromFormData } from '@/lib/services/games/game-form-data';
 
 export async function createGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated — please log in again.';
 
-  const teamId       = formData.get('teamId') as string;
-  const tournamentId = (formData.get('tournamentId') as string | null)?.trim() || null;
-  const opponentTbd  = formData.get('opponentTbd') === 'on';
-  const opponent     = (formData.get('opponent') as string)?.trim();
-  const opponentTeamId = (formData.get('opponentTeamId') as string)?.trim() || null;
-  const date         = formData.get('date') as string;
-  const time         = (formData.get('time') as string) || '12:00';
-  const locationType = (formData.get('locationType') as string) || 'home';
-  const venue        = (formData.get('venue') as string)?.trim() || null;
-  const neutralHomeTeam = locationType === 'neutral'
-    ? ((formData.get('neutralHomeTeam') as string) || 'us')
-    : null;
-  const notes        = (formData.get('notes') as string)?.trim() || null;
-
-  // Structured address fields from AddressAutocomplete
-  const address   = (formData.get('venue_address') as string)   || null;
-  const latRaw    = formData.get('venue_latitude') as string;
-  const lngRaw    = formData.get('venue_longitude') as string;
-  const placeId   = (formData.get('venue_place_id') as string)  || null;
-  const latitude  = latRaw  ? parseFloat(latRaw)  : null;
-  const longitude = lngRaw  ? parseFloat(lngRaw)  : null;
-
-  if (!teamId)                   return 'Missing team ID.';
-  if (!opponentTbd && !opponent) return 'Opponent name is required.';
-  if (!date)                     return 'Game date is required.';
-
-  // The typed time is wall-clock at the venue (or the coach's browser when no
-  // venue was picked). This action runs in UTC, so never let `new Date()`
-  // interpret it.
-  const timeZone = resolveGameTimeZone({
-    latitude,
-    longitude,
-    browserTimeZone: formData.get('browserTimeZone') as string | null,
-  });
-  let scheduledAt: string;
-  try {
-    scheduledAt = zonedDateTimeToUtc(date, time, timeZone ?? 'UTC');
-  } catch {
-    return 'Invalid game date or time.';
-  }
-
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  // Verify coach role
-  const { data: membership } = await supabase
-    .from('team_members')
-    .select('role')
-    .eq('team_id', teamId)
-    .eq('user_id', user.id)
-    .single();
+  const result = await createGame(supabase, user.id, {
+    teamId: formData.get('teamId'),
+    tournamentId: (formData.get('tournamentId') as string | null)?.trim() || null,
+    notifyTeam: formData.get('notifyTeam') === 'on',
+    ...gameFormFieldsFromFormData(formData),
+  });
+  if (!result.ok) return result.error;
 
-  const isCoach =
-    membership?.role === 'head_coach' ||
-    membership?.role === 'assistant_coach' ||
-    membership?.role === 'athletic_director';
-
-  if (!isCoach) return 'Only coaches can schedule games.';
-
-  // Validate opponentTeamId belongs to this team or the team's league.
-  // (TBD games skip this entirely — no opponent team to validate.)
-  let validatedOpponentTeamId: string | null = null;
-  if (!opponentTbd && opponentTeamId) {
-    const { data: opponentTeam, error: otError } = await supabase
-      .from('opponent_teams')
-      .select('id, team_id')
-      .eq('id', opponentTeamId)
-      .single();
-
-    if (otError || !opponentTeam) return 'Selected opponent team not found.';
-
-    // Must belong to this team directly...
-    const ownedByTeam = opponentTeam.team_id === teamId;
-
-    // ...or be accessible via a shared league (opponent team is a league member,
-    // and this team is also a member of that same league)
-    let inSameLeague = false;
-    if (!ownedByTeam) {
-      const { data: sharedLeague } = await supabase
-        .from('league_members')
-        .select('league_id')
-        .eq('opponent_team_id', opponentTeamId)
-        .eq('is_active', true)
-        .limit(1)
-        .maybeSingle();
-
-      if (sharedLeague) {
-        const { data: teamMembership } = await supabase
-          .from('league_members')
-          .select('id')
-          .eq('league_id', sharedLeague.league_id)
-          .eq('team_id', teamId)
-          .eq('is_active', true)
-          .maybeSingle();
-        inSameLeague = !!teamMembership;
-      }
-    }
-
-    if (!ownedByTeam && !inSameLeague) {
-      return 'Selected opponent team does not belong to your team or league.';
-    }
-    validatedOpponentTeamId = opponentTeam.id;
-  }
-
-  // Tournament game creation is scoped to the exact tournament team/season
-  // tuple. Never trust the team or season supplied by a hidden form field.
-  let seasonId: string | null = null;
-  if (tournamentId) {
-    const { data: tournamentTeam, error: tournamentTeamError } = await supabase
-      .from('tournament_teams')
-      .select('team_id, season_id')
-      .eq('tournament_id', tournamentId)
-      .eq('team_id', teamId)
-      .maybeSingle();
-
-    if (tournamentTeamError || !tournamentTeam) {
-      return 'This team is not registered for the selected tournament.';
-    }
-    seasonId = tournamentTeam.season_id;
-
-    // A typed-in tournament opponent gets its own opponent team record so the
-    // opponent roster and lineup can sync to the phone that scores the game.
-    if (!opponentTbd && !validatedOpponentTeamId) {
-      const ensured = await ensureTournamentOpponentTeam(supabase, {
-        teamId,
-        opponentName: opponent,
-        userId: user.id,
-      });
-      if ('error' in ensured) return ensured.error;
-      validatedOpponentTeamId = ensured.opponentTeamId;
-    }
-  } else {
-    // Regular games continue to use the team's active season.
-    const { data: activeSeason } = await supabase
-      .from('seasons')
-      .select('id')
-      .eq('team_id', teamId)
-      .eq('is_active', true)
-      .maybeSingle();
-    seasonId = activeSeason?.id ?? null;
-  }
-
-  const { data: game, error } = await supabase
-    .from('games')
-    .insert({
-      team_id:       teamId,
-      opponent_name: opponentTbd ? null : opponent,
-      opponent_team_id: opponentTbd ? null : validatedOpponentTeamId,
-      scheduled_at:  scheduledAt,
-      time_zone:     timeZone,
-      location_type:     locationType,
-      neutral_home_team: neutralHomeTeam,
-      venue_name:        venue,
-      address,
-      latitude,
-      longitude,
-      place_id:      placeId,
-      notes,
-      created_by:    user.id,
-      season_id:     seasonId,
-      tournament_id: tournamentId,
-    })
-    .select()
-    .single();
-
-  if (error) return `Failed to create game: ${error.message}`;
-
-  // If the league runs dual scorekeeper and the opponent is a linked team,
-  // auto-provision the opponent's parallel game so both sides can score.
-  // Best-effort: never blocks game creation.
-  await provisionMirrorGame(supabase, game, user.id);
-
-  // Skip the announcement for TBD opponents — "New game scheduled: vs. TBD"
-  // adds noise without information; coaches should announce once the bracket fills in.
-  if (!opponentTbd && formData.get('notifyTeam') === 'on') {
-    const locationLabel =
-      locationType === 'home' ? 'Home' : locationType === 'away' ? 'Away' : 'Neutral site';
-    const msg = `📅 New game scheduled: vs. ${opponent} — ${formatDate(scheduledAt, timeZone)} at ${formatTime(scheduledAt, timeZone)} (${locationLabel})`;
-    await postEventAlert(supabase, teamId, user.id, msg);
-  }
-
-  redirect(`/games/${game.id}`);
+  redirect(`/games/${result.data.gameId}`);
 }

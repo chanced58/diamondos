@@ -5,7 +5,6 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import {
-  zonedDateTimeToUtc,
   weAreHome,
   EventType,
   upsertGameRsvpSchema,
@@ -19,9 +18,9 @@ import {
   getAuthorizedCoach,
   finalizeGame,
 } from '@/lib/games/finalize';
-import { resolveGameTimeZone } from '@/lib/games/game-time-zone';
-import { ensureTournamentOpponentTeam } from '@/lib/games/tournament-opponent-team';
 import { cancelGame } from '@/lib/services/games/cancel-game';
+import { updateGame } from '@/lib/services/games/update-game';
+import { gameFormFieldsFromFormData } from '@/lib/services/games/game-form-data';
 import { resetGame } from '@/lib/services/games/reset-game';
 import { recalculateScores } from '@/lib/services/games/recalculate-scores';
 import { resolveReconciliationConflict } from '@/lib/services/games/resolve-reconciliation-conflict';
@@ -305,156 +304,17 @@ export async function updateGameAction(
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated.';
 
-  const gameId = formData.get('gameId') as string;
-  if (!gameId) return 'Missing game ID.';
-
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const { data: game } = await supabase
-    .from('games')
-    .select('team_id, status, time_zone, tournament_id')
-    .eq('id', gameId)
-    .single();
-  if (!game) return 'Game not found.';
-
-  // Allow platform admins and team coaches
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('is_platform_admin')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  let isCoach = profile?.is_platform_admin === true;
-
-  if (!isCoach) {
-    const { data: membership } = await supabase
-      .from('team_members')
-      .select('role')
-      .eq('team_id', game.team_id)
-      .eq('user_id', user.id)
-      .single();
-    isCoach = COACH_ROLES.includes(membership?.role ?? '');
-  }
-
-  if (!isCoach) return 'Only coaches can edit games.';
-
-  const opponentTbd = formData.get('opponentTbd') === 'on';
-  const opponent = (formData.get('opponent') as string)?.trim();
-  const date     = formData.get('date') as string;
-  const time     = (formData.get('time') as string) || '12:00';
-  const opponentTeamIdRaw = (formData.get('opponentTeamId') as string)?.trim() || null;
-  if (!opponentTbd && !opponent) return 'Opponent name is required.';
-  if (!date)                     return 'Game date is required.';
-
-  // Once a game is in_progress or completed, the opponent is locked in — clearing
-  // it back to TBD would orphan game_events, stats, and any opponent_teams row.
-  // Cancelled/postponed games may still be re-edited; only block once play started.
-  if (opponentTbd && (game.status === 'in_progress' || game.status === 'completed')) {
-    return 'Cannot clear the opponent on a game that has started or completed.';
-  }
-
-  // Validate opponent team belongs to this team or its league.
-  // (TBD games skip this — there's no opponent team to validate.)
-  let opponentTeamId: string | null = null;
-  if (!opponentTbd && opponentTeamIdRaw) {
-    // Check team-owned
-    const { data: teamOwned } = await supabase
-      .from('opponent_teams')
-      .select('id')
-      .eq('id', opponentTeamIdRaw)
-      .eq('team_id', game.team_id)
-      .maybeSingle();
-
-    if (teamOwned) {
-      opponentTeamId = teamOwned.id;
-    } else {
-      // Check league-linked: find leagues this team belongs to, then check if
-      // the opponent team is a league member in any of those leagues.
-      const { data: teamLeagues } = await supabase
-        .from('league_members')
-        .select('league_id')
-        .eq('team_id', game.team_id);
-      const leagueIds = (teamLeagues ?? []).map((l) => l.league_id);
-
-      if (leagueIds.length > 0) {
-        const { data: leagueLinked } = await supabase
-          .from('league_members')
-          .select('opponent_team_id')
-          .eq('opponent_team_id', opponentTeamIdRaw)
-          .in('league_id', leagueIds)
-          .limit(1);
-        if (leagueLinked && leagueLinked.length > 0) opponentTeamId = opponentTeamIdRaw;
-      }
-
-      if (!opponentTeamId) return 'Selected opponent team not found or not accessible.';
-    }
-  }
-
-  // Same as createGameAction: a typed-in tournament opponent (e.g. a TBD
-  // bracket slot being filled in) gets an opponent team record to sync.
-  if (!opponentTbd && !opponentTeamId && game.tournament_id) {
-    const ensured = await ensureTournamentOpponentTeam(supabase, {
-      teamId: game.team_id,
-      opponentName: opponent,
-      userId: user.id,
-    });
-    if ('error' in ensured) return ensured.error;
-    opponentTeamId = ensured.opponentTeamId;
-  }
-
-  const locationType = (formData.get('locationType') as string) || 'home';
-  const neutralHomeTeam = locationType === 'neutral'
-    ? ((formData.get('neutralHomeTeam') as string) || 'us')
-    : null;
-  const venue        = (formData.get('venue') as string)?.trim() || null;
-  const notes        = (formData.get('notes') as string)?.trim() || null;
-
-  const latRaw  = formData.get('venue_latitude') as string;
-  const lngRaw  = formData.get('venue_longitude') as string;
-  const address = (formData.get('venue_address') as string) || null;
-  const placeId = (formData.get('venue_place_id') as string) || null;
-  const latitude  = latRaw ? parseFloat(latRaw) : null;
-  const longitude = lngRaw ? parseFloat(lngRaw) : null;
-
-  // Wall-clock at the venue; see createGameAction. Without new coordinates the
-  // game keeps the zone it was scheduled in.
-  const timeZone = resolveGameTimeZone({
-    latitude,
-    longitude,
-    existingTimeZone: game.time_zone,
-    browserTimeZone: formData.get('browserTimeZone') as string | null,
+  const result = await updateGame(supabase, user.id, {
+    gameId: formData.get('gameId'),
+    ...gameFormFieldsFromFormData(formData),
   });
-  let scheduledAt: string;
-  try {
-    scheduledAt = zonedDateTimeToUtc(date, time, timeZone ?? 'UTC');
-  } catch {
-    return 'Invalid game date or time.';
-  }
-
-  const { error } = await supabase
-    .from('games')
-    .update({
-      opponent_name:     opponentTbd ? null : opponent,
-      opponent_team_id:  opponentTbd ? null : opponentTeamId,
-      scheduled_at:      scheduledAt,
-      time_zone:         timeZone,
-      location_type:     locationType,
-      neutral_home_team: neutralHomeTeam,
-      venue_name:        venue,
-      address,
-      latitude,
-      longitude,
-      place_id:      placeId,
-      notes,
-      updated_at:    new Date().toISOString(),
-    })
-    .eq('id', gameId);
-
-  if (error) return `Failed to update game: ${error.message}`;
-  redirect(`/games/${gameId}`);
+  if (!result.ok) return result.error;
+  redirect(`/games/${result.data.gameId}`);
 }
 
 export async function resetGameAction(

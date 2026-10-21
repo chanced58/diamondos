@@ -54,6 +54,8 @@ export async function loadGameDetail(
       locationType: game.location_type,
       neutralHomeTeam: game.neutral_home_team ?? null,
       venueName: game.venue_name ?? null,
+      venueAddress: game.address ?? null,
+      placeId: game.place_id ?? null,
       notes: game.notes ?? null,
       homeScore: game.home_score ?? 0,
       awayScore: game.away_score ?? 0,

@@ -289,6 +289,7 @@ Copy `.env.example` to `.env.local` in each app directory. Never commit `.env` f
 | `EXPO_ACCESS_TOKEN` | Supabase secrets | Expo push notification API token |
 | `APP_URL` | Supabase secrets | Base URL for invite redirect |
 | `CRON_SECRET` | Server-only (Vercel env) | Bearer token authorizing the scheduled league-snapshot rebuild route (`/api/cron/rebuild-league-snapshots`) |
+| `GOOGLE_MAPS_SERVER_API_KEY` | Server-only (web host env) | Google key with **Places API (New)** enabled, used by the mobile venue search proxy (`/api/m/v1/places/*`, `lib/services/places/google-places.ts`). Must not be referrer-restricted (calls come from the server). Unset → the routes answer 503 and the app saves a typed venue without coordinates. Distinct from the browser-restricted `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` the web forms use |
 
 ---
 
