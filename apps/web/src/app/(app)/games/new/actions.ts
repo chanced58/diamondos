@@ -7,6 +7,7 @@ import { formatDate, formatTime, zonedDateTimeToUtc } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
 import { provisionMirrorGame } from '@/lib/dual-scorekeeper/provision';
 import { resolveGameTimeZone } from '@/lib/games/game-time-zone';
+import { ensureTournamentOpponentTeam } from '@/lib/games/tournament-opponent-team';
 
 export async function createGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
@@ -134,6 +135,18 @@ export async function createGameAction(_prevState: string | null | undefined, fo
       return 'This team is not registered for the selected tournament.';
     }
     seasonId = tournamentTeam.season_id;
+
+    // A typed-in tournament opponent gets its own opponent team record so the
+    // opponent roster and lineup can sync to the phone that scores the game.
+    if (!opponentTbd && !validatedOpponentTeamId) {
+      const ensured = await ensureTournamentOpponentTeam(supabase, {
+        teamId,
+        opponentName: opponent,
+        userId: user.id,
+      });
+      if ('error' in ensured) return ensured.error;
+      validatedOpponentTeamId = ensured.opponentTeamId;
+    }
   } else {
     // Regular games continue to use the team's active season.
     const { data: activeSeason } = await supabase

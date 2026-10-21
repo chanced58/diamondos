@@ -37,6 +37,7 @@ import type { GameEvent } from '@baseball/shared';
 import { endGameAction } from '../actions';
 import { DefensiveDiamond } from './DefensiveDiamond';
 import { BattingOrderPanel, type BattingOrderPlayer } from './BattingOrderPanel';
+import { canRecordPlay } from './can-record';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,9 @@ function mapRowToEvent(row: EventRow): GameEvent {
     deviceId: (row.device_id as string) ?? 'web',
   };
 }
+
+/** Postgres unique_violation. */
+const UNIQUE_VIOLATION = '23505';
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
@@ -1012,6 +1016,14 @@ export function ScoringBoard({
         })
     : 'Choose an active batting slot.';
 
+  // Record the current opponent PA without a named batter (per-PA only).
+  function skipOpponentSlot() {
+    setSkippedSlots((prev) => new Set(prev).add(expectedOpponentSlot));
+    setAssignBatterPlayerId('');
+    setAssignBatterPosition('');
+    setAssignBatterError(null);
+  }
+
   // Clear skipped-slot dismissals when the active slot changes (skip is per-PA only)
   useEffect(() => {
     setSkippedSlots(new Set());
@@ -1033,24 +1045,37 @@ export function ScoringBoard({
     let pitcher: { playerId: string; player: LineupEntry['player'] } | null = startingEntry
       ? { playerId: startingEntry.playerId, player: { ...startingEntry.player } }
       : null;
+    // No lineup row marked P (e.g. a game started on mobile, whose start
+    // wizard picks the starter without setting a position): fall back to the
+    // starter recorded in the GAME_START payload.
+    if (!pitcher) {
+      const startPayload = (effectiveEventRows.find((row) => row.event_type === 'game_start')?.payload ?? {}) as Record<string, unknown>;
+      const sideIsHome = forOpponent ? !isHome : isHome;
+      const starterId = startPayload[sideIsHome ? 'homeLineupPitcherId' : 'awayLineupPitcherId'] as string | null | undefined;
+      if (starterId) pitcher = { playerId: starterId, player: resolvePitcherName(starterId, baseLineup, roster) };
+    }
     for (const row of effectiveEventRows) {
       if ((row.event_type as string) !== 'pitching_change') continue;
       const p = (row.payload ?? {}) as Record<string, unknown>;
       if (Boolean(p.isOpponentChange) !== forOpponent) continue;
       const newId = p.newPitcherId as string;
       if (!newId) continue;
-      const rosterEntry = (roster ?? []).find((r) => r.id === newId);
-      const lineupEntry = baseLineup.find((l) => l.playerId === newId);
-      pitcher = {
-        playerId: newId,
-        player: rosterEntry
-          ? { id: newId, firstName: rosterEntry.firstName, lastName: rosterEntry.lastName, jerseyNumber: rosterEntry.jerseyNumber }
-          : lineupEntry
-            ? { ...lineupEntry.player }
-            : { id: newId, firstName: '', lastName: '?', jerseyNumber: null },
-      };
+      pitcher = { playerId: newId, player: resolvePitcherName(newId, baseLineup, roster) };
     }
     return pitcher;
+  }
+
+  function resolvePitcherName(
+    pitcherId: string,
+    baseLineup: LineupEntry[],
+    roster: RosterEntry[] | undefined,
+  ): LineupEntry['player'] {
+    const rosterEntry = (roster ?? []).find((r) => r.id === pitcherId);
+    if (rosterEntry) {
+      return { id: pitcherId, firstName: rosterEntry.firstName, lastName: rosterEntry.lastName, jerseyNumber: rosterEntry.jerseyNumber };
+    }
+    const lineupEntry = baseLineup.find((l) => l.playerId === pitcherId);
+    return lineupEntry ? { ...lineupEntry.player } : { id: pitcherId, firstName: '', lastName: '?', jerseyNumber: null };
   }
 
   // When opponent is batting → our team pitches; when our team is batting → opponent pitches.
@@ -1065,7 +1090,17 @@ export function ScoringBoard({
   // then silently drop the event with no attribution and no recovery path.
   // Gate the PA-closing handlers on both sides being resolved, and surface a
   // banner so the scorer fixes the lineup before logging new events.
-  const canRecord = activeBatterId != null && activePitcherId != null;
+  //
+  // The opponent side may be unattributed when the opponent is untracked
+  // (games started on mobile usually are), so a coach can take such a game
+  // over here — see canRecordPlay.
+  const canRecord = canRecordPlay({
+    isOpponentBatting,
+    activeBatterId,
+    activePitcherId,
+    opponentTracked: effectiveOpponentStarters.length > 0,
+    opponentSlotSkipped: skippedSlots.has(expectedOpponentSlot),
+  });
 
   // Count pitches thrown by the active pitcher from effectiveEventRows directly, so the
   // count is correct even before the first pitch of a new half-inning.
@@ -1195,6 +1230,11 @@ export function ScoringBoard({
           filter: `game_id=eq.${game.id}`,
         },
         (payload) => {
+          // Another scorer (e.g. the phone this game was started on) may still
+          // be writing; keep our next sequence number above theirs so the
+          // unique (game_id, sequence_number) constraint doesn't reject ours.
+          const incomingSeq = payload.new.sequence_number as number;
+          if (incomingSeq >= nextSeqNum.current) nextSeqNum.current = incomingSeq + 1;
           setEventRows((prev) => {
             if (prev.some((e) => e.id === payload.new.id)) return prev;
             return [...prev, payload.new].sort(
@@ -1233,11 +1273,33 @@ export function ScoringBoard({
       if (isDemo) return newRow.id as string;
 
       const supabase = createBrowserClient();
-      const { error: upsertError } = await supabase.from('game_events').upsert(
+      const persistRow = async () => (await supabase.from('game_events').upsert(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         newRow as any,
         { onConflict: 'id', ignoreDuplicates: true },
-      );
+      )).error;
+      let upsertError = await persistRow();
+      // Another scorer (e.g. the phone this game was started on) took this
+      // sequence number before its insert reached us over Realtime. Duplicate
+      // ids are ignored above, so a unique violation here is the
+      // (game_id, sequence_number) constraint: move past the server's highest
+      // number and retry, keeping the optimistic row in step.
+      for (let attempt = 0; upsertError?.code === UNIQUE_VIOLATION && attempt < 3; attempt++) {
+        const { data: latest } = await supabase
+          .from('game_events')
+          .select('sequence_number')
+          .eq('game_id', game.id)
+          .order('sequence_number', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const retrySeq = Math.max(nextSeqNum.current, ((latest?.sequence_number as number | undefined) ?? 0) + 1);
+        nextSeqNum.current = retrySeq + 1;
+        newRow.sequence_number = retrySeq;
+        setEventRows((prev) => prev
+          .map((row) => (row.id === newRow.id ? { ...newRow } : row))
+          .sort((a, b) => (a.sequence_number as number) - (b.sequence_number as number)));
+        upsertError = await persistRow();
+      }
       if (upsertError) {
         console.error('[ScoringBoard] Failed to persist event:', eventType, upsertError);
         // Roll back the optimistic insert so local state matches what is actually persisted.
@@ -1860,6 +1922,10 @@ export function ScoringBoard({
   }
 
   // Pitch outcome buttons are enabled once all enabled annotations are filled in
+  // The field location is required before an in-play result only while
+  // spray-chart capture is on (a phone game can turn hit location off).
+  const sprayPointMissing = localConfig.sprayChart && !sprayPoint;
+
   const pitchAnnotationsReady =
     (!localConfig.pitchType     || pitchType    !== null) &&
     (!localConfig.pitchLocation || zoneLocation !== null);
@@ -2141,7 +2207,16 @@ export function ScoringBoard({
                 <p className="text-xs text-red-600 mb-2">{assignBatterError}</p>
               )}
               {availablePlayers.length === 0 ? (
-                <p className="text-xs text-blue-700">No unassigned roster players remaining.</p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-xs text-blue-700">No unassigned roster players remaining.</p>
+                  <button
+                    type="button"
+                    onClick={skipOpponentSlot}
+                    className="text-sm text-blue-700 hover:text-blue-900 transition-colors"
+                  >
+                    Skip
+                  </button>
+                </div>
               ) : (
                 <div className="flex flex-wrap items-end gap-2">
                   <div>
@@ -2186,12 +2261,7 @@ export function ScoringBoard({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setSkippedSlots((prev) => new Set(prev).add(expectedOpponentSlot));
-                      setAssignBatterPlayerId('');
-                      setAssignBatterPosition('');
-                      setAssignBatterError(null);
-                    }}
+                    onClick={skipOpponentSlot}
                     className="text-sm text-blue-700 hover:text-blue-900 transition-colors"
                   >
                     Skip
@@ -2253,7 +2323,7 @@ export function ScoringBoard({
             ) : inPlayPending ? (
               <div className="space-y-3">
                 {/* Field spray chart — hidden during out-assignment step (already captured) */}
-                {!outAssignmentPending && (
+                {!outAssignmentPending && localConfig.sprayChart && (
                   <SprayChartPicker value={sprayPoint} onChange={setSprayPoint} />
                 )}
 
@@ -2680,7 +2750,7 @@ export function ScoringBoard({
                         <button
                           key={value}
                           onClick={() => setPendingResult(value)}
-                          disabled={!sprayPoint}
+                          disabled={sprayPointMissing}
                           className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-gray-300 bg-gray-50 hover:bg-gray-100 disabled:hover:bg-gray-50"
                         >
                           {label}
@@ -2688,13 +2758,13 @@ export function ScoringBoard({
                       ))}
                       <button
                         onClick={() => setPendingResult('error')}
-                        disabled={!sprayPoint}
+                        disabled={sprayPointMissing}
                         className="py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:hover:bg-red-50"
                       >
                         Error
                       </button>
                     </div>
-                    {!sprayPoint && (
+                    {sprayPointMissing && (
                       <p className="text-xs text-gray-400 mt-2">Tap the field above to mark where the ball was hit</p>
                     )}
                   </div>
