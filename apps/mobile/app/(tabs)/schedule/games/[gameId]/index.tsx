@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Badge, Button, ErrorState, ListRow, SectionHeader } from '@baseball/ui';
 import { formatDate, formatTime } from '@baseball/shared';
@@ -137,8 +137,20 @@ export default function GameDetailScreen() {
     { title: 'Box score and stats', path: `/games/${game.id}/stats`, show: sections.showStatsAndHistory },
     { title: 'Play-by-play history', path: `/games/${game.id}/history`, show: sections.showStatsAndHistory },
     { title: 'Opponent lineup', path: `/games/${game.id}/opponent-lineup`, show: sections.showOpponentLineup },
-    { title: 'Edit game', path: `/games/${game.id}`, show: sections.canEdit },
   ].filter((link) => link.show);
+
+  const editButton = sections.canEdit
+    ? () => (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Edit game"
+          hitSlop={8}
+          onPress={() => router.push({ pathname: '/(tabs)/schedule/games/[gameId]/edit', params: { gameId: game.id } })}
+        >
+          <Text className="text-white text-base font-semibold">Edit</Text>
+        </TouchableOpacity>
+      )
+    : undefined;
 
   return (
     <ScrollView
@@ -148,7 +160,7 @@ export default function GameDetailScreen() {
         <RefreshControl refreshing={detailQuery.isRefetching} onRefresh={() => void detailQuery.refetch()} />
       }
     >
-      <Stack.Screen options={{ title: matchupTitle(game) }} />
+      <Stack.Screen options={{ title: matchupTitle(game), headerRight: editButton }} />
 
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1">
