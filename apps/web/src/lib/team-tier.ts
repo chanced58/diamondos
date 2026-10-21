@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getSubscriptionForTeam, getSubscriptionForLeague, getLeagueForTeam } from '@baseball/database';
 import { SubscriptionTier } from '@baseball/shared';
 
@@ -15,7 +15,11 @@ export async function getTeamTier(teamId: string): Promise<SubscriptionTier> {
   if (!serviceRoleKey) return SubscriptionTier.FREE;
 
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey);
+  return resolveTeamTier(db, teamId);
+}
 
+/** {@link getTeamTier} with a caller-supplied service-role client. */
+export async function resolveTeamTier(db: SupabaseClient, teamId: string): Promise<SubscriptionTier> {
   try {
     // 1. Check for a direct team subscription
     const teamSub = await getSubscriptionForTeam(db, teamId);
