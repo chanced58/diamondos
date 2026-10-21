@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { getSupabaseClient } from '../lib/supabase';
+import { unregisterPushToken } from '../lib/notifications';
+import { clearCachedMe } from '../features/teams/me';
 
 interface AuthContextValue {
   session: Session | null;
@@ -39,7 +41,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Device cleanup runs first, while the session can still authorize the
+  // push-token delete; neither step can block the sign-out itself.
   const signOut = async () => {
+    await Promise.all([unregisterPushToken(), clearCachedMe()]);
     const supabase = getSupabaseClient();
     await supabase.auth.signOut();
   };
