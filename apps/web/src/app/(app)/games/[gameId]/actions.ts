@@ -14,7 +14,6 @@ import { upsertGameRsvp } from '@baseball/database';
 // Game finalization + coach authorization live in @/lib/games/finalize so the
 // mobile finalize API route shares the exact same logic as endGameAction.
 import {
-  COACH_ROLES,
   getAuthorizedCoach,
   finalizeGame,
 } from '@/lib/games/finalize';
@@ -24,6 +23,8 @@ import { gameFormFieldsFromFormData } from '@/lib/services/games/game-form-data'
 import { resetGame } from '@/lib/services/games/reset-game';
 import { recalculateScores } from '@/lib/services/games/recalculate-scores';
 import { resolveReconciliationConflict } from '@/lib/services/games/resolve-reconciliation-conflict';
+import { saveGameNotes, savePlayerGameNotes } from '@/lib/services/games/save-game-notes';
+import { gameNotesInputFromFormData } from '@/lib/services/games/game-notes-form-data';
 
 export async function cancelGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
@@ -346,96 +347,13 @@ export async function saveGameNotesAction(
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated — please log in again.';
 
-  const gameId = formData.get('gameId') as string;
-  const teamId = formData.get('teamId') as string;
-  if (!gameId || !teamId) return 'Missing required IDs.';
-
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  // Allow platform admins and team coaches
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('is_platform_admin')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  let isCoach = profile?.is_platform_admin === true;
-
-  if (!isCoach) {
-    const { data: membership } = await supabase
-      .from('team_members')
-      .select('role')
-      .eq('team_id', teamId)
-      .eq('user_id', user.id)
-      .single();
-    isCoach = COACH_ROLES.includes(membership?.role ?? '');
-  }
-
-  if (!isCoach) return 'Only coaches can save game notes.';
-
-  const overallNotes = (formData.get('overall_notes') as string) ?? '';
-  const coachNotes   = (formData.get('coach_notes') as string) ?? '';
-
-  const { error: notesError } = await supabase
-    .from('game_notes')
-    .upsert(
-      {
-        game_id:       gameId,
-        overall_notes: overallNotes || null,
-        updated_by:    user.id,
-        updated_at:    new Date().toISOString(),
-      },
-      { onConflict: 'game_id' },
-    );
-  if (notesError) return `Failed to save notes: ${notesError.message}`;
-
-  // coach_notes lives in a separate coach-only table
-  const { error: coachNotesError } = await supabase
-    .from('game_coach_notes')
-    .upsert(
-      {
-        game_id:     gameId,
-        coach_notes: coachNotes || null,
-        updated_by:  user.id,
-        updated_at:  new Date().toISOString(),
-      },
-      { onConflict: 'game_id' },
-    );
-  if (coachNotesError) return `Failed to save coach notes: ${coachNotesError.message}`;
-
-  // Collect player categorical notes (keys: player_<uuid>_<category>)
-  const playerMap = new Map<string, Record<string, string>>();
-  for (const [key, value] of formData.entries()) {
-    const match = key.match(/^player_([0-9a-f-]{36})_(.+)$/);
-    if (!match) continue;
-    const [, playerId, category] = match;
-    if (!playerMap.has(playerId)) playerMap.set(playerId, {});
-    playerMap.get(playerId)![category] = value as string;
-  }
-
-  if (playerMap.size > 0) {
-    const rows = Array.from(playerMap.entries()).map(([playerId, notes]) => ({
-      game_id:          gameId,
-      player_id:        playerId,
-      pitching:         notes.pitching || null,
-      hitting:          notes.hitting || null,
-      fielding_catching: notes.fielding_catching || null,
-      baserunning:      notes.baserunning || null,
-      athleticism:      notes.athleticism || null,
-      attitude:         notes.attitude || null,
-      updated_by:       user.id,
-      updated_at:       new Date().toISOString(),
-    }));
-
-    const { error: playerError } = await supabase
-      .from('game_player_notes')
-      .upsert(rows, { onConflict: 'game_id,player_id' });
-    if (playerError) return `Failed to save player notes: ${playerError.message}`;
-  }
-
+  const result = await saveGameNotes(supabase, user.id, gameNotesInputFromFormData(formData));
+  if (!result.ok) return result.error;
   return 'saved';
 }
 
@@ -447,49 +365,17 @@ export async function savePlayerGameNotesAction(
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated — please log in again.';
 
-  const gameId      = formData.get('gameId') as string;
-  const playerId    = formData.get('playerId') as string;
-  const playerNotes = (formData.get('player_notes') as string) || null;
-
-  if (!gameId || !playerId) return 'Missing required IDs.';
-
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  // Verify the player record belongs to this user
-  const { data: player } = await supabase
-    .from('players')
-    .select('id, team_id')
-    .eq('id', playerId)
-    .eq('user_id', user.id)
-    .single();
-  if (!player) return 'Player record not found for your account.';
-
-  // Verify the game belongs to the same team
-  const { data: game } = await supabase
-    .from('games')
-    .select('id')
-    .eq('id', gameId)
-    .eq('team_id', player.team_id)
-    .single();
-  if (!game) return 'Game not found.';
-
-  const { error } = await supabase
-    .from('game_player_notes')
-    .upsert(
-      {
-        game_id:      gameId,
-        player_id:    playerId,
-        player_notes: playerNotes,
-        updated_by:   user.id,
-        updated_at:   new Date().toISOString(),
-      },
-      { onConflict: 'game_id,player_id' },
-    );
-  if (error) return `Failed to save notes: ${error.message}`;
-
+  const result = await savePlayerGameNotes(supabase, user.id, {
+    gameId: formData.get('gameId'),
+    playerId: formData.get('playerId'),
+    playerNotes: String(formData.get('player_notes') ?? ''),
+  });
+  if (!result.ok) return result.error;
   return 'saved';
 }
 

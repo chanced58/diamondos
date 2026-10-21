@@ -2,12 +2,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * A chainable Supabase client fake for service tests. Results are keyed
- * `table.op` (op = select | insert | update | delete); an array is consumed in
+ * `table.op` (op = select | insert | update | upsert | delete); an array is consumed in
  * call order, its last entry repeating. Every call is recorded with its
  * filters and payload so tests can assert scoping.
  */
 
-export type FakeOp = 'select' | 'insert' | 'update' | 'delete';
+export type FakeOp = 'select' | 'insert' | 'update' | 'upsert' | 'delete';
 export interface FakeCall {
   table: string;
   op: FakeOp;
@@ -41,6 +41,7 @@ export function fakeDb(results: Record<string, FakeResult | FakeResult[]> = {}) 
         select: () => builder,
         insert: (payload: unknown) => { call.op = 'insert'; call.payload = payload; return builder; },
         update: (payload: unknown) => { call.op = 'update'; call.payload = payload; return builder; },
+        upsert: (payload: unknown) => { call.op = 'upsert'; call.payload = payload; return builder; },
         delete: () => { call.op = 'delete'; return builder; },
         eq: (col: string, val: unknown) => { call.filters[col] = val; return builder; },
         in: (col: string, val: unknown) => { call.filters[col] = val; return builder; },
