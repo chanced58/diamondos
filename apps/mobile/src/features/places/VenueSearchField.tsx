@@ -21,9 +21,13 @@ interface VenueSearchFieldProps {
 
 const SEARCH_DELAY_MS = 300;
 
-/** Any failure other than bad input means search can't help right now. */
+/**
+ * Whether a failure means search can't help right now. Bad input, no
+ * permission, or one place Google no longer knows (a stale suggestion)
+ * don't: search itself still works.
+ */
 function searchUnavailable(error: unknown): boolean {
-  return !isApiError(error) || !['invalid', 'forbidden'].includes(error.kind);
+  return !isApiError(error) || !['invalid', 'forbidden', 'not_found'].includes(error.kind);
 }
 
 /**

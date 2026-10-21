@@ -15,7 +15,16 @@ export async function deleteTeamEvent(
   if (!parsed.success) return invalidInput(parsed.error);
   const { eventId } = parsed.data;
 
-  const { data: event } = await db.from('team_events').select('team_id').eq('id', eventId).maybeSingle();
+  const { data: event, error: lookupError } = await db
+    .from('team_events')
+    .select('team_id')
+    .eq('id', eventId)
+    .maybeSingle();
+  // A failed lookup is a server fault, not a missing event.
+  if (lookupError) {
+    console.error(`[deleteTeamEvent] event=${eventId} actor=${actorUserId} lookup failed:`, lookupError);
+    return serviceError('failed', `Failed to load event: ${lookupError.message}`);
+  }
   if (!event) return serviceError('not_found', 'Event not found.');
 
   if (!(await isActiveTeamCoach(db, actorUserId, event.team_id as string))) {

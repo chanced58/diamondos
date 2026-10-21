@@ -5,6 +5,7 @@ import { router, useFocusEffect } from 'expo-router';
 import {
   buildMonthGrid,
   formatInTimeZone,
+  monthDateRange,
   monthOfDateKey,
   shiftMonth,
   utcToZonedDateTime,
@@ -74,7 +75,18 @@ export function ScheduleCalendar() {
     return byDay;
   }, [items, zone]);
 
-  const goToMonth = (delta: number) => setMonth((current) => shiftMonth(current, delta));
+  // Keep the selected day inside the visible month, so the agenda never shows
+  // a day from the month just left: today if it's in view, else the 1st.
+  const goToMonth = (delta: number) => {
+    const next = shiftMonth(month, delta);
+    const todayMonth = monthOfDateKey(today);
+    setMonth(next);
+    setSelected(
+      next.year === todayMonth.year && next.month === todayMonth.month
+        ? today
+        : monthDateRange(next).first,
+    );
+  };
   const goToToday = () => {
     setMonth(monthOfDateKey(today));
     setSelected(today);

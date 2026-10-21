@@ -21,6 +21,20 @@ export async function isPlatformAdmin(db: SupabaseClient, userId: string): Promi
 }
 
 /**
+ * The leagues the team is an active member of. The one source for which
+ * leagues' opponents a team may schedule, shared by the availability check
+ * and the form options so the form never offers an opponent the check rejects.
+ */
+export async function activeLeagueIds(db: SupabaseClient, teamId: string): Promise<string[]> {
+  const { data: teamLeagues } = await db
+    .from('league_members')
+    .select('league_id')
+    .eq('team_id', teamId)
+    .eq('is_active', true);
+  return (teamLeagues ?? []).map((row) => row.league_id as string);
+}
+
+/**
  * Whether an opponent team record may be used for one of the team's games:
  * the team owns it, or it is an active member of a league the team is also an
  * active member of.
@@ -38,12 +52,7 @@ export async function isOpponentTeamAvailable(
   if (!opponentTeam) return false;
   if (opponentTeam.team_id === teamId) return true;
 
-  const { data: teamLeagues } = await db
-    .from('league_members')
-    .select('league_id')
-    .eq('team_id', teamId)
-    .eq('is_active', true);
-  const leagueIds = (teamLeagues ?? []).map((row) => row.league_id as string);
+  const leagueIds = await activeLeagueIds(db, teamId);
   if (leagueIds.length === 0) return false;
 
   const { data: shared } = await db

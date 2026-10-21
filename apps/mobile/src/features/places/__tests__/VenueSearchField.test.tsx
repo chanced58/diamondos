@@ -60,6 +60,24 @@ it('should pick a suggestion and pass its address and coordinates on', async () 
   });
 });
 
+it('should keep searching after one stale suggestion is no longer found', async () => {
+  mockSearchPlaces.mockResolvedValue([{ placeId: 'gone', primaryText: 'Old Field', secondaryText: 'Boise, ID' }]);
+  mockGetPlace.mockRejectedValue(new ApiError('not_found', 'Venue not found.', { status: 404 }));
+  const onChange = jest.fn();
+  render(<Harness onChange={onChange} />);
+
+  await typeAndWait('Old Field');
+  await act(async () => {
+    fireEvent.press(screen.getByLabelText('Use Old Field'));
+  });
+
+  // The suggestion's name is kept as a typed venue, and search stays on.
+  expect(onChange).toHaveBeenLastCalledWith({ name: 'Old Field', address: 'Boise, ID', latitude: null, longitude: null, placeId: null });
+  expect(screen.queryByText(/Venue search is unavailable/)).toBeNull();
+  await typeAndWait('Riverside');
+  expect(mockSearchPlaces).toHaveBeenCalledTimes(2);
+});
+
 it('should fall back to a typed venue when search is unavailable', async () => {
   mockSearchPlaces.mockRejectedValue(new ApiError('server', 'Venue search is not configured.', { status: 503 }));
   render(<Harness onChange={jest.fn()} />);

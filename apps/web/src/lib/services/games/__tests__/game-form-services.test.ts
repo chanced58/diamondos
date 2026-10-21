@@ -7,7 +7,6 @@ import { fakeDb } from '../../__tests__/fake-db';
 const mockPostEventAlert = jest.fn();
 const mockProvisionMirrorGame = jest.fn();
 const mockEnsureTournamentOpponentTeam = jest.fn();
-const mockGetLeagueForTeam = jest.fn();
 
 jest.mock('@/app/(app)/messages/notify', () => ({
   postEventAlert: (...args: unknown[]) => mockPostEventAlert(...args),
@@ -17,9 +16,6 @@ jest.mock('@/lib/dual-scorekeeper/provision', () => ({
 }));
 jest.mock('@/lib/games/tournament-opponent-team', () => ({
   ensureTournamentOpponentTeam: (...args: unknown[]) => mockEnsureTournamentOpponentTeam(...args),
-}));
-jest.mock('@baseball/database', () => ({
-  getLeagueForTeam: (...args: unknown[]) => mockGetLeagueForTeam(...args),
 }));
 
 const TEAM = '11111111-1111-4111-8111-111111111111';
@@ -40,7 +36,6 @@ const form = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockGetLeagueForTeam.mockResolvedValue(null);
 });
 
 describe('createGame', () => {
@@ -167,18 +162,38 @@ describe('updateGame', () => {
 
 describe('loadGameFormOptions', () => {
   it('should merge, dedupe and sort the team and league opponents', async () => {
-    mockGetLeagueForTeam.mockResolvedValue({ id: 'league-1' });
     const { db } = fakeDb({
       ...coach,
       'opponent_teams.select': { data: [{ id: 'b', name: 'Bears', city: null }, { id: 'z', name: 'Zebras', city: 'Boise' }] },
-      'league_members.select': { data: [
-        { opponent_teams: { id: 'a', name: 'Aces', city: null } },
-        { opponent_teams: [{ id: 'b', name: 'Bears', city: null }] },
-      ] },
+      // First the team's active leagues, then those leagues' opponents.
+      'league_members.select': [
+        { data: [{ league_id: 'league-1' }] },
+        { data: [
+          { opponent_teams: { id: 'a', name: 'Aces', city: null } },
+          { opponent_teams: [{ id: 'b', name: 'Bears', city: null }] },
+        ] },
+      ],
     });
     const result = await loadGameFormOptions(db, 'coach', { teamId: TEAM });
     if (!result.ok) throw new Error(result.error);
     expect(result.data.opponentTeams.map((t) => t.id)).toEqual(['a', 'b', 'z']);
+  });
+
+  it('should only offer active opponents from every league the team is actively in', async () => {
+    const { db, calls } = fakeDb({
+      ...coach,
+      'league_members.select': [{ data: [{ league_id: 'league-1' }, { league_id: 'league-2' }] }, { data: [] }],
+    });
+    await loadGameFormOptions(db, 'coach', { teamId: TEAM });
+    const [teamLeagues, opponents] = calls.filter((c) => c.table === 'league_members');
+    expect(teamLeagues.filters).toEqual({ team_id: TEAM, is_active: true });
+    expect(opponents.filters).toEqual({ league_id: ['league-1', 'league-2'], is_active: true });
+  });
+
+  it('should skip the league query for a team in no league', async () => {
+    const { db, calls } = fakeDb({ ...coach, 'league_members.select': { data: [] } });
+    await loadGameFormOptions(db, 'coach', { teamId: TEAM });
+    expect(calls.filter((c) => c.table === 'league_members')).toHaveLength(1);
   });
 
   it('should refuse a non-coach', async () => {
@@ -199,5 +214,15 @@ describe('deleteTeamEvent', () => {
     expect(await deleteTeamEvent(stranger.db, 'u', { eventId: EVENT })).toMatchObject({ ok: false, code: 'forbidden' });
     expect(stranger.calls.find((c) => c.op === 'delete')).toBeUndefined();
     expect(await deleteTeamEvent(fakeDb().db, 'coach', { eventId: EVENT })).toMatchObject({ ok: false, code: 'not_found' });
+  });
+
+  it('should report a failed lookup as a server fault, not a missing event', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const { db, calls } = fakeDb({ 'team_events.select': { data: null, error: { message: 'connection reset' } } });
+    const result = await deleteTeamEvent(db, 'coach', { eventId: EVENT });
+    expect(result).toMatchObject({ ok: false, code: 'failed' });
+    expect(log).toHaveBeenCalled();
+    expect(calls.find((c) => c.op === 'delete')).toBeUndefined();
+    log.mockRestore();
   });
 });

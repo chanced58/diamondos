@@ -90,10 +90,22 @@ it('should send a coach to practice attendance', async () => {
   });
 });
 
-it('should move between months', async () => {
+it('should move between months, keeping the agenda on a day in view', async () => {
   render(<ScheduleCalendar />);
+
+  // Leaving today's month selects the new month's first day.
   fireEvent.press(screen.getByLabelText('Next month'));
   expect(screen.getByText('November 2026')).toBeTruthy();
+  expect(screen.getByText('Sunday, November 1')).toBeTruthy();
+  expect(screen.queryByText('Wednesday, October 21')).toBeNull();
+
+  // Coming back to today's month selects today again.
+  fireEvent.press(screen.getByLabelText('Previous month'));
+  expect(screen.getByText('October 2026')).toBeTruthy();
+  expect(screen.getByText('Wednesday, October 21')).toBeTruthy();
+
+  fireEvent.press(screen.getByLabelText('Previous month'));
+  expect(screen.getByText('Tuesday, September 1')).toBeTruthy();
   fireEvent.press(screen.getByLabelText('Go to today'));
   expect(screen.getByText('October 2026')).toBeTruthy();
   await waitFor(() => expect(screen.getByText('Practice')).toBeTruthy());

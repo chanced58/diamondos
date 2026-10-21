@@ -1,9 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import type { GameFormOptions } from '@baseball/shared';
-import { getLeagueForTeam } from '@baseball/database';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
-import { isActiveTeamCoach, isPlatformAdmin } from './game-form-helpers';
+import { activeLeagueIds, isActiveTeamCoach, isPlatformAdmin } from './game-form-helpers';
 
 const inputSchema = z.object({ teamId: z.string().uuid('Missing team ID.') });
 
@@ -31,13 +30,16 @@ export async function loadGameFormOptions(
     .eq('team_id', teamId)
     .order('name');
 
+  // The same rule as isOpponentTeamAvailable: active opponents of every league
+  // the team is actively in, so the form never offers one the save rejects.
   let leagueOpponents: OpponentTeam[] = [];
-  const league = await getLeagueForTeam(db as never, teamId);
-  if (league) {
+  const leagueIds = await activeLeagueIds(db, teamId);
+  if (leagueIds.length > 0) {
     const { data: leagueMembers } = await db
       .from('league_members')
       .select('opponent_team_id, opponent_teams(id, name, city)')
-      .eq('league_id', league.id)
+      .in('league_id', leagueIds)
+      .eq('is_active', true)
       .not('opponent_team_id', 'is', null);
     leagueOpponents = (leagueMembers ?? []).flatMap((member) => {
       const raw = member.opponent_teams as unknown;
