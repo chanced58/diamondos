@@ -76,7 +76,7 @@ export function buildGameStartPayload(input: BuildGameStartPayloadInput): Record
  * If the starting pitcher isn't one of the selected batters (a DH lineup),
  * they still get a row — batting_order null, starting_position 'pitcher' —
  * so pitch-count tracking survives without a batting slot. Mirrors the
- * dedicated lineup screen's save behavior (app/(tabs)/games/[gameId]/
+ * dedicated lineup screen's save behavior (app/(tabs)/schedule/games/[gameId]/
  * lineup.tsx), which keeps a benched pitcher for the same reason.
  *
  * `priorPositions` carries forward a real fielding position (first_base,

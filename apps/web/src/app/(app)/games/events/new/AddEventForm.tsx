@@ -3,6 +3,7 @@ import type { JSX } from 'react';
 
 import { useFormState, useFormStatus } from 'react-dom';
 import { createTeamEventAction } from './actions';
+import { BrowserTimeZoneInput } from '@/components/game/BrowserTimeZoneInput';
 import { AddressAutocomplete } from '@/components/maps/AddressAutocomplete';
 
 function SubmitButton() {
@@ -30,6 +31,7 @@ export function AddEventForm({ teamId }: { teamId: string }): JSX.Element | null
   return (
     <form action={formAction} className="space-y-5">
       <input type="hidden" name="teamId" value={teamId} />
+      <BrowserTimeZoneInput />
 
       {/* Title */}
       <div>

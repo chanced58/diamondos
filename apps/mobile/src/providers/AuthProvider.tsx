@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { getSupabaseClient } from '../lib/supabase';
+import { unregisterPushToken } from '../lib/notifications';
+import { clearCachedMe } from '../features/teams/me';
 
 interface AuthContextValue {
   session: Session | null;
@@ -8,6 +10,8 @@ interface AuthContextValue {
   loading: boolean;
   signOut: () => Promise<void>;
 }
+
+const SIGN_OUT_CLEANUP_TIMEOUT_MS = 5_000;
 
 const AuthContext = createContext<AuthContextValue>({
   session: null,
@@ -39,7 +43,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Device cleanup runs first, while the session can still authorize the
+  // push-token delete. It is capped so a slow network can't hold the button:
+  // a token left undeleted stays stored and the next sign-out retries it.
   const signOut = async () => {
+    await Promise.race([
+      Promise.all([unregisterPushToken(), clearCachedMe()]),
+      new Promise((resolve) => setTimeout(resolve, SIGN_OUT_CLEANUP_TIMEOUT_MS)),
+    ]);
     const supabase = getSupabaseClient();
     await supabase.auth.signOut();
   };

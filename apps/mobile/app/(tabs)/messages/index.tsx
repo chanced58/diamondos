@@ -1,4 +1,4 @@
-import { View, Text, FlatList, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, View, Text, FlatList, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Q } from '@nozbe/watermelondb';
 import withObservables from '@nozbe/with-observables';
@@ -6,6 +6,8 @@ import { database } from '../../../src/db';
 import type { Channel } from '../../../src/db/models/Channel';
 import type { Message } from '../../../src/db/models/Message';
 import { useAuth } from '../../../src/providers/AuthProvider';
+import { useRole } from '../../../src/providers/RoleProvider';
+import { TeamSwitcher } from '../../../src/features/teams/TeamSwitcher';
 import { resolveChannelLabel } from '../../../src/features/messaging/channel-label';
 
 interface ChannelWithMessages {
@@ -80,16 +82,18 @@ function ChannelList({ channelsWithMessages, currentUserId }: ChannelListProps) 
   );
 }
 
-const ChannelListEnhanced = withObservables([], () => ({
+// Scoped to the active team: the local mirror holds the channels of every
+// team the user belongs to, and the list used to show them all mixed together.
+const ChannelListEnhanced = withObservables(['teamId'], ({ teamId }: { teamId: string }) => ({
   channels: database
     .get<Channel>('channels')
-    .query(Q.sortBy('channel_type', Q.asc))
+    .query(Q.where('team_id', teamId), Q.sortBy('channel_type', Q.asc))
     .observe(),
   // Denormalised sender_name on messages is what lets a direct channel's
   // counterparty be resolved offline — see channel-label.ts. A handful of
   // channels means a full messages observable here stays cheap.
   messages: database.get<Message>('messages').query().observe(),
-}))((props: { channels: Channel[]; messages: Message[] }) => {
+}))((props: { teamId: string; channels: Channel[]; messages: Message[] }) => {
   const { user } = useAuth();
   const channelsWithMessages: ChannelWithMessages[] = props.channels.map((channel) => ({
     channel,
@@ -102,9 +106,24 @@ const ChannelListEnhanced = withObservables([], () => ({
 });
 
 export default function MessagesScreen() {
+  const { activeTeam, loading } = useRole();
+
+  if (loading) {
+    return (
+      <View className="flex-1 items-center justify-center bg-gray-50">
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1 bg-gray-50">
-      <ChannelListEnhanced />
+      <TeamSwitcher />
+      {activeTeam ? (
+        <ChannelListEnhanced teamId={activeTeam.teamId} />
+      ) : (
+        <ChannelList channelsWithMessages={[]} currentUserId={null} />
+      )}
     </View>
   );
 }

@@ -64,7 +64,7 @@ describe('mapGameToScheduleItem', () => {
   it('uses game.remoteId (not the local WDB row id) as the routed gameId', () => {
     const item = mapGameToScheduleItem(mkGame({ remoteId: 'remote-42' }));
     expect(item.href).toMatchObject({
-      pathname: '/(tabs)/games/[gameId]/score',
+      pathname: '/(tabs)/schedule/games/[gameId]/score',
       params: { gameId: 'remote-42' },
     });
   });

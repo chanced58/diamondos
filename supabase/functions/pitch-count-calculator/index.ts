@@ -217,7 +217,9 @@ Deno.serve(async (req: Request) => {
           userIds: coaches.map((c: { user_id: string }) => c.user_id),
           title,
           body,
-          data: { gameId, pitcherId, pitchCount, type: alertType, ...payloadExtras },
+          // `kind` drives the mobile tap-through (opens the game); `type`
+          // stays for anything already reading it.
+          data: { kind: 'game', gameId, pitcherId, pitchCount, type: alertType, ...payloadExtras },
         },
       });
     };

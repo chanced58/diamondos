@@ -11,6 +11,7 @@ import {
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { getSupabaseClient } from '../../src/lib/supabase';
+import { AUTH_CALLBACK_URL, GOOGLE_NOT_INVITED_MESSAGE } from '../../src/features/auth/auth-callback';
 
 /**
  * Input validation at the boundary, before either Supabase call.
@@ -23,9 +24,7 @@ import { getSupabaseClient } from '../../src/lib/supabase';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OTP_PATTERN = /^\d+$/;
 
-const GOOGLE_REDIRECT_URI = 'baseballcoaches://auth-callback';
-const GOOGLE_NOT_INVITED_MESSAGE =
-  "That Google account isn't associated with an invite. Contact your coach, or sign in with the email your invite was sent to.";
+const GOOGLE_REDIRECT_URI = AUTH_CALLBACK_URL;
 const GOOGLE_SIGNIN_FAILED_MESSAGE = 'Google sign-in failed. Please try again.';
 
 /**
@@ -68,7 +67,7 @@ export default function SignInScreen() {
     const { error: signInError } = await supabase.auth.signInWithOtp({
       email: normalizedEmail,
       options: {
-        emailRedirectTo: 'baseballcoaches://auth-callback',
+        emailRedirectTo: AUTH_CALLBACK_URL,
       },
     });
 

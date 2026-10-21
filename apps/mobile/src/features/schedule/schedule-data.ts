@@ -2,7 +2,7 @@ import type { Href } from 'expo-router';
 
 /**
  * Pure merge/normalise logic for the Schedule tab, extracted out of
- * `app/(tabs)/schedule.tsx` so it is directly testable without standing up
+ * `ScheduleList.tsx` so it is directly testable without standing up
  * WatermelonDB, Supabase, or React Native Testing Library — per the pattern
  * `fetch-game-events.ts` already uses for score.tsx (see its file header).
  *
@@ -72,7 +72,7 @@ export interface ScheduleEventRow {
   location: string | null;
 }
 
-/** Statuses for which a game opens somewhere; matches games/index.tsx and
+/** Statuses for which a game opens somewhere; matches GamesList.tsx and
  * the pre-fix schedule.tsx behavior exactly. */
 const OPENABLE_GAME_STATUSES = ['scheduled', 'in_progress', 'completed'];
 
@@ -87,7 +87,7 @@ export function mapGameToScheduleItem(game: ScheduleGameRow): ScheduleItem {
     tag: game.tournamentId ? 'Tournament' : null,
     href: OPENABLE_GAME_STATUSES.includes(game.status)
       ? ({
-          pathname: '/(tabs)/games/[gameId]/score',
+          pathname: '/(tabs)/schedule/games/[gameId]/score',
           params: {
             gameId: game.remoteId,
             teamId: game.teamId,

@@ -1,6 +1,22 @@
+import type { ComponentProps } from 'react';
 import { Redirect, Tabs } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/providers/AuthProvider';
 
+type IconName = ComponentProps<typeof Ionicons>['name'];
+
+function tabIcon(focused: IconName, unfocused: IconName) {
+  return ({ color, size, focused: isFocused }: { color: string; size: number; focused: boolean }) => (
+    <Ionicons name={isFocused ? focused : unfocused} size={size} color={color} />
+  );
+}
+
+/**
+ * Five tabs, each owning a nested Stack (its `_layout.tsx`) so detail screens
+ * push within the tab — with a back button and swipe-back — instead of
+ * switching tabs. The stacks draw the headers, so the tab navigator's own
+ * header is off. Tapping the current tab pops its stack to the top.
+ */
 export default function TabLayout() {
   const { user } = useAuth();
 
@@ -11,43 +27,31 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
+        headerShown: false,
         tabBarActiveTintColor: '#1e3a8a',
         tabBarStyle: { borderTopColor: '#e5e7eb' },
-        headerStyle: { backgroundColor: '#1e3a8a' },
-        headerTintColor: '#ffffff',
-        headerTitleStyle: { fontWeight: '700' },
       }}
     >
       <Tabs.Screen
-        name="index"
-        options={{ title: 'Home', tabBarIcon: () => null, tabBarLabel: 'Home' }}
-      />
-      {/* The Games tab owns a nested Stack (games/_layout.tsx), so its
-          detail screens push properly. headerShown is off here because that
-          stack draws the header. */}
-      <Tabs.Screen
-        name="games"
-        options={{ title: 'Games', tabBarLabel: 'Games', headerShown: false }}
+        name="(home)"
+        options={{ title: 'Home', tabBarIcon: tabIcon('home', 'home-outline') }}
       />
       <Tabs.Screen
-        name="messages/index"
-        options={{ title: 'Messages', tabBarLabel: 'Messages' }}
+        name="schedule"
+        options={{ title: 'Schedule', tabBarIcon: tabIcon('calendar', 'calendar-outline') }}
       />
-
-      {/* Reachable from cards on the Home screen, not from the tab bar
-          itself — kept out of the bar to keep it to the 3 primary
-          destinations (Home, Games, Messages). */}
-      <Tabs.Screen name="schedule" options={{ title: 'Schedule', href: null }} />
-      <Tabs.Screen name="practices/index" options={{ title: 'Practices', href: null }} />
-      <Tabs.Screen name="roster/index" options={{ title: 'Roster', href: null }} />
-
-      {/* Detail/dynamic routes nested under a tab — reachable via push
-          navigation, but hidden from the tab bar itself (href: null). The
-          games detail routes are not listed: they live inside the Games
-          stack. */}
-      <Tabs.Screen name="messages/[channelId]" options={{ href: null }} />
-      <Tabs.Screen name="practices/[practiceId]/card" options={{ href: null }} />
-      <Tabs.Screen name="practices/[practiceId]/attendance" options={{ href: null }} />
+      <Tabs.Screen
+        name="messages"
+        options={{ title: 'Messages', tabBarIcon: tabIcon('chatbubbles', 'chatbubbles-outline') }}
+      />
+      <Tabs.Screen
+        name="stats"
+        options={{ title: 'Stats', tabBarIcon: tabIcon('stats-chart', 'stats-chart-outline') }}
+      />
+      <Tabs.Screen
+        name="more"
+        options={{ title: 'More', tabBarIcon: tabIcon('ellipsis-horizontal-circle', 'ellipsis-horizontal-circle-outline') }}
+      />
     </Tabs>
   );
 }

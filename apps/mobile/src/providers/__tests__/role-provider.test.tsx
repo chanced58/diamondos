@@ -1,14 +1,33 @@
 import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import * as SecureStore from 'expo-secure-store';
-import { RoleProvider, useRole } from '../RoleProvider';
+import { Feature, SubscriptionTier, type MeResponse } from '@baseball/shared';
+import { RoleProvider, useCan, useRole } from '../RoleProvider';
 import { notifyTeamMembershipChange } from '../../sync/team-backfill';
+import { ApiError } from '../../lib/api-client';
+import { fetchMe, readCachedMe, writeCachedMe } from '../../features/teams/me';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
   setItemAsync: jest.fn(async () => undefined),
 }));
 jest.mock('../AuthProvider', () => ({ useAuth: () => ({ user: { id: 'coach' } }) }));
+jest.mock('../../features/teams/me', () => ({
+  fetchMe: jest.fn(),
+  readCachedMe: jest.fn(),
+  writeCachedMe: jest.fn(),
+}));
+
+const mockFetchMe = fetchMe as jest.Mock;
+const mockReadCachedMe = readCachedMe as jest.Mock;
+const mockWriteCachedMe = writeCachedMe as jest.Mock;
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  // Default: no web API in this build, nothing cached — the direct-read fallback.
+  mockFetchMe.mockRejectedValue(new ApiError('not_configured', 'EXPO_PUBLIC_API_BASE_URL is not set'));
+  mockReadCachedMe.mockResolvedValue(null);
+});
 
 const memberRows = [
   { team_id: 'regular', role: 'head_coach', teams: { name: 'Huskies' } },
@@ -39,7 +58,7 @@ jest.mock('../../lib/supabase', () => ({
 
 const wrapper = ({ children }: { children: React.ReactNode }) => <RoleProvider>{children}</RoleProvider>;
 
-describe('RoleProvider', () => {
+describe('RoleProvider (direct-read fallback)', () => {
   it('publishes teams without waiting for the optional tournament-team tags', async () => {
     const { result } = renderHook(() => useRole(), { wrapper });
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -91,5 +110,79 @@ describe('RoleProvider', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+function mePayload(overrides: Partial<MeResponse> = {}): MeResponse {
+  return {
+    apiVersion: 1,
+    user: { id: 'coach', email: 'coach@example.com', firstName: null, lastName: null },
+    memberships: [
+      {
+        teamId: 'regular', teamName: 'Huskies', organization: null, role: 'head_coach',
+        playerId: null, isTournamentTeam: false, tier: SubscriptionTier.STARTER,
+        features: [Feature.DIRECT_MESSAGES],
+      },
+      {
+        teamId: 'cup-team', teamName: 'Idaho Natives', organization: null, role: 'assistant_coach',
+        playerId: null, isTournamentTeam: true, tier: SubscriptionTier.FREE, features: [],
+      },
+    ],
+    leagueRoles: [{ leagueId: 'l1', leagueName: 'Metro', leagueSlug: 'metro', role: 'league_admin' }],
+    ...overrides,
+  };
+}
+
+describe('RoleProvider (/me)', () => {
+  it('publishes memberships, active-team features and league roles from /me, and caches them', async () => {
+    const me = mePayload();
+    mockFetchMe.mockResolvedValue(me);
+
+    const { result } = renderHook(() => ({
+      role: useRole(),
+      canMessage: useCan(Feature.DIRECT_MESSAGES),
+      canAdminLeague: useCan('league.admin'),
+    }), { wrapper });
+    await waitFor(() => expect(result.current.role.loading).toBe(false));
+
+    expect(result.current.role.memberships.map((m) => [m.teamId, m.isTournamentTeam, m.tier])).toEqual([
+      ['regular', false, SubscriptionTier.STARTER],
+      ['cup-team', true, SubscriptionTier.FREE],
+    ]);
+    expect(result.current.role.features).toEqual([Feature.DIRECT_MESSAGES]);
+    expect(result.current.role.isLeagueAdmin).toBe(true);
+    expect(result.current.canMessage).toBe(true);
+    expect(result.current.canAdminLeague).toBe(true);
+    expect(mockWriteCachedMe).toHaveBeenCalledWith(me);
+
+    // Features follow the active team.
+    await act(async () => { await result.current.role.setActiveTeamId('cup-team'); });
+    expect(result.current.role.features).toEqual([]);
+    expect(result.current.canMessage).toBe(false);
+  });
+
+  it('starts offline from the cached /me without falling back to a direct read', async () => {
+    mockReadCachedMe.mockResolvedValue(mePayload());
+    mockFetchMe.mockRejectedValue(new ApiError('offline', 'Network request failed'));
+
+    const { result } = renderHook(() => useRole(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.memberships.map((m) => m.teamId)).toEqual(['regular', 'cup-team']);
+    expect(result.current.leagueRoles).toHaveLength(1);
+    expect(mockReadCachedMe).toHaveBeenCalledWith('coach');
+  });
+
+  it('keeps the selected team when the fresh /me replaces the cached one', async () => {
+    mockReadCachedMe.mockResolvedValue(mePayload());
+    let resolveFetch: (me: MeResponse) => void = () => {};
+    mockFetchMe.mockReturnValue(new Promise((resolve) => { resolveFetch = resolve; }));
+
+    const { result } = renderHook(() => useRole(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => { await result.current.setActiveTeamId('cup-team'); });
+
+    await act(async () => resolveFetch(mePayload()));
+    expect(result.current.activeTeam?.teamId).toBe('cup-team');
   });
 });
