@@ -133,7 +133,6 @@ export default function GameDetailScreen() {
   };
 
   const webLinks = [
-    { title: 'Game notes', path: `/games/${game.id}/notes`, show: true },
     { title: 'Play-by-play history', path: `/games/${game.id}/history`, show: sections.showStatsAndHistory },
     { title: 'Opponent lineup', path: `/games/${game.id}/opponent-lineup`, show: sections.showOpponentLineup },
   ].filter((link) => link.show);
@@ -237,20 +236,25 @@ export default function GameDetailScreen() {
         </View>
       )}
 
-      {sections.showStatsAndHistory && (
-        <>
-          <SectionHeader title="Game stats" />
-          <ListGroup>
-            <ListRow
-              title="Box score"
-              subtitle="Line score, batting, pitching and fielding"
-              onPress={() =>
-                router.push({ pathname: '/(tabs)/schedule/games/[gameId]/box-score', params: { gameId: game.id } })
-              }
-            />
-          </ListGroup>
-        </>
-      )}
+      <SectionHeader title="Game recap" />
+      <ListGroup>
+        {sections.showStatsAndHistory && (
+          <ListRow
+            title="Box score"
+            subtitle="Line score, batting, pitching and fielding"
+            onPress={() =>
+              router.push({ pathname: '/(tabs)/schedule/games/[gameId]/box-score', params: { gameId: game.id } })
+            }
+          />
+        )}
+        <ListRow
+          title="Game notes"
+          subtitle={detail.viewer.isCoach ? 'Overall, coach-only and player notes' : 'Notes from the coach'}
+          onPress={() =>
+            router.push({ pathname: '/(tabs)/schedule/games/[gameId]/notes', params: { gameId: game.id } })
+          }
+        />
+      </ListGroup>
 
       {(sections.showLineup || sections.showAttendance) && (
         <>

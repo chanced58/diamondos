@@ -193,6 +193,8 @@ export function createApiClient(config: ApiClientConfig) {
       request<T>(path, { method: 'POST', body, schema }),
     patch: <T>(path: string, body: unknown, schema?: Schema<T>) =>
       request<T>(path, { method: 'PATCH', body, schema }),
+    put: <T>(path: string, body: unknown, schema?: Schema<T>) =>
+      request<T>(path, { method: 'PUT', body, schema }),
     delete: <T>(path: string, schema?: Schema<T>) =>
       request<T>(path, { method: 'DELETE', schema }),
   };
