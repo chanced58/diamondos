@@ -7,6 +7,8 @@ const STATUS_BY_CODE: Record<ServiceErrorCode, number> = {
   forbidden: 403,
   not_found: 404,
   conflict: 409,
+  /** A dependency (e.g. an unconfigured third-party API) can't serve the request. */
+  unavailable: 503,
   failed: 500,
 };
 

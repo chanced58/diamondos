@@ -12,7 +12,7 @@ import type { ZodError } from 'zod';
  * never throw for expected failures — the caller maps `code` to a form
  * message (web) or an HTTP status (mobile, see `lib/api/service-response`).
  */
-export type ServiceErrorCode = 'invalid' | 'forbidden' | 'not_found' | 'conflict' | 'failed';
+export type ServiceErrorCode = 'invalid' | 'forbidden' | 'not_found' | 'conflict' | 'unavailable' | 'failed';
 
 export type ServiceResult<T> =
   | { ok: true; data: T }
