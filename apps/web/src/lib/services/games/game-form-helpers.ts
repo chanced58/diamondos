@@ -20,49 +20,62 @@ export async function isPlatformAdmin(db: SupabaseClient, userId: string): Promi
   return data?.is_platform_admin === true;
 }
 
+/** A failed lookup as a `failed` result, logged with its context. */
+function lookupFailed<T>(what: string, context: string, error: { message: string }): ServiceResult<T> {
+  console.error(`[game-form] ${what} lookup failed ${context}:`, error);
+  return serviceError('failed', `Failed to load ${what}: ${error.message}`);
+}
+
 /**
  * The leagues the team is an active member of. The one source for which
  * leagues' opponents a team may schedule, shared by the availability check
  * and the form options so the form never offers an opponent the check rejects.
+ * A failed query is a `failed` result, never an empty list: "no leagues" would
+ * silently drop league opponents and reject valid ones.
  */
-export async function activeLeagueIds(db: SupabaseClient, teamId: string): Promise<string[]> {
-  const { data: teamLeagues } = await db
+export async function activeLeagueIds(db: SupabaseClient, teamId: string): Promise<ServiceResult<string[]>> {
+  const { data: teamLeagues, error } = await db
     .from('league_members')
     .select('league_id')
     .eq('team_id', teamId)
     .eq('is_active', true);
-  return (teamLeagues ?? []).map((row) => row.league_id as string);
+  if (error) return lookupFailed('team leagues', `team=${teamId}`, error);
+  return { ok: true, data: (teamLeagues ?? []).map((row) => row.league_id as string) };
 }
 
 /**
  * Whether an opponent team record may be used for one of the team's games:
  * the team owns it, or it is an active member of a league the team is also an
- * active member of.
+ * active member of. Lookup failures come back as `failed`, not as "no".
  */
 export async function isOpponentTeamAvailable(
   db: SupabaseClient,
   teamId: string,
   opponentTeamId: string,
-): Promise<boolean> {
-  const { data: opponentTeam } = await db
+): Promise<ServiceResult<boolean>> {
+  const context = `team=${teamId} opponent=${opponentTeamId}`;
+  const { data: opponentTeam, error: opponentError } = await db
     .from('opponent_teams')
     .select('id, team_id')
     .eq('id', opponentTeamId)
     .maybeSingle();
-  if (!opponentTeam) return false;
-  if (opponentTeam.team_id === teamId) return true;
+  if (opponentError) return lookupFailed('opponent team', context, opponentError);
+  if (!opponentTeam) return { ok: true, data: false };
+  if (opponentTeam.team_id === teamId) return { ok: true, data: true };
 
-  const leagueIds = await activeLeagueIds(db, teamId);
-  if (leagueIds.length === 0) return false;
+  const leagues = await activeLeagueIds(db, teamId);
+  if (!leagues.ok) return leagues;
+  if (leagues.data.length === 0) return { ok: true, data: false };
 
-  const { data: shared } = await db
+  const { data: shared, error: sharedError } = await db
     .from('league_members')
     .select('id')
     .eq('opponent_team_id', opponentTeamId)
     .eq('is_active', true)
-    .in('league_id', leagueIds)
+    .in('league_id', leagues.data)
     .limit(1);
-  return (shared ?? []).length > 0;
+  if (sharedError) return lookupFailed('league opponent', context, sharedError);
+  return { ok: true, data: (shared ?? []).length > 0 };
 }
 
 type Schedule = Pick<CreateGameFormData, 'date' | 'time' | 'venue' | 'deviceTimeZone'>;

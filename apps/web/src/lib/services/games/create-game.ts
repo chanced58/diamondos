@@ -32,7 +32,9 @@ export async function createGame(
 
   let opponentTeamId: string | null = null;
   if (!input.opponentTbd && input.opponentTeamId) {
-    if (!(await isOpponentTeamAvailable(db, input.teamId, input.opponentTeamId))) {
+    const available = await isOpponentTeamAvailable(db, input.teamId, input.opponentTeamId);
+    if (!available.ok) return available;
+    if (!available.data) {
       return serviceError('invalid', 'Selected opponent team does not belong to your team or league.');
     }
     opponentTeamId = input.opponentTeamId;

@@ -104,6 +104,19 @@ describe('createGame', () => {
     expect(calls.find((c) => c.table === 'games' && c.op === 'insert')?.payload).toMatchObject({ opponent_team_id: OPP });
   });
 
+  it('should report a failed league lookup as a server fault, not a foreign opponent', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const { db, calls } = fakeDb({
+      ...coach,
+      'opponent_teams.select': { data: { id: OPP, team_id: 'other-team' } },
+      'league_members.select': { data: null, error: { message: 'connection reset' } },
+    });
+    const result = await createGame(db, 'coach', { teamId: TEAM, ...form, opponentTeamId: OPP });
+    expect(result).toMatchObject({ ok: false, code: 'failed' });
+    expect(calls.find((c) => c.op === 'insert')).toBeUndefined();
+    log.mockRestore();
+  });
+
   it('should scope a tournament game to the tournament team and give a typed opponent a record', async () => {
     mockEnsureTournamentOpponentTeam.mockResolvedValue({ opponentTeamId: OPP });
     const { db, calls } = fakeDb({
@@ -188,6 +201,16 @@ describe('loadGameFormOptions', () => {
     const [teamLeagues, opponents] = calls.filter((c) => c.table === 'league_members');
     expect(teamLeagues.filters).toEqual({ team_id: TEAM, is_active: true });
     expect(opponents.filters).toEqual({ league_id: ['league-1', 'league-2'], is_active: true });
+  });
+
+  it.each([
+    ['the team leagues', [{ data: null, error: { message: 'boom' } }]],
+    ['the league opponents', [{ data: [{ league_id: 'league-1' }] }, { data: null, error: { message: 'boom' } }]],
+  ])('should fail rather than return a partial list when %s lookup fails', async (_what, leagueResults) => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const { db } = fakeDb({ ...coach, 'opponent_teams.select': { data: [] }, 'league_members.select': leagueResults });
+    expect(await loadGameFormOptions(db, 'coach', { teamId: TEAM })).toMatchObject({ ok: false, code: 'failed' });
+    log.mockRestore();
   });
 
   it('should skip the league query for a team in no league', async () => {

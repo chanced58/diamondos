@@ -41,7 +41,9 @@ export async function updateGame(
 
   let opponentTeamId: string | null = null;
   if (!input.opponentTbd && input.opponentTeamId) {
-    if (!(await isOpponentTeamAvailable(db, teamId, input.opponentTeamId))) {
+    const available = await isOpponentTeamAvailable(db, teamId, input.opponentTeamId);
+    if (!available.ok) return available;
+    if (!available.data) {
       return serviceError('invalid', 'Selected opponent team not found or not accessible.');
     }
     opponentTeamId = input.opponentTeamId;
