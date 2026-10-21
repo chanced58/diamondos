@@ -72,10 +72,6 @@ export interface ScheduleEventRow {
   location: string | null;
 }
 
-/** Statuses for which a game opens somewhere; matches GamesList.tsx and
- * the pre-fix schedule.tsx behavior exactly. */
-const OPENABLE_GAME_STATUSES = ['scheduled', 'in_progress', 'completed'];
-
 export function mapGameToScheduleItem(game: ScheduleGameRow): ScheduleItem {
   return {
     id: `game:${game.remoteId}`,
@@ -85,16 +81,8 @@ export function mapGameToScheduleItem(game: ScheduleGameRow): ScheduleItem {
     title: `Game vs ${game.opponentName || 'TBD'}`,
     detail: game.status,
     tag: game.tournamentId ? 'Tournament' : null,
-    href: OPENABLE_GAME_STATUSES.includes(game.status)
-      ? ({
-          pathname: '/(tabs)/schedule/games/[gameId]/score',
-          params: {
-            gameId: game.remoteId,
-            teamId: game.teamId,
-            opponentName: game.opponentName || 'TBD',
-          },
-        } as const)
-      : undefined,
+    // Every game opens its detail screen, as in the Games list.
+    href: { pathname: '/(tabs)/schedule/games/[gameId]', params: { gameId: game.remoteId } } as const,
   };
 }
 
