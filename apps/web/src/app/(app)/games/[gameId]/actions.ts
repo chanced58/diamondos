@@ -5,76 +5,42 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import {
-  formatDate,
   zonedDateTimeToUtc,
   weAreHome,
   EventType,
-  conflictKey,
   upsertGameRsvpSchema,
-  type ScoreConflict,
   type UpsertGameRsvpInput,
 } from '@baseball/shared';
 import { upsertGameRsvp } from '@baseball/database';
-import { postEventAlert } from '@/app/(app)/messages/notify';
 // Game finalization + coach authorization live in @/lib/games/finalize so the
 // mobile finalize API route shares the exact same logic as endGameAction.
 import {
   COACH_ROLES,
   getAuthorizedCoach,
-  deriveScoresFromEvents,
   finalizeGame,
 } from '@/lib/games/finalize';
 import { resolveGameTimeZone } from '@/lib/games/game-time-zone';
 import { ensureTournamentOpponentTeam } from '@/lib/games/tournament-opponent-team';
+import { cancelGame } from '@/lib/services/games/cancel-game';
+import { resetGame } from '@/lib/services/games/reset-game';
+import { recalculateScores } from '@/lib/services/games/recalculate-scores';
+import { resolveReconciliationConflict } from '@/lib/services/games/resolve-reconciliation-conflict';
 
 export async function cancelGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated.';
 
-  const gameId = formData.get('gameId') as string;
-  if (!gameId) return 'Missing game ID.';
-
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  // Verify user is a coach on this team
-  const { data: game } = await supabase
-    .from('games')
-    .select('team_id, opponent_name, scheduled_at, time_zone')
-    .eq('id', gameId)
-    .single();
-
-  if (!game) return 'Game not found.';
-
-  const { data: membership } = await supabase
-    .from('team_members')
-    .select('role')
-    .eq('team_id', game.team_id)
-    .eq('user_id', user.id)
-    .single();
-
-  const isCoach =
-    membership?.role === 'head_coach' ||
-    membership?.role === 'assistant_coach' ||
-    membership?.role === 'athletic_director';
-
-  if (!isCoach) return 'Only coaches can cancel games.';
-
-  const { error } = await supabase
-    .from('games')
-    .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-    .eq('id', gameId);
-
-  if (error) return `Failed to cancel game: ${error.message}`;
-
-  // Skip the announcement when opponent is TBD — "Game vs. null" helps no one.
-  if (game.opponent_name && formData.get('notifyTeam') === 'on') {
-    const msg = `⚠️ Game vs. ${game.opponent_name} on ${formatDate(game.scheduled_at, game.time_zone)} has been cancelled.`;
-    await postEventAlert(supabase, game.team_id, user.id, msg);
-  }
+  const result = await cancelGame(supabase, user.id, {
+    gameId: formData.get('gameId'),
+    notifyTeam: formData.get('notifyTeam') === 'on',
+  });
+  if (!result.ok) return result.error;
 
   redirect('/games');
 }
@@ -507,54 +473,8 @@ export async function resetGameAction(
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error ?? null;
-  const { game } = result;
-
-  if (game.status === 'scheduled') return 'Game is already in scheduled state.';
-
-  const now = new Date().toISOString();
-
-  // Append a game_reset event instead of deleting — game_events is append-only
-  const { data: lastEvent } = await supabase
-    .from('game_events')
-    .select('sequence_number')
-    .eq('game_id', gameId)
-    .order('sequence_number', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const { error: resetEventError } = await supabase.from('game_events').insert({
-    id: crypto.randomUUID(),
-    game_id: gameId,
-    sequence_number: (lastEvent?.sequence_number ?? 0) + 1,
-    event_type: 'game_reset',
-    inning: 1,
-    is_top_of_inning: true,
-    payload: { resetBy: user.id, previousStatus: game.status },
-    occurred_at: now,
-    created_by: user.id,
-    device_id: 'web',
-  });
-
-  if (resetEventError) return `Failed to reset game: ${resetEventError.message}`;
-
-  const { error } = await supabase
-    .from('games')
-    .update({
-      status:           'scheduled',
-      home_score:        0,
-      away_score:        0,
-      current_inning:    1,
-      is_top_of_inning:  true,
-      outs:              0,
-      started_at:        null,
-      completed_at:      null,
-      updated_at:        now,
-    })
-    .eq('id', gameId);
-
-  if (error) return `Failed to reset game: ${error.message}`;
+  const result = await resetGame(supabase, user.id, { gameId }, 'web');
+  if (!result.ok) return result.error;
   redirect(`/games/${gameId}`);
 }
 
@@ -805,21 +725,8 @@ export async function recalculateScoresAction(
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error ?? null;
-
-  const { homeScore, awayScore } = await deriveScoresFromEvents(supabase, gameId);
-
-  const { error } = await supabase
-    .from('games')
-    .update({
-      home_score: homeScore,
-      away_score: awayScore,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', gameId);
-
-  if (error) return `Failed to update scores: ${error.message}`;
+  const result = await recalculateScores(supabase, user.id, { gameId });
+  if (!result.ok) return result.error;
 
   revalidatePath(`/games/${gameId}`);
   revalidatePath(`/games/${gameId}/stats`);
@@ -1278,46 +1185,18 @@ export async function resolveReconciliationConflictAction(
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return 'Not authenticated.';
 
-  const reconciliationId = formData.get('reconciliationId') as string;
-  const conflictKeyValue = (formData.get('conflictKey') as string)?.trim();
-  const useAwayValue = formData.get('useAwayValue') === 'true';
-  if (!reconciliationId || !conflictKeyValue) return 'Missing override fields.';
-
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const { data: recon } = await supabase
-    .from('game_reconciliations')
-    .select('id, home_game_id, conflicts')
-    .eq('id', reconciliationId)
-    .maybeSingle();
-  if (!recon) return 'Reconciliation not found.';
-
-  // Only the home (canonical) team's coach may override.
-  const auth = await getAuthorizedCoach(supabase, user.id, recon.home_game_id);
-  if ('error' in auth) return auth.error ?? 'Only the home team coach can resolve conflicts.';
-
-  // Reject a key that does not correspond to a current conflict (stale form or
-  // tampered input) so resolved_overrides never accumulates dangling entries.
-  const conflicts = Array.isArray(recon.conflicts) ? (recon.conflicts as ScoreConflict[]) : [];
-  if (!conflicts.some((c) => conflictKey(c) === conflictKeyValue)) {
-    return 'That conflict no longer exists — reload the game.';
-  }
-
-  // Set (or clear) the override atomically in the DB, keyed by stable conflict
-  // identity. A single UPDATE that filters-then-appends avoids the
-  // read-modify-write race where two near-simultaneous submissions could drop
-  // each other's edit.
-  const { error } = await supabase.rpc('set_reconciliation_override', {
-    p_reconciliation_id: reconciliationId,
-    p_key: conflictKeyValue,
-    p_use_away: useAwayValue,
-    p_resolved_by: user.id,
+  const result = await resolveReconciliationConflict(supabase, user.id, {
+    reconciliationId: formData.get('reconciliationId'),
+    conflictKey: formData.get('conflictKey'),
+    useAwayValue: formData.get('useAwayValue') === 'true',
   });
-  if (error) return `Failed to save override: ${error.message}`;
+  if (!result.ok) return result.error;
 
-  revalidatePath(`/games/${recon.home_game_id}`);
+  revalidatePath(`/games/${result.data.homeGameId}`);
   return null;
 }

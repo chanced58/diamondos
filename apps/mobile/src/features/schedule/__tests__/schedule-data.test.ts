@@ -63,25 +63,26 @@ describe('mapGameToScheduleItem', () => {
 
   it('uses game.remoteId (not the local WDB row id) as the routed gameId', () => {
     const item = mapGameToScheduleItem(mkGame({ remoteId: 'remote-42' }));
-    expect(item.href).toMatchObject({
-      pathname: '/(tabs)/schedule/games/[gameId]/score',
+    expect(item.href).toEqual({
+      pathname: '/(tabs)/schedule/games/[gameId]',
       params: { gameId: 'remote-42' },
     });
   });
 
-  it('preserves teamId and opponentName on the href params exactly', () => {
-    const item = mapGameToScheduleItem(
-      mkGame({ teamId: 'team-9', opponentName: 'Panthers', status: 'in_progress' }),
-    );
-    expect(item.href).toMatchObject({
-      params: { teamId: 'team-9', opponentName: 'Panthers' },
-    });
+  it('titles an away game with "@" rather than "vs"', () => {
+    expect(mapGameToScheduleItem(mkGame({ opponentName: 'Marsing', locationType: 'away' })).title)
+      .toBe('Game @ Marsing');
+    expect(mapGameToScheduleItem(mkGame({ opponentName: 'Marsing', locationType: 'home' })).title)
+      .toBe('Game vs Marsing');
   });
 
-  it('omits href for a non-openable status', () => {
-    const item = mapGameToScheduleItem(mkGame({ status: 'cancelled' }));
-    expect(item.href).toBeUndefined();
-  });
+  it.each(['scheduled', 'in_progress', 'completed', 'cancelled', 'postponed'])(
+    'opens the game detail screen for a %s game',
+    (status) => {
+      const item = mapGameToScheduleItem(mkGame({ status }));
+      expect(item.href).toMatchObject({ pathname: '/(tabs)/schedule/games/[gameId]' });
+    },
+  );
 });
 
 describe('mapGameToScheduleItem — tournament games', () => {

@@ -6,21 +6,17 @@ import withObservables from '@nozbe/with-observables';
 import { map } from 'rxjs';
 import { database } from '../../db';
 import type { Game } from '../../db/models/Game';
-import { formatDate, formatTime, type GameRsvpStatus } from '@baseball/shared';
+import { formatDate, formatTime } from '@baseball/shared';
 import { useRole } from '../../providers/RoleProvider';
 import { useGameRsvps } from '../rsvp/useGameRsvps';
+import { RsvpButtonRow } from '../rsvp/RsvpButtonRow';
 import { sortGamesForList } from './sort-games-for-list';
+import { matchupLabel } from './game-detail-view';
 import { TournamentTag } from '../tournaments/TournamentTag';
 
 interface GamesListProps {
   games: Game[];
 }
-
-const RSVP_OPTIONS: { status: GameRsvpStatus; label: string; activeClass: string }[] = [
-  { status: 'attending', label: 'Going', activeClass: 'bg-green-600 border-green-600' },
-  { status: 'maybe', label: 'Maybe', activeClass: 'bg-amber-500 border-amber-500' },
-  { status: 'not_attending', label: 'Out', activeClass: 'bg-gray-700 border-gray-700' },
-];
 
 function GamesList({ games }: GamesListProps) {
   const { activeTeam } = useRole();
@@ -62,24 +58,16 @@ function GamesList({ games }: GamesListProps) {
       renderItem={({ item: game }) => (
         <TouchableOpacity
           className="bg-white rounded-xl border border-gray-200 p-4 mb-3"
-          onPress={() => {
-            // Scheduled games open in the pre-game state (start the game at
-            // the field), live games in the scoring surface, and completed
-            // games in the read-only Final view.
-            if (['scheduled', 'in_progress', 'completed'].includes(game.status)) {
-              router.push({
-                pathname: '/(tabs)/schedule/games/[gameId]/score',
-                params: {
-                  gameId: game.remoteId,
-                  teamId: game.teamId,
-                  opponentName: game.opponentName || 'TBD',
-                },
-              });
-            }
-          }}
+          onPress={() =>
+            // Every game opens its detail screen, which leads on to the scorer
+            // (start, continue or the read-only final), lineup and attendance.
+            router.push({ pathname: '/(tabs)/schedule/games/[gameId]', params: { gameId: game.remoteId } })
+          }
         >
           <View className="flex-row justify-between items-start mb-1">
-            <Text className="font-semibold text-gray-900 text-base flex-1 mr-2">vs {game.opponentName || 'TBD'}</Text>
+            <Text className="font-semibold text-gray-900 text-base flex-1 mr-2">
+              {matchupLabel(game.opponentName, game.locationType, game.neutralHomeTeam)}
+            </Text>
             <View className="flex-row items-center gap-1.5">
               {game.tournamentId ? <TournamentTag /> : null}
               <StatusBadge status={game.status} />
@@ -135,44 +123,14 @@ function GamesList({ games }: GamesListProps) {
           )}
 
           {game.status === 'scheduled' && !activeTeam?.isCoach && myPlayers.length > 0 && (
-            <View className="mt-3 gap-1.5">
-              {myPlayers.map((player) => {
-                const key = `${game.remoteId}:${player.playerId}`;
-                const status = rsvpByKey.get(key);
-                const isSaving = savingKeys.has(key);
-                return (
-                  <View key={player.playerId} className="flex-row items-center justify-between">
-                    {myPlayers.length > 1 && (
-                      <Text className="text-xs text-gray-500 mr-2" numberOfLines={1}>
-                        {player.playerName.split(' ')[0]}
-                      </Text>
-                    )}
-                    <View className="flex-row gap-1.5">
-                      {RSVP_OPTIONS.map((opt) => (
-                        <TouchableOpacity
-                          key={opt.status}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: status === opt.status, busy: isSaving }}
-                          accessibilityLabel={`${player.playerName}: ${opt.label}`}
-                          disabled={isSaving}
-                          onPress={() => setRsvp(game.remoteId, player.playerId, opt.status)}
-                          className={`px-2.5 py-1 rounded-full border ${
-                            isSaving ? 'opacity-50' : ''
-                          } ${status === opt.status ? opt.activeClass : 'bg-white border-gray-200'}`}
-                        >
-                          <Text
-                            className={`text-xs font-semibold ${
-                              status === opt.status ? 'text-white' : 'text-gray-600'
-                            }`}
-                          >
-                            {opt.label}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-                );
-              })}
+            <View className="mt-3">
+              <RsvpButtonRow
+                gameId={game.remoteId}
+                players={myPlayers}
+                rsvpByKey={rsvpByKey}
+                savingKeys={savingKeys}
+                onSelect={setRsvp}
+              />
             </View>
           )}
         </TouchableOpacity>

@@ -37,7 +37,7 @@ async function authorizeGameRole(
 ) {
   const { data: game } = await supabase
     .from('games')
-    .select('team_id, opponent_name, opponent_team_id, scheduled_at, status, location_type, neutral_home_team, tournament_id')
+    .select('team_id, opponent_name, opponent_team_id, scheduled_at, time_zone, status, location_type, neutral_home_team, tournament_id')
     .eq('id', gameId)
     .single();
   // `code` lets callers branch on the failure kind (e.g. 404 vs 403) without

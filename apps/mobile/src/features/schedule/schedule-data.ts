@@ -1,4 +1,5 @@
 import type { Href } from 'expo-router';
+import { matchupLabel } from '../games/game-detail-view';
 
 /**
  * Pure merge/normalise logic for the Schedule tab, extracted out of
@@ -56,6 +57,9 @@ export interface ScheduleGameRow {
   status: string;
   /** Set when the game belongs to a tournament (`Game.tournamentId`). */
   tournamentId?: string | null;
+  /** `Game.locationType` / `Game.neutralHomeTeam` — decide "vs" or "@". */
+  locationType?: string | null;
+  neutralHomeTeam?: string | null;
 }
 
 export interface SchedulePracticeRow {
@@ -72,29 +76,17 @@ export interface ScheduleEventRow {
   location: string | null;
 }
 
-/** Statuses for which a game opens somewhere; matches GamesList.tsx and
- * the pre-fix schedule.tsx behavior exactly. */
-const OPENABLE_GAME_STATUSES = ['scheduled', 'in_progress', 'completed'];
-
 export function mapGameToScheduleItem(game: ScheduleGameRow): ScheduleItem {
   return {
     id: `game:${game.remoteId}`,
     kind: 'game',
     startsAt: new Date(game.scheduledAt).toISOString(),
     timeZone: game.timeZone ?? null,
-    title: `Game vs ${game.opponentName || 'TBD'}`,
+    title: `Game ${matchupLabel(game.opponentName, game.locationType, game.neutralHomeTeam)}`,
     detail: game.status,
     tag: game.tournamentId ? 'Tournament' : null,
-    href: OPENABLE_GAME_STATUSES.includes(game.status)
-      ? ({
-          pathname: '/(tabs)/schedule/games/[gameId]/score',
-          params: {
-            gameId: game.remoteId,
-            teamId: game.teamId,
-            opponentName: game.opponentName || 'TBD',
-          },
-        } as const)
-      : undefined,
+    // Every game opens its detail screen, as in the Games list.
+    href: { pathname: '/(tabs)/schedule/games/[gameId]', params: { gameId: game.remoteId } } as const,
   };
 }
 
