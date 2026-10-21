@@ -4,14 +4,14 @@ import { POST } from '../route';
 const GAME_ID = '11111111-1111-4111-8111-111111111111';
 
 const mockRequireApiUser = jest.fn();
-const mockGetAuthorizedCoach = jest.fn();
+const mockGetAuthorizedFinalizer = jest.fn();
 const mockFinalizeGame = jest.fn();
 
 jest.mock('@/lib/api/bearer-auth', () => ({
   requireApiUser: (req: Request) => mockRequireApiUser(req),
 }));
 jest.mock('@/lib/games/finalize', () => ({
-  getAuthorizedCoach: (...args: unknown[]) => mockGetAuthorizedCoach(...args),
+  getAuthorizedFinalizer: (...args: unknown[]) => mockGetAuthorizedFinalizer(...args),
   finalizeGame: (...args: unknown[]) => mockFinalizeGame(...args),
 }));
 
@@ -26,7 +26,7 @@ function finalizeRequest(body?: unknown): NextRequest {
 beforeEach(() => {
   jest.clearAllMocks();
   mockRequireApiUser.mockResolvedValue({ user: { id: 'coach-1' }, db: { name: 'db' } });
-  mockGetAuthorizedCoach.mockResolvedValue({ game: { team_id: 'team-1' } });
+  mockGetAuthorizedFinalizer.mockResolvedValue({ game: { team_id: 'team-1' } });
   mockFinalizeGame.mockResolvedValue({ ok: true });
 });
 
@@ -48,8 +48,8 @@ it('should reject a malformed game id before authenticating', async () => {
   expect(mockRequireApiUser).not.toHaveBeenCalled();
 });
 
-it('should respond 403 when the caller is not a coach on the game team', async () => {
-  mockGetAuthorizedCoach.mockResolvedValue({ error: 'Only coaches can perform this action.', code: 'forbidden' });
+it('should respond 403 when the caller is not a coach or scorekeeper on the game team', async () => {
+  mockGetAuthorizedFinalizer.mockResolvedValue({ error: 'Only coaches and scorekeepers can finalize a game.', code: 'forbidden' });
 
   const res = await POST(finalizeRequest(), { params: { gameId: GAME_ID } });
 
@@ -64,7 +64,7 @@ it('should finalize with the authenticated user and the body scores', async () =
   );
 
   expect(res.status).toBe(200);
-  expect(mockGetAuthorizedCoach).toHaveBeenCalledWith({ name: 'db' }, 'coach-1', GAME_ID);
+  expect(mockGetAuthorizedFinalizer).toHaveBeenCalledWith({ name: 'db' }, 'coach-1', GAME_ID);
   expect(mockFinalizeGame).toHaveBeenCalledWith({ name: 'db' }, {
     gameId: GAME_ID,
     userId: 'coach-1',

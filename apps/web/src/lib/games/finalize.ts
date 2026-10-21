@@ -6,10 +6,35 @@ import { runReconciliationForGame } from '@/lib/dual-scorekeeper/reconcile';
 export const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
 /**
+ * Roles that may finalize a game the mobile app ended offline: coaches plus
+ * scorekeepers, who record the game's events (RLS lets them insert
+ * `game_events`, game_end included) and so must be able to complete it.
+ */
+export const FINALIZE_ROLES = [...COACH_ROLES, 'scorekeeper'];
+
+/**
  * Authorize a user as a coach (or platform admin) for a game's team.
- * Shared by the game server actions and the mobile finalize API route.
+ * Used by the game server actions; the mobile finalize route uses
+ * {@link getAuthorizedFinalizer}, which also admits scorekeepers.
  */
 export async function getAuthorizedCoach(supabase: SupabaseClient, userId: string, gameId: string) {
+  return authorizeGameRole(supabase, userId, gameId, COACH_ROLES, 'Only coaches can perform this action.');
+}
+
+/** Authorize a coach, scorekeeper (or platform admin) to finalize a game. */
+export async function getAuthorizedFinalizer(supabase: SupabaseClient, userId: string, gameId: string) {
+  return authorizeGameRole(
+    supabase, userId, gameId, FINALIZE_ROLES, 'Only coaches and scorekeepers can finalize a game.',
+  );
+}
+
+async function authorizeGameRole(
+  supabase: SupabaseClient,
+  userId: string,
+  gameId: string,
+  allowedRoles: readonly string[],
+  deniedMessage: string,
+) {
   const { data: game } = await supabase
     .from('games')
     .select('team_id, opponent_name, opponent_team_id, scheduled_at, status, location_type, neutral_home_team, tournament_id')
@@ -36,8 +61,8 @@ export async function getAuthorizedCoach(supabase: SupabaseClient, userId: strin
     .eq('is_active', true)
     .single();
 
-  if (!membership || !COACH_ROLES.includes(membership.role)) {
-    return { error: 'Only coaches can perform this action.', code: 'forbidden' as const };
+  if (!membership || !allowedRoles.includes(membership.role)) {
+    return { error: deniedMessage, code: 'forbidden' as const };
   }
 
   return { game };

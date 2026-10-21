@@ -9,12 +9,13 @@
  * same finalizeGame used by the web endGameAction.
  *
  * Auth: Supabase JWT in the Authorization header (no cookies — the caller is
- * the mobile app). Idempotent: safe under sync-cycle retries and after the
- * coach's game_end event has already been pushed.
+ * the mobile app). Coaches and scorekeepers of the game's team may finalize.
+ * Idempotent: safe under sync-cycle retries and after the scorer's game_end
+ * event has already been pushed.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { requireApiUser } from '@/lib/api/bearer-auth';
-import { getAuthorizedCoach, finalizeGame } from '@/lib/games/finalize';
+import { getAuthorizedFinalizer, finalizeGame } from '@/lib/games/finalize';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -31,7 +32,7 @@ export async function POST(
     if (auth.response) return auth.response;
     const { user, db } = auth;
 
-    const authz = await getAuthorizedCoach(db, user.id, params.gameId);
+    const authz = await getAuthorizedFinalizer(db, user.id, params.gameId);
     if ('error' in authz) {
       const status = authz.code === 'not_found' ? 404 : 403;
       return NextResponse.json({ error: authz.error }, { status });
