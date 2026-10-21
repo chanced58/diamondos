@@ -2,11 +2,10 @@
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import {
   weAreHome,
-  EventType,
   upsertGameRsvpSchema,
   type UpsertGameRsvpInput,
 } from '@baseball/shared';
@@ -25,6 +24,12 @@ import { recalculateScores } from '@/lib/services/games/recalculate-scores';
 import { resolveReconciliationConflict } from '@/lib/services/games/resolve-reconciliation-conflict';
 import { saveGameNotes, savePlayerGameNotes } from '@/lib/services/games/save-game-notes';
 import { gameNotesInputFromFormData } from '@/lib/services/games/game-notes-form-data';
+import {
+  insertCorrectionEvents,
+  replaceGameEvent,
+  replayAtBat,
+  voidGameEvent,
+} from '@/lib/services/game-corrections/corrections';
 
 export async function cancelGameAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
@@ -481,439 +486,113 @@ export async function recalculateScoresAction(
   redirect(`/games/${gameId}`);
 }
 
-// ── Void Event ──────────────────────────────────────────────────────────────
+// ── Play-by-play corrections ────────────────────────────────────────────────
+// Each appends to the immutable log through lib/services/game-corrections,
+// shared with the mobile app's /api/m/v1 correction routes.
+
+function parseJson(raw: FormDataEntryValue | null, fallback: unknown): unknown {
+  try {
+    return JSON.parse((raw as string | null) || JSON.stringify(fallback));
+  } catch {
+    return undefined;
+  }
+}
+
+async function runCorrection(
+  gameId: string,
+  run: (db: SupabaseClient, userId: string) => Promise<{ ok: true } | { ok: false; error: string }>,
+): Promise<string | null> {
+  const authClient = createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return 'Not authenticated.';
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const result = await run(supabase, user.id);
+  if (!result.ok) return result.error;
+
+  revalidatePath(`/games/${gameId}/history`);
+  return null;
+}
 
 export async function voidEventAction(
   _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
-  const authClient = createServerClient();
-  const { data: { user } } = await authClient.auth.getUser();
-  if (!user) return 'Not authenticated.';
-
   const gameId = formData.get('gameId') as string;
-  const eventId = formData.get('eventId') as string;
-  if (!gameId || !eventId) return 'Missing game ID or event ID.';
-
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  return runCorrection(gameId, (db, userId) =>
+    voidGameEvent(db, userId, { gameId, eventId: formData.get('eventId') }, 'web'),
   );
-
-  const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error ?? null;
-
-  // Fetch the target event to record its sequence number
-  const { data: targetEvent } = await supabase
-    .from('game_events')
-    .select('sequence_number, inning, is_top_of_inning')
-    .eq('id', eventId)
-    .eq('game_id', gameId)
-    .single();
-
-  if (!targetEvent) return 'Event not found.';
-
-  // Insert with retry to handle race conditions on the unique(game_id, sequence_number) constraint
-  const maxRetries = 3;
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const { data: maxRow } = await supabase
-      .from('game_events')
-      .select('sequence_number')
-      .eq('game_id', gameId)
-      .order('sequence_number', { ascending: false })
-      .limit(1)
-      .single();
-
-    const nextSeq = (maxRow?.sequence_number ?? 0) + 1;
-
-    const { error } = await supabase.from('game_events').insert({
-      game_id: gameId,
-      sequence_number: nextSeq,
-      event_type: 'event_voided',
-      inning: targetEvent.inning,
-      is_top_of_inning: targetEvent.is_top_of_inning,
-      payload: {
-        voidedEventId: eventId,
-        voidedSequenceNumber: targetEvent.sequence_number,
-      },
-      occurred_at: new Date().toISOString(),
-      created_by: user.id,
-      device_id: 'web',
-    });
-
-    if (!error) break;
-    if (error.code !== '23505' || attempt === maxRetries - 1) {
-      return `Failed to void event: ${error.message}`;
-    }
-  }
-
-  revalidatePath(`/games/${gameId}/history`);
-  return null;
 }
-
-// ── Insert Correction Event ─────────────────────────────────────────────────
 
 export async function insertCorrectionEventAction(
   _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
-  const authClient = createServerClient();
-  const { data: { user } } = await authClient.auth.getUser();
-  if (!user) return 'Not authenticated.';
-
   const gameId = formData.get('gameId') as string;
-  const eventType = formData.get('eventType') as string;
-  const inning = Number(formData.get('inning'));
-  const isTopOfInning = formData.get('isTopOfInning') === 'true';
-  const payloadJson = formData.get('payload') as string;
-
-  if (!gameId || !eventType) return 'Missing required fields.';
-  if (isNaN(inning) || inning < 1) return 'Invalid inning.';
-
-  const validEventTypes = new Set(Object.values(EventType) as string[]);
-  if (!validEventTypes.has(eventType)) return `Unknown event type: ${eventType}`;
-
-  let payload: Record<string, unknown>;
-  try {
-    payload = JSON.parse(payloadJson || '{}');
-  } catch {
-    return 'Invalid payload JSON.';
-  }
-
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  const payload = parseJson(formData.get('payload'), {});
+  if (payload === undefined) return 'Invalid payload JSON.';
+  return runCorrection(gameId, (db, userId) =>
+    insertCorrectionEvents(db, userId, {
+      gameId,
+      events: [{
+        eventType: formData.get('eventType'),
+        inning: Number(formData.get('inning')),
+        isTopOfInning: formData.get('isTopOfInning') === 'true',
+        payload,
+      }],
+    }, 'web'),
   );
-
-  const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error ?? null;
-
-  // Insert with retry to handle race conditions on the unique(game_id, sequence_number) constraint
-  const maxRetries = 3;
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const { data: maxRow } = await supabase
-      .from('game_events')
-      .select('sequence_number')
-      .eq('game_id', gameId)
-      .order('sequence_number', { ascending: false })
-      .limit(1)
-      .single();
-
-    const nextSeq = (maxRow?.sequence_number ?? 0) + 1;
-
-    const { error } = await supabase.from('game_events').insert({
-      game_id: gameId,
-      sequence_number: nextSeq,
-      event_type: eventType,
-      inning,
-      is_top_of_inning: isTopOfInning,
-      payload,
-      occurred_at: new Date().toISOString(),
-      created_by: user.id,
-      device_id: 'web',
-    });
-
-    if (!error) break;
-    if (error.code !== '23505' || attempt === maxRetries - 1) {
-      return `Failed to insert event: ${error.message}`;
-    }
-  }
-
-  revalidatePath(`/games/${gameId}/history`);
-  return null;
 }
-
-// ── Batch Insert Correction Events (atomic) ────────────────────────────────
 
 export async function insertCorrectionEventsBatchAction(
   _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
-  const authClient = createServerClient();
-  const { data: { user } } = await authClient.auth.getUser();
-  if (!user) return 'Not authenticated.';
-
   const gameId = formData.get('gameId') as string;
-  const eventsJson = formData.get('events') as string;
-
-  if (!gameId) return 'Missing game ID.';
-
-  let events: Array<{ eventType: string; inning: number; isTopOfInning: boolean; payload: Record<string, unknown> }>;
-  try {
-    events = JSON.parse(eventsJson || '[]');
-  } catch {
-    return 'Invalid events JSON.';
-  }
-
-  if (events.length === 0) return 'No events to insert.';
-
-  const validEventTypes = new Set(Object.values(EventType) as string[]);
-  for (const e of events) {
-    if (!validEventTypes.has(e.eventType)) return `Unknown event type: ${e.eventType}`;
-    if (isNaN(e.inning) || e.inning < 1) return 'Invalid inning.';
-  }
-
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
-
-  const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error ?? null;
-
-  const now = new Date().toISOString();
-  const maxRetries = 3;
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const { data: maxRow } = await supabase
-      .from('game_events')
-      .select('sequence_number')
-      .eq('game_id', gameId)
-      .order('sequence_number', { ascending: false })
-      .limit(1)
-      .single();
-
-    const baseSeq = maxRow?.sequence_number ?? 0;
-
-    const rows = events.map((e, i) => ({
-      game_id: gameId,
-      sequence_number: baseSeq + 1 + i,
-      event_type: e.eventType,
-      inning: e.inning,
-      is_top_of_inning: e.isTopOfInning,
-      payload: e.payload,
-      occurred_at: now,
-      created_by: user.id,
-      device_id: 'web',
-    }));
-
-    const { error } = await supabase.from('game_events').insert(rows);
-
-    if (!error) break;
-    if (error.code !== '23505' || attempt === maxRetries - 1) {
-      return `Failed to insert events: ${error.message}`;
-    }
-  }
-
-  revalidatePath(`/games/${gameId}/history`);
-  return null;
+  const events = parseJson(formData.get('events'), []);
+  if (events === undefined) return 'Invalid events JSON.';
+  return runCorrection(gameId, (db, userId) => insertCorrectionEvents(db, userId, { gameId, events }, 'web'));
 }
-
-// ── Replace Event (atomic void + insert) ────────────────────────────────────
 
 export async function replaceEventAction(
   _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
-  const authClient = createServerClient();
-  const { data: { user } } = await authClient.auth.getUser();
-  if (!user) return 'Not authenticated.';
-
   const gameId = formData.get('gameId') as string;
-  const eventId = formData.get('eventId') as string;
-  const eventType = formData.get('eventType') as string;
-  const payloadJson = formData.get('payload') as string;
-
-  if (!gameId || !eventId || !eventType) return 'Missing required fields.';
-
-  const validEventTypes = new Set(Object.values(EventType) as string[]);
-  if (!validEventTypes.has(eventType)) return `Unknown event type: ${eventType}`;
-
-  let payload: Record<string, unknown>;
-  try {
-    payload = JSON.parse(payloadJson || '{}');
-  } catch {
-    return 'Invalid payload JSON.';
-  }
-
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  const payload = parseJson(formData.get('payload'), {});
+  if (payload === undefined) return 'Invalid payload JSON.';
+  return runCorrection(gameId, (db, userId) =>
+    replaceGameEvent(db, userId, {
+      gameId,
+      eventId: formData.get('eventId'),
+      eventType: formData.get('eventType'),
+      payload,
+    }, 'web'),
   );
-
-  const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error ?? null;
-
-  // Fetch original event for context
-  const { data: targetEvent } = await supabase
-    .from('game_events')
-    .select('sequence_number, inning, is_top_of_inning')
-    .eq('id', eventId)
-    .eq('game_id', gameId)
-    .single();
-
-  if (!targetEvent) return 'Event not found.';
-
-  // Insert both void marker and replacement in a single batch with retry
-  const maxRetries = 3;
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const { data: maxRow } = await supabase
-      .from('game_events')
-      .select('sequence_number')
-      .eq('game_id', gameId)
-      .order('sequence_number', { ascending: false })
-      .limit(1)
-      .single();
-
-    const baseSeq = (maxRow?.sequence_number ?? 0);
-
-    const { error } = await supabase.from('game_events').insert([
-      {
-        game_id: gameId,
-        sequence_number: baseSeq + 1,
-        event_type: 'event_voided',
-        inning: targetEvent.inning,
-        is_top_of_inning: targetEvent.is_top_of_inning,
-        payload: { voidedEventId: eventId, voidedSequenceNumber: targetEvent.sequence_number },
-        occurred_at: new Date().toISOString(),
-        created_by: user.id,
-        device_id: 'web',
-      },
-      {
-        game_id: gameId,
-        sequence_number: baseSeq + 2,
-        event_type: eventType,
-        inning: targetEvent.inning,
-        is_top_of_inning: targetEvent.is_top_of_inning,
-        payload: { ...payload, insertAfterSequence: targetEvent.sequence_number - 1 },
-        occurred_at: new Date().toISOString(),
-        created_by: user.id,
-        device_id: 'web',
-      },
-    ]);
-
-    if (!error) break;
-    if (error.code !== '23505' || attempt === maxRetries - 1) {
-      return `Failed to replace event: ${error.message}`;
-    }
-  }
-
-  revalidatePath(`/games/${gameId}/history`);
-  return null;
 }
-
-// ── Replay At-Bat (batch void + insert) ────────────────────────────────────
 
 export async function replayAtBatAction(
   _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
-  const authClient = createServerClient();
-  const { data: { user } } = await authClient.auth.getUser();
-  if (!user) return 'Not authenticated.';
-
   const gameId = formData.get('gameId') as string;
-  const voidEventIdsJson = formData.get('voidEventIds') as string;
-  const newEventsJson = formData.get('newEvents') as string;
-  const inning = Number(formData.get('inning'));
-  const isTopOfInning = formData.get('isTopOfInning') === 'true';
-  const insertAfterSequence = Number(formData.get('insertAfterSequence'));
-
-  if (!gameId) return 'Missing game ID.';
-  if (isNaN(inning) || inning < 1) return 'Invalid inning.';
-
-  let voidEventIds: string[];
-  let newEvents: Array<{ eventType: string; payload: Record<string, unknown> }>;
-  try {
-    voidEventIds = JSON.parse(voidEventIdsJson || '[]');
-    newEvents = JSON.parse(newEventsJson || '[]');
-  } catch {
-    return 'Invalid JSON.';
-  }
-
-  if (voidEventIds.length === 0 && newEvents.length === 0) return 'Nothing to do.';
-
-  const validEventTypes = new Set(Object.values(EventType) as string[]);
-  for (const e of newEvents) {
-    if (!validEventTypes.has(e.eventType)) return `Unknown event type: ${e.eventType}`;
-  }
-
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  const voidEventIds = parseJson(formData.get('voidEventIds'), []);
+  const newEvents = parseJson(formData.get('newEvents'), []);
+  if (voidEventIds === undefined || newEvents === undefined) return 'Invalid JSON.';
+  return runCorrection(gameId, (db, userId) =>
+    replayAtBat(db, userId, {
+      gameId,
+      voidEventIds,
+      newEvents,
+      inning: Number(formData.get('inning')),
+      isTopOfInning: formData.get('isTopOfInning') === 'true',
+      insertAfterSequence: Number(formData.get('insertAfterSequence')),
+    }, 'web'),
   );
-
-  const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error ?? null;
-
-  // Fetch sequence numbers for events to void
-  const voidMarkers: Array<{
-    game_id: string;
-    sequence_number: number;
-    event_type: string;
-    inning: number;
-    is_top_of_inning: boolean;
-    payload: Record<string, unknown>;
-    occurred_at: string;
-    created_by: string;
-    device_id: string;
-  }> = [];
-
-  if (voidEventIds.length > 0) {
-    const { data: targetEvents } = await supabase
-      .from('game_events')
-      .select('id, sequence_number')
-      .eq('game_id', gameId)
-      .in('id', voidEventIds);
-
-    if (!targetEvents) return 'Failed to fetch events to void.';
-
-    for (const te of targetEvents) {
-      voidMarkers.push({
-        game_id: gameId,
-        sequence_number: 0, // placeholder, assigned below
-        event_type: 'event_voided',
-        inning,
-        is_top_of_inning: isTopOfInning,
-        payload: { voidedEventId: te.id, voidedSequenceNumber: te.sequence_number },
-        occurred_at: new Date().toISOString(),
-        created_by: user.id,
-        device_id: 'web',
-      });
-    }
-  }
-
-  // Build new event rows
-  const newRows = newEvents.map((e) => ({
-    game_id: gameId,
-    sequence_number: 0, // placeholder
-    event_type: e.eventType,
-    inning,
-    is_top_of_inning: isTopOfInning,
-    payload: { ...e.payload, insertAfterSequence },
-    occurred_at: new Date().toISOString(),
-    created_by: user.id,
-    device_id: 'web',
-  }));
-
-  const allRows = [...voidMarkers, ...newRows];
-  if (allRows.length === 0) return null;
-
-  // Insert with retry
-  const maxRetries = 3;
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const { data: maxRow } = await supabase
-      .from('game_events')
-      .select('sequence_number')
-      .eq('game_id', gameId)
-      .order('sequence_number', { ascending: false })
-      .limit(1)
-      .single();
-
-    const baseSeq = maxRow?.sequence_number ?? 0;
-    for (let i = 0; i < allRows.length; i++) {
-      allRows[i].sequence_number = baseSeq + 1 + i;
-    }
-
-    const { error } = await supabase.from('game_events').insert(allRows);
-
-    if (!error) break;
-    if (error.code !== '23505' || attempt === maxRetries - 1) {
-      return `Failed to replay at-bat: ${error.message}`;
-    }
-  }
-
-  revalidatePath(`/games/${gameId}/history`);
-  return null;
 }
 
 /**
