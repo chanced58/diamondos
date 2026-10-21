@@ -210,13 +210,29 @@ it('should let the home coach accept the away value for a conflict', () => {
   );
 });
 
-it('should link coaches to pages not yet in the app', () => {
+it('should open the game pages in the app, not on the web', () => {
   givenDetail(detail({ status: 'completed' }, true), 'head_coach');
 
   render(<GameDetailScreen />);
-  fireEvent.press(screen.getByText('Play-by-play history'));
+  for (const [title, page] of [
+    ['Box score', 'box-score'],
+    ['Play-by-play', 'history'],
+    ['Game notes', 'notes'],
+    ['Opponent lineup', 'opponent-lineup'],
+  ]) {
+    fireEvent.press(screen.getByText(title));
+    expect(mockPush).toHaveBeenLastCalledWith({ pathname: `/(tabs)/schedule/games/[gameId]/${page}`, params: { gameId: 'game-1' } });
+  }
+  expect(screen.queryByText('Opens on the web')).toBeNull();
+  expect(mockOpenOnWeb).not.toHaveBeenCalled();
+});
 
-  expect(mockOpenOnWeb).toHaveBeenCalledWith('/games/game-1/history');
+it('should keep stats and play-by-play off a game that has not started', () => {
+  givenDetail(detail({}, true), 'head_coach');
+  render(<GameDetailScreen />);
+  expect(screen.queryByText('Box score')).toBeNull();
+  expect(screen.queryByText('Play-by-play')).toBeNull();
+  expect(screen.getByText('Game notes')).toBeTruthy();
 });
 
 it('should give coaches a native Edit button instead of a web link', () => {

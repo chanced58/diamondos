@@ -19,7 +19,6 @@ import { GameTakeawaysCard } from '../../../../../src/features/games/GameTakeawa
 import { ReconciliationCard } from '../../../../../src/features/games/ReconciliationCard';
 import { ListGroup } from '../../../../../src/features/navigation/ListGroup';
 import { describeApiError } from '../../../../../src/lib/api-client';
-import { openOnWeb, webUrl } from '../../../../../src/lib/web-links';
 
 /**
  * A game's home screen (the web's /games/[gameId]): details, RSVP, the way
@@ -61,7 +60,6 @@ export default function GameDetailScreen() {
   const { game } = detail;
   const badge = statusBadge(game.status);
   const score = scoreFromOurSide(game);
-  const hasWeb = webUrl('/') !== null;
 
   const showError = (title: string) => (error: unknown) => Alert.alert(title, describeApiError(error));
 
@@ -131,10 +129,6 @@ export default function GameDetailScreen() {
     });
     void Linking.openURL(url);
   };
-
-  const webLinks = [
-    { title: 'Play-by-play history', path: `/games/${game.id}/history`, show: sections.showStatsAndHistory },
-  ].filter((link) => link.show);
 
   const editButton = sections.canEdit
     ? () => (
@@ -246,6 +240,15 @@ export default function GameDetailScreen() {
             }
           />
         )}
+        {sections.showStatsAndHistory && (
+          <ListRow
+            title="Play-by-play"
+            subtitle={detail.viewer.isCoach ? 'Every pitch and play, with corrections' : 'Every pitch and play'}
+            onPress={() =>
+              router.push({ pathname: '/(tabs)/schedule/games/[gameId]/history', params: { gameId: game.id } })
+            }
+          />
+        )}
         <ListRow
           title="Game notes"
           subtitle={detail.viewer.isCoach ? 'Overall, coach-only and player notes' : 'Notes from the coach'}
@@ -299,17 +302,6 @@ export default function GameDetailScreen() {
         )}
         {game.notes && <ListRow title="Notes" subtitle={game.notes} />}
       </ListGroup>
-
-      {hasWeb && webLinks.length > 0 && (
-        <>
-          <SectionHeader title="On the web" />
-          <ListGroup>
-            {webLinks.map((link) => (
-              <ListRow key={link.path + link.title} title={link.title} subtitle="Opens on the web" onPress={() => void openOnWeb(link.path)} />
-            ))}
-          </ListGroup>
-        </>
-      )}
 
       {(sections.canRecalculate || sections.canReset || sections.canCancel) && (
         <>
