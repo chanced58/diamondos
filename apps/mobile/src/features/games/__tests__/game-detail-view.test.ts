@@ -118,4 +118,12 @@ describe('gameDetailSections', () => {
     expect(sections.canReset).toBe(true);
     expect(sections.score).toBeNull();
   });
+
+  it("should offer the opponent lineup to coaches, except a started tournament game's", () => {
+    expect(gameDetailSections(detail({}, true), true).showOpponentLineup).toBe(true);
+    expect(gameDetailSections(detail({}, false), false).showOpponentLineup).toBe(false);
+    expect(gameDetailSections(detail({ status: 'in_progress' }, true), true).showOpponentLineup).toBe(true);
+    expect(gameDetailSections(detail({ tournamentId: 'tour', status: 'scheduled' }, true), true).showOpponentLineup).toBe(true);
+    expect(gameDetailSections(detail({ tournamentId: 'tour', status: 'in_progress' }, true), true).showOpponentLineup).toBe(false);
+  });
 });

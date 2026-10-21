@@ -134,7 +134,6 @@ export default function GameDetailScreen() {
 
   const webLinks = [
     { title: 'Play-by-play history', path: `/games/${game.id}/history`, show: sections.showStatsAndHistory },
-    { title: 'Opponent lineup', path: `/games/${game.id}/opponent-lineup`, show: sections.showOpponentLineup },
   ].filter((link) => link.show);
 
   const editButton = sections.canEdit
@@ -256,7 +255,7 @@ export default function GameDetailScreen() {
         />
       </ListGroup>
 
-      {(sections.showLineup || sections.showAttendance) && (
+      {(sections.showLineup || sections.showAttendance || sections.showOpponentLineup) && (
         <>
           <SectionHeader title="Game day" />
           <ListGroup>
@@ -266,6 +265,15 @@ export default function GameDetailScreen() {
                 subtitle={detail.hasLineup ? 'Batting order and positions' : 'No lineup yet'}
                 onPress={() =>
                   router.push({ pathname: '/(tabs)/schedule/games/[gameId]/lineup', params: { gameId: game.id } })
+                }
+              />
+            )}
+            {sections.showOpponentLineup && (
+              <ListRow
+                title="Opponent lineup"
+                subtitle="Their roster and batting order"
+                onPress={() =>
+                  router.push({ pathname: '/(tabs)/schedule/games/[gameId]/opponent-lineup', params: { gameId: game.id } })
                 }
               />
             )}
