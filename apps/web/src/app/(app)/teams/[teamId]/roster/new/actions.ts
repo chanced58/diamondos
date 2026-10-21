@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { createPlayerSchema } from '@baseball/shared';
+import { canManageRoster } from '@/lib/roster-access';
 
 export async function addPlayerAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
@@ -12,6 +13,10 @@ export async function addPlayerAction(_prevState: string | null | undefined, for
 
   const teamId = formData.get('teamId') as string;
   if (!teamId) return 'Missing team ID.';
+
+  if (!(await canManageRoster(teamId, user.id))) {
+    return 'You do not have permission to add players to this team.';
+  }
 
   const secondaryPositions = formData.getAll('secondaryPositions') as string[];
   const email = (formData.get('email') as string)?.toLowerCase().trim() || undefined;

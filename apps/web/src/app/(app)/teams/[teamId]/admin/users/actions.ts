@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
+import { isTeamRole } from '@baseball/shared';
 import { createServerClient } from '@/lib/supabase/server';
 
 const ROSTER_ADMIN_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'] as const;
@@ -50,7 +51,8 @@ export async function updateMemberRoleAction(
   const { supabase } = result;
 
   const memberId = formData.get('memberId') as string;
-  const newRole  = formData.get('role') as string;
+  const newRole  = formData.get('role');
+  if (!isTeamRole(newRole)) return 'Invalid role.';
 
   const { error } = await supabase
     .from('team_members')
