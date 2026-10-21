@@ -108,7 +108,8 @@ export default function OpponentLineupScreen() {
 
   const header = <Stack.Screen options={{ title: 'Opponent lineup' }} />;
 
-  if (query.isPending) {
+  // The draft is set from the data in an effect, one render after it arrives.
+  if (query.isPending || (query.data && !order)) {
     return (
       <View className="flex-1 items-center justify-center bg-gray-50">
         {header}

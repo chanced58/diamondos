@@ -23,12 +23,23 @@ interface TargetEvent {
   sequence_number: number;
   inning: number;
   is_top_of_inning: boolean;
+  payload: Record<string, unknown> | null;
+}
+
+/**
+ * Where an event sits in replay: an earlier correction sits after its own
+ * `insertAfterSequence`, anything recorded in place right after the event
+ * before it. A replacement takes the same spot.
+ */
+function replayPosition(target: TargetEvent): number {
+  const placed = target.payload?.insertAfterSequence;
+  return typeof placed === 'number' ? placed : target.sequence_number - 1;
 }
 
 async function findEvents(db: SupabaseClient, gameId: string, eventIds: string[]): Promise<ServiceResult<TargetEvent[]>> {
   const { data, error } = await db
     .from('game_events')
-    .select('id, sequence_number, inning, is_top_of_inning')
+    .select('id, sequence_number, inning, is_top_of_inning, payload')
     .eq('game_id', gameId)
     .in('id', eventIds);
   if (error) {
@@ -126,7 +137,7 @@ export async function replaceGameEvent(
         event_type: eventType,
         inning: original.inning,
         is_top_of_inning: original.is_top_of_inning,
-        payload: { ...payload, insertAfterSequence: original.sequence_number - 1 },
+        payload: { ...payload, insertAfterSequence: replayPosition(original) },
       },
     ],
   });

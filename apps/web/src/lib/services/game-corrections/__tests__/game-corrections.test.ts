@@ -11,7 +11,9 @@ const GAME_ID = '11111111-1111-4111-8111-111111111111';
 const EVENT_A = '22222222-2222-4222-8222-222222222222';
 const EVENT_B = '33333333-3333-4333-8333-333333333333';
 
-const target = (id: string, sequence: number) => ({ id, sequence_number: sequence, inning: 3, is_top_of_inning: false });
+const target = (id: string, sequence: number, payload: Record<string, unknown> = {}) => ({
+  id, sequence_number: sequence, inning: 3, is_top_of_inning: false, payload,
+});
 
 beforeEach(() => {
   mockGetAuthorizedCoach.mockReset().mockResolvedValue({ game: { team_id: 'team-1', status: 'completed' } });
@@ -80,7 +82,7 @@ describe('insertCorrectionEvents', () => {
 
   it('should refuse flow events that have their own paths', async () => {
     const { db, calls } = fakeDb();
-    for (const eventType of ['game_start', 'game_end', 'event_voided', 'game_reset', 'nonsense']) {
+    for (const eventType of ['game_start', 'game_end', 'event_voided', 'pitch_reverted', 'game_reset', 'nonsense']) {
       const result = await insertCorrectionEvents(db, 'coach', {
         gameId: GAME_ID,
         events: [{ eventType, inning: 1, isTopOfInning: true, payload: {} }],
@@ -125,6 +127,17 @@ describe('replaceGameEvent', () => {
         payload: { batterId: 'b1', hitType: 'double', insertAfterSequence: 11 },
       }),
     ]);
+  });
+});
+
+describe('replaceGameEvent of an earlier correction', () => {
+  it('should keep the place the correction was inserted at, not its own sequence', async () => {
+    const { db, calls } = fakeDb({
+      'game_events.select': [{ data: [target(EVENT_A, 41, { insertAfterSequence: 11 })] }, { data: { sequence_number: 50 } }],
+    });
+    await replaceGameEvent(db, 'coach', { gameId: GAME_ID, eventId: EVENT_A, eventType: 'walk', payload: {} }, 'web');
+    const [rows] = inserted(calls);
+    expect(rows[1].payload).toEqual({ insertAfterSequence: 11 });
   });
 });
 

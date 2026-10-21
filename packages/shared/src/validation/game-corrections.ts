@@ -12,11 +12,16 @@ import { EventType } from '../types/game-event';
  * with `payload.insertAfterSequence`), or both (replace, replay at-bat).
  */
 
-/** Written only by their own flows (start, end, the void marker), never as a correction. */
+/**
+ * Written only by their own flows (start, end, the void marker, the scorer's
+ * undo), never as a correction. A stray revert would hide every later event.
+ * `game_reset` is not an EventType, so the enum check already rejects it.
+ */
 const NON_CORRECTION_EVENT_TYPES: ReadonlySet<string> = new Set([
   EventType.GAME_START,
   EventType.GAME_END,
   EventType.EVENT_VOIDED,
+  EventType.PITCH_REVERTED,
 ]);
 
 const MAX_PAYLOAD_CHARS = 10_000;

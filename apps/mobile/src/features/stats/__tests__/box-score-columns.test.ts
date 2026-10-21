@@ -7,8 +7,23 @@ import {
   formatEra,
   formatPercent,
   formatRate,
+  homeSkippedLastHalf,
   pitchingTotals,
 } from '../box-score-columns';
+
+describe('homeSkippedLastHalf', () => {
+  const runs = (n: number) => ({ runsByInning: Array.from({ length: n }, () => 0) });
+
+  it('should mark the inning the home team did not bat in a finished game, however short', () => {
+    expect(homeSkippedLastHalf('completed', runs(5), runs(4))).toBe(5);
+    expect(homeSkippedLastHalf('completed', runs(7), runs(6))).toBe(7);
+  });
+
+  it('should mark nothing when the home team batted, or the game is still going', () => {
+    expect(homeSkippedLastHalf('completed', runs(7), runs(7))).toBeNull();
+    expect(homeSkippedLastHalf('in_progress', runs(5), runs(4))).toBeNull();
+  });
+});
 
 const batter = (over: Partial<BoxScoreBatter> = {}): BoxScoreBatter => ({
   playerId: 'p', name: 'P', ab: 4, r: 1, h: 2, doubles: 1, triples: 0, hr: 0, rbi: 1, bb: 0, k: 1, sb: 0, avg: 0.5, ...over,

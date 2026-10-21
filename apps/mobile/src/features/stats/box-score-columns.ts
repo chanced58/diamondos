@@ -3,8 +3,24 @@ import {
   type BoxScoreBatter,
   type BoxScoreFielder,
   type BoxScorePitcher,
+  type GameBoxScoreResponse,
+  type GameBoxScoreSide,
 } from '@baseball/shared';
 import type { StatColumn } from './StatTable';
+
+/**
+ * The inning whose bottom half a finished game never played (the home team
+ * led after the top), where the line score shows "x"; null otherwise.
+ */
+export function homeSkippedLastHalf(
+  status: GameBoxScoreResponse['status'],
+  away: Pick<GameBoxScoreSide, 'runsByInning'>,
+  home: Pick<GameBoxScoreSide, 'runsByInning'>,
+): number | null {
+  if (status !== 'completed') return null;
+  const lastInning = away.runsByInning.length;
+  return home.runsByInning.length < lastInning ? lastInning : null;
+}
 
 /**
  * The box score's columns and totals — the web stats page's columns, as pure

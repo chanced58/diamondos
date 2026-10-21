@@ -1,5 +1,6 @@
 import { ScrollView, Text, View } from 'react-native';
 import type { GameBoxScoreResponse, GameBoxScoreSide } from '@baseball/shared';
+import { homeSkippedLastHalf } from './box-score-columns';
 
 const MIN_INNINGS = 7;
 const TEAM_WIDTH = 104;
@@ -13,6 +14,7 @@ export function LineScoreCard({ box }: { box: GameBoxScoreResponse }) {
   const [away, home] = box.weAreHome ? [box.them, box.us] : [box.us, box.them];
   const innings = Math.max(MIN_INNINGS, away.runsByInning.length, home.runsByInning.length);
   const inningNumbers = Array.from({ length: innings }, (_, i) => i + 1);
+  const skippedHomeHalf = homeSkippedLastHalf(box.status, away, home);
 
   const row = (side: GameBoxScoreSide, isHome: boolean) => (
     <View className="flex-row items-center h-8">
@@ -20,7 +22,7 @@ export function LineScoreCard({ box }: { box: GameBoxScoreResponse }) {
         const runs = side.runsByInning[n - 1];
         return (
           <Text key={n} style={{ width: CELL }} className="text-center text-sm text-gray-800">
-            {runs ?? (isHome && n === innings && box.status === 'completed' ? 'x' : '')}
+            {runs ?? (isHome && n === skippedHomeHalf ? 'x' : '')}
           </Text>
         );
       })}
