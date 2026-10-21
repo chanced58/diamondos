@@ -3,7 +3,6 @@ import {
   conflictKey,
   describeScoreConflict,
   gameIdInputSchema,
-  isCoachRole,
   weAreHome,
   type GameDetailResponse,
   type GameTakeaway,
@@ -11,6 +10,7 @@ import {
 import { getGameWeaknesses } from '@baseball/database';
 import { loadReconciliationForGame } from '@/lib/dual-scorekeeper/load';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
+import { resolveGameViewer } from './authorize';
 
 /**
  * Everything the game detail screen shows, as the web game page computes it.
@@ -30,7 +30,7 @@ export async function loadGameDetail(
   const { data: game } = await db.from('games').select('*').eq('id', gameId).maybeSingle();
   if (!game) return serviceError('not_found', 'Game not found.');
 
-  const viewer = await resolveViewer(db, actorUserId, game.team_id as string);
+  const viewer = await resolveGameViewer(db, actorUserId, game.team_id as string);
   if (!viewer) return serviceError('not_found', 'Game not found.');
 
   const isCompleted = game.status === 'completed';
@@ -87,27 +87,6 @@ export async function loadGameDetail(
         }
       : null,
   });
-}
-
-async function resolveViewer(
-  db: SupabaseClient,
-  userId: string,
-  teamId: string,
-): Promise<{ isCoach: boolean } | null> {
-  const [{ data: profile }, { data: membership }] = await Promise.all([
-    db.from('user_profiles').select('is_platform_admin').eq('id', userId).maybeSingle(),
-    db
-      .from('team_members')
-      .select('role')
-      .eq('team_id', teamId)
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .maybeSingle(),
-  ]);
-
-  if (profile?.is_platform_admin) return { isCoach: true };
-  if (!membership) return null;
-  return { isCoach: isCoachRole(membership.role as string) };
 }
 
 async function countRows(db: SupabaseClient, table: string, gameId: string): Promise<number> {
