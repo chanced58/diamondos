@@ -2,12 +2,24 @@ import { NextResponse } from 'next/server';
 import { GET as getBoxScore } from '../box-score/route';
 import { GET as getNotes, PUT as putNotes } from '../notes/route';
 import { PUT as putPlayerNotes } from '../notes/players/[playerId]/route';
+import { GET as getOpponentLineup, PUT as putOpponentLineup } from '../opponent-lineup/route';
+import { POST as postAutoFill } from '../opponent-lineup/auto-fill/route';
+import { PUT as putOpponentTeam } from '../opponent-team/route';
+import { POST as postOpponentPlayer } from '../opponent-players/route';
+import { DELETE as deleteOpponentPlayer, PATCH as patchOpponentPlayer } from '../opponent-players/[playerId]/route';
 
 const mockRequireApiUser = jest.fn();
 const mockLoadGameBoxScore = jest.fn();
 const mockLoadGameNotes = jest.fn();
 const mockSaveGameNotes = jest.fn();
 const mockSavePlayerGameNotes = jest.fn();
+const mockLoadOpponentLineup = jest.fn();
+const mockSaveOpponentLineup = jest.fn();
+const mockAutoFill = jest.fn();
+const mockSaveOpponentTeam = jest.fn();
+const mockAddOpponentPlayer = jest.fn();
+const mockUpdateOpponentPlayer = jest.fn();
+const mockRemoveOpponentPlayer = jest.fn();
 
 jest.mock('@/lib/api/bearer-auth', () => ({
   ...jest.requireActual('@/lib/api/bearer-auth'),
@@ -18,6 +30,21 @@ jest.mock('@/lib/services/games/load-game-box-score', () => ({
 }));
 jest.mock('@/lib/services/games/load-game-notes', () => ({
   loadGameNotes: (...args: unknown[]) => mockLoadGameNotes(...args),
+}));
+jest.mock('@/lib/services/opponent-lineup/load-opponent-lineup', () => ({
+  loadOpponentLineup: (...args: unknown[]) => mockLoadOpponentLineup(...args),
+}));
+jest.mock('@/lib/services/opponent-lineup/opponent-batting-order', () => ({
+  saveOpponentLineup: (...args: unknown[]) => mockSaveOpponentLineup(...args),
+  autoFillOpponentLineup: (...args: unknown[]) => mockAutoFill(...args),
+}));
+jest.mock('@/lib/services/opponent-lineup/opponent-team', () => ({
+  saveOpponentTeam: (...args: unknown[]) => mockSaveOpponentTeam(...args),
+}));
+jest.mock('@/lib/services/opponent-lineup/opponent-roster', () => ({
+  addOpponentPlayer: (...args: unknown[]) => mockAddOpponentPlayer(...args),
+  updateOpponentPlayer: (...args: unknown[]) => mockUpdateOpponentPlayer(...args),
+  removeOpponentPlayer: (...args: unknown[]) => mockRemoveOpponentPlayer(...args),
 }));
 jest.mock('@/lib/services/games/save-game-notes', () => ({
   saveGameNotes: (...args: unknown[]) => mockSaveGameNotes(...args),
@@ -98,5 +125,49 @@ describe('game notes routes', () => {
     );
     expect(res.status).toBe(200);
     expect(mockSavePlayerGameNotes).toHaveBeenCalledWith(DB, 'u1', { gameId: 'game-1', playerId: 'p1', playerNotes: 'Felt good' });
+  });
+});
+
+describe('opponent lineup routes', () => {
+  const playerParams = { params: { gameId: 'game-1', playerId: 'p1' } };
+  const ok = { ok: true, data: {} };
+
+  it('should respond 401 to every opponent route without calling a service', async () => {
+    mockRequireApiUser.mockResolvedValue({ response: NextResponse.json({ error: 'Not authenticated' }, { status: 401 }) });
+    const responses = await Promise.all([
+      getOpponentLineup(request(), gameParams),
+      putOpponentLineup(request('PUT', {}), gameParams),
+      postAutoFill(request('POST'), gameParams),
+      putOpponentTeam(request('PUT', {}), gameParams),
+      postOpponentPlayer(request('POST', {}), gameParams),
+      patchOpponentPlayer(request('PATCH', {}), playerParams),
+      deleteOpponentPlayer(request('DELETE'), playerParams),
+    ]);
+    expect(responses.map((r) => r.status)).toEqual([401, 401, 401, 401, 401, 401, 401]);
+    for (const mock of [mockLoadOpponentLineup, mockSaveOpponentLineup, mockAutoFill, mockSaveOpponentTeam,
+      mockAddOpponentPlayer, mockUpdateOpponentPlayer, mockRemoveOpponentPlayer]) {
+      expect(mock).not.toHaveBeenCalled();
+    }
+  });
+
+  it('should pass path ids over any in the body', async () => {
+    for (const mock of [mockSaveOpponentLineup, mockSaveOpponentTeam, mockAddOpponentPlayer, mockUpdateOpponentPlayer]) {
+      mock.mockResolvedValue(ok);
+    }
+    await putOpponentLineup(request('PUT', { gameId: 'other', entries: [] }), gameParams);
+    await putOpponentTeam(request('PUT', { gameId: 'other', name: 'Eagles' }), gameParams);
+    await patchOpponentPlayer(request('PATCH', { gameId: 'other', playerId: 'other', firstName: 'Ty' }), playerParams);
+
+    expect(mockSaveOpponentLineup).toHaveBeenCalledWith(DB, 'u1', { gameId: 'game-1', entries: [] });
+    expect(mockSaveOpponentTeam).toHaveBeenCalledWith(DB, 'u1', { gameId: 'game-1', name: 'Eagles' });
+    expect(mockUpdateOpponentPlayer).toHaveBeenCalledWith(DB, 'u1', { gameId: 'game-1', playerId: 'p1', firstName: 'Ty' });
+  });
+
+  it('should answer 201 for an added player and 404 for a player off the roster', async () => {
+    mockAddOpponentPlayer.mockResolvedValue({ ok: true, data: { playerId: 'p1' } });
+    expect((await postOpponentPlayer(request('POST', { firstName: 'Ty', lastName: 'Cobb' }), gameParams)).status).toBe(201);
+    mockRemoveOpponentPlayer.mockResolvedValue({ ok: false, code: 'not_found', error: 'Player not found on this opponent team.' });
+    expect((await deleteOpponentPlayer(request('DELETE'), playerParams)).status).toBe(404);
+    expect(mockRemoveOpponentPlayer).toHaveBeenCalledWith(DB, 'u1', { gameId: 'game-1', playerId: 'p1' });
   });
 });

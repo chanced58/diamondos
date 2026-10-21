@@ -22,3 +22,4 @@ export * from './game-detail';
 export * from './game-form';
 export * from './game-box-score';
 export * from './game-notes';
+export * from './opponent-lineup';
