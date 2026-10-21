@@ -2,15 +2,9 @@
 
 import type { JSX } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
-import type { ScoreConflict } from '@baseball/shared';
-import { conflictKey } from '@baseball/shared';
+import type { ReconciliationOverride, ScoreConflict } from '@baseball/shared';
+import { conflictKey, describeScoreConflict } from '@baseball/shared';
 import { resolveReconciliationConflictAction } from './actions';
-
-export interface ReconciliationOverride {
-  /** Stable conflict identity (see conflictKey in @baseball/shared). */
-  key: string;
-  useAwayValue: boolean;
-}
 
 interface ReconciliationPanelProps {
   reconciliationId: string;
@@ -20,28 +14,6 @@ interface ReconciliationPanelProps {
   canOverride: boolean;
   homeTeamLabel: string;
   awayTeamLabel: string;
-}
-
-const HALF_LABEL: Record<'top' | 'bottom', string> = { top: 'Top', bottom: 'Bottom' };
-
-/** Human-readable label for a single score conflict, shown as the row title. */
-function describeConflict(c: ScoreConflict): string {
-  switch (c.kind) {
-    case 'final_score':
-      return `Final score — ${c.side === 'home' ? 'home' : 'away'} runs`;
-    case 'inning_runs':
-      return `Runs in ${HALF_LABEL[c.half]} ${c.inning}`;
-    case 'team_hits':
-      return `Team hits — ${c.side}`;
-    case 'team_errors':
-      return `Team errors — ${c.side}`;
-    case 'player_batting':
-      return `Batting · ${c.stat} (player ${c.playerId.slice(0, 8)})`;
-    case 'player_pitching':
-      return `Pitching · ${c.stat} (player ${c.playerId.slice(0, 8)})`;
-    default:
-      return 'Conflict';
-  }
 }
 
 /** Render a numeric stat value, or an em dash when the player is absent from a log. */
@@ -88,7 +60,7 @@ function ConflictRow({
   return (
     <div className="py-3 border-b border-gray-100 last:border-0">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-sm text-gray-700">{describeConflict(conflict)}</span>
+        <span className="text-sm text-gray-700">{describeScoreConflict(conflict)}</span>
         <span className="text-xs text-gray-400">
           Using {overridden ? awayTeamLabel : homeTeamLabel}:{' '}
           <span className="font-semibold text-gray-700">{fmt(acceptedValue)}</span>
