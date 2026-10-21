@@ -26,10 +26,22 @@ export function opponentLabel(game: Pick<Game, 'opponentName'>): string {
   return game.opponentName?.trim() || 'TBD';
 }
 
-/** "vs Eagles" at home, "@ Eagles" away, judged from our side. */
+/**
+ * "vs Eagles" at home, "@ Eagles" away, judged from our side. Takes the bare
+ * fields so the offline game lists (WatermelonDB rows) can use it too.
+ */
+export function matchupLabel(
+  opponentName: string | null | undefined,
+  locationType: string | null | undefined,
+  neutralHomeTeam?: string | null,
+): string {
+  // An unknown location keeps the lists' historical "vs".
+  const vsAt = !locationType || weAreHome(locationType, neutralHomeTeam) ? 'vs' : '@';
+  return `${vsAt} ${opponentLabel({ opponentName: opponentName ?? null })}`;
+}
+
 export function matchupTitle(game: Game): string {
-  const vsAt = weAreHome(game.locationType, game.neutralHomeTeam) ? 'vs' : '@';
-  return `${vsAt} ${opponentLabel(game)}`;
+  return matchupLabel(game.opponentName, game.locationType, game.neutralHomeTeam);
 }
 
 export function locationLabel(game: Game): string {

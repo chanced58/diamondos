@@ -166,6 +166,23 @@ it('should show takeaways and a reset for a coach on a completed game', () => {
   alert.mockRestore();
 });
 
+it('should not recalculate the stored score until the coach confirms', () => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  givenDetail(detail({ status: 'completed' }, true), 'head_coach');
+
+  render(<GameDetailScreen />);
+  fireEvent.press(screen.getByText('Recalculate score from play-by-play'));
+
+  // A stray tap only opens the confirmation; nothing is written yet.
+  expect(mockActions.recalculate.mutate).not.toHaveBeenCalled();
+  const buttons = alert.mock.calls[0][2] as { text: string; onPress?: () => void }[];
+  buttons.find((b) => b.text === 'Keep score')?.onPress?.();
+  expect(mockActions.recalculate.mutate).not.toHaveBeenCalled();
+  buttons.find((b) => b.text === 'Recalculate')?.onPress?.();
+  expect(mockActions.recalculate.mutate).toHaveBeenCalled();
+  alert.mockRestore();
+});
+
 it('should let the home coach accept the away value for a conflict', () => {
   givenDetail(
     {

@@ -1,4 +1,5 @@
 import type { Href } from 'expo-router';
+import { matchupLabel } from '../games/game-detail-view';
 
 /**
  * Pure merge/normalise logic for the Schedule tab, extracted out of
@@ -56,6 +57,9 @@ export interface ScheduleGameRow {
   status: string;
   /** Set when the game belongs to a tournament (`Game.tournamentId`). */
   tournamentId?: string | null;
+  /** `Game.locationType` / `Game.neutralHomeTeam` — decide "vs" or "@". */
+  locationType?: string | null;
+  neutralHomeTeam?: string | null;
 }
 
 export interface SchedulePracticeRow {
@@ -78,7 +82,7 @@ export function mapGameToScheduleItem(game: ScheduleGameRow): ScheduleItem {
     kind: 'game',
     startsAt: new Date(game.scheduledAt).toISOString(),
     timeZone: game.timeZone ?? null,
-    title: `Game vs ${game.opponentName || 'TBD'}`,
+    title: `Game ${matchupLabel(game.opponentName, game.locationType, game.neutralHomeTeam)}`,
     detail: game.status,
     tag: game.tournamentId ? 'Tournament' : null,
     // Every game opens its detail screen, as in the Games list.

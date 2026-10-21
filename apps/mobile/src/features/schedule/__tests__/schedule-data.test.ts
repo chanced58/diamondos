@@ -69,6 +69,13 @@ describe('mapGameToScheduleItem', () => {
     });
   });
 
+  it('titles an away game with "@" rather than "vs"', () => {
+    expect(mapGameToScheduleItem(mkGame({ opponentName: 'Marsing', locationType: 'away' })).title)
+      .toBe('Game @ Marsing');
+    expect(mapGameToScheduleItem(mkGame({ opponentName: 'Marsing', locationType: 'home' })).title)
+      .toBe('Game vs Marsing');
+  });
+
   it.each(['scheduled', 'in_progress', 'completed', 'cancelled', 'postponed'])(
     'opens the game detail screen for a %s game',
     (status) => {

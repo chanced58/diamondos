@@ -2,6 +2,7 @@ import type { GameDetailResponse } from '@baseball/shared';
 import {
   gameDetailSections,
   locationLabel,
+  matchupLabel,
   matchupTitle,
   opponentLabel,
   scoreFromOurSide,
@@ -51,6 +52,13 @@ describe('labels', () => {
     expect(matchupTitle(detail({ locationType: 'away' }).game)).toBe('@ Eagles');
     expect(matchupTitle(detail({ locationType: 'neutral', neutralHomeTeam: 'opponent' }).game)).toBe('@ Eagles');
     expect(locationLabel(detail({ locationType: 'neutral', neutralHomeTeam: 'us' }).game)).toBe('Neutral site (home)');
+  });
+
+  it('should label offline list rows from bare fields, keeping "vs" when the location is unknown', () => {
+    expect(matchupLabel('Marsing', 'away')).toBe('@ Marsing');
+    expect(matchupLabel('Marsing', 'neutral', 'opponent')).toBe('@ Marsing');
+    expect(matchupLabel('Marsing', 'home')).toBe('vs Marsing');
+    expect(matchupLabel('', undefined)).toBe('vs TBD');
   });
 
   it('should report the score as ours versus theirs whichever side we batted on', () => {

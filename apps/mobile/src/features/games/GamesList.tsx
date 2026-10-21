@@ -11,6 +11,7 @@ import { useRole } from '../../providers/RoleProvider';
 import { useGameRsvps } from '../rsvp/useGameRsvps';
 import { RsvpButtonRow } from '../rsvp/RsvpButtonRow';
 import { sortGamesForList } from './sort-games-for-list';
+import { matchupLabel } from './game-detail-view';
 import { TournamentTag } from '../tournaments/TournamentTag';
 
 interface GamesListProps {
@@ -64,7 +65,9 @@ function GamesList({ games }: GamesListProps) {
           }
         >
           <View className="flex-row justify-between items-start mb-1">
-            <Text className="font-semibold text-gray-900 text-base flex-1 mr-2">vs {game.opponentName || 'TBD'}</Text>
+            <Text className="font-semibold text-gray-900 text-base flex-1 mr-2">
+              {matchupLabel(game.opponentName, game.locationType, game.neutralHomeTeam)}
+            </Text>
             <View className="flex-row items-center gap-1.5">
               {game.tournamentId ? <TournamentTag /> : null}
               <StatusBadge status={game.status} />

@@ -97,12 +97,21 @@ export default function GameDetailScreen() {
       ],
     );
 
-  const recalculate = () =>
-    actions.recalculate.mutate(undefined, {
-      onSuccess: ({ homeScore, awayScore }) =>
-        Alert.alert('Scores recalculated', `Home ${homeScore}, away ${awayScore}, from the play-by-play.`),
-      onError: showError('Could not recalculate the score'),
-    });
+  // Confirmed like reset and cancel: it overwrites the stored score, so a
+  // stray tap must not write to the game.
+  const confirmRecalculate = () =>
+    Alert.alert('Recalculate the score?', "The stored score is replaced by a replay of the game's play-by-play.", [
+      { text: 'Keep score', style: 'cancel' },
+      {
+        text: 'Recalculate',
+        onPress: () =>
+          actions.recalculate.mutate(undefined, {
+            onSuccess: ({ homeScore, awayScore }) =>
+              Alert.alert('Scores recalculated', `Home ${homeScore}, away ${awayScore}, from the play-by-play.`),
+            onError: showError('Could not recalculate the score'),
+          }),
+      },
+    ]);
 
   const override = (conflictKey: string, useAwayValue: boolean) => {
     if (!detail.reconciliation) return;
@@ -248,7 +257,7 @@ export default function GameDetailScreen() {
         <ListRow title="Location" subtitle={locationLabel(game)} />
         {game.venueName && <ListRow title="Venue" subtitle={game.venueName} />}
         {game.latitude !== null && game.longitude !== null && (
-          <ListRow title="Open in Maps" subtitle={game.venueName ?? undefined} onPress={openMap} />
+          <ListRow title="Open in Maps" onPress={openMap} />
         )}
         {game.notes && <ListRow title="Notes" subtitle={game.notes} />}
       </ListGroup>
@@ -273,7 +282,7 @@ export default function GameDetailScreen() {
                 variant="secondary"
                 label="Recalculate score from play-by-play"
                 loading={actions.recalculate.isPending}
-                onPress={recalculate}
+                onPress={confirmRecalculate}
               />
             )}
             {sections.canReset && (
