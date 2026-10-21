@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { ScoreConflict } from '@baseball/shared';
-import type { ReconciliationOverride } from '@/app/(app)/games/[gameId]/ReconciliationPanel';
+import type { ReconciliationOverride, ScoreConflict } from '@baseball/shared';
 
 export interface ReconciliationView {
   reconciliationId: string;
