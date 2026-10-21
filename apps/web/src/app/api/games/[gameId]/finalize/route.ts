@@ -13,7 +13,7 @@
  * coach's game_end event has already been pushed.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { requireApiUser } from '@/lib/api/bearer-auth';
 import { getAuthorizedCoach, finalizeGame } from '@/lib/games/finalize';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -27,25 +27,9 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid game id' }, { status: 400 });
     }
 
-    const authHeader = req.headers.get('authorization') ?? '';
-    const token = authHeader.replace(/^Bearer\s+/i, '');
-    if (!token) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    }
-
-    const anonClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    );
-    const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    }
-
-    const db = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    );
+    const auth = await requireApiUser(req);
+    if (auth.response) return auth.response;
+    const { user, db } = auth;
 
     const authz = await getAuthorizedCoach(db, user.id, params.gameId);
     if ('error' in authz) {
