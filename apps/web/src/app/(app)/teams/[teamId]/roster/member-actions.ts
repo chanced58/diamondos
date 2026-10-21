@@ -49,6 +49,7 @@ async function isMemberOfTeam(
     .eq('id', memberId)
     .eq('team_id', teamId)
     .eq('user_id', userId)
+    .eq('is_active', true)
     .maybeSingle();
   return data !== null;
 }
@@ -111,6 +112,7 @@ export async function updateStaffMemberAction(
     .eq('id', memberId)
     .eq('team_id', teamId)
     .eq('user_id', userId)
+    .eq('is_active', true)
     .select('id');
   if (roleErr) return roleErr.message;
   if (!updatedMembers?.length) return 'Member not found on this team.';

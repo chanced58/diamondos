@@ -83,6 +83,11 @@ beforeEach(() => {
   mockGetUser.mockResolvedValue({ data: { user: { id: 'caller' } } });
 });
 
+afterEach(() => {
+  // Some tests override the builder; restore it even when an expectation fails.
+  mockDb.from.mockImplementation(query);
+});
+
 describe('roster player actions', () => {
   it('should refuse to add a player for someone who cannot manage the roster', async () => {
     mockCanManageRoster.mockResolvedValue(false);
@@ -143,6 +148,7 @@ describe('roster member actions', () => {
     const [update] = writesTo('team_members');
     expect(hasFilter(update, 'team_id', TEAM)).toBe(true);
     expect(hasFilter(update, 'user_id', 'u-other')).toBe(true);
+    expect(hasFilter(update, 'is_active', true)).toBe(true);
     expect(writesTo('user_profiles')).toHaveLength(0);
   });
 
@@ -168,7 +174,6 @@ describe('roster member actions', () => {
     const parent = { firstName: 'A', lastName: 'B', email: '', phone: '' };
     expect(await updateParentMemberAction(TEAM, 'm-other', 'u-other', parent)).toBe('Member not found on this team.');
     expect(writesTo('user_profiles')).toHaveLength(0);
-    mockDb.from.mockImplementation(query);
   });
 });
 
@@ -185,22 +190,35 @@ describe('team admin role changes', () => {
 });
 
 describe('startDmAction', () => {
-  function dmForm(): FormData {
+  const DM_TEAM = '11111111-1111-4111-8111-111111111111';
+  const CALLER = '22222222-2222-4222-8222-222222222222';
+  const TARGET = '33333333-3333-4333-8333-333333333333';
+
+  function dmForm(targetUserId = TARGET): FormData {
     const form = new FormData();
-    form.set('teamId', TEAM);
-    form.set('targetUserId', 'outsider');
+    form.set('teamId', DM_TEAM);
+    form.set('targetUserId', targetUserId);
     return form;
   }
 
+  beforeEach(() => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: CALLER } } });
+  });
+
+  it('should ignore a malformed target id without querying the database', async () => {
+    await startDmAction(dmForm('not-a-uuid'));
+    expect(mockDb.from).not.toHaveBeenCalled();
+  });
+
   it('should not open a DM with someone who is not on the team', async () => {
-    results['team_members.select'] = { data: [{ user_id: 'caller' }], error: null };
+    results['team_members.select'] = { data: [{ user_id: CALLER }], error: null };
     await startDmAction(dmForm());
     expect(writesTo('channels')).toHaveLength(0);
     expect(writesTo('channel_members')).toHaveLength(0);
   });
 
   it('should open a DM when both people are on the team', async () => {
-    results['team_members.select'] = { data: [{ user_id: 'caller' }, { user_id: 'outsider' }], error: null };
+    results['team_members.select'] = { data: [{ user_id: CALLER }, { user_id: TARGET }], error: null };
     results['channel_members.select'] = { data: [], error: null };
     results['channels.insert'] = { data: { id: 'ch1' }, error: null };
     await expect(startDmAction(dmForm())).rejects.toThrow('/messages/ch1');

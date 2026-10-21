@@ -5,6 +5,8 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function startDmAction(formData: FormData): Promise<void> {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
@@ -14,6 +16,7 @@ export async function startDmAction(formData: FormData): Promise<void> {
   const targetUserId = formData.get('targetUserId') as string;
 
   if (!teamId || !targetUserId) return;
+  if (!UUID_RE.test(teamId) || !UUID_RE.test(targetUserId)) return;
   if (targetUserId === user.id)  return;
 
   const db = createClient(
