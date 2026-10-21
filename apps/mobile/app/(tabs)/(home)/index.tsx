@@ -122,7 +122,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           className="bg-white rounded-xl border border-gray-200 p-5"
-          onPress={() => router.push('/(tabs)/schedule')}
+          onPress={() => router.push({ pathname: '/(tabs)/schedule', params: { view: 'games' } })}
         >
           <Text className="text-lg font-semibold text-gray-900 mb-1">Today's Games</Text>
           <Text className="text-gray-500 text-sm">View schedule and score a game</Text>

@@ -127,7 +127,22 @@ export function createApiClient(config: ApiClientConfig) {
     options.signal?.addEventListener('abort', onCallerAbort);
 
     const method = options.method ?? 'GET';
+    const cleanUp = () => {
+      clearTimeout(timer);
+      options.signal?.removeEventListener('abort', onCallerAbort);
+    };
+    const abortError = (err: unknown): unknown => {
+      if (controller.signal.aborted && !options.signal?.aborted) {
+        return new ApiError('timeout', `${method} ${path} timed out after ${timeoutMs}ms`);
+      }
+      if (options.signal?.aborted) return err;
+      return new ApiError('offline', `${method} ${path} failed: ${err instanceof Error ? err.message : String(err)}`);
+    };
+
+    // The timeout covers the body as well as the headers: fetch resolves on
+    // headers, and a stalled body read would otherwise never settle.
     let response: Response;
+    let body: unknown;
     try {
       response = await fetchImpl(`${baseUrl}${MOBILE_API_PREFIX}${path}`, {
         method,
@@ -139,18 +154,16 @@ export function createApiClient(config: ApiClientConfig) {
         body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
         signal: controller.signal,
       });
+      body = await response.json().catch((err: unknown) => {
+        // An unparseable body is just absent; an aborted read is a failure.
+        if (controller.signal.aborted) throw err;
+        return undefined;
+      });
     } catch (err) {
-      if (controller.signal.aborted && !options.signal?.aborted) {
-        throw new ApiError('timeout', `${method} ${path} timed out after ${timeoutMs}ms`);
-      }
-      if (options.signal?.aborted) throw err;
-      throw new ApiError('offline', `${method} ${path} failed: ${err instanceof Error ? err.message : String(err)}`);
+      throw abortError(err);
     } finally {
-      clearTimeout(timer);
-      options.signal?.removeEventListener('abort', onCallerAbort);
+      cleanUp();
     }
-
-    const body: unknown = await response.json().catch(() => undefined);
 
     if (!response.ok) {
       const errorBody = (body ?? {}) as { error?: unknown; code?: unknown };

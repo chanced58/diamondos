@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { SegmentedControl } from '@baseball/ui';
@@ -20,7 +20,13 @@ const VIEW_OPTIONS = [
  */
 export default function ScheduleTabScreen() {
   const params = useLocalSearchParams<{ view?: string }>();
-  const [view, setView] = useState<ScheduleView>(params.view === 'all' ? 'all' : 'games');
+  const requestedView: ScheduleView = params.view === 'all' ? 'all' : 'games';
+  const [view, setView] = useState<ScheduleView>(requestedView);
+  // The tab stays mounted, so a later link (Home's cards) arrives as new
+  // params on this same screen rather than a fresh mount.
+  useEffect(() => {
+    setView(requestedView);
+  }, [requestedView]);
 
   return (
     <View className="flex-1 bg-gray-50">

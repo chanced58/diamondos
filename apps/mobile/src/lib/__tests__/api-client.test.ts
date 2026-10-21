@@ -98,6 +98,21 @@ describe('api-client', () => {
     expect(error.kind).toBe('timeout');
   });
 
+  it('should time out a response whose body never finishes', async () => {
+    const fetchImpl = jest.fn(async (_url: string, init: RequestInit) => ({
+      ok: true,
+      status: 200,
+      json: () =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(new Error('Aborted')));
+        }),
+    }) as unknown as Response);
+
+    const error = await caught(client(fetchImpl, { timeoutMs: 5 }).get('/me'));
+
+    expect(error.kind).toBe('timeout');
+  });
+
   it('should fail fast without a base URL or a session', async () => {
     const fetchImpl = jest.fn();
 

@@ -46,6 +46,19 @@ describe('schedule tab', () => {
     expect(screen.getByText('games list')).toBeTruthy();
   });
 
+  it('follows a later link to the already-mounted tab', () => {
+    const { rerender } = render(<ScheduleTabScreen />);
+    expect(screen.getByText('games list')).toBeTruthy();
+
+    mockParams.view = 'all';
+    rerender(<ScheduleTabScreen />);
+    expect(screen.getByText('full schedule')).toBeTruthy();
+
+    mockParams.view = 'games';
+    rerender(<ScheduleTabScreen />);
+    expect(screen.getByText('games list')).toBeTruthy();
+  });
+
   it('opens on the full schedule when linked with ?view=all', () => {
     mockParams.view = 'all';
 
