@@ -78,6 +78,35 @@ export function conflictKey(c: ScoreConflict): string {
   }
 }
 
+/** A coach's decision on one conflict, stored in `game_reconciliations.resolved_overrides`. */
+export interface ReconciliationOverride {
+  /** Stable conflict identity (see `conflictKey`). */
+  key: string;
+  useAwayValue: boolean;
+}
+
+const HALF_LABEL: Record<'top' | 'bottom', string> = { top: 'Top', bottom: 'Bottom' };
+
+/** Human-readable label for one conflict, shared by the web and mobile panels. */
+export function describeScoreConflict(c: ScoreConflict): string {
+  switch (c.kind) {
+    case 'final_score':
+      return `Final score — ${c.side === 'home' ? 'home' : 'away'} runs`;
+    case 'inning_runs':
+      return `Runs in ${HALF_LABEL[c.half]} ${c.inning}`;
+    case 'team_hits':
+      return `Team hits — ${c.side}`;
+    case 'team_errors':
+      return `Team errors — ${c.side}`;
+    case 'player_batting':
+      return `Batting · ${c.stat} (player ${c.playerId.slice(0, 8)})`;
+    case 'player_pitching':
+      return `Pitching · ${c.stat} (player ${c.playerId.slice(0, 8)})`;
+    default:
+      return 'Conflict';
+  }
+}
+
 export interface ScoreReconciliation {
   /** True when the two logs agree on every compared field. */
   inAgreement: boolean;

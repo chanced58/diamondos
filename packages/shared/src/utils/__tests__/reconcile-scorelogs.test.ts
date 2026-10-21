@@ -1,4 +1,4 @@
-import { reconcileScoreLogs, conflictKey } from '../reconcile-scorelogs';
+import { reconcileScoreLogs, conflictKey, describeScoreConflict } from '../reconcile-scorelogs';
 import type { BattingStats } from '../../types/batting';
 import type { PitchingStats } from '../../types/pitching';
 
@@ -187,5 +187,22 @@ describe('reconcileScoreLogs', () => {
       homeLog: 4,
       awayLog: null,
     });
+  });
+});
+
+describe('describeScoreConflict', () => {
+  it('should label line-score conflicts by side, inning and half', () => {
+    expect(describeScoreConflict({ kind: 'final_score', side: 'away', homeLog: 3, awayLog: 4 }))
+      .toBe('Final score — away runs');
+    expect(describeScoreConflict({ kind: 'inning_runs', inning: 5, half: 'bottom', homeLog: 1, awayLog: 2 }))
+      .toBe('Runs in Bottom 5');
+    expect(describeScoreConflict({ kind: 'team_errors', side: 'home', homeLog: 1, awayLog: 0 }))
+      .toBe('Team errors — home');
+  });
+
+  it('should label player conflicts with the stat and a short player id', () => {
+    expect(describeScoreConflict({
+      kind: 'player_batting', playerId: 'abcdef1234567890', stat: 'hits', homeLog: 2, awayLog: 1,
+    })).toBe('Batting · hits (player abcdef12)');
   });
 });
