@@ -17,10 +17,11 @@ const VALID_INPUT = {
 
 interface FakeOptions {
   membership?: { role: string } | null;
+  membershipError?: { message: string } | null;
   insertResult?: { data: { id: string } | null; error: { message: string } | null };
 }
 
-function fakeDb({ membership = { role: 'head_coach' }, insertResult }: FakeOptions = {}) {
+function fakeDb({ membership = { role: 'head_coach' }, membershipError = null, insertResult }: FakeOptions = {}) {
   const filters: Array<[string, string, unknown]> = [];
   const inserts: unknown[] = [];
   const db = {
@@ -31,7 +32,7 @@ function fakeDb({ membership = { role: 'head_coach' }, insertResult }: FakeOptio
           filters.push([table, column, value]);
           return builder;
         },
-        maybeSingle: () => Promise.resolve({ data: membership, error: null }),
+        maybeSingle: () => Promise.resolve({ data: membershipError ? null : membership, error: membershipError }),
         insert: (row: unknown) => {
           inserts.push(row);
           return builder;
@@ -114,5 +115,51 @@ describe('createTeamEvent', () => {
       ok: false, code: 'failed', error: 'Failed to create event: constraint',
     });
     consoleError.mockRestore();
+  });
+
+  it('should report a failed membership lookup as a server fault, not a denial', async () => {
+    const { db, inserts } = fakeDb({ membershipError: { message: 'connection reset' } });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(await createTeamEvent(db, 'coach-1', VALID_INPUT)).toEqual({
+      ok: false, code: 'failed', error: 'Failed to verify team membership.',
+    });
+    expect(inserts).toEqual([]);
+    consoleError.mockRestore();
+  });
+
+  it('should still succeed when the announcement fails after the event is created', async () => {
+    const { db } = fakeDb();
+    mockPostEventAlert.mockRejectedValueOnce(new Error('channel insert failed'));
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await createTeamEvent(db, 'coach-1', { ...VALID_INPUT, notifyTeam: true });
+
+    expect(result).toEqual({ ok: true, data: { eventId: 'event-1' } });
+    consoleError.mockRestore();
+  });
+
+  it('should word the announcement time in the submitter zone, not the server UTC', async () => {
+    const { db } = fakeDb();
+
+    // 18:00 UTC is 1:00 PM in Chicago (CDT) on this date.
+    await createTeamEvent(db, 'coach-1', { ...VALID_INPUT, notifyTeam: true, timeZone: 'America/Chicago' });
+
+    expect(mockPostEventAlert).toHaveBeenCalledWith(
+      db, TEAM_ID, 'coach-1', expect.stringContaining('Oct 21, 2026 at 1:00 PM'),
+    );
+  });
+
+  it('should prefer the venue zone when the event has coordinates', async () => {
+    const { db } = fakeDb();
+
+    // A Los Angeles venue: 18:00 UTC is 11:00 AM there (PDT), whatever the submitter's zone.
+    await createTeamEvent(db, 'coach-1', {
+      ...VALID_INPUT, notifyTeam: true, timeZone: 'America/New_York', latitude: 34.05, longitude: -118.24,
+    });
+
+    expect(mockPostEventAlert).toHaveBeenCalledWith(
+      db, TEAM_ID, 'coach-1', expect.stringContaining('at 11:00 AM'),
+    );
   });
 });

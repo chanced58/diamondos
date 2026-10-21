@@ -11,6 +11,8 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
 }
 
+const SIGN_OUT_CLEANUP_TIMEOUT_MS = 5_000;
+
 const AuthContext = createContext<AuthContextValue>({
   session: null,
   user: null,
@@ -42,9 +44,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Device cleanup runs first, while the session can still authorize the
-  // push-token delete; neither step can block the sign-out itself.
+  // push-token delete. It is capped so a slow network can't hold the button:
+  // a token left undeleted stays stored and the next sign-out retries it.
   const signOut = async () => {
-    await Promise.all([unregisterPushToken(), clearCachedMe()]);
+    await Promise.race([
+      Promise.all([unregisterPushToken(), clearCachedMe()]),
+      new Promise((resolve) => setTimeout(resolve, SIGN_OUT_CLEANUP_TIMEOUT_MS)),
+    ]);
     const supabase = getSupabaseClient();
     await supabase.auth.signOut();
   };

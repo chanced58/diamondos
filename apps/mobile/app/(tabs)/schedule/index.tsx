@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
 import { View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SegmentedControl } from '@baseball/ui';
 import { GamesScreen } from '../../../src/features/games/GamesList';
 import { ScheduleList } from '../../../src/features/schedule/ScheduleList';
@@ -20,13 +19,10 @@ const VIEW_OPTIONS = [
  */
 export default function ScheduleTabScreen() {
   const params = useLocalSearchParams<{ view?: string }>();
-  const requestedView: ScheduleView = params.view === 'all' ? 'all' : 'games';
-  const [view, setView] = useState<ScheduleView>(requestedView);
-  // The tab stays mounted, so a later link (Home's cards) arrives as new
-  // params on this same screen rather than a fresh mount.
-  useEffect(() => {
-    setView(requestedView);
-  }, [requestedView]);
+  // The route param is the only source of truth: the tab stays mounted, so a
+  // later link (Home's cards) and a tap on the control both land here.
+  const view: ScheduleView = params.view === 'all' ? 'all' : 'games';
+  const setView = (next: ScheduleView) => router.setParams({ view: next });
 
   return (
     <View className="flex-1 bg-gray-50">

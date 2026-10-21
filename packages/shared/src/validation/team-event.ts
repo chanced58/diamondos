@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidTimeZone } from '../utils/date';
 
 export const TEAM_EVENT_TYPES = ['meeting', 'scrimmage', 'travel', 'other'] as const;
 export type TeamEventType = (typeof TEAM_EVENT_TYPES)[number];
@@ -32,6 +33,16 @@ export const createTeamEventSchema = z
     longitude: z.number().min(-180).max(180).nullish().transform((value) => value ?? null),
     placeId: optionalText(500),
     description: optionalText(5000),
+    /**
+     * IANA zone the submitter entered the times in (their device or browser).
+     * Only used to word the announcement; the venue's zone wins when the
+     * event has coordinates.
+     */
+    timeZone: z
+      .string()
+      .refine(isValidTimeZone, 'Unknown time zone.')
+      .nullish()
+      .transform((value) => value ?? null),
     /** Post the event to the team's announcement channel. */
     notifyTeam: z.boolean().default(false),
   })

@@ -20,6 +20,9 @@ export type ApiAuthResult =
 
 const BEARER_RE = /^Bearer\s+(\S+)\s*$/i;
 
+// Per-request server clients: no session storage or refresh timers.
+const SERVER_AUTH_OPTIONS = { auth: { persistSession: false, autoRefreshToken: false } } as const;
+
 /** JSON error body shared by every mobile API route: `{ error, code? }`. */
 export function apiError(status: number, error: string, code?: string): NextResponse {
   return NextResponse.json(code ? { error, code } : { error }, { status });
@@ -43,9 +46,9 @@ export async function requireApiUser(req: Request): Promise<ApiAuthResult> {
     return { response: apiError(500, 'Internal error') };
   }
 
-  const anonClient = createClient(supabaseUrl, anonKey);
+  const anonClient = createClient(supabaseUrl, anonKey, SERVER_AUTH_OPTIONS);
   const { data: { user }, error } = await anonClient.auth.getUser(token);
   if (error || !user) return { response: apiError(401, 'Not authenticated', 'unauthenticated') };
 
-  return { user, db: createClient(supabaseUrl, serviceRoleKey) };
+  return { user, db: createClient(supabaseUrl, serviceRoleKey, SERVER_AUTH_OPTIONS) };
 }

@@ -19,6 +19,7 @@ describe('createTeamEventSchema', () => {
       longitude: null,
       placeId: null,
       description: null,
+      timeZone: null,
       notifyTeam: false,
     });
   });
@@ -41,5 +42,13 @@ describe('createTeamEventSchema', () => {
 
     expect(result.success).toBe(false);
     expect(result.error?.issues[0].message).toBe('The event must end after it starts.');
+  });
+});
+
+describe('createTeamEventSchema timeZone', () => {
+  it('should accept an IANA zone, default to null, and reject an unknown zone', () => {
+    expect(createTeamEventSchema.parse({ ...base, timeZone: 'America/Chicago' }).timeZone).toBe('America/Chicago');
+    expect(createTeamEventSchema.parse(base).timeZone).toBeNull();
+    expect(createTeamEventSchema.safeParse({ ...base, timeZone: 'Mars/Olympus' }).success).toBe(false);
   });
 });

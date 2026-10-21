@@ -5,8 +5,14 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
  * view) and the old Schedule screen behind a segmented control.
  */
 
+// setParams writes the route param, which the screen reads back on render.
 const mockParams: { view?: string } = {};
-jest.mock('expo-router', () => ({ __esModule: true, useLocalSearchParams: () => mockParams }));
+const mockSetParams = jest.fn((next: { view?: string }) => Object.assign(mockParams, next));
+jest.mock('expo-router', () => ({
+  __esModule: true,
+  useLocalSearchParams: () => mockParams,
+  router: { setParams: (next: { view?: string }) => mockSetParams(next) },
+}));
 jest.mock('../../../../src/features/games/GamesList', () => {
   const { Text } = jest.requireActual('react-native');
   return { GamesScreen: () => <Text>games list</Text> };
@@ -26,6 +32,7 @@ const ScheduleTabScreen = require('../index').default;
 describe('schedule tab', () => {
   beforeEach(() => {
     delete mockParams.view;
+    mockSetParams.mockClear();
   });
 
   it('opens on the games list with the team switcher', () => {
@@ -36,24 +43,29 @@ describe('schedule tab', () => {
     expect(screen.queryByText('full schedule')).toBeNull();
   });
 
-  it('switches to the full schedule and back', () => {
-    render(<ScheduleTabScreen />);
+  it('switches segments through the route param', () => {
+    const { rerender } = render(<ScheduleTabScreen />);
 
     fireEvent.press(screen.getByRole('tab', { name: 'Full schedule' }));
-    expect(screen.getByText('full schedule')).toBeTruthy();
-
-    fireEvent.press(screen.getByRole('tab', { name: 'Games' }));
-    expect(screen.getByText('games list')).toBeTruthy();
-  });
-
-  it('follows a later link to the already-mounted tab', () => {
-    const { rerender } = render(<ScheduleTabScreen />);
-    expect(screen.getByText('games list')).toBeTruthy();
-
-    mockParams.view = 'all';
+    expect(mockSetParams).toHaveBeenLastCalledWith({ view: 'all' });
     rerender(<ScheduleTabScreen />);
     expect(screen.getByText('full schedule')).toBeTruthy();
 
+    fireEvent.press(screen.getByRole('tab', { name: 'Games' }));
+    expect(mockSetParams).toHaveBeenLastCalledWith({ view: 'games' });
+    rerender(<ScheduleTabScreen />);
+    expect(screen.getByText('games list')).toBeTruthy();
+  });
+
+  it('follows a later link even after a manual segment change', () => {
+    // Linked to games, user switches to the full schedule by hand…
+    mockParams.view = 'games';
+    const { rerender } = render(<ScheduleTabScreen />);
+    fireEvent.press(screen.getByRole('tab', { name: 'Full schedule' }));
+    rerender(<ScheduleTabScreen />);
+    expect(screen.getByText('full schedule')).toBeTruthy();
+
+    // …then Home's "Today's Games" links view=games again.
     mockParams.view = 'games';
     rerender(<ScheduleTabScreen />);
     expect(screen.getByText('games list')).toBeTruthy();
