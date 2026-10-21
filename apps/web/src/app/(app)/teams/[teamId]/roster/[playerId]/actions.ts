@@ -15,6 +15,10 @@ export async function updatePlayerAction(_prevState: string | null | undefined, 
   const playerId = formData.get('playerId') as string;
   if (!teamId || !playerId) return 'Missing required IDs.';
 
+  if (!(await canManageRoster(teamId, user.id))) {
+    return 'You do not have permission to edit players on this roster.';
+  }
+
   const secondaryPositions = formData.getAll('secondaryPositions') as string[];
   const email = (formData.get('email') as string)?.toLowerCase().trim() || undefined;
   const phone = (formData.get('phone') as string)?.trim() || undefined;

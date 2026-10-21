@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@supabase/supabase-js';
+import { isTeamRole } from '@baseball/shared';
 import { createServerClient } from '@/lib/supabase/server';
 
 function serviceClient() {
@@ -36,6 +37,23 @@ async function getCallerRole(teamId: string): Promise<string | null> {
 
 const CAN_MANAGE = ['head_coach', 'assistant_coach', 'athletic_director'];
 
+async function isMemberOfTeam(
+  db: ReturnType<typeof serviceClient>,
+  teamId: string,
+  memberId: string,
+  userId: string,
+): Promise<boolean> {
+  const { data } = await db
+    .from('team_members')
+    .select('id')
+    .eq('id', memberId)
+    .eq('team_id', teamId)
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .maybeSingle();
+  return data !== null;
+}
+
 // ── Remove a confirmed team member (team_members row) ───────────────────────
 
 export async function removeMemberAction(
@@ -46,7 +64,11 @@ export async function removeMemberAction(
   if (!role || !CAN_MANAGE.includes(role)) return 'Not authorized.';
 
   const db = serviceClient();
-  const { error } = await db.from('team_members').delete().eq('id', memberId);
+  const { error } = await db
+    .from('team_members')
+    .delete()
+    .eq('id', memberId)
+    .eq('team_id', teamId);
   return error ? error.message : null;
 }
 
@@ -60,7 +82,11 @@ export async function removeInvitationAction(
   if (!role || !CAN_MANAGE.includes(role)) return 'Not authorized.';
 
   const db = serviceClient();
-  const { error } = await db.from('team_invitations').delete().eq('id', invitationId);
+  const { error } = await db
+    .from('team_invitations')
+    .delete()
+    .eq('id', invitationId)
+    .eq('team_id', teamId);
   return error ? error.message : null;
 }
 
@@ -74,15 +100,22 @@ export async function updateStaffMemberAction(
 ): Promise<string | null> {
   const callerRole = await getCallerRole(teamId);
   if (!callerRole || !CAN_MANAGE.includes(callerRole)) return 'Not authorized.';
+  if (!isTeamRole(data.role)) return 'Invalid role.';
 
   const db = serviceClient();
 
-  // Update role and jersey_number in team_members
-  const { error: roleErr } = await db
+  // Update role and jersey_number in team_members. Scoping to this team and
+  // user also proves userId belongs to the team before its profile is edited.
+  const { data: updatedMembers, error: roleErr } = await db
     .from('team_members')
     .update({ role: data.role, jersey_number: data.jerseyNumber })
-    .eq('id', memberId);
+    .eq('id', memberId)
+    .eq('team_id', teamId)
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .select('id');
   if (roleErr) return roleErr.message;
+  if (!updatedMembers?.length) return 'Member not found on this team.';
 
   // Update profile fields
   const profileUpdate: Record<string, string | null> = {
@@ -111,6 +144,10 @@ export async function updateParentMemberAction(
   if (!callerRole || !CAN_MANAGE.includes(callerRole)) return 'Not authorized.';
 
   const db = serviceClient();
+  if (!(await isMemberOfTeam(db, teamId, memberId, userId))) {
+    return 'Member not found on this team.';
+  }
+
   const profileUpdate: Record<string, string | null> = {
     first_name: data.firstName || null,
     last_name: data.lastName || null,
@@ -131,6 +168,7 @@ export async function updateInvitationAction(
 ): Promise<string | null> {
   const callerRole = await getCallerRole(teamId);
   if (!callerRole || !CAN_MANAGE.includes(callerRole)) return 'Not authorized.';
+  if (data.role && !isTeamRole(data.role)) return 'Invalid role.';
 
   const db = serviceClient();
   const update: Record<string, string | number | null> = {
@@ -141,6 +179,10 @@ export async function updateInvitationAction(
   if (data.role) update.role = data.role;
   if (data.jerseyNumber !== undefined) update.jersey_number = data.jerseyNumber;
 
-  const { error } = await db.from('team_invitations').update(update).eq('id', invitationId);
+  const { error } = await db
+    .from('team_invitations')
+    .update(update)
+    .eq('id', invitationId)
+    .eq('team_id', teamId);
   return error ? error.message : null;
 }

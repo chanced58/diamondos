@@ -6,6 +6,13 @@ export const COACH_ROLES = [
   UserRole.ATHLETIC_DIRECTOR,
 ] as const;
 
+// Every value of the Postgres `team_role` enum.
+export const TEAM_ROLES = Object.values(UserRole) as readonly string[];
+
+export function isTeamRole(role: unknown): role is UserRole {
+  return typeof role === 'string' && TEAM_ROLES.includes(role);
+}
+
 export function isCoachRole(role: string): boolean {
   return (COACH_ROLES as readonly string[]).includes(role);
 }

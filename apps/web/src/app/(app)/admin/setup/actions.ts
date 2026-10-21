@@ -1,6 +1,6 @@
 'use server';
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 
 type SetupResult = {
@@ -8,6 +8,18 @@ type SetupResult = {
   steps: string[];
   errors: string[];
 };
+
+async function isPlatformAdmin(
+  db: SupabaseClient,
+  userId: string,
+): Promise<boolean> {
+  const { data } = await db
+    .from('user_profiles')
+    .select('is_platform_admin')
+    .eq('id', userId)
+    .maybeSingle();
+  return data?.is_platform_admin === true;
+}
 
 /**
  * One-time bootstrap: creates chance@diamondos.app as platform admin,
@@ -25,6 +37,10 @@ export async function runSetupAction(): Promise<SetupResult> {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  if (!(await isPlatformAdmin(db, user.id))) {
+    return { success: false, steps, errors: ['Not authorized — must be platform admin.'] };
+  }
 
   // ── Step 1: Ensure current user (cdital5@gmail.com) has a user_profiles row ──
   const { data: existingProfile } = await db
@@ -232,6 +248,10 @@ export async function runVerifyCleanAction(): Promise<SetupResult> {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  if (!(await isPlatformAdmin(db, user.id))) {
+    return { success: false, steps, errors: ['Not authorized — must be platform admin.'] };
+  }
 
   const { data: allAuthUsers } = await db.auth.admin.listUsers({ perPage: 1000 });
 
