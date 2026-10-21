@@ -1,4 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { EmptyState, ErrorState, FormField, ListRow, SectionHeader, SegmentedControl } from '@baseball/ui';
 import { Text } from 'react-native';
 
@@ -50,6 +52,21 @@ describe('SegmentedControl', () => {
     // Pressing the current segment is not a change.
     fireEvent.press(screen.getByRole('tab', { name: 'Schedule' }));
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('should never give a segment a shadow class', () => {
+    // NativeWind shadows use CSS variables; a segment gaining one after its
+    // first render forced a component "upgrade" that crashed the Schedule
+    // tab inside the navigator. Selection is shown with a border instead.
+    // NativeWind strips className before Jest sees the props, so the check
+    // reads the component's class strings from its source.
+    const source = readFileSync(
+      join(__dirname, '../../../../packages/ui/src/components/SegmentedControl.tsx'),
+      'utf8',
+    );
+    const code = source.replace(/^\s*\/\/.*$/gm, '');
+    expect(code).toMatch(/className=/);
+    expect(code).not.toMatch(/shadow/);
   });
 });
 

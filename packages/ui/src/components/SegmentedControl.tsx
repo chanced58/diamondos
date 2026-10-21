@@ -21,7 +21,12 @@ export function SegmentedControl<T extends string>({ options, value, onChange, t
             onPress={() => {
               if (!selected) onChange(option.value);
             }}
-            className={`flex-1 items-center rounded-md py-1.5 ${selected ? 'bg-white shadow-sm' : ''}`}
+            // No conditional `shadow-*`: NativeWind shadows use CSS variables,
+            // and gaining one after the first render forces a component
+            // "upgrade" — whose dev warning crashes inside a navigator. A
+            // border marks the selected segment without changing the class
+            // shape between renders.
+            className={`flex-1 items-center rounded-md py-1.5 border ${selected ? 'bg-white border-gray-200' : 'border-transparent'}`}
           >
             <Text className={`text-sm font-semibold ${selected ? 'text-gray-900' : 'text-gray-500'}`}>
               {option.label}
