@@ -49,6 +49,12 @@ describe('booking form', () => {
     expect(bookingFormDefaults(local(10, 18), now)).toMatchObject({ date: '2026-10-18', startTime: '15:00', endTime: '16:00' });
   });
 
+  it('should keep a late default on one day, valid as it opens', () => {
+    const late = bookingFormDefaults(local(10, 21), local(10, 21, 22, 30));
+    expect(late).toMatchObject({ date: '2026-10-21', startTime: '23:00', endTime: '23:59' });
+    expect(validateBookingForm({ ...late, facilityId: 'f1', title: 'Late' })).toBeNull();
+  });
+
   it('should require a facility, a title and an end after the start', () => {
     const values = { ...bookingFormDefaults(local(10, 18)), facilityId: 'f1', title: 'Hitting' };
     expect(validateBookingForm(values)).toBeNull();

@@ -48,6 +48,7 @@ export function fakeDb(results: Record<string, FakeResult | FakeResult[]> = {}) 
         // Range filters record as `col>=` / `col<`, so a test can tell them apart.
         gte: (col: string, val: unknown) => { call.filters[`${col}>=`] = val; return builder; },
         lt: (col: string, val: unknown) => { call.filters[`${col}<`] = val; return builder; },
+        gt: (col: string, val: unknown) => { call.filters[`${col}>`] = val; return builder; },
         not: () => builder,
         order: () => builder,
         limit: () => builder,
