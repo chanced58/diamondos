@@ -25,3 +25,4 @@ export * from './game-notes';
 export * from './opponent-lineup';
 export * from './game-corrections';
 export * from './live-game';
+export * from './facility';
