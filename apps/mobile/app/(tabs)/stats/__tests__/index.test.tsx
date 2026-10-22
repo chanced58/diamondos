@@ -128,6 +128,18 @@ it('should sort the pitching table it falls back to when Opponents leaves the pl
   expect(screen.getByText('Pitcher ↑')).toBeTruthy();
 });
 
+it('should link to league stats only in a league on a plan with opponent tracking', () => {
+  given(stats({ hasLeague: true }));
+  const { unmount } = render(<StatsScreen />);
+  expect(screen.queryByText('League stats')).toBeNull();
+  unmount();
+
+  given(stats({ hasLeague: true, features: { advancedBatting: true, advancedPitching: true, opponents: true }, opponents: [] }));
+  render(<StatsScreen />);
+  fireEvent.press(screen.getByText('League stats'));
+  expect(mockPush).toHaveBeenCalledWith('/(tabs)/stats/league');
+});
+
 it('should point to the roster when active players are missing a waiver', () => {
   given(stats({ missingWaiverCount: 2 }));
   render(<StatsScreen />);

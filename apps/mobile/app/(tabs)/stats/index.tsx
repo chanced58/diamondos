@@ -189,6 +189,20 @@ function SeasonStats({
         </View>
       )}
 
+      {/* Where the web shows its League Stats link: in a league, on a plan with opponent tracking. */}
+      {stats.hasLeague && stats.features.opponents && (
+        <View className="mb-3">
+          <ListGroup>
+            <ListRow title="League stats" subtitle="Every player in the league" onPress={() => router.push('/(tabs)/stats/league')} />
+            <ListRow
+              title="Team comparison"
+              subtitle="League teams side by side"
+              onPress={() => router.push('/(tabs)/stats/league-teams')}
+            />
+          </ListGroup>
+        </View>
+      )}
+
       <View className="gap-2">
         <SegmentedControl options={sectionOptions} value={section} onChange={onSection} testID="stats-section" />
         {(section === 'pitching' || section === 'hitting') && (
