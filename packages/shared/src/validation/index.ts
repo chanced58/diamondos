@@ -20,3 +20,7 @@ export * from './mobile-me';
 export * from './team-event';
 export * from './game-detail';
 export * from './game-form';
+export * from './game-box-score';
+export * from './game-notes';
+export * from './opponent-lineup';
+export * from './game-corrections';

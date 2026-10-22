@@ -26,9 +26,10 @@ export function SegmentedControl<T extends string>({ options, value, onChange, t
             // "upgrade" — whose dev warning crashes inside a navigator. A
             // border marks the selected segment without changing the class
             // shape between renders.
-            className={`flex-1 items-center rounded-md py-1.5 border ${selected ? 'bg-white border-gray-200' : 'border-transparent'}`}
+            className={`flex-1 items-center rounded-md py-1.5 px-2 border ${selected ? 'bg-white border-gray-200' : 'border-transparent'}`}
           >
-            <Text className={`text-sm font-semibold ${selected ? 'text-gray-900' : 'text-gray-500'}`}>
+            {/* One line, so a long label (an opponent's name) truncates instead of growing the control. */}
+            <Text numberOfLines={1} className={`text-sm font-semibold ${selected ? 'text-gray-900' : 'text-gray-500'}`}>
               {option.label}
             </Text>
           </TouchableOpacity>

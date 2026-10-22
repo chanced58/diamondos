@@ -107,7 +107,8 @@ export function gameDetailSections(detail: GameDetailResponse, canScore: boolean
     showLineup: game.status !== 'cancelled' && (game.status !== 'scheduled' || hasOpponent),
     showAttendance: coach && (game.status === 'scheduled' || game.status === 'postponed'),
     showStatsAndHistory: started,
-    showOpponentLineup: coach && game.status !== 'cancelled',
+    // A started tournament game changes its lineup through the scorer's lineup events.
+    showOpponentLineup: coach && game.status !== 'cancelled' && !(game.tournamentId && game.status !== 'scheduled'),
     canEdit: coach,
     canRecalculate: coach && started,
     canReset: coach && game.status !== 'scheduled',
