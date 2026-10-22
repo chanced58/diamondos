@@ -15,6 +15,7 @@ import { getSupabaseClient } from '../../../src/lib/supabase';
 import { describeApiError } from '../../../src/lib/api-client';
 import { deleteChannel, deleteMessage, useChannelDetail } from '../../../src/features/messaging/messaging-api';
 import { useChannelRealtime } from '../../../src/features/messaging/use-channel-realtime';
+import { removeChannelLocally } from '../../../src/features/messaging/local-channel';
 import { roleBadge } from '../../../src/features/messaging/role-badges';
 import { formatTime } from '@baseball/shared';
 
@@ -44,8 +45,10 @@ function MessageThread({ channelRemoteId, messages, channel }: MessageThreadProp
   });
   const removeChannel = useMutation({
     mutationFn: () => deleteChannel(channelRemoteId),
-    onSuccess: () => {
-      requestSync();
+    onSuccess: async () => {
+      await removeChannelLocally(channelRemoteId).catch((err) =>
+        console.warn(`Could not remove channel ${channelRemoteId} locally; the next deletion check will`, err),
+      );
       router.back();
     },
     onError: (error) => Alert.alert('Could not delete the channel', describeApiError(error)),

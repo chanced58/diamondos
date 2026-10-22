@@ -66,6 +66,10 @@ jest.mock('../../../../src/features/messaging/messaging-api', () => ({
   deleteMessage: (id: string) => mockDeleteMessage(id),
   deleteChannel: (id: string) => mockDeleteChannel(id),
 }));
+const mockRemoveChannelLocally = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../../../src/features/messaging/local-channel', () => ({
+  removeChannelLocally: (id: string) => mockRemoveChannelLocally(id),
+}));
 const mockRequestSync = jest.fn();
 jest.mock('../../../../src/features/messaging/use-channel-realtime', () => ({
   useChannelRealtime: () => ({ requestSync: mockRequestSync }),
@@ -234,6 +238,8 @@ describe('MessageThread — managing messages', () => {
       fireEvent.press(screen.getByLabelText('Delete channel'));
     });
     await waitFor(() => expect(mockDeleteChannel).toHaveBeenCalledWith('channel-123'));
+    // Off this device at once, not at the next deletion check.
+    await waitFor(() => expect(mockRemoveChannelLocally).toHaveBeenCalledWith('channel-123'));
     expect(mockBack).toHaveBeenCalled();
     unmount();
 
