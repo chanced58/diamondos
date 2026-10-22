@@ -316,10 +316,15 @@ export async function startDirectMessage(
   return serviceOk({ channelId: channel.id as string });
 }
 
-/** An active member of a team whose plan includes direct messages. */
+/**
+ * An active member of a team whose plan includes direct messages. A DM is
+ * between two seats on the team, so a platform admin without one can't start
+ * one (the web's rule before this service).
+ */
 async function authorizeDirectMessages(db: SupabaseClient, actorUserId: string, teamId: string): Promise<ServiceResult<null>> {
   const viewer = await resolveGameViewer(db, actorUserId, teamId);
   if (!viewer) return serviceError('not_found', 'Team not found.');
+  if (!viewer.role) return serviceError('forbidden', 'Direct messages are between members of the team.');
   if (!hasFeature(await resolveTeamTier(db, teamId), Feature.DIRECT_MESSAGES)) {
     return serviceError('forbidden', "Direct messages aren't on this team's plan.");
   }

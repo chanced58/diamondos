@@ -1,4 +1,11 @@
-import { splitDeletedMessages } from '../message-deletions';
+import { deletedMessagesSince, splitDeletedMessages } from '../message-deletions';
+
+describe('deletedMessagesSince', () => {
+  it('should reach back five minutes before the checkpoint, never before the epoch', () => {
+    expect(deletedMessagesSince('2026-10-22T14:10:00.000Z')).toBe('2026-10-22T14:05:00.000Z');
+    expect(deletedMessagesSince(new Date(0).toISOString())).toBe(new Date(0).toISOString());
+  });
+});
 
 const message = (id: string, deletedAt: string | null = null) => ({ id, body: deletedAt ? '' : 'hi', deleted_at: deletedAt });
 

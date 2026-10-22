@@ -216,7 +216,8 @@ describe('startDmAction', () => {
 
   it('should pass the caller and form to the service, and stay put when it refuses', async () => {
     mockStartDirectMessage.mockResolvedValue({ ok: false, code: 'not_found', error: "That person isn't on this team." });
-    await startDmAction(dmForm());
+    // The redirect mock throws, so resolving means no redirect.
+    await expect(startDmAction(dmForm())).resolves.toBeUndefined();
     expect(mockStartDirectMessage).toHaveBeenCalledWith(mockDb, CALLER, { teamId: DM_TEAM, targetUserId: TARGET });
   });
 

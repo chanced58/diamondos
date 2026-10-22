@@ -198,6 +198,11 @@ describe('direct messages', () => {
     const offTeam = fakeDb({ 'team_members.select': [role('parent'), { data: null }] });
     expect(await startDirectMessage(offTeam.db, 'me', { teamId: TEAM, targetUserId: OTHER })).toMatchObject({ ok: false, code: 'not_found' });
 
+    const admin = fakeDb({ 'user_profiles.select': { data: { is_platform_admin: true } }, 'team_members.select': { data: null } });
+    expect(await startDirectMessage(admin.db, 'admin-1', { teamId: TEAM, targetUserId: OTHER })).toMatchObject({
+      ok: false, code: 'forbidden', error: 'Direct messages are between members of the team.',
+    });
+
     const self = '55555555-5555-4555-8555-555555555555';
     expect(await startDirectMessage(fakeDb().db, self, { teamId: TEAM, targetUserId: self })).toMatchObject({ ok: false, code: 'invalid' });
   });

@@ -21,7 +21,10 @@ export default function NewChannelScreen() {
   const isCoach = useCan('team.coach');
   const canTopics = useCan(Feature.TOPIC_CHANNELS);
   const { triggerSync } = useSyncContext();
-  const [channelType, setChannelType] = useState<NewChannelFields['channelType']>(canTopics ? 'topic' : 'announcement');
+  const [chosenType, setChannelType] = useState<NewChannelFields['channelType']>('topic');
+  // Topic access can arrive after the first render (or go, on a team switch):
+  // without it the only valid choice is an announcement channel.
+  const channelType = canTopics ? chosenType : 'announcement';
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [problem, setProblem] = useState<string | null>(null);

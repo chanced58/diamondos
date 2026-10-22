@@ -22,7 +22,7 @@ import type { Player } from '../db/models/Player';
 import { getSupabaseClient } from '../lib/supabase';
 import type { Database as RemoteDatabase, Json } from '@baseball/database';
 import { pushTournamentEventQueue, reconcilePendingSequences, type TournamentSyncRejection } from './tournament-event-sync';
-import { splitDeletedMessages } from './message-deletions';
+import { deletedMessagesSince, splitDeletedMessages } from './message-deletions';
 import {
   EMPTY_TEAM_BACKFILL,
   fetchAllByParentIds,
@@ -821,7 +821,7 @@ export async function syncWithSupabase(): Promise<void> {
           supabase.from('messages').select('*, user_profiles!sender_id(first_name, last_name)').gte('created_at', since),
           // Older messages deleted since the last pull: their rows predate the
           // created_at window, so only their ids come (see message-deletions.ts).
-          supabase.from('messages').select('id').gte('deleted_at', since),
+          supabase.from('messages').select('id').gte('deleted_at', deletedMessagesSince(since)),
           supabase.from('game_lineups').select('*').gte('updated_at', lineupsSince),
           supabase.from('league_players').select('*').gte('registered_at', leaguePlayersSince),
           supabase.from('opponent_players').select('*').gte('updated_at', oppPlayersSince),
