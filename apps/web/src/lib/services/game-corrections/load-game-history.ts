@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { gameIdInputSchema, weAreHome, type GameHistoryResponse, type HistoryEvent } from '@baseball/shared';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import { resolveGameViewer } from '../games/authorize';
+import { fetchGameEventLog } from '@/lib/games/fetch-game-event-log';
 
 interface NamedRow {
   id: string;
@@ -49,7 +50,7 @@ export async function loadGameHistory(
 
   const opponentTeamId = game.opponent_team_id as string | null;
   const [events, roster, team, opponentRoster, lineup, opponentLineup] = await Promise.all([
-    db.from('game_events').select('*').eq('game_id', gameId).order('sequence_number'),
+    fetchGameEventLog(db, gameId),
     db.from('players').select('id, first_name, last_name').eq('team_id', game.team_id).order('last_name'),
     db.from('teams').select('name').eq('id', game.team_id).maybeSingle(),
     opponentTeamId

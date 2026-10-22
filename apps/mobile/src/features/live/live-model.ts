@@ -1,4 +1,5 @@
 import {
+  applyPitchRevertedTyped,
   deriveGameState,
   formatEventDescription,
   weAreHome,
@@ -49,12 +50,12 @@ function isInPlayPitch(event: HistoryEvent): boolean {
 }
 
 /**
- * The latest described plays, newest first. Events with no description
- * (voids, reverts) and in-play pitches (the play that follows says what
- * happened) are skipped.
+ * The latest described plays, newest first — of the effective log, so a play
+ * voided or undone since doesn't linger and contradict the score. In-play
+ * pitches are skipped too: the play that follows says what happened.
  */
 export function recentPlays(data: LiveGameResponse, limit: number): LivePlay[] {
-  const events = sinceLastReset(data.events);
+  const events = applyPitchRevertedTyped(sinceLastReset(data.events) as unknown as GameEvent[]) as unknown as HistoryEvent[];
   const plays: LivePlay[] = [];
   for (let i = events.length - 1; i >= 0 && plays.length < limit; i--) {
     const event = events[i];

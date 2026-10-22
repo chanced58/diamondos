@@ -62,10 +62,16 @@ export async function buildGameExport(
   }
   if (!meta.opponent_name) return serviceError('conflict', 'Set the opponent before exporting.');
 
-  const bundle = await loadGameStats(db, gameId);
-  if (!bundle) return serviceError('not_found', 'Game not found.');
-
-  return serviceOk(await zipBundle(bundle));
+  // The stat loader and the zip throw on failure; answer with a structured
+  // `failed` like every other service error, not a bare 500.
+  try {
+    const bundle = await loadGameStats(db, gameId);
+    if (!bundle) return serviceError('not_found', 'Game not found.');
+    return serviceOk(await zipBundle(bundle));
+  } catch (error) {
+    console.error(`[buildGameExport] game=${gameId} actor=${actorUserId} export failed:`, error);
+    return serviceError('failed', 'Failed to build the export.');
+  }
 }
 
 async function zipBundle(bundle: GameStatsBundle): Promise<GameExport> {

@@ -74,7 +74,8 @@ export function bookingFormDefaults(day: Date, now: Date = new Date()): BookingF
     facilityId: null,
     date: startParts.date,
     startTime: startParts.time,
-    endTime: partsFromLocalDate(end).time,
+    // A booking can't cross midnight, so a late default ends at the day's end.
+    endTime: isSameLocalDay(end, start) ? partsFromLocalDate(end).time : '23:59',
     title: '',
     notes: '',
   };
