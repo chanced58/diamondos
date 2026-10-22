@@ -112,12 +112,16 @@ async function loadLeagueOpponentStats(
   const teamOf = new Map(oppPlayers.map((p) => [p.id as string, p.opponent_team_id as string]));
   const teamLabel = (playerId: string) => teamNames.get(teamOf.get(playerId) ?? '') ?? 'Unknown';
 
+  // The events include platform games against non-league opponents too; only
+  // the league's opponent players count, for batting as for pitching.
+  const oppPlayerIds = new Set(oppPlayers.map((p) => p.id as string));
   const batting = computeOpponentBatting(
     filtered,
     new Map(oppPlayers.map((p) => [p.id as string, `${p.first_name} ${p.last_name}`])),
-  ).map((row) => opponentBattingAsStats(row, teamLabel(row.playerId)));
+  )
+    .filter((row) => oppPlayerIds.has(row.playerId))
+    .map((row) => opponentBattingAsStats(row, teamLabel(row.playerId)));
 
-  const oppPlayerIds = new Set(oppPlayers.map((p) => p.id as string));
   const pitching = Array.from(
     derivePitchingStats(
       filtered as unknown as GameEvent[],

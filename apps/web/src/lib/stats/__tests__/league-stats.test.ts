@@ -23,6 +23,9 @@ jest.mock('@baseball/shared', () => {
     computeOpponentBatting: () => [
       { playerId: 'o1', playerName: 'Opp Hitter', pa: 6, ab: 5, r: 0, h: 2, doubles: 0, triples: 0, hr: 0, rbi: 1,
         bb: 1, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, avg: 0.4, obp: 0.5, slg: 0.4, ops: 0.9 },
+      // A hitter from a non-league opponent the platform team also played.
+      { playerId: 'x9', playerName: 'Unknown', pa: 9, ab: 9, r: 0, h: 3, doubles: 0, triples: 0, hr: 0, rbi: 0,
+        bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, avg: 0.333, obp: 0.333, slg: 0.333, ops: 0.667 },
     ],
   };
 });
@@ -39,7 +42,7 @@ describe('loadLeaguePlayerStats', () => {
     expect(await loadLeaguePlayerStats(fakeDb().db, 'l1')).toEqual({ teamCount: 0, gameCount: 0, pitching: [], batting: [] });
   });
 
-  it('should label every player with their team and add the league opponents', async () => {
+  it('should label every player with their team and add only the league opponents', async () => {
     mockGetLeagueTeamIds.mockResolvedValue(['t1']);
     mockGetLeagueOpponentTeamIds.mockResolvedValue(['ot1']);
     const { db } = fakeDb({
