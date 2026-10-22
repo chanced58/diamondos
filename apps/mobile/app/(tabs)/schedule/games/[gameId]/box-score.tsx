@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { Badge, ErrorState, SegmentedControl } from '@baseball/ui';
+import { useMutation } from '@tanstack/react-query';
+import { Badge, Button, ErrorState, SegmentedControl } from '@baseball/ui';
 import { useBoxScore } from '../../../../../src/features/stats/box-score-api';
+import { shareGameExport } from '../../../../../src/features/stats/game-export';
 import { LineScoreCard } from '../../../../../src/features/stats/LineScoreCard';
 import { StatTable } from '../../../../../src/features/stats/StatTable';
 import {
@@ -24,12 +26,19 @@ const SECTION_OPTIONS = [
   { value: 'fielding', label: 'Fielding' },
 ] as const;
 
-/** A started game's box score (the web's /games/[gameId]/stats). Any team member. */
+/**
+ * A started game's box score (the web's /games/[gameId]/stats). Any team
+ * member; coaches can also export it for GameChanger through the share sheet.
+ */
 export default function BoxScoreScreen() {
   const { gameId = '' } = useLocalSearchParams<{ gameId: string }>();
   const query = useBoxScore(gameId);
   const [section, setSection] = useState<Section>('batting');
   const [side, setSide] = useState<Side>('us');
+  const exporting = useMutation({
+    mutationFn: () => shareGameExport(gameId),
+    onError: (error) => Alert.alert('Could not export the game', describeApiError(error)),
+  });
 
   const header = <Stack.Screen options={{ title: 'Box score' }} />;
 
@@ -76,6 +85,17 @@ export default function BoxScoreScreen() {
       </View>
 
       <LineScoreCard box={box} />
+
+      {box.canExport && (
+        <View className="mt-3">
+          <Button
+            label="Export for GameChanger"
+            variant="secondary"
+            loading={exporting.isPending}
+            onPress={() => exporting.mutate()}
+          />
+        </View>
+      )}
 
       <View className="mt-4 gap-2">
         <SegmentedControl options={SECTION_OPTIONS} value={section} onChange={setSection} testID="box-score-section" />
