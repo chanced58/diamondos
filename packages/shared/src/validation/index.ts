@@ -27,3 +27,4 @@ export * from './game-corrections';
 export * from './live-game';
 export * from './facility';
 export * from './season-stats';
+export * from './bullpen';
