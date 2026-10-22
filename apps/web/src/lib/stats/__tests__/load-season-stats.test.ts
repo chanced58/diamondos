@@ -57,6 +57,14 @@ describe('loadTeamSeasonStats', () => {
     expect(calls.find((c) => c.table === 'games')?.filters).not.toHaveProperty('season_id');
   });
 
+  it('should read every scored game for "all", even with an active season', async () => {
+    const { db, calls } = fakeDb({ 'seasons.select': seasons, 'games.select': { data: [] } });
+    const stats = await loadTeamSeasonStats(db, 't1', { ...OPTIONS, seasonId: 'all' });
+
+    expect(stats.season).toBeNull();
+    expect(calls.find((c) => c.table === 'games')?.filters).not.toHaveProperty('season_id');
+  });
+
   it("should keep only our pitchers, with each one's latest rest row and 7-day count", async () => {
     mockDerivePitchingStats.mockReturnValue(new Map([
       ['p1', pitcherStats('p1', 9)],

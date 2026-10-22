@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  ALL_SEASONS,
   computeOpponentBatting,
   derivePitchingStats,
   deriveBattingStats,
@@ -56,7 +57,10 @@ export interface TeamSeasonStats {
 }
 
 export interface LoadSeasonStatsOptions {
-  /** A season id; omitted → the active season. An unknown id → every scored game. */
+  /**
+   * A season id, or `ALL_SEASONS` for every scored game. Omitted → the active
+   * season. An unknown id → every scored game.
+   */
   seasonId?: string;
   includeCatcher: boolean;
   includeOpponents: boolean;
@@ -180,6 +184,7 @@ function pickSeason(
   seasons: { id: string; name: string; isActive: boolean }[],
   seasonId: string | undefined,
 ): { id: string; name: string } | null {
+  if (seasonId === ALL_SEASONS) return null;
   const match = seasonId ? seasons.find((s) => s.id === seasonId) : seasons.find((s) => s.isActive);
   return match ? { id: match.id, name: match.name } : null;
 }

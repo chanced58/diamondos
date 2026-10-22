@@ -15,10 +15,13 @@ const rate = z.number().nullable();
 
 export const STAT_TIERS = ['youth', 'high_school', 'college'] as const;
 
+/** The season picker's "All games": every scored game, even when a season is active. */
+export const ALL_SEASONS = 'all';
+
 export const seasonStatsInputSchema = z.object({
   teamId: z.string().uuid('Invalid team.'),
-  /** Omitted → the active season, else every scored game. */
-  seasonId: z.string().uuid('Invalid season.').optional(),
+  /** A season, or `all` for every scored game. Omitted → the active season, else every scored game. */
+  seasonId: z.union([z.literal(ALL_SEASONS), z.string().uuid('Invalid season.')]).optional(),
 });
 export type SeasonStatsInput = z.infer<typeof seasonStatsInputSchema>;
 

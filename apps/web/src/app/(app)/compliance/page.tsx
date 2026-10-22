@@ -16,7 +16,7 @@ import { SeasonPicker } from './SeasonPicker';
 import { TierToggle } from './TierToggle';
 import { getActiveLeague } from '@/lib/active-league';
 import { getTeamTier } from '@/lib/team-tier';
-import { hasFeature, Feature } from '@baseball/shared';
+import { ALL_SEASONS, hasFeature, Feature } from '@baseball/shared';
 
 export const metadata: Metadata = { title: 'Stats' };
 
@@ -63,6 +63,9 @@ export default async function CompliancePage({
   const opponentTeamStats: OpponentTeamStats[] = stats.opponents;
   const gameCount = stats.gameCount;
   const today = new Date().toISOString().slice(0, 10);
+  // Tab links keep "All Games" explicit; without `season` the page shows the active season.
+  const seasonParam = season?.id ?? (searchParams.season === ALL_SEASONS ? ALL_SEASONS : null);
+  const seasonQuery = seasonParam ? `&season=${seasonParam}` : '';
 
   const VALID_TIERS: StatTier[] = ['youth', 'high_school', 'college'];
   const tier: StatTier = VALID_TIERS.includes(searchParams.tier as StatTier)
@@ -119,7 +122,7 @@ export default async function CompliancePage({
       {/* Tab strip */}
       <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
         <Link
-          href={`/compliance?tab=pitching${season ? `&season=${season.id}` : ''}&tier=${tier}`}
+          href={`/compliance?tab=pitching${seasonQuery}&tier=${tier}`}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
             tab === 'pitching'
               ? 'bg-white text-gray-900 shadow-sm'
@@ -129,7 +132,7 @@ export default async function CompliancePage({
           Pitching
         </Link>
         <Link
-          href={`/compliance?tab=hitting${season ? `&season=${season.id}` : ''}&tier=${tier}`}
+          href={`/compliance?tab=hitting${seasonQuery}&tier=${tier}`}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
             tab === 'hitting'
               ? 'bg-white text-gray-900 shadow-sm'
@@ -139,7 +142,7 @@ export default async function CompliancePage({
           Hitting
         </Link>
         <Link
-          href={`/compliance?tab=catcher${season ? `&season=${season.id}` : ''}&tier=${tier}`}
+          href={`/compliance?tab=catcher${seasonQuery}&tier=${tier}`}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
             tab === 'catcher'
               ? 'bg-white text-gray-900 shadow-sm'
@@ -150,7 +153,7 @@ export default async function CompliancePage({
         </Link>
         {canViewOpponents && (
           <Link
-            href={`/compliance?tab=opponents${season ? `&season=${season.id}` : ''}&tier=${tier}`}
+            href={`/compliance?tab=opponents${seasonQuery}&tier=${tier}`}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
               tab === 'opponents'
                 ? 'bg-white text-gray-900 shadow-sm'
