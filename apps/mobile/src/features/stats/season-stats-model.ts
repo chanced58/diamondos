@@ -1,7 +1,7 @@
 import {
   battingTotals,
   formatSeasonStat,
-  pitcherRestStatus,
+  pitcherRestStatusAt,
   pitchingTotals,
   visibleBattingColumns,
   visiblePitchingColumns,
@@ -68,23 +68,23 @@ export interface RestLabel {
   resting: boolean;
 }
 
-/** A pitcher's rest status on `today` (YYYY-MM-DD) from their latest outing. */
-export function restLabel(compliance: PitcherCompliance | null, today: string): RestLabel {
+/** A pitcher's rest status at `now` from their latest outing, counting days in its game's time zone. */
+export function restLabel(compliance: PitcherCompliance | null, now: Date): RestLabel {
   if (!compliance) return { short: '—', long: 'No pitch count on record', resting: false };
-  const rest = pitcherRestStatus(compliance, today);
+  const rest = pitcherRestStatusAt(compliance, now);
   if (rest.eligible) return { short: 'OK', long: 'Eligible to pitch', resting: false };
   const days = rest.daysRemaining;
   return { short: `${days}d`, long: `${days} more rest ${days === 1 ? 'day' : 'days'} required`, resting: true };
 }
 
-export function seasonPitchingColumns(tier: StatTier, advanced: boolean, today: string): StatColumn<SeasonPitcher>[] {
+export function seasonPitchingColumns(tier: StatTier, advanced: boolean, now: Date): StatColumn<SeasonPitcher>[] {
   return [
     ...toStatColumns(visiblePitchingColumns(tier, advanced), (row: SeasonPitcher, key) => row[key]),
     {
       key: 'rest',
       label: 'Rest',
-      value: (row) => restLabel(row.compliance, today).short,
-      emphasize: (row) => restLabel(row.compliance, today).resting,
+      value: (row) => restLabel(row.compliance, now).short,
+      emphasize: (row) => restLabel(row.compliance, now).resting,
     },
     { key: 'pitches7d', label: '7d', value: (row) => row.compliance?.pitches7d ?? '—' },
   ];
@@ -95,10 +95,10 @@ export function seasonPitchingTotals(rows: SeasonPitchingRow[], tier: StatTier, 
 }
 
 /** What a pitching column sorts by, including the rest and 7-day columns. */
-export function pitcherSortValue(row: SeasonPitcher, key: string, today: string): number | null {
+export function pitcherSortValue(row: SeasonPitcher, key: string, now: Date): number | null {
   if (key === 'rest') {
     if (!row.compliance) return null;
-    const rest = pitcherRestStatus(row.compliance, today);
+    const rest = pitcherRestStatusAt(row.compliance, now);
     return rest.eligible ? 0 : rest.daysRemaining;
   }
   if (key === 'pitches7d') return row.compliance?.pitches7d ?? null;

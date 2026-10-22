@@ -3,7 +3,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { Badge, ErrorState } from '@baseball/ui';
 import { formatInningsPitched, formatSeasonStat, type SeasonPitcher } from '@baseball/shared';
 import { useRole } from '../../../../src/providers/RoleProvider';
-import { localToday, useSeasonStats } from '../../../../src/features/stats/season-stats-api';
+import { currentTime, useSeasonStats } from '../../../../src/features/stats/season-stats-api';
 import { formatPlanDate, restLabel } from '../../../../src/features/stats/season-stats-model';
 import { describeApiError } from '../../../../src/lib/api-client';
 
@@ -106,7 +106,7 @@ export default function PitcherDetailScreen() {
 }
 
 function RestCard({ pitcher }: { pitcher: SeasonPitcher }) {
-  const rest = restLabel(pitcher.compliance, localToday());
+  const rest = restLabel(pitcher.compliance, currentTime());
   const compliance = pitcher.compliance;
   return (
     <View className="rounded-xl border border-gray-200 bg-white p-4">

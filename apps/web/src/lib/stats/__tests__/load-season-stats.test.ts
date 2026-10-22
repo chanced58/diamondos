@@ -77,8 +77,8 @@ describe('loadTeamSeasonStats', () => {
       'players.select': players,
       'pitch_counts.select': {
         data: [
-          { player_id: 'p1', pitch_count: 60, required_rest_days: 2, can_pitch_next_day: false, game_date: '2026-10-20' },
-          { player_id: 'p1', pitch_count: 30, required_rest_days: 0, can_pitch_next_day: true, game_date: '2026-10-10' },
+          { player_id: 'p1', pitch_count: 60, required_rest_days: 2, can_pitch_next_day: false, game_date: '2026-10-20', games: { time_zone: 'America/Phoenix' } },
+          { player_id: 'p1', pitch_count: 30, required_rest_days: 0, can_pitch_next_day: true, game_date: '2026-10-10', games: [{ time_zone: 'UTC' }] },
         ],
       },
       'v_pitcher_rolling_7d.select': {
@@ -92,7 +92,9 @@ describe('loadTeamSeasonStats', () => {
 
     expect(stats.pitching.map((s) => s.playerId)).toEqual(['p2', 'p1']);
     expect(stats.complianceMap).toEqual({
-      p1: { pitchCount: 60, requiredRestDays: 2, canPitchNextDay: false, lastGameDate: '2026-10-20', pitches7d: 75 },
+      p1: {
+        pitchCount: 60, requiredRestDays: 2, canPitchNextDay: false, lastGameDate: '2026-10-20', timeZone: 'America/Phoenix', pitches7d: 75,
+      },
     });
   });
 

@@ -102,8 +102,10 @@ export const pitcherComplianceSchema = z.object({
   pitchCount: count,
   requiredRestDays: z.number().int().nullable(),
   canPitchNextDay: z.boolean().nullable(),
-  /** YYYY-MM-DD */
+  /** YYYY-MM-DD, the outing's local day in `timeZone`. */
   lastGameDate: z.string().nullable(),
+  /** The outing's game time zone; rest days are counted in it (`pitcherRestStatusAt`). */
+  timeZone: z.string().nullable(),
   pitches7d: z.number().int().nullable(),
 });
 export type PitcherCompliance = z.infer<typeof pitcherComplianceSchema>;

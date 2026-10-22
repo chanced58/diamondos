@@ -6,7 +6,7 @@ import type { PitchingStats, SeasonPitchingStatKey, StatFormat, StatTier } from 
 import {
   formatAverage,
   formatSeasonStat,
-  pitcherRestStatus,
+  pitcherRestStatusAt,
   pitchingTotals,
   SubscriptionTier,
   hasFeature,
@@ -19,14 +19,16 @@ type ComplianceInfo = {
   requiredRestDays: number | null;
   canPitchNextDay: boolean | null;
   lastGameDate: string | null;
+  timeZone?: string | null;
   pitches7d?: number | null;
 };
 
 type Props = {
   stats: PitchingStats[];
-  /** Omit (with `today`) to hide the Rest column, e.g. outside the compliance page. */
+  /** Omit (with `now`) to hide the Rest column, e.g. outside the compliance page. */
   complianceMap?: Record<string, ComplianceInfo>;
-  today?: string;
+  /** The page's render time (ISO); each pitcher's rest counts days in their outing's time zone. */
+  now?: string;
   tier?: StatTier;
   subscriptionTier?: SubscriptionTier;
 };
@@ -65,13 +67,13 @@ function getValue(s: PitchingStats, key: SortKey): number | string {
   return s[key];
 }
 
-export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_school', subscriptionTier = SubscriptionTier.FREE }: Props): JSX.Element | null {
+export function PitchingStatsTable({ stats, complianceMap, now, tier = 'high_school', subscriptionTier = SubscriptionTier.FREE }: Props): JSX.Element | null {
   const [sortKey, setSortKey] = useState<SortKey>('inningsPitchedOuts');
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const isAdvanced = hasFeature(subscriptionTier, Feature.ADVANCED_PITCHING_STATS);
-  const rest = complianceMap && today ? { complianceMap, today } : null;
+  const rest = complianceMap && now ? { complianceMap, now: new Date(now) } : null;
 
   const columns = useMemo(() => statColumns(tier, isAdvanced), [tier, isAdvanced]);
 
@@ -155,7 +157,7 @@ export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_s
                   ))}
                   {rest && (
                     <td className="px-3 py-3 whitespace-nowrap">
-                      <ComplianceBadge compliance={rest.complianceMap[s.playerId]} today={rest.today} />
+                      <ComplianceBadge compliance={rest.complianceMap[s.playerId]} now={rest.now} />
                     </td>
                   )}
                 </tr>
@@ -192,10 +194,10 @@ export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_s
 
 function ComplianceBadge({
   compliance,
-  today,
+  now,
 }: {
   compliance: ComplianceInfo | undefined;
-  today: string;
+  now: Date;
 }) {
   if (!compliance) {
     return <span className="text-xs text-gray-400">—</span>;
@@ -207,7 +209,7 @@ function ComplianceBadge({
       <span className="ml-1 text-[10px] font-normal text-gray-500">· {pitches7d} 7d</span>
     ) : null;
 
-  const rest = pitcherRestStatus(compliance, today);
+  const rest = pitcherRestStatusAt(compliance, now);
   if (rest.eligible) {
     return (
       <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">

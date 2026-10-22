@@ -19,7 +19,8 @@ const mockUseSeasonStats = jest.fn();
 jest.mock('../../../../src/features/stats/season-stats-api', () => ({
   ...jest.requireActual('../../../../src/features/stats/season-stats-api'),
   useSeasonStats: (teamId: string, seasonId?: string) => mockUseSeasonStats(teamId, seasonId),
-  localToday: () => '2026-10-21',
+  // 11 AM on the 21st in Phoenix.
+  currentTime: () => new Date('2026-10-21T18:00:00Z'),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -43,7 +44,7 @@ function stats(over: Partial<SeasonStatsResponse> = {}): SeasonStatsResponse {
         threeZeroCountPAs: 0, totalPAs: 10, threeBallCountPercentage: 0.2, threeZeroCountPercentage: 0, hitsAllowed: 3,
         runsAllowed: 1, earnedRunsAllowed: 1, walksAllowed: 1, strikeouts: 4, hitBatters: 0, wildPitches: 0, era: 2.33,
         whip: 1.33, strikeoutsPerSeven: 9.33, walksPerSeven: 2.33, baByCount: {},
-        compliance: { pitchCount: 50, requiredRestDays: 2, canPitchNextDay: false, lastGameDate: '2026-10-20', pitches7d: 50 },
+        compliance: { pitchCount: 50, requiredRestDays: 2, canPitchNextDay: false, lastGameDate: '2026-10-20', timeZone: 'America/Phoenix', pitches7d: 50 },
       },
     ],
     batting: [],
@@ -112,6 +113,19 @@ it('should show the Opponents tab only on plans with opponent tracking', () => {
     pathname: '/(tabs)/stats/opponent/[opponentTeamId]',
     params: { opponentTeamId: 'o1' },
   });
+});
+
+it('should sort the pitching table it falls back to when Opponents leaves the plan', () => {
+  const withOpponents = stats({ features: { advancedBatting: true, advancedPitching: true, opponents: true }, opponents: [] });
+  given(withOpponents);
+  const { rerender } = render(<StatsScreen />);
+  fireEvent.press(screen.getByText('Opponents'));
+
+  // Switching to a team without opponent tracking shows Pitching again.
+  given(stats());
+  rerender(<StatsScreen />);
+  fireEvent.press(screen.getByLabelText('Sort by Pitcher'));
+  expect(screen.getByText('Pitcher ↑')).toBeTruthy();
 });
 
 it('should point to the roster when active players are missing a waiver', () => {

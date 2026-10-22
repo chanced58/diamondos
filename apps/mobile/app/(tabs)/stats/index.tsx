@@ -7,7 +7,7 @@ import { useCan, useRole } from '../../../src/providers/RoleProvider';
 import { TeamSwitcher } from '../../../src/features/teams/TeamSwitcher';
 import { ListGroup } from '../../../src/features/navigation/ListGroup';
 import { StatTable } from '../../../src/features/stats/StatTable';
-import { localToday, useSeasonStats } from '../../../src/features/stats/season-stats-api';
+import { currentTime, useSeasonStats } from '../../../src/features/stats/season-stats-api';
 import {
   CATCHER_COLUMNS,
   TIER_OPTIONS,
@@ -71,14 +71,16 @@ export default function StatsScreen() {
           stats={query.data}
           seasonKey={seasonId}
           onSeason={setSeasonId}
-          section={query.data.features.opponents || section !== 'opponents' ? section : 'pitching'}
+          section={shownSection(section, query.data)}
           onSection={setSection}
           tier={tier ?? query.data.defaultTier}
           onTier={setTier}
           sorts={sorts}
           onSort={(key) => {
-            if (section === 'opponents') return;
-            setSorts({ ...sorts, [section]: nextSort(sorts[section], key) });
+            // Sort the table on screen, which is Pitching when Opponents isn't on this plan.
+            const shown = shownSection(section, query.data);
+            if (shown === 'opponents') return;
+            setSorts({ ...sorts, [shown]: nextSort(sorts[shown], key) });
           }}
           isCoach={isCoach}
           refreshing={query.isRefetching}
@@ -87,6 +89,11 @@ export default function StatsScreen() {
       )}
     </View>
   );
+}
+
+/** The tab on screen: Opponents falls back to Pitching on a plan (or team) without opponent tracking. */
+function shownSection(section: Section, stats: SeasonStatsResponse): Section {
+  return section === 'opponents' && !stats.features.opponents ? 'pitching' : section;
 }
 
 interface SeasonStatsProps {
@@ -119,7 +126,7 @@ function SeasonStats({
   refreshing,
   onRefresh,
 }: SeasonStatsProps) {
-  const today = localToday();
+  const now = currentTime();
   const sectionOptions = [
     { value: 'pitching', label: 'Pitching' },
     { value: 'hitting', label: 'Hitting' },
@@ -193,10 +200,10 @@ function SeasonStats({
         <>
           <View className="mt-3 rounded-xl border border-gray-200 overflow-hidden">
             <StatTable
-              rows={sortStatRows(stats.pitching, sorts.pitching, (r) => r.playerName, (r, key) => pitcherSortValue(r, key, today))}
+              rows={sortStatRows(stats.pitching, sorts.pitching, (r) => r.playerName, (r, key) => pitcherSortValue(r, key, now))}
               rowKey={(r) => r.playerId}
               rowLabel={(r) => r.playerName}
-              columns={seasonPitchingColumns(tier, stats.features.advancedPitching, today)}
+              columns={seasonPitchingColumns(tier, stats.features.advancedPitching, now)}
               totals={seasonPitchingTotals(stats.pitching, tier, stats.features.advancedPitching)}
               emptyText={stats.season ? `No pitching data for ${stats.season.name} yet.` : 'No pitching data yet.'}
               labelHeader="Pitcher"

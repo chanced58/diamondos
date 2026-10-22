@@ -50,9 +50,12 @@ beforeEach(() => {
 });
 
 describe('loadBullpenPlan', () => {
-  it('should reject a malformed date', async () => {
+  it('should reject a malformed or impossible date as invalid, not a server error', async () => {
     const { db } = fakeDb(coach);
     expect(await loadBullpenPlan(db, 'c1', { teamId: TEAM, date: '10/21/2026' })).toMatchObject({ ok: false, code: 'invalid' });
+    expect(await loadBullpenPlan(db, 'c1', { teamId: TEAM, date: '2026-13-45' })).toMatchObject({ ok: false, code: 'invalid' });
+    expect(await loadBullpenPlan(db, 'c1', { teamId: TEAM, today: '2026-02-30' })).toMatchObject({ ok: false, code: 'invalid' });
+    expect(mockListPitchersWithUsage).not.toHaveBeenCalled();
   });
 
   it('should hide the team from outsiders and refuse non-coach members', async () => {

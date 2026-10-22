@@ -299,7 +299,7 @@ export default async function LeagueStatsPage({
             // Empty complianceMap is intentional — compliance rules are team-specific
             // and cannot be meaningfully aggregated across teams with different tiers/rules
             complianceMap={{}}
-            today={new Date().toISOString().slice(0, 10)}
+            now={new Date().toISOString()}
             tier={tier}
           />
         )

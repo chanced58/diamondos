@@ -3,6 +3,7 @@ import type { PitchingStats } from '../types/pitching';
 import type { StatTier } from '../types/team';
 import { formatBattingPct, formatBattingRate } from './batting-stats';
 import { formatInningsPitched } from './pitching-stats';
+import { utcToZonedDateTime } from './date';
 
 /**
  * The season stats tables' columns — which show at each stat tier and on the
@@ -243,8 +244,23 @@ export function pitchingTotals(rows: PitchingCounts[]): Record<SeasonPitchingSta
 export interface PitcherComplianceSnapshot {
   requiredRestDays: number | null;
   canPitchNextDay: boolean | null;
-  /** YYYY-MM-DD of the latest pitch_counts row. */
+  /** YYYY-MM-DD of the latest pitch_counts row: that game's local day. */
   lastGameDate: string | null;
+  /** IANA zone of the latest outing's game (`games.time_zone`); null when unknown. */
+  timeZone?: string | null;
+}
+
+/**
+ * {@link pitcherRestStatus} as of `now`, counting days the way `game_date` was
+ * written: in the outing's game time zone, so a late-evening check doesn't
+ * land on the next UTC day and clear a pitcher early. An unknown zone falls
+ * back to the viewer's.
+ */
+export function pitcherRestStatusAt(
+  compliance: PitcherComplianceSnapshot,
+  now: Date,
+): ReturnType<typeof pitcherRestStatus> {
+  return pitcherRestStatus(compliance, utcToZonedDateTime(now, compliance.timeZone).date);
 }
 
 /**

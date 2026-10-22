@@ -2,6 +2,7 @@ import {
   battingTotals,
   formatSeasonStat,
   pitcherRestStatus,
+  pitcherRestStatusAt,
   pitchingTotals,
   visibleBattingColumns,
   visiblePitchingColumns,
@@ -67,6 +68,16 @@ describe('totals', () => {
     expect(totals.whip).toBeCloseTo(8 / 7);
     expect(totals.strikePercentage).toBeCloseTo(0.6);
     expect(Number.isNaN(pitchingTotals([{ ...pitcher, inningsPitchedOuts: 0 }]).era)).toBe(true);
+  });
+});
+
+describe('pitcherRestStatusAt', () => {
+  it("should count days in the outing's time zone, not UTC", () => {
+    const owedTwo = { requiredRestDays: 2, canPitchNextDay: false, lastGameDate: '2026-10-20', timeZone: 'America/Phoenix' };
+    // 9 PM Thursday in Phoenix is already Friday in UTC; the pitcher clears Friday.
+    const thursdayNight = new Date('2026-10-23T04:00:00Z');
+    expect(pitcherRestStatusAt(owedTwo, thursdayNight)).toEqual({ eligible: false, daysRemaining: 1 });
+    expect(pitcherRestStatusAt({ ...owedTwo, timeZone: 'UTC' }, thursdayNight)).toEqual({ eligible: true });
   });
 });
 

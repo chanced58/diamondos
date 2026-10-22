@@ -21,6 +21,8 @@ export interface PitcherComplianceInfo {
   requiredRestDays: number | null;
   canPitchNextDay: boolean | null;
   lastGameDate: string | null;
+  /** The outing's game time zone: `lastGameDate` is that game's local day. */
+  timeZone: string | null;
   pitches7d: number | null;
 }
 
@@ -122,8 +124,9 @@ export async function loadTeamSeasonStats(
   const filteredEvents = filterResetAndReverted(rawEvents);
 
   // Per-game lineups let deriveBattingStats infer the batter when a PA-closing
-  // event carries a missing or 'unknown-batter' stub (best-effort).
-  const lineupsByGameId = await buildLineupsByGameId(db, games);
+  // event carries a missing or 'unknown-batter' stub, and drop guests who don't
+  // count toward stats. Strict: without them the season's batting is wrong.
+  const lineupsByGameId = await buildLineupsByGameId(db, games, { strict: true });
 
   // ALL players (not just active) so deactivated players who played in past
   // games still resolve their names.
@@ -210,7 +213,7 @@ async function loadPitcherCompliance(
   const [pitchCountsResult, rolling7dResult] = await Promise.all([
     db
       .from('pitch_counts')
-      .select('player_id, pitch_count, required_rest_days, can_pitch_next_day, game_date')
+      .select('player_id, pitch_count, required_rest_days, can_pitch_next_day, game_date, games(time_zone)')
       .in('player_id', pitcherIds)
       .order('game_date', { ascending: false }),
     db
@@ -229,6 +232,7 @@ async function loadPitcherCompliance(
       requiredRestDays: row.required_rest_days,
       canPitchNextDay: row.can_pitch_next_day,
       lastGameDate: row.game_date,
+      timeZone: gameTimeZone(row.games),
       pitches7d: null,
     };
   }
@@ -237,6 +241,13 @@ async function loadPitcherCompliance(
     if (existing && existing.pitches7d === null) existing.pitches7d = row.pitches_7d;
   }
   return complianceMap;
+}
+
+/** `games(time_zone)` as PostgREST embeds it: one object, or an array of one. */
+function gameTimeZone(embedded: unknown): string | null {
+  const game = Array.isArray(embedded) ? embedded[0] : embedded;
+  const zone = (game as { time_zone?: unknown } | null | undefined)?.time_zone;
+  return typeof zone === 'string' ? zone : null;
 }
 
 /** Active players without a current (non-expired) liability waiver. */

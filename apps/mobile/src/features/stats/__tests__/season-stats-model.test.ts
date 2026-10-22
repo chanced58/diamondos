@@ -14,7 +14,8 @@ import {
   sortStatRows,
 } from '../season-stats-model';
 
-const TODAY = '2026-10-21';
+// 11 AM on the 21st in Phoenix, where the fixtures' outings were played.
+const NOW = new Date('2026-10-21T18:00:00Z');
 
 function pitcher(id: string, over: Partial<SeasonPitcher> = {}): SeasonPitcher {
   return {
@@ -35,7 +36,9 @@ function batter(id: string, over: Partial<SeasonBattingRow> = {}): SeasonBatting
   };
 }
 
-const resting = { pitchCount: 70, requiredRestDays: 2, canPitchNextDay: false, lastGameDate: '2026-10-20', pitches7d: 70 };
+const resting = {
+  pitchCount: 70, requiredRestDays: 2, canPitchNextDay: false, lastGameDate: '2026-10-20', timeZone: 'America/Phoenix', pitches7d: 70,
+};
 
 describe('columns', () => {
   it("should show the plan's and tier's columns and format missing rates as ---", () => {
@@ -48,7 +51,7 @@ describe('columns', () => {
   });
 
   it('should add rest and 7-day columns to pitching, highlighting a resting pitcher', () => {
-    const columns = seasonPitchingColumns('high_school', true, TODAY);
+    const columns = seasonPitchingColumns('high_school', true, NOW);
     const rest = columns.find((c) => c.key === 'rest')!;
     const weekly = columns.find((c) => c.key === 'pitches7d')!;
     expect(rest.value(pitcher('a', { compliance: resting }))).toBe('2d');
@@ -70,16 +73,18 @@ describe('columns', () => {
 
 describe('restLabel', () => {
   it('should say eligible, how many rest days remain, or that there is no outing', () => {
-    expect(restLabel(resting, TODAY)).toEqual({ short: '2d', long: '2 more rest days required', resting: true });
-    expect(restLabel({ ...resting, lastGameDate: '2026-10-19' }, TODAY).long).toBe('1 more rest day required');
-    expect(restLabel({ ...resting, canPitchNextDay: true }, TODAY)).toMatchObject({ short: 'OK', resting: false });
-    expect(restLabel(null, TODAY)).toMatchObject({ short: '—', resting: false });
+    expect(restLabel(resting, NOW)).toEqual({ short: '2d', long: '2 more rest days required', resting: true });
+    expect(restLabel({ ...resting, lastGameDate: '2026-10-19' }, NOW).long).toBe('1 more rest day required');
+    expect(restLabel({ ...resting, canPitchNextDay: true }, NOW)).toMatchObject({ short: 'OK', resting: false });
+    // 9 PM Thursday in Phoenix is Friday in UTC, but the pitcher still owes Thursday.
+    expect(restLabel(resting, new Date('2026-10-23T04:00:00Z'))).toMatchObject({ short: '1d', resting: true });
+    expect(restLabel(null, NOW)).toMatchObject({ short: '—', resting: false });
   });
 });
 
 describe('sorting', () => {
   const name = (row: SeasonPitcher) => row.playerName;
-  const value = (row: SeasonPitcher, key: string) => pitcherSortValue(row, key, TODAY);
+  const value = (row: SeasonPitcher, key: string) => pitcherSortValue(row, key, NOW);
 
   it('should sort high to low by default and keep missing values last either way', () => {
     const rows = [pitcher('a', { era: 3 }), pitcher('b', { era: null }), pitcher('c', { era: 1 })];

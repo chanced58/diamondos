@@ -8,7 +8,14 @@ import { PitcherAvailabilityStatus, PitcherEligibilitySource } from '../types/pi
  * the next game's local day, else the device's `today`.
  */
 
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a YYYY-MM-DD date.');
+/** A real calendar day as YYYY-MM-DD: "2026-13-45" fails here, not as a 500 later. */
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a YYYY-MM-DD date.')
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }, 'Use a real calendar date.');
 
 export const bullpenInputSchema = z.object({
   teamId: z.string().uuid('Invalid team.'),

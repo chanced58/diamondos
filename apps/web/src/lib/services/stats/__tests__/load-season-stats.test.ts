@@ -43,7 +43,9 @@ const stats: TeamSeasonStats = {
   pitching: [pitcher],
   batting: [batter],
   complianceMap: {
-    p1: { pitchCount: 40, requiredRestDays: 1, canPitchNextDay: false, lastGameDate: '2026-10-20', pitches7d: 55 },
+    p1: {
+      pitchCount: 40, requiredRestDays: 1, canPitchNextDay: false, lastGameDate: '2026-10-20', timeZone: 'America/Phoenix', pitches7d: 55,
+    },
   },
   catcher: [{ playerId: 'c1', playerName: 'Cal Baldwin', totalInnings: 5.5, games: 2, lastGameDate: '2026-10-20' }],
   opponents: [{

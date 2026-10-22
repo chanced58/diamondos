@@ -48,6 +48,11 @@ export function useSeasonStats(teamId: string | undefined, seasonId: string | un
   });
 }
 
+/** Now, for rest status (its own function so screen tests can pin the clock). */
+export function currentTime(): Date {
+  return new Date();
+}
+
 /** The device's local date, YYYY-MM-DD. */
 export function localToday(now: Date = new Date()): string {
   return partsFromLocalDate(now).date;

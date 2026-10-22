@@ -62,7 +62,8 @@ export default async function CompliancePage({
   const catcherRows = stats.catcher;
   const opponentTeamStats: OpponentTeamStats[] = stats.opponents;
   const gameCount = stats.gameCount;
-  const today = new Date().toISOString().slice(0, 10);
+  // Rest badges count days in each outing's game time zone (pitcherRestStatusAt), not the server's UTC day.
+  const now = new Date().toISOString();
   // Tab links keep "All Games" explicit; without `season` the page shows the active season.
   const seasonParam = season?.id ?? (searchParams.season === ALL_SEASONS ? ALL_SEASONS : null);
   const seasonQuery = seasonParam ? `&season=${seasonParam}` : '';
@@ -180,7 +181,7 @@ export default async function CompliancePage({
           <PitchingStatsTable
             stats={allPitchingStats}
             complianceMap={complianceMap}
-            today={today}
+            now={now}
             tier={tier}
             subscriptionTier={subscriptionTier}
           />
