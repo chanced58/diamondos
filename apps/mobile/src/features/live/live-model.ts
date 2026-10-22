@@ -43,12 +43,22 @@ export interface LivePlay {
   isTopOfInning: boolean;
 }
 
-/** The latest described plays, newest first. Events with no description (voids, reverts) are skipped. */
+/** An "in play" pitch only announces the play recorded right after it. */
+function isInPlayPitch(event: HistoryEvent): boolean {
+  return event.eventType === 'pitch_thrown' && (event.payload as { outcome?: unknown }).outcome === 'in_play';
+}
+
+/**
+ * The latest described plays, newest first. Events with no description
+ * (voids, reverts) and in-play pitches (the play that follows says what
+ * happened) are skipped.
+ */
 export function recentPlays(data: LiveGameResponse, limit: number): LivePlay[] {
   const events = sinceLastReset(data.events);
   const plays: LivePlay[] = [];
   for (let i = events.length - 1; i >= 0 && plays.length < limit; i--) {
     const event = events[i];
+    if (isInPlayPitch(event)) continue;
     const text = formatEventDescription(event, (id) => livePlayerLabel(data.players, id));
     if (text !== null) plays.push({ id: event.id, text, inning: event.inning, isTopOfInning: event.isTopOfInning });
   }

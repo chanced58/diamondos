@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { ErrorState } from '@baseball/ui';
@@ -25,6 +25,12 @@ export default function LiveGameScreen() {
   const { gameId = '' } = useLocalSearchParams<{ gameId: string }>();
   const query = useLiveGame(gameId);
   const data = query.data;
+  // The spinner is for a pull; Realtime catch-ups and the backstop refetch run quietly.
+  const [pulling, setPulling] = useState(false);
+  const pullToRefresh = () => {
+    setPulling(true);
+    void query.refetch().finally(() => setPulling(false));
+  };
 
   const state = useMemo(() => (data ? liveState(data) : null), [data]);
   const plays = useMemo(() => (data ? recentPlays(data, RECENT_PLAY_COUNT) : []), [data]);
@@ -64,7 +70,7 @@ export default function LiveGameScreen() {
     <ScrollView
       className="flex-1 bg-gray-50"
       contentContainerStyle={{ padding: 16, paddingBottom: 48 }}
-      refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} />}
+      refreshControl={<RefreshControl refreshing={pulling} onRefresh={pullToRefresh} />}
     >
       {header}
 

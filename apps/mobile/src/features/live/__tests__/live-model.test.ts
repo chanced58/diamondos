@@ -54,16 +54,18 @@ describe('live state', () => {
 });
 
 describe('plays', () => {
-  it('should list described plays newest first, skipping corrections, up to the limit', () => {
+  it('should list described plays newest first, skipping corrections and in-play pitches, up to the limit', () => {
     const events = [
       ev('game_start'),
+      ev('pitch_thrown', { outcome: 'in_play', batterId: 'b1' }),
       ev('hit', { batterId: 'b1', pitcherId: 'p1', hitType: 'double' }),
       ev('event_voided', { voidedEventId: 'nope' }),
       ev('walk', { batterId: 'b1' }),
     ];
     const plays = recentPlays(data(events), 2);
-    expect(plays.map((p) => p.id)).toEqual(['e4', 'e2']);
+    expect(plays.map((p) => p.id)).toEqual(['e5', 'e3']);
     expect(plays[1].text).toContain('#4 Abbott');
+    expect(recentPlays(data(events), 10).some((p) => p.id === 'e2')).toBe(false);
   });
 
   it('should label players with their jersey, and unknowns with a dash', () => {
