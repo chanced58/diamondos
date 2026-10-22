@@ -121,6 +121,26 @@ it('should open the scorer for a coach with the scorer params', () => {
   });
 });
 
+it('should send a parent following a live game to the live viewer, not the scorer', () => {
+  givenDetail(detail({ status: 'in_progress' }), 'parent');
+
+  render(<GameDetailScreen />);
+  fireEvent.press(screen.getByText('Follow live'));
+  expect(mockPush).toHaveBeenLastCalledWith({ pathname: '/(tabs)/schedule/games/[gameId]/live', params: { gameId: 'game-1' } });
+
+  fireEvent.press(screen.getByText('Live view'));
+  expect(mockPush).toHaveBeenLastCalledWith({ pathname: '/(tabs)/schedule/games/[gameId]/live', params: { gameId: 'game-1' } });
+});
+
+it('should keep a coach on the scorer for a live game, with the live view a row away', () => {
+  givenDetail(detail({ status: 'in_progress' }, true), 'head_coach');
+
+  render(<GameDetailScreen />);
+  fireEvent.press(screen.getByText('Continue scoring'));
+  expect(mockPush).toHaveBeenLastCalledWith(expect.objectContaining({ pathname: '/(tabs)/schedule/games/[gameId]/score' }));
+  expect(screen.getByText('Live view')).toBeTruthy();
+});
+
 it('should let the team scorekeeper start scoring without coach actions', () => {
   givenDetail(detail(), 'scorekeeper');
 

@@ -9,6 +9,9 @@ export default function MoreLayout() {
       <Stack.Screen name="index" options={{ title: 'More' }} />
       <Stack.Screen name="roster/index" options={{ title: 'Roster' }} />
       <Stack.Screen name="practices/index" options={{ title: 'Practices' }} />
+      <Stack.Screen name="facilities/index" options={{ title: 'Facilities' }} />
+      <Stack.Screen name="facilities/new-booking" options={{ title: 'Book a facility' }} />
+      <Stack.Screen name="facilities/manage" options={{ title: 'Manage facilities' }} />
     </Stack>
   );
 }

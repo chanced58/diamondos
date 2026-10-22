@@ -31,6 +31,11 @@ export default function MoreScreen() {
           subtitle="Upcoming practices and attendance"
           onPress={() => router.push('/(tabs)/more/practices')}
         />
+        <ListRow
+          title="Facilities"
+          subtitle="Cage, field and bullpen bookings"
+          onPress={() => router.push('/(tabs)/more/facilities')}
+        />
       </ListGroup>
 
       {leagueRoles.length > 0 && hasWeb && (

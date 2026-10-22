@@ -8,15 +8,18 @@ interface DateTimeFieldsProps {
   time: string;
   onChange: (parts: { date: string; time: string }) => void;
   testID?: string;
+  /** False shows the time alone (an end time on the start's day). */
+  showDate?: boolean;
 }
 
 /**
  * A date and a time, as the coach means them at the field. iOS shows the
  * compact inline pickers; Android opens its dialog from a button.
  */
-export function DateTimeFields({ date, time, onChange, testID }: DateTimeFieldsProps) {
+export function DateTimeFields({ date, time, onChange, testID, showDate = true }: DateTimeFieldsProps) {
   const [androidPicker, setAndroidPicker] = useState<'date' | 'time' | null>(null);
   const value = localDateFromParts(date, time);
+  const modes = showDate ? (['date', 'time'] as const) : (['time'] as const);
 
   const handle = (mode: 'date' | 'time') => (event: DateTimePickerEvent, picked?: Date) => {
     setAndroidPicker(null);
@@ -28,15 +31,16 @@ export function DateTimeFields({ date, time, onChange, testID }: DateTimeFieldsP
   if (Platform.OS === 'ios') {
     return (
       <View testID={testID} className="flex-row items-center gap-2">
-        <DateTimePicker value={value} mode="date" display="compact" onChange={handle('date')} />
-        <DateTimePicker value={value} mode="time" display="compact" onChange={handle('time')} />
+        {modes.map((mode) => (
+          <DateTimePicker key={mode} value={value} mode={mode} display="compact" onChange={handle(mode)} />
+        ))}
       </View>
     );
   }
 
   return (
     <View testID={testID} className="flex-row gap-2">
-      {(['date', 'time'] as const).map((mode) => (
+      {modes.map((mode) => (
         <TouchableOpacity
           key={mode}
           accessibilityRole="button"
