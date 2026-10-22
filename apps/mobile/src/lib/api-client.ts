@@ -106,13 +106,16 @@ export interface RequestOptions<T> {
   /** Validates (and types) the response body. */
   schema?: Schema<T>;
   signal?: AbortSignal;
+  /** Overrides the client's timeout, e.g. for a slow AI generation. */
+  timeoutMs?: number;
 }
 
 export function createApiClient(config: ApiClientConfig) {
   const fetchImpl = config.fetchImpl ?? fetch;
-  const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const defaultTimeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   async function request<T = unknown>(path: string, options: RequestOptions<T> = {}): Promise<T> {
+    const timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
     const baseUrl = config.baseUrl?.trim().replace(/\/+$/, '');
     if (!baseUrl) {
       throw new ApiError('not_configured', 'EXPO_PUBLIC_API_BASE_URL is not set');

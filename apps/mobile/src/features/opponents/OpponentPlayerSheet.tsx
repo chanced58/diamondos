@@ -1,28 +1,42 @@
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Button, FormField } from '@baseball/ui';
-import { LINEUP_POSITIONS, POSITION_TO_DB, type OpponentRosterPlayer } from '@baseball/shared';
+import { BATS, LINEUP_POSITIONS, POSITION_TO_DB, THROWS, type OpponentRosterPlayer } from '@baseball/shared';
 import type { OpponentPlayerFields } from './opponent-lineup-api';
 import { positionLabel } from './opponent-lineup-model';
+
+/** What the team-scoped roster also records. */
+export interface Handedness {
+  bats: (typeof BATS)[number] | null;
+  throws: (typeof THROWS)[number] | null;
+}
+
+type SheetPlayer = OpponentRosterPlayer & { bats?: string | null; throws?: string | null };
 
 interface OpponentPlayerSheetProps {
   visible: boolean;
   /** Null adds a new player. */
-  player: OpponentRosterPlayer | null;
+  player: SheetPlayer | null;
   saving: boolean;
   error: string | null;
-  onSave: (fields: OpponentPlayerFields) => void;
+  /** Also ask for bats and throws (the team's opponent roster; a game's lineup doesn't keep them). */
+  withHandedness?: boolean;
+  onSave: (fields: OpponentPlayerFields & Partial<Handedness>) => void;
   onClose: () => void;
 }
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 
-/** Add or edit an opponent roster player: jersey, name and usual position. */
-export function OpponentPlayerSheet({ visible, player, saving, error, onSave, onClose }: OpponentPlayerSheetProps) {
+const BATS_LABELS: Record<(typeof BATS)[number], string> = { right: 'R', left: 'L', switch: 'S' };
+
+/** Add or edit an opponent roster player: jersey, name, usual position and, when asked, handedness. */
+export function OpponentPlayerSheet({ visible, player, saving, error, withHandedness = false, onSave, onClose }: OpponentPlayerSheetProps) {
   const [jersey, setJersey] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [position, setPosition] = useState<string | null>(null);
+  const [bats, setBats] = useState<Handedness['bats']>(null);
+  const [throws, setThrows] = useState<Handedness['throws']>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,6 +45,8 @@ export function OpponentPlayerSheet({ visible, player, saving, error, onSave, on
     setFirstName(player?.firstName ?? '');
     setLastName(player?.lastName ?? '');
     setPosition(player?.primaryPosition ?? null);
+    setBats(asHand(BATS, player?.bats));
+    setThrows(asHand(THROWS, player?.throws));
     setProblem(null);
   }, [visible, player]);
 
@@ -45,6 +61,7 @@ export function OpponentPlayerSheet({ visible, player, saving, error, onSave, on
       lastName: lastName.trim(),
       jerseyNumber: jersey.trim() || null,
       primaryPosition: (position ?? null) as OpponentPlayerFields['primaryPosition'],
+      ...(withHandedness ? { bats, throws } : {}),
     });
   };
 
@@ -116,6 +133,26 @@ export function OpponentPlayerSheet({ visible, player, saving, error, onSave, on
               })}
             </View>
           </FormField>
+          {withHandedness && (
+            <>
+              <FormField label="Bats">
+                <ChoiceRow
+                  label="Bats"
+                  options={BATS.map((value) => ({ value, label: BATS_LABELS[value] }))}
+                  value={bats}
+                  onChange={setBats}
+                />
+              </FormField>
+              <FormField label="Throws">
+                <ChoiceRow
+                  label="Throws"
+                  options={THROWS.map((value) => ({ value, label: BATS_LABELS[value] }))}
+                  value={throws}
+                  onChange={setThrows}
+                />
+              </FormField>
+            </>
+          )}
 
           {(problem ?? error) && (
             <Text accessibilityRole="alert" className="text-sm text-red-700 mb-3">{problem ?? error}</Text>
@@ -124,5 +161,42 @@ export function OpponentPlayerSheet({ visible, player, saving, error, onSave, on
         </ScrollView>
       </KeyboardAvoidingView>
     </Modal>
+  );
+}
+
+function asHand<T extends string>(allowed: readonly T[], value: string | null | undefined): T | null {
+  return allowed.includes(value as T) ? (value as T) : null;
+}
+
+/** "—" plus each choice as a pill; the selected one is filled. */
+function ChoiceRow<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: T; label: string }[];
+  value: T | null;
+  onChange: (value: T | null) => void;
+}) {
+  return (
+    <View className="flex-row flex-wrap gap-2">
+      {[{ value: null, label: '—' }, ...options].map((option) => {
+        const selected = option.value === value;
+        return (
+          <TouchableOpacity
+            key={option.value ?? 'none'}
+            accessibilityRole="radio"
+            accessibilityLabel={`${label} ${option.label}`}
+            accessibilityState={{ selected }}
+            onPress={() => onChange(option.value)}
+            className={`px-4 py-1.5 rounded-full border ${selected ? 'bg-blue-700 border-blue-700' : 'bg-white border-gray-300'}`}
+          >
+            <Text className={`text-sm font-semibold ${selected ? 'text-white' : 'text-gray-700'}`}>{option.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
   );
 }
