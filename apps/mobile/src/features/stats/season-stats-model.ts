@@ -77,9 +77,14 @@ export function restLabel(compliance: PitcherCompliance | null, now: Date): Rest
   return { short: `${days}d`, long: `${days} more rest ${days === 1 ? 'day' : 'days'} required`, resting: true };
 }
 
+/** The pitching stat columns alone — the league table, where rest is per team and not shown. */
+export function pitchingStatColumns(tier: StatTier, advanced: boolean): StatColumn<SeasonPitchingRow>[] {
+  return toStatColumns(visiblePitchingColumns(tier, advanced), (row: SeasonPitchingRow, key) => row[key]);
+}
+
 export function seasonPitchingColumns(tier: StatTier, advanced: boolean, now: Date): StatColumn<SeasonPitcher>[] {
   return [
-    ...toStatColumns(visiblePitchingColumns(tier, advanced), (row: SeasonPitcher, key) => row[key]),
+    ...pitchingStatColumns(tier, advanced),
     {
       key: 'rest',
       label: 'Rest',

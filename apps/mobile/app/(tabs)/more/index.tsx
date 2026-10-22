@@ -2,7 +2,7 @@ import { ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { ListRow, SectionHeader } from '@baseball/ui';
 import { useAuth } from '../../../src/providers/AuthProvider';
-import { useRole } from '../../../src/providers/RoleProvider';
+import { useCan, useRole } from '../../../src/providers/RoleProvider';
 import { ListGroup } from '../../../src/features/navigation/ListGroup';
 import { openOnWeb, webUrl } from '../../../src/lib/web-links';
 
@@ -15,6 +15,7 @@ const LEAGUE_ROLE_LABELS = { league_admin: 'League admin', league_manager: 'Leag
 export default function MoreScreen() {
   const { user, signOut } = useAuth();
   const { leagueRoles } = useRole();
+  const isCoach = useCan('team.coach');
   const hasWeb = webUrl('/') !== null;
 
   return (
@@ -36,6 +37,13 @@ export default function MoreScreen() {
           subtitle="Cage, field and bullpen bookings"
           onPress={() => router.push('/(tabs)/more/facilities')}
         />
+        {isCoach && (
+          <ListRow
+            title="Opponents"
+            subtitle="Opponent rosters and scouting cards"
+            onPress={() => router.push('/(tabs)/more/opponents')}
+          />
+        )}
       </ListGroup>
 
       {leagueRoles.length > 0 && hasWeb && (

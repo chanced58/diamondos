@@ -15,6 +15,7 @@ import {
 import { RELEVANT_EVENT_TYPES } from '@/app/(app)/compliance/constants';
 import { buildLineupsByGameId } from './lineups';
 import { fetchAllEventsForGames } from './fetch-events';
+import { rowsOf } from './rows-of';
 
 export interface PitcherComplianceInfo {
   pitchCount: number;
@@ -175,15 +176,6 @@ export async function loadTeamSeasonStats(
     opponents,
     missingWaiverCount,
   };
-}
-
-/**
- * A query's rows, or a throw naming the failed query: a failed read must not
- * pass for an empty one (no games, no pitch counts) and render a wrong season.
- */
-function rowsOf<T>(result: { data: T | null; error: { message: string } | null }, query: string): T | null {
-  if (result.error) throw new Error(`${query} query failed: ${result.error.message}`);
-  return result.data;
 }
 
 /** The stat tier a team's level starts on. */

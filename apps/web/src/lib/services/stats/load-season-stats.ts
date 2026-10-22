@@ -5,15 +5,13 @@ import {
   hasFeature,
   seasonStatsInputSchema,
   type OpponentBattingRow,
-  type PitchingStats,
-  type SeasonBattingRow,
-  type SeasonPitchingRow,
   type SeasonStatsResponse,
 } from '@baseball/shared';
 import { loadTeamSeasonStats } from '@/lib/stats/load-season-stats';
 import { resolveTeamTier } from '@/lib/team-tier';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import { resolveGameViewer } from '../games/authorize';
+import { finiteOrNull, toBattingRow, toPitchingRow } from './wire';
 
 /**
  * A team's season stats for the mobile Stats tab: the web Stats page's data
@@ -61,7 +59,7 @@ export async function loadSeasonStats(
         ...toPitchingRow(s),
         compliance: stats.complianceMap[s.playerId] ?? null,
       })),
-      batting: stats.batting.map((s) => finiteOrNull<SeasonBattingRow>(s)),
+      batting: stats.batting.map(toBattingRow),
       catcher: stats.catcher,
       opponents: features.opponents
         ? stats.opponents.map((team) => ({
@@ -76,19 +74,4 @@ export async function loadSeasonStats(
     console.error(`[loadSeasonStats] team=${teamId} season=${seasonId ?? 'default'} actor=${actorUserId} failed:`, err);
     return serviceError('failed', 'Failed to load season stats.');
   }
-}
-
-/** Rates that can't be computed (NaN, Infinity) travel as null: JSON has no NaN. */
-function finiteOrNull<Wire>(row: object): Wire {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(row)) {
-    out[key] = typeof value === 'number' && !Number.isFinite(value) ? null : value;
-  }
-  return out as Wire;
-}
-
-function toPitchingRow(s: PitchingStats): SeasonPitchingRow {
-  const baByCount: SeasonPitchingRow['baByCount'] = {};
-  for (const [count, stat] of Object.entries(s.baByCount)) baByCount[count] = finiteOrNull(stat);
-  return { ...finiteOrNull<SeasonPitchingRow>(s), baByCount };
 }

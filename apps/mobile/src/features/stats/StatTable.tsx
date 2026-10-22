@@ -21,15 +21,19 @@ interface StatTableProps<Row> {
   emptyText: string;
   /** Header for the pinned name column. */
   labelHeader?: string;
+  /** The pinned name column's width; wider for names carrying a team. */
+  labelWidth?: number;
   /** The sorted column, marked with an arrow. Rows arrive already sorted. */
   sort?: { key: string; ascending: boolean };
   /** Makes the headers tappable; the name header sends `NAME_COLUMN_KEY`. */
   onSort?: (key: string) => void;
   /** Makes each name tappable, e.g. to open the player's detail. */
   onPressRow?: (row: Row) => void;
+  /** Tints a row, e.g. your own team in a league table. */
+  highlightRow?: (row: Row) => boolean;
 }
 
-const NAME_WIDTH = 132;
+const DEFAULT_NAME_WIDTH = 132;
 const CELL_WIDTH = 48;
 
 /**
@@ -44,19 +48,23 @@ export function StatTable<Row>({
   totals,
   emptyText,
   labelHeader = 'Player',
+  labelWidth = DEFAULT_NAME_WIDTH,
   sort,
   onSort,
   onPressRow,
+  highlightRow,
 }: StatTableProps<Row>) {
   if (rows.length === 0) return <Text className="text-sm text-gray-400 px-4 py-4">{emptyText}</Text>;
 
   const rowClass = 'h-10 justify-center border-b border-gray-100';
   const arrow = (key: string) => (sort?.key === key ? (sort.ascending ? ' ↑' : ' ↓') : '');
+  // Same class shape on every row: only the background value changes.
+  const tint = (row: Row) => (highlightRow?.(row) ? 'bg-blue-50' : 'bg-white');
   const headerText = (key: string) => (sort?.key === key ? 'text-blue-700' : 'text-gray-600');
 
   return (
     <View className="flex-row bg-white">
-      <View style={{ width: NAME_WIDTH }}>
+      <View style={{ width: labelWidth }}>
         <TouchableOpacity
           disabled={!onSort}
           accessibilityRole={onSort ? 'button' : undefined}
@@ -75,7 +83,7 @@ export function StatTable<Row>({
             disabled={!onPressRow}
             accessibilityRole={onPressRow ? 'button' : undefined}
             onPress={() => onPressRow?.(row)}
-            className={`${rowClass} px-3`}
+            className={`${rowClass} px-3 ${tint(row)}`}
           >
             <Text className={`text-sm font-medium ${onPressRow ? 'text-blue-700' : 'text-gray-900'}`} numberOfLines={1}>
               {rowLabel(row)}
@@ -109,7 +117,7 @@ export function StatTable<Row>({
             ))}
           </View>
           {rows.map((row) => (
-            <View key={rowKey(row)} className={`${rowClass} flex-row items-center`}>
+            <View key={rowKey(row)} className={`${rowClass} flex-row items-center ${tint(row)}`}>
               {columns.map((column) => (
                 <Text
                   key={column.key}
