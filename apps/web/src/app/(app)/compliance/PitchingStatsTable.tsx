@@ -2,8 +2,17 @@
 import type { JSX } from 'react';
 
 import { useState, useMemo } from 'react';
-import type { PitchingStats, StatTier } from '@baseball/shared';
-import { formatInningsPitched, formatAverage, SubscriptionTier, hasFeature, Feature } from '@baseball/shared';
+import type { PitchingStats, SeasonPitchingStatKey, StatFormat, StatTier } from '@baseball/shared';
+import {
+  formatAverage,
+  formatSeasonStat,
+  pitcherRestStatus,
+  pitchingTotals,
+  SubscriptionTier,
+  hasFeature,
+  Feature,
+  visiblePitchingColumns,
+} from '@baseball/shared';
 
 type ComplianceInfo = {
   pitchCount: number;
@@ -22,75 +31,30 @@ type Props = {
   subscriptionTier?: SubscriptionTier;
 };
 
-type SortKey =
-  | 'playerName'
-  | 'inningsPitchedOuts'
-  | 'totalPitches'
-  | 'strikePercentage'
-  | 'firstPitchStrikePercentage'
-  | 'threeBallCountPercentage'
-  | 'threeZeroCountPercentage'
-  | 'era'
-  | 'whip'
-  | 'strikeoutsPerSeven'
-  | 'walksPerSeven'
-  | 'hitsAllowed'
-  | 'walksAllowed'
-  | 'strikeouts'
-  | 'hitBatters'
-  | 'wildPitches';
+type SortKey = SeasonPitchingStatKey | 'playerName';
 
-type ColDef = { key: SortKey; label: string; title: string; fmt: (s: PitchingStats) => string };
+type ColDef = { key: SortKey; label: string; title: string; format?: StatFormat; fmt: (s: PitchingStats) => string };
 
 function pct(value: number): string {
-  if (!isFinite(value) || isNaN(value)) return '---';
-  return `${(value * 100).toFixed(1)}%`;
+  return formatSeasonStat(value, 'pct');
 }
 
-function dec(value: number, decimals = 2): string {
-  if (!isFinite(value) || isNaN(value)) return '---';
-  return value.toFixed(decimals);
+// Stat columns, their tier and plan visibility, formatting and totals come
+// from @baseball/shared (season-stat-columns), shared with the mobile Stats tab.
+const NAME_COLUMN: ColDef = { key: 'playerName', label: 'Pitcher', title: 'Pitcher name', fmt: (s) => s.playerName };
+
+function statColumns(tier: StatTier, advanced: boolean): ColDef[] {
+  return [
+    NAME_COLUMN,
+    ...visiblePitchingColumns(tier, advanced).map((col) => ({
+      key: col.key,
+      label: col.label,
+      title: col.title,
+      format: col.format,
+      fmt: (s: PitchingStats) => formatSeasonStat(s[col.key], col.format),
+    })),
+  ];
 }
-
-const ALL_COLUMNS: ColDef[] = [
-  { key: 'playerName',               label: 'Pitcher',  title: 'Pitcher name',                         fmt: (s) => s.playerName },
-  { key: 'inningsPitchedOuts',       label: 'IP',       title: 'Innings pitched',                      fmt: (s) => formatInningsPitched(s.inningsPitchedOuts) },
-  { key: 'totalPitches',             label: 'PC',       title: 'Pitch count',                          fmt: (s) => String(s.totalPitches) },
-  { key: 'strikePercentage',         label: 'STR%',     title: 'Strike percentage',                    fmt: (s) => pct(s.strikePercentage) },
-  { key: 'firstPitchStrikePercentage', label: 'FPS%',   title: 'First-pitch strike percentage',        fmt: (s) => pct(s.firstPitchStrikePercentage) },
-  { key: 'threeBallCountPercentage', label: '3B%',      title: '% of PAs with a 3-ball count',         fmt: (s) => pct(s.threeBallCountPercentage) },
-  { key: 'threeZeroCountPercentage', label: '30CNT',  title: '% of PAs starting with 3 straight balls (3-0 count)', fmt: (s) => pct(s.threeZeroCountPercentage) },
-  { key: 'era',                      label: 'ERA',      title: 'Earned run average (per 7 innings)',    fmt: (s) => dec(s.era) },
-  { key: 'whip',                     label: 'WHIP',     title: 'Walks + hits per inning pitched',       fmt: (s) => dec(s.whip) },
-  { key: 'strikeoutsPerSeven',       label: 'K/7',      title: 'Strikeouts per 7 innings',             fmt: (s) => dec(s.strikeoutsPerSeven) },
-  { key: 'walksPerSeven',            label: 'BB/7',     title: 'Walks per 7 innings',                  fmt: (s) => dec(s.walksPerSeven) },
-  { key: 'hitsAllowed',              label: 'H',        title: 'Hits allowed',                         fmt: (s) => String(s.hitsAllowed) },
-  { key: 'walksAllowed',             label: 'BB',       title: 'Walks',                                fmt: (s) => String(s.walksAllowed) },
-  { key: 'strikeouts',               label: 'K',        title: 'Strikeouts',                           fmt: (s) => String(s.strikeouts) },
-  { key: 'hitBatters',               label: 'HBP',      title: 'Hit batters',                          fmt: (s) => String(s.hitBatters) },
-  { key: 'wildPitches',              label: 'WP',       title: 'Wild pitches',                         fmt: (s) => String(s.wildPitches) },
-];
-
-const TIER_KEYS: Record<StatTier, Set<SortKey>> = {
-  youth: new Set<SortKey>([
-    'playerName', 'inningsPitchedOuts', 'totalPitches',
-    'strikePercentage', 'firstPitchStrikePercentage',
-    'era', 'walksAllowed', 'strikeouts', 'wildPitches', 'hitBatters',
-  ]),
-  high_school: new Set<SortKey>([
-    'playerName', 'inningsPitchedOuts', 'totalPitches',
-    'strikePercentage', 'firstPitchStrikePercentage', 'threeBallCountPercentage', 'threeZeroCountPercentage',
-    'era', 'whip', 'strikeoutsPerSeven', 'walksPerSeven',
-    'hitsAllowed', 'walksAllowed', 'strikeouts', 'hitBatters', 'wildPitches',
-  ]),
-  college: new Set<SortKey>(ALL_COLUMNS.map((c) => c.key)),
-};
-
-// Columns visible on the free subscription tier (counting stats + ERA only)
-const FREE_TIER_PITCHING_KEYS = new Set<SortKey>([
-  'playerName', 'inningsPitchedOuts', 'totalPitches',
-  'era', 'hitsAllowed', 'walksAllowed', 'strikeouts', 'hitBatters', 'wildPitches',
-]);
 
 // Ball-strike count grid
 const COUNT_ROWS = [0, 1, 2, 3];
@@ -109,14 +73,7 @@ export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_s
   const isAdvanced = hasFeature(subscriptionTier, Feature.ADVANCED_PITCHING_STATS);
   const rest = complianceMap && today ? { complianceMap, today } : null;
 
-  const columns = useMemo(
-    () => ALL_COLUMNS.filter((col) => {
-      if (!TIER_KEYS[tier].has(col.key)) return false;
-      if (!isAdvanced && !FREE_TIER_PITCHING_KEYS.has(col.key)) return false;
-      return true;
-    }),
-    [tier, isAdvanced],
-  );
+  const columns = useMemo(() => statColumns(tier, isAdvanced), [tier, isAdvanced]);
 
   function handleSort(key: SortKey) {
     if (key === sortKey) {
@@ -139,6 +96,7 @@ export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_s
     const bf = isFinite(bn) ? bn : 1e10;
     return sortAsc ? af - bf : bf - af;
   });
+  const totals = pitchingTotals(sorted);
 
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-200">
@@ -221,7 +179,7 @@ export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_s
                   col.key === 'playerName' ? 'font-bold' : ''
                 }`}
               >
-                {col.key === 'playerName' ? 'Totals' : computePitchingTotal(sorted, col)}
+                {col.key === 'playerName' || !col.format ? 'Totals' : formatSeasonStat(totals[col.key], col.format)}
               </td>
             ))}
             {rest && <td className="px-3 py-3" />}
@@ -230,44 +188,6 @@ export function PitchingStatsTable({ stats, complianceMap, today, tier = 'high_s
       </table>
     </div>
   );
-}
-
-function computePitchingTotal(rows: PitchingStats[], col: ColDef): string {
-  const t = rows.reduce((acc, s) => ({
-    ip: acc.ip + s.inningsPitchedOuts,
-    pc: acc.pc + s.totalPitches,
-    str: acc.str + s.strikes,
-    fps: acc.fps + s.firstPitchStrikes,
-    tpa: acc.tpa + s.totalPAs,
-    tb3: acc.tb3 + s.threeBallCountPAs,
-    t30: acc.t30 + s.threeZeroCountPAs,
-    h: acc.h + s.hitsAllowed,
-    r: acc.r + s.runsAllowed,
-    bb: acc.bb + s.walksAllowed,
-    k: acc.k + s.strikeouts,
-    hbp: acc.hbp + s.hitBatters,
-    wp: acc.wp + s.wildPitches,
-  }), { ip: 0, pc: 0, str: 0, fps: 0, tpa: 0, tb3: 0, t30: 0, h: 0, r: 0, bb: 0, k: 0, hbp: 0, wp: 0 });
-
-  const ipDec = t.ip / 3;
-  switch (col.key) {
-    case 'inningsPitchedOuts': return formatInningsPitched(t.ip);
-    case 'totalPitches': return String(t.pc);
-    case 'strikePercentage': return pct(t.pc > 0 ? t.str / t.pc : NaN);
-    case 'firstPitchStrikePercentage': return pct(t.tpa > 0 ? t.fps / t.tpa : NaN);
-    case 'threeBallCountPercentage': return pct(t.tpa > 0 ? t.tb3 / t.tpa : NaN);
-    case 'threeZeroCountPercentage': return pct(t.tpa > 0 ? t.t30 / t.tpa : NaN);
-    case 'era': return dec(ipDec > 0 ? (t.r * 7) / ipDec : NaN);
-    case 'whip': return dec(ipDec > 0 ? (t.bb + t.h) / ipDec : NaN);
-    case 'strikeoutsPerSeven': return dec(ipDec > 0 ? (t.k * 7) / ipDec : NaN);
-    case 'walksPerSeven': return dec(ipDec > 0 ? (t.bb * 7) / ipDec : NaN);
-    case 'hitsAllowed': return String(t.h);
-    case 'walksAllowed': return String(t.bb);
-    case 'strikeouts': return String(t.k);
-    case 'hitBatters': return String(t.hbp);
-    case 'wildPitches': return String(t.wp);
-    default: return '';
-  }
 }
 
 function ComplianceBadge({
@@ -281,30 +201,14 @@ function ComplianceBadge({
     return <span className="text-xs text-gray-400">—</span>;
   }
 
-  const { requiredRestDays, canPitchNextDay, lastGameDate, pitches7d } = compliance;
+  const { pitches7d } = compliance;
   const weekly =
     pitches7d != null ? (
       <span className="ml-1 text-[10px] font-normal text-gray-500">· {pitches7d} 7d</span>
     ) : null;
 
-  if (requiredRestDays == null || requiredRestDays === 0 || canPitchNextDay) {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
-        Eligible{weekly}
-      </span>
-    );
-  }
-
-  let daysElapsed = 0;
-  if (lastGameDate) {
-    const last = new Date(lastGameDate);
-    const now = new Date(today);
-    daysElapsed = Math.floor((now.getTime() - last.getTime()) / 86_400_000);
-  }
-
-  const daysRemaining = Math.max(0, requiredRestDays - daysElapsed);
-
-  if (daysRemaining === 0) {
+  const rest = pitcherRestStatus(compliance, today);
+  if (rest.eligible) {
     return (
       <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
         Eligible{weekly}
@@ -314,7 +218,7 @@ function ComplianceBadge({
 
   return (
     <span className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded-full px-2 py-0.5">
-      {daysRemaining}d rest{weekly}
+      {rest.daysRemaining}d rest{weekly}
     </span>
   );
 }
