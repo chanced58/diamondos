@@ -29,3 +29,4 @@ export * from './facility';
 export * from './season-stats';
 export * from './bullpen';
 export * from './league-stats';
+export * from './opponent-team';

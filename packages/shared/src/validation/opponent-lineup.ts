@@ -18,7 +18,8 @@ export const saveOpponentTeamInputSchema = z.object({
 });
 export type SaveOpponentTeamInput = z.input<typeof saveOpponentTeamInputSchema>;
 
-const opponentPlayerFields = {
+/** An opponent player's editable fields, shared with the team-scoped roster in `opponent-team.ts`. */
+export const opponentPlayerFields = {
   firstName: z.string().trim().min(1, 'First and last name are required.').max(60, 'Name is too long.'),
   lastName: z.string().trim().min(1, 'First and last name are required.').max(60, 'Name is too long.'),
   /** Text: opponent jerseys arrive as "07", "00". Blank = none. */
