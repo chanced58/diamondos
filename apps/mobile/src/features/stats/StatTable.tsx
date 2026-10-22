@@ -90,7 +90,7 @@ export function StatTable<Row>({
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View>
-          <View className={`${rowClass} flex-row bg-gray-50`}>
+          <View className={`${rowClass} flex-row items-center bg-gray-50`}>
             {columns.map((column) => (
               <TouchableOpacity
                 key={column.key}
@@ -99,6 +99,7 @@ export function StatTable<Row>({
                 accessibilityLabel={onSort ? `Sort by ${column.label}` : undefined}
                 onPress={() => onSort?.(column.key)}
                 style={{ width: CELL_WIDTH }}
+                className="h-10 justify-center"
               >
                 <Text numberOfLines={1} className={`text-center text-xs font-semibold ${headerText(column.key)}`}>
                   {column.label}
@@ -108,7 +109,7 @@ export function StatTable<Row>({
             ))}
           </View>
           {rows.map((row) => (
-            <View key={rowKey(row)} className={`${rowClass} flex-row`}>
+            <View key={rowKey(row)} className={`${rowClass} flex-row items-center`}>
               {columns.map((column) => (
                 <Text
                   key={column.key}
@@ -121,7 +122,7 @@ export function StatTable<Row>({
             </View>
           ))}
           {totals && (
-            <View className={`${rowClass} flex-row bg-gray-50`}>
+            <View className={`${rowClass} flex-row items-center bg-gray-50`}>
               {columns.map((column) => (
                 <Text key={column.key} style={{ width: CELL_WIDTH }} className="text-center text-sm font-semibold text-gray-700">
                   {totals[column.key] ?? ''}

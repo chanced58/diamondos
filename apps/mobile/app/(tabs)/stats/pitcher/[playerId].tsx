@@ -53,7 +53,7 @@ export default function PitcherDetailScreen() {
         <Stat label="Pitches" value={String(pitcher.totalPitches)} />
         <Stat label="ERA" value={formatSeasonStat(pitcher.era, 'dec')} />
         <Stat label="Strike %" value={formatSeasonStat(pitcher.strikePercentage, 'pct')} />
-        <Stat label="First-pitch K %" value={formatSeasonStat(pitcher.firstPitchStrikePercentage, 'pct')} />
+        <Stat label="First-pitch strike %" value={formatSeasonStat(pitcher.firstPitchStrikePercentage, 'pct')} />
         <Stat label="3-ball count %" value={formatSeasonStat(pitcher.threeBallCountPercentage, 'pct')} />
         <Stat label="Batters faced" value={String(pitcher.totalPAs)} />
         <Stat label="Strikes / balls" value={`${pitcher.strikes} / ${pitcher.balls}`} />

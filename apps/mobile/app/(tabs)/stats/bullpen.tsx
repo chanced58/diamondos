@@ -57,14 +57,17 @@ export default function BullpenScreen() {
 
   const plan = query.data;
   const counts = plan ? countByStatus(plan.pitchers) : null;
+  // The day asked for, not the plan on screen: while a day loads the last plan
+  // stays up, and stepping from its date would repeat the same day.
+  const shownDate = date ?? plan?.date;
 
   return (
     <View className="flex-1 bg-gray-50">
       {header}
       <TeamSwitcher />
-      {plan && (
+      {plan && shownDate && (
         <View className="flex-row items-center justify-between px-4 py-2 bg-white border-b border-gray-200">
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Previous day" hitSlop={8} onPress={() => setDate(addDays(plan.date, -1))}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Previous day" hitSlop={8} onPress={() => setDate(addDays(shownDate, -1))}>
             <Text className="text-blue-700 text-base">‹ Prev</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -74,10 +77,10 @@ export default function BullpenScreen() {
             onPress={() => setDate(undefined)}
             className="items-center"
           >
-            <Text className="text-sm font-semibold text-gray-900">{formatPlanDate(plan.date)}</Text>
+            <Text className="text-sm font-semibold text-gray-900">{formatPlanDate(shownDate)}</Text>
             <Text className="text-xs text-gray-500">{date === undefined ? DATE_SOURCE[plan.dateSource] : 'Tap for the next game'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Next day" hitSlop={8} onPress={() => setDate(addDays(plan.date, 1))}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Next day" hitSlop={8} onPress={() => setDate(addDays(shownDate, 1))}>
             <Text className="text-blue-700 text-base">Next ›</Text>
           </TouchableOpacity>
         </View>
