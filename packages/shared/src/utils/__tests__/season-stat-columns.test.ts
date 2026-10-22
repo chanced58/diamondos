@@ -57,11 +57,12 @@ describe('totals', () => {
     expect(totals.qabPct).toBeCloseTo(2 / 4);
   });
 
-  it('should recompute pitching rates per 7 innings and leave rates empty with no outs', () => {
+  it('should recompute pitching rates per 7 innings, ERA from earned runs, and leave rates empty with no outs', () => {
     const pitcher = { inningsPitchedOuts: 21, totalPitches: 100, strikes: 60, firstPitchStrikes: 12, totalPAs: 20,
-      threeBallCountPAs: 4, threeZeroCountPAs: 1, hitsAllowed: 5, runsAllowed: 2, walksAllowed: 3, strikeouts: 7,
-      hitBatters: 1, wildPitches: 0 };
+      threeBallCountPAs: 4, threeZeroCountPAs: 1, hitsAllowed: 5, runsAllowed: 3, earnedRunsAllowed: 2, walksAllowed: 3,
+      strikeouts: 7, hitBatters: 1, wildPitches: 0 };
     const totals = pitchingTotals([pitcher]);
+    // Earned runs only, like each pitcher's own ERA: the unearned run doesn't count.
     expect(totals.era).toBeCloseTo(2);
     expect(totals.whip).toBeCloseTo(8 / 7);
     expect(totals.strikePercentage).toBeCloseTo(0.6);
@@ -70,11 +71,15 @@ describe('totals', () => {
 });
 
 describe('pitcherRestStatus', () => {
-  it('should count rest days still owed from the last outing', () => {
-    expect(pitcherRestStatus({ requiredRestDays: 3, canPitchNextDay: false, lastGameDate: '2026-10-20' }, '2026-10-21'))
-      .toEqual({ eligible: false, daysRemaining: 2 });
-    expect(pitcherRestStatus({ requiredRestDays: 3, canPitchNextDay: false, lastGameDate: '2026-10-17' }, '2026-10-21'))
-      .toEqual({ eligible: true });
+  it('should count rest days still owed, clearing the day after the last one like the bullpen planner', () => {
+    const owedTwo = { requiredRestDays: 2, canPitchNextDay: false, lastGameDate: '2026-10-20' };
+    // Tuesday's outing: Wednesday and Thursday are rest, Friday is eligible.
+    expect(pitcherRestStatus(owedTwo, '2026-10-20')).toEqual({ eligible: false, daysRemaining: 2 });
+    expect(pitcherRestStatus(owedTwo, '2026-10-21')).toEqual({ eligible: false, daysRemaining: 2 });
+    expect(pitcherRestStatus(owedTwo, '2026-10-22')).toEqual({ eligible: false, daysRemaining: 1 });
+    expect(pitcherRestStatus(owedTwo, '2026-10-23')).toEqual({ eligible: true });
+    expect(pitcherRestStatus({ ...owedTwo, lastGameDate: '2026-11-01' }, '2026-11-03'))
+      .toEqual({ eligible: false, daysRemaining: 1 });
     expect(pitcherRestStatus({ requiredRestDays: 0, canPitchNextDay: false, lastGameDate: '2026-10-21' }, '2026-10-21'))
       .toEqual({ eligible: true });
     expect(pitcherRestStatus({ requiredRestDays: 2, canPitchNextDay: true, lastGameDate: '2026-10-21' }, '2026-10-21'))

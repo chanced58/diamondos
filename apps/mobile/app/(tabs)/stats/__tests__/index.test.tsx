@@ -69,7 +69,7 @@ it("should show the active season's pitchers with their rest, and open a pitcher
   render(<StatsScreen />);
 
   expect(screen.getByText('Spring · 2 games')).toBeTruthy();
-  expect(screen.getByText('1d')).toBeTruthy();
+  expect(screen.getByText('2d')).toBeTruthy();
   fireEvent.press(screen.getByText('Luke Fox'));
   expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/stats/pitcher/[playerId]', params: { playerId: 'p1' } });
 });

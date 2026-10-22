@@ -35,7 +35,7 @@ function batter(id: string, over: Partial<SeasonBattingRow> = {}): SeasonBatting
   };
 }
 
-const resting = { pitchCount: 70, requiredRestDays: 3, canPitchNextDay: false, lastGameDate: '2026-10-20', pitches7d: 70 };
+const resting = { pitchCount: 70, requiredRestDays: 2, canPitchNextDay: false, lastGameDate: '2026-10-20', pitches7d: 70 };
 
 describe('columns', () => {
   it("should show the plan's and tier's columns and format missing rates as ---", () => {

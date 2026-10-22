@@ -204,19 +204,19 @@ export function visiblePitchingColumns(tier: StatTier, advanced: boolean): Seaso
 
 type PitchingCounts = Pick<PitchingStats,
   | 'inningsPitchedOuts' | 'totalPitches' | 'strikes' | 'firstPitchStrikes' | 'totalPAs' | 'threeBallCountPAs'
-  | 'threeZeroCountPAs' | 'hitsAllowed' | 'runsAllowed' | 'walksAllowed' | 'strikeouts' | 'hitBatters' | 'wildPitches'
+  | 'threeZeroCountPAs' | 'hitsAllowed' | 'earnedRunsAllowed' | 'walksAllowed' | 'strikeouts' | 'hitBatters' | 'wildPitches'
 >;
 
-/** The totals row, rates recomputed from the summed counts (ERA per 7 innings). */
+/** The totals row, rates recomputed from the summed counts (ERA: earned runs per 7 innings, like each row). */
 export function pitchingTotals(rows: PitchingCounts[]): Record<SeasonPitchingStatKey, number> {
   const t = rows.reduce(
     (acc, s) => ({
       ip: acc.ip + s.inningsPitchedOuts, pc: acc.pc + s.totalPitches, str: acc.str + s.strikes,
       fps: acc.fps + s.firstPitchStrikes, tpa: acc.tpa + s.totalPAs, tb3: acc.tb3 + s.threeBallCountPAs,
-      t30: acc.t30 + s.threeZeroCountPAs, h: acc.h + s.hitsAllowed, r: acc.r + s.runsAllowed,
+      t30: acc.t30 + s.threeZeroCountPAs, h: acc.h + s.hitsAllowed, er: acc.er + s.earnedRunsAllowed,
       bb: acc.bb + s.walksAllowed, k: acc.k + s.strikeouts, hbp: acc.hbp + s.hitBatters, wp: acc.wp + s.wildPitches,
     }),
-    { ip: 0, pc: 0, str: 0, fps: 0, tpa: 0, tb3: 0, t30: 0, h: 0, r: 0, bb: 0, k: 0, hbp: 0, wp: 0 },
+    { ip: 0, pc: 0, str: 0, fps: 0, tpa: 0, tb3: 0, t30: 0, h: 0, er: 0, bb: 0, k: 0, hbp: 0, wp: 0 },
   );
   const innings = t.ip / 3;
   return {
@@ -226,7 +226,7 @@ export function pitchingTotals(rows: PitchingCounts[]): Record<SeasonPitchingSta
     firstPitchStrikePercentage: t.tpa > 0 ? t.fps / t.tpa : NaN,
     threeBallCountPercentage: t.tpa > 0 ? t.tb3 / t.tpa : NaN,
     threeZeroCountPercentage: t.tpa > 0 ? t.t30 / t.tpa : NaN,
-    era: innings > 0 ? (t.r * 7) / innings : NaN,
+    era: innings > 0 ? (t.er * 7) / innings : NaN,
     whip: innings > 0 ? (t.bb + t.h) / innings : NaN,
     strikeoutsPerSeven: innings > 0 ? (t.k * 7) / innings : NaN,
     walksPerSeven: innings > 0 ? (t.bb * 7) / innings : NaN,
@@ -250,16 +250,21 @@ export interface PitcherComplianceSnapshot {
 /**
  * A pitcher's rest from their latest pitch count, as of `today`
  * (YYYY-MM-DD): eligible, or the whole days of rest still owed.
+ *
+ * Rest days are the full days after the outing, so a pitcher owed two clears
+ * on the third day (`getEligibleDate`, the Bullpen Planner's rule): after a
+ * Tuesday outing, Wednesday and Thursday are rest and Friday is eligible.
  */
 export function pitcherRestStatus(
   compliance: PitcherComplianceSnapshot,
   today: string,
 ): { eligible: true } | { eligible: false; daysRemaining: number } {
   const { requiredRestDays, canPitchNextDay, lastGameDate } = compliance;
-  if (requiredRestDays == null || requiredRestDays === 0 || canPitchNextDay) return { eligible: true };
-  const elapsed = lastGameDate
-    ? Math.floor((Date.parse(today) - Date.parse(lastGameDate)) / 86_400_000)
-    : 0;
-  const daysRemaining = Math.max(0, requiredRestDays - elapsed);
-  return daysRemaining === 0 ? { eligible: true } : { eligible: false, daysRemaining };
+  if (requiredRestDays == null || requiredRestDays === 0 || canPitchNextDay || !lastGameDate) return { eligible: true };
+  // Both are YYYY-MM-DD, parsed as UTC midnights: whole days, no DST drift.
+  const daysSinceOuting = Math.round((Date.parse(today) - Date.parse(lastGameDate)) / 86_400_000);
+  const daysUntilEligible = requiredRestDays + 1 - daysSinceOuting;
+  if (daysUntilEligible <= 0) return { eligible: true };
+  // On the day of the outing itself, every rest day is still ahead.
+  return { eligible: false, daysRemaining: Math.min(requiredRestDays, daysUntilEligible) };
 }
