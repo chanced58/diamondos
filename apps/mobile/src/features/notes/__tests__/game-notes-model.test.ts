@@ -35,6 +35,14 @@ describe('coachNotesChanges', () => {
     });
   });
 
+  it('should count edits for a player who joined after the form opened', () => {
+    const original = coachNotesDraftFrom(notes);
+    const draft = { ...original, assessments: { ...original.assessments, c: { attitude: 'Hustles' } as never } };
+    expect(coachNotesChanges(original, draft)).toEqual({
+      players: [{ playerId: 'c', assessment: { ...empty, attitude: 'Hustles' } }],
+    });
+  });
+
   it('should treat typing back the original text as no change', () => {
     const original = coachNotesDraftFrom(notes);
     const draft = { ...original, overallNotes: 'Windy day' };

@@ -3,7 +3,12 @@ import { ActivityIndicator, Alert, ScrollView, Text, TextInput, TouchableOpacity
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, ErrorState, SectionHeader } from '@baseball/ui';
-import { LINEUP_POSITIONS, POSITION_TO_DB, type OpponentRosterPlayer } from '@baseball/shared';
+import {
+  LINEUP_POSITIONS,
+  POSITION_TO_DB,
+  type OpponentLineupResponse,
+  type OpponentRosterPlayer,
+} from '@baseball/shared';
 import { useSyncContext } from '../../../../../src/providers/SyncProvider';
 import { useDiscardGuard } from '../../../../../src/features/forms/use-discard-guard';
 import {
@@ -100,9 +105,17 @@ export default function OpponentLineupScreen() {
   });
   const saveOrder = useMutation({
     mutationFn: (draft: OpponentAssignments) => saveOpponentLineup(gameId, lineupEntries(draft)),
-    onSuccess: async () => {
-      setOrderNotice('Batting order saved.');
+    onSuccess: async (_result, sent) => {
       await afterWrite();
+      // The server normalizes what it stores (a benched non-pitcher loses its
+      // position), so take its copy for everything that was sent; only edits
+      // made while the save was in flight stay as draft.
+      const saved = queryClient.getQueryData<OpponentLineupResponse>(opponentLineupQueryKey(gameId));
+      if (saved) {
+        const next = assignmentsFrom(saved);
+        setOrder((prev) => (prev ? { baseline: next, draft: rebaseAssignments(sent, prev.draft, next) } : prev));
+      }
+      setOrderNotice('Batting order saved.');
     },
   });
 

@@ -30,11 +30,15 @@ export async function loadGameHistory(
   if (!parsed.success) return invalidInput(parsed.error);
   const { gameId } = parsed.data;
 
-  const { data: game } = await db
+  const { data: game, error: gameError } = await db
     .from('games')
     .select('id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, opponent_team_id')
     .eq('id', gameId)
     .maybeSingle();
+  if (gameError) {
+    console.error(`[loadGameHistory] game=${gameId} actor=${actorUserId} game read failed:`, gameError);
+    return serviceError('failed', 'Failed to load the game history.');
+  }
   if (!game) return serviceError('not_found', 'Game not found.');
 
   const viewer = await resolveGameViewer(db, actorUserId, game.team_id as string);

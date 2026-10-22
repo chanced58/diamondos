@@ -29,7 +29,11 @@ export async function loadGameBoxScore(
   const { gameId } = parsed.data;
 
   // A light read authorizes before the expensive stat load.
-  const { data: meta } = await db.from('games').select('team_id, status').eq('id', gameId).maybeSingle();
+  const { data: meta, error: metaError } = await db.from('games').select('team_id, status').eq('id', gameId).maybeSingle();
+  if (metaError) {
+    console.error(`[loadGameBoxScore] game=${gameId} actor=${actorUserId} game read failed:`, metaError);
+    return serviceError('failed', 'Failed to load the box score.');
+  }
   if (!meta) return serviceError('not_found', 'Game not found.');
 
   const viewer = await resolveGameViewer(db, actorUserId, meta.team_id as string);

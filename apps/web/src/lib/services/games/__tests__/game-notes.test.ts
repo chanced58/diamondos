@@ -222,7 +222,7 @@ describe('savePlayerGameNotes', () => {
     const { db, calls } = fakeDb({ 'players.select': { data: null } });
     const result = await savePlayerGameNotes(db, 'parent-user', { gameId: GAME_ID, playerId: PLAYER_A, playerNotes: 'x' });
     expect(result).toMatchObject({ ok: false, code: 'forbidden' });
-    expect(calls[0].filters).toMatchObject({ id: PLAYER_A, user_id: 'parent-user' });
+    expect(calls[0].filters).toMatchObject({ id: PLAYER_A, user_id: 'parent-user', is_active: true });
     expect(calls.some((c) => c.op === 'upsert')).toBe(false);
   });
 

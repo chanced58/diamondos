@@ -58,6 +58,17 @@ describe('assignments', () => {
     });
   });
 
+  it("should settle on the server's copy after a save that normalized a benched player", () => {
+    const sent = { a: { order: null, position: 'shortstop' }, c: { order: 1, position: null } };
+    const draftNow = { ...sent, c: { order: 2, position: null } };
+    // The server drops a benched non-pitcher's position.
+    const saved = { a: { order: null, position: null }, c: { order: 1, position: null } };
+    const rebased = rebaseAssignments(sent, draftNow, saved);
+    expect(rebased).toEqual({ a: { order: null, position: null }, c: { order: 2, position: null } });
+    expect(assignmentsChanged(saved, rebased)).toBe(true);
+    expect(assignmentsChanged(saved, rebaseAssignments(sent, sent, saved))).toBe(false);
+  });
+
   it('should send every player, bench included, for the server to filter', () => {
     expect(lineupEntries({ a: { order: 1, position: null }, b: { order: null, position: 'pitcher' } })).toEqual([
       { opponentPlayerId: 'a', battingOrder: 1, startingPosition: null },

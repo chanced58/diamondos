@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   insertCorrectionEventsInputSchema,
+  isFlowEventType,
   replaceGameEventInputSchema,
   replayAtBatInputSchema,
   voidGameEventInputSchema,
@@ -21,6 +22,7 @@ type Corrected = ServiceResult<{ gameId: string }>;
 interface TargetEvent {
   id: string;
   sequence_number: number;
+  event_type: string;
   inning: number;
   is_top_of_inning: boolean;
   payload: Record<string, unknown> | null;
@@ -39,7 +41,7 @@ function replayPosition(target: TargetEvent): number {
 async function findEvents(db: SupabaseClient, gameId: string, eventIds: string[]): Promise<ServiceResult<TargetEvent[]>> {
   const { data, error } = await db
     .from('game_events')
-    .select('id, sequence_number, inning, is_top_of_inning, payload')
+    .select('id, sequence_number, event_type, inning, is_top_of_inning, payload')
     .eq('game_id', gameId)
     .in('id', eventIds);
   if (error) {
@@ -48,6 +50,9 @@ async function findEvents(db: SupabaseClient, gameId: string, eventIds: string[]
   }
   const found = (data ?? []) as TargetEvent[];
   if (found.length !== new Set(eventIds).size) return serviceError('not_found', 'Event not found in this game.');
+  if (found.some((target) => isFlowEventType(target.event_type))) {
+    return serviceError('invalid', 'The game start, end and earlier corrections cannot be corrected.');
+  }
   return serviceOk(found);
 }
 

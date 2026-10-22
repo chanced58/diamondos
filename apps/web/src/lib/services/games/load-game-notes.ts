@@ -43,7 +43,8 @@ export async function loadGameNotes(
   if (!parsed.success) return invalidInput(parsed.error);
   const { gameId } = parsed.data;
 
-  const { data: game } = await db.from('games').select('id, team_id').eq('id', gameId).maybeSingle();
+  const { data: game, error: gameError } = await db.from('games').select('id, team_id').eq('id', gameId).maybeSingle();
+  if (gameError) return loadFailed(gameId, actorUserId, 'game', gameError);
   if (!game) return serviceError('not_found', 'Game not found.');
   const teamId = game.team_id as string;
 

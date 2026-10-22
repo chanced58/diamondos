@@ -54,6 +54,17 @@ describe('voidGameEvent', () => {
     expect(inserted(calls)).toHaveLength(0);
   });
 
+  it('should refuse to void or replace a flow event', async () => {
+    for (const event_type of ['game_start', 'game_end', 'event_voided', 'pitch_reverted']) {
+      const { db, calls } = fakeDb({ 'game_events.select': { data: [{ ...target(EVENT_A, 1), event_type }] } });
+      expect(await voidGameEvent(db, 'coach', { gameId: GAME_ID, eventId: EVENT_A }, 'web')).toMatchObject({ ok: false, code: 'invalid' });
+      expect(
+        await replaceGameEvent(db, 'coach', { gameId: GAME_ID, eventId: EVENT_A, eventType: 'walk', payload: {} }, 'web'),
+      ).toMatchObject({ ok: false, code: 'invalid' });
+      expect(inserted(calls)).toHaveLength(0);
+    }
+  });
+
   it('should refuse anyone but a coach', async () => {
     mockGetAuthorizedCoach.mockResolvedValue({ error: 'Only coaches can perform this action.' });
     const { db, calls } = fakeDb();
@@ -217,6 +228,11 @@ describe('loadGameHistory', () => {
       },
     });
     if (result.ok) expect(result.data.events.map((e) => e.sequenceNumber)).toEqual([3, 4]);
+  });
+
+  it('should report a failed game read as failed, not as a missing game', async () => {
+    const { db } = fakeDb({ 'games.select': { error: { message: 'boom' } } });
+    expect(await loadGameHistory(db, 'u', { gameId: GAME_ID })).toMatchObject({ ok: false, code: 'failed' });
   });
 
   it('should answer 409 before the game starts and not_found to non-members', async () => {

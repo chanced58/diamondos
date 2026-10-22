@@ -4,6 +4,7 @@ import {
   EventType,
   HitTrajectory,
   HitType,
+  isFlowEventType,
   PitchOutcome,
   type GameEvent,
   type GameHistoryResponse,
@@ -39,9 +40,9 @@ export function correctionKind(event: GameEvent): CorrectionKind {
   return 'delete';
 }
 
-/** Events the history can't correct at all: the game's own start and end. */
+/** Flow events (start, end, void markers, reverts) can't be corrected; the server refuses them too. */
 export function isCorrectable(event: GameEvent): boolean {
-  return event.eventType !== EventType.GAME_START && event.eventType !== EventType.GAME_END;
+  return !isFlowEventType(event.eventType);
 }
 
 export interface Replacement {

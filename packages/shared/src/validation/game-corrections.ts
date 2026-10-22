@@ -24,6 +24,14 @@ const NON_CORRECTION_EVENT_TYPES: ReadonlySet<string> = new Set([
   EventType.PITCH_REVERTED,
 ]);
 
+/**
+ * Flow events are neither written nor targeted by a correction: voiding a
+ * start, end, void marker or revert would change how every later event replays.
+ */
+export function isFlowEventType(eventType: string): boolean {
+  return NON_CORRECTION_EVENT_TYPES.has(eventType);
+}
+
 const MAX_PAYLOAD_CHARS = 10_000;
 
 const gameId = z.string().uuid('Missing game ID.');

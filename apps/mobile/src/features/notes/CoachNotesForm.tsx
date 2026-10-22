@@ -7,7 +7,13 @@ import { GAME_NOTE_CATEGORIES, type GameNotesResponse, type GameNoteCategory } f
 import { describeApiError } from '../../lib/api-client';
 import { useDiscardGuard } from '../forms/use-discard-guard';
 import { gameNotesQueryKey, saveCoachNotes } from './game-notes-api';
-import { assessmentChanged, coachNotesChanges, coachNotesDraftFrom, type CoachNotesDraft } from './game-notes-model';
+import {
+  assessmentChanged,
+  coachNotesChanges,
+  coachNotesDraftFrom,
+  EMPTY_ASSESSMENT_DRAFT,
+  type CoachNotesDraft,
+} from './game-notes-model';
 import { NoteBody, NoteHeading, NoteInput } from './NoteText';
 
 /** Wide enough (iPad) to set the six assessment boxes two to a row. */
@@ -45,8 +51,18 @@ export function CoachNotesForm({ notes }: { notes: GameNotesResponse }) {
     setSavedAt(null);
     setDraft((current) => ({ ...current, ...patch }));
   };
-  const editCategory = (playerId: string, key: GameNoteCategory, value: string) =>
-    edit({ assessments: { ...draft.assessments, [playerId]: { ...draft.assessments[playerId], [key]: value } } });
+  // Functional, so two quick edits before a re-render both land; a player new
+  // since the form opened starts from blank.
+  const editCategory = (playerId: string, key: GameNoteCategory, value: string) => {
+    setSavedAt(null);
+    setDraft((current) => ({
+      ...current,
+      assessments: {
+        ...current.assessments,
+        [playerId]: { ...EMPTY_ASSESSMENT_DRAFT, ...current.assessments[playerId], [key]: value },
+      },
+    }));
+  };
 
   const toggle = (playerId: string) =>
     setExpanded((current) => {

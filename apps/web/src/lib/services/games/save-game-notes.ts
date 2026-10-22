@@ -104,6 +104,8 @@ export async function savePlayerGameNotes(
     .select('id, team_id')
     .eq('id', playerId)
     .eq('user_id', actorUserId)
+    // As loadGameNotes: only an active player record may write.
+    .eq('is_active', true)
     .maybeSingle();
   if (!player) return serviceError('forbidden', 'Player record not found for your account.');
 

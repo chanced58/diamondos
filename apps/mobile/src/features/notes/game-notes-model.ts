@@ -29,15 +29,23 @@ export function coachNotesDraftFrom(notes: GameNotesResponse): CoachNotesDraft {
   };
 }
 
+/** A player with no notes yet: every category blank. */
+export const EMPTY_ASSESSMENT_DRAFT: Record<GameNoteCategory, string> = Object.fromEntries(
+  GAME_NOTE_CATEGORIES.map(({ key }) => [key, '']),
+) as Record<GameNoteCategory, string>;
+
+/**
+ * A player missing from either copy (one who joined the roster after the
+ * form opened) counts as blank there, so their edits still count.
+ */
 export function assessmentChanged(
   original: CoachNotesDraft,
   draft: CoachNotesDraft,
   playerId: string,
 ): boolean {
-  const before = original.assessments[playerId];
-  const after = draft.assessments[playerId];
-  if (!before || !after) return false;
-  return GAME_NOTE_CATEGORIES.some(({ key }) => before[key] !== after[key]);
+  const before = original.assessments[playerId] ?? EMPTY_ASSESSMENT_DRAFT;
+  const after = draft.assessments[playerId] ?? EMPTY_ASSESSMENT_DRAFT;
+  return GAME_NOTE_CATEGORIES.some(({ key }) => (before[key] ?? '') !== (after[key] ?? ''));
 }
 
 /**
@@ -52,7 +60,7 @@ export function coachNotesChanges(original: CoachNotesDraft, draft: CoachNotesDr
   const players = Object.keys(draft.assessments)
     .filter((playerId) => assessmentChanged(original, draft, playerId))
     .map((playerId) => {
-      const values = draft.assessments[playerId];
+      const values = { ...EMPTY_ASSESSMENT_DRAFT, ...draft.assessments[playerId] };
       return {
         playerId,
         assessment: Object.fromEntries(
