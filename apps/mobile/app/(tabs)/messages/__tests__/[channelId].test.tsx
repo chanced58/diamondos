@@ -1,4 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { renderWithQuery } from '../../../../src/__tests__/render-with-query';
 import type { Message } from '../../../../src/db/models/Message';
 import type { Channel } from '../../../../src/db/models/Channel';
 
@@ -47,12 +49,26 @@ const mockMessage = {
   syncedAt: undefined,
 } as unknown as Message;
 
+const mockBack = jest.fn();
 jest.mock('expo-router', () => ({
   __esModule: true,
-  Stack: {
-    Screen: ({ options: _options }: { options: unknown }) => null,
-  },
+  router: { back: () => mockBack() },
+  // Render the header's right button so tests can press it.
+  Stack: { Screen: ({ options }: { options?: { headerRight?: () => JSX.Element } }) => options?.headerRight?.() ?? null },
   useLocalSearchParams: () => ({ channelId: 'channel-123' }),
+}));
+
+const mockUseChannelDetail = jest.fn();
+const mockDeleteMessage = jest.fn();
+const mockDeleteChannel = jest.fn();
+jest.mock('../../../../src/features/messaging/messaging-api', () => ({
+  useChannelDetail: (id: string) => mockUseChannelDetail(id),
+  deleteMessage: (id: string) => mockDeleteMessage(id),
+  deleteChannel: (id: string) => mockDeleteChannel(id),
+}));
+const mockRequestSync = jest.fn();
+jest.mock('../../../../src/features/messaging/use-channel-realtime', () => ({
+  useChannelRealtime: () => ({ requestSync: mockRequestSync }),
 }));
 
 jest.mock('expo-crypto', () => ({
@@ -107,7 +123,7 @@ jest.mock('@nozbe/with-observables', () => {
           messages: mockMessages,
           channel: mockChannelData,
         };
-        return <Component {...observables} />;
+        return <Component {..._props} {...observables} />;
       };
     };
 });
@@ -116,16 +132,21 @@ jest.mock('@nozbe/with-observables', () => {
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const ChannelScreen = require('../[channelId]').default;
 
+function renderScreen() {
+  return renderWithQuery(<ChannelScreen />);
+}
+
 describe('MessageThread — ListEmptyComponent (W9)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockMessages = [];
     mockChannelData = mockChannel;
+    mockUseChannelDetail.mockReturnValue({ data: undefined });
   });
 
   it('should render "No messages yet." when channel is empty', async () => {
     mockMessages = [];
-    render(<ChannelScreen />);
+    renderScreen();
 
     await waitFor(
       () => {
@@ -137,7 +158,7 @@ describe('MessageThread — ListEmptyComponent (W9)', () => {
 
   it('should not render "No messages yet." when channel has messages', async () => {
     mockMessages = [mockMessage];
-    render(<ChannelScreen />);
+    renderScreen();
 
     // The message should be rendered
     await waitFor(() => {
@@ -146,5 +167,78 @@ describe('MessageThread — ListEmptyComponent (W9)', () => {
 
     // Empty state should not appear
     expect(screen.queryByText('No messages yet.')).toBeFalsy();
+  });
+});
+
+describe('MessageThread — managing messages', () => {
+  const sent = { ...mockMessage, syncedAt: Date.now() } as unknown as Message;
+  const detail = (isCoach: boolean, channelType = 'topic') => ({
+    data: {
+      channel: { id: 'channel-123', teamId: 'team-1', channelType, displayName: 'Pitchers', description: null },
+      canPost: true,
+      isCoach,
+      canDeleteChannel: isCoach && channelType !== 'direct',
+      memberRoles: { 'other-user-id': 'head_coach' },
+    },
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockChannelData = mockChannel;
+    jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      buttons?.find((b) => b.style === 'destructive')?.onPress?.();
+    });
+  });
+
+  it("should show the sender's role badge", () => {
+    mockMessages = [sent];
+    mockUseChannelDetail.mockReturnValue(detail(false));
+    renderScreen();
+    expect(screen.getByText('Coach')).toBeTruthy();
+  });
+
+  it("should let a coach delete someone else's message, then sync", async () => {
+    mockMessages = [sent];
+    mockUseChannelDetail.mockReturnValue(detail(true));
+    mockDeleteMessage.mockResolvedValue({ messageId: 'msg-remote-1' });
+    renderScreen();
+
+    await act(async () => {
+      fireEvent(screen.getByText('Hello world'), 'longPress');
+    });
+    await waitFor(() => expect(mockDeleteMessage).toHaveBeenCalledWith('msg-remote-1'));
+    expect(mockRequestSync).toHaveBeenCalled();
+  });
+
+  it("should not delete someone else's message for a player, or one still queued offline", () => {
+    mockMessages = [sent];
+    mockUseChannelDetail.mockReturnValue(detail(false));
+    const { unmount } = renderScreen();
+    fireEvent(screen.getByText('Hello world'), 'longPress');
+    expect(mockDeleteMessage).not.toHaveBeenCalled();
+    unmount();
+
+    mockMessages = [{ ...mockMessage, senderId: 'test-user-id' } as unknown as Message];
+    mockUseChannelDetail.mockReturnValue(detail(true));
+    renderScreen();
+    fireEvent(screen.getByText('Hello world'), 'longPress');
+    expect(mockDeleteMessage).not.toHaveBeenCalled();
+  });
+
+  it('should let a coach delete a topic channel, but not a DM', async () => {
+    mockMessages = [];
+    mockUseChannelDetail.mockReturnValue(detail(true));
+    mockDeleteChannel.mockResolvedValue({ channelId: 'channel-123' });
+    const { unmount } = renderScreen();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Delete channel'));
+    });
+    await waitFor(() => expect(mockDeleteChannel).toHaveBeenCalledWith('channel-123'));
+    expect(mockBack).toHaveBeenCalled();
+    unmount();
+
+    mockUseChannelDetail.mockReturnValue(detail(true, 'direct'));
+    renderScreen();
+    expect(screen.queryByLabelText('Delete channel')).toBeNull();
   });
 });

@@ -1,14 +1,17 @@
+import { useState } from 'react';
 import { ActivityIndicator, View, Text, FlatList, TouchableOpacity } from 'react-native';
-import { router } from 'expo-router';
+import { Stack, router } from 'expo-router';
+import { Feature } from '@baseball/shared';
 import { Q } from '@nozbe/watermelondb';
 import withObservables from '@nozbe/with-observables';
 import { database } from '../../../src/db';
 import type { Channel } from '../../../src/db/models/Channel';
 import type { Message } from '../../../src/db/models/Message';
 import { useAuth } from '../../../src/providers/AuthProvider';
-import { useRole } from '../../../src/providers/RoleProvider';
+import { useCan, useRole } from '../../../src/providers/RoleProvider';
 import { TeamSwitcher } from '../../../src/features/teams/TeamSwitcher';
-import { resolveChannelLabel } from '../../../src/features/messaging/channel-label';
+import { OptionSheet } from '../../../src/features/opponents/OptionSheet';
+import { resolveChannelLabel, visibleChannels } from '../../../src/features/messaging/channel-label';
 
 interface ChannelWithMessages {
   channel: Channel;
@@ -95,7 +98,9 @@ const ChannelListEnhanced = withObservables(['teamId'], ({ teamId }: { teamId: s
   messages: database.get<Message>('messages').query().observe(),
 }))((props: { teamId: string; channels: Channel[]; messages: Message[] }) => {
   const { user } = useAuth();
-  const channelsWithMessages: ChannelWithMessages[] = props.channels.map((channel) => ({
+  const canTopics = useCan(Feature.TOPIC_CHANNELS);
+  const canDms = useCan(Feature.DIRECT_MESSAGES);
+  const channelsWithMessages: ChannelWithMessages[] = visibleChannels(props.channels, { canTopics, canDms }).map((channel) => ({
     channel,
     messages: props.messages.filter((m) => m.channelRemoteId === channel.remoteId),
   }));
@@ -107,10 +112,39 @@ const ChannelListEnhanced = withObservables(['teamId'], ({ teamId }: { teamId: s
 
 export default function MessagesScreen() {
   const { activeTeam, loading } = useRole();
+  const isCoach = useCan('team.coach');
+  const canDms = useCan(Feature.DIRECT_MESSAGES);
+  const [choosing, setChoosing] = useState(false);
+
+  const actions = [
+    ...(isCoach ? [{ key: 'channel', label: 'New channel', onPress: () => router.push('/(tabs)/messages/new') }] : []),
+    ...(canDms ? [{ key: 'dm', label: 'New direct message', onPress: () => router.push('/(tabs)/messages/new-dm') }] : []),
+  ];
+
+  const header = (
+    <Stack.Screen
+      options={{
+        headerRight:
+          activeTeam && actions.length > 0
+            ? () => (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="New conversation"
+                  hitSlop={8}
+                  onPress={() => (actions.length === 1 ? actions[0].onPress() : setChoosing(true))}
+                >
+                  <Text className="text-white text-2xl font-semibold">+</Text>
+                </TouchableOpacity>
+              )
+            : undefined,
+      }}
+    />
+  );
 
   if (loading) {
     return (
       <View className="flex-1 items-center justify-center bg-gray-50">
+        {header}
         <ActivityIndicator />
       </View>
     );
@@ -118,6 +152,18 @@ export default function MessagesScreen() {
 
   return (
     <View className="flex-1 bg-gray-50">
+      {header}
+      <OptionSheet
+        title={choosing ? 'Start a conversation' : null}
+        options={actions.map((action) => ({
+          ...action,
+          onPress: () => {
+            setChoosing(false);
+            action.onPress();
+          },
+        }))}
+        onClose={() => setChoosing(false)}
+      />
       <TeamSwitcher />
       {activeTeam ? (
         <ChannelListEnhanced teamId={activeTeam.teamId} />

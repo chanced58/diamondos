@@ -1,45 +1,72 @@
 import { View, Text, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from 'react-native';
-import { useLocalSearchParams, Stack } from 'expo-router';
+import { useLocalSearchParams, Stack, router } from 'expo-router';
 import { useState, useRef } from 'react';
 import { randomUUID } from 'expo-crypto';
 import { map } from 'rxjs';
 import { Q } from '@nozbe/watermelondb';
 import withObservables from '@nozbe/with-observables';
+import { useMutation } from '@tanstack/react-query';
+import type { ChannelDetailResponse } from '@baseball/shared';
 import { database } from '../../../src/db';
 import type { Message } from '../../../src/db/models/Message';
 import type { Channel } from '../../../src/db/models/Channel';
 import { useAuth } from '../../../src/providers/AuthProvider';
 import { getSupabaseClient } from '../../../src/lib/supabase';
+import { describeApiError } from '../../../src/lib/api-client';
+import { deleteChannel, deleteMessage, useChannelDetail } from '../../../src/features/messaging/messaging-api';
+import { useChannelRealtime } from '../../../src/features/messaging/use-channel-realtime';
+import { roleBadge } from '../../../src/features/messaging/role-badges';
 import { formatTime } from '@baseball/shared';
 
 interface MessageThreadProps {
+  channelRemoteId: string;
   messages: Message[];
   channel: Channel | undefined;
 }
 
-function MessageThread({ messages, channel }: MessageThreadProps) {
+function MessageThread({ channelRemoteId, messages, channel }: MessageThreadProps) {
   const { user } = useAuth();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
+  const detail = useChannelDetail(channelRemoteId);
+  const { requestSync } = useChannelRealtime(channelRemoteId);
 
-  const canPost = channel?.canPost ?? false;
+  // The device's copy decides posting offline; a channel just created or
+  // opened before its first sync falls back to the server's answer.
+  const canPost = channel?.canPost ?? detail.data?.canPost ?? false;
+  const title = detail.data?.channel.displayName ?? channel?.name ?? 'Channel';
+
+  const removeMessage = useMutation({
+    mutationFn: (messageId: string) => deleteMessage(messageId),
+    onSuccess: requestSync,
+    onError: (error) => Alert.alert('Could not delete the message', describeApiError(error)),
+  });
+  const removeChannel = useMutation({
+    mutationFn: () => deleteChannel(channelRemoteId),
+    onSuccess: () => {
+      requestSync();
+      router.back();
+    },
+    onError: (error) => Alert.alert('Could not delete the channel', describeApiError(error)),
+  });
 
   async function handleSend() {
     const body = text.trim();
-    if (!body || !channel || !user || sendingRef.current) return;
+    if (!body || !user || sendingRef.current) return;
     sendingRef.current = true;
     setSending(true);
 
     try {
       const supabase = getSupabaseClient();
       const { error } = await supabase.from('messages').insert({
-        channel_id: channel.remoteId,
+        channel_id: channelRemoteId,
         sender_id: user.id,
         body,
       });
       if (error) throw error;
       setText('');
+      requestSync();
     } catch (err) {
       console.warn('Message send failed; queueing offline message', err);
       await database.write(async () => {
@@ -51,7 +78,7 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
           record._raw.id = messageId;
           record.remoteId = messageId;
           record.channelId = '';
-          record.channelRemoteId = channel.remoteId;
+          record.channelRemoteId = channelRemoteId;
           record.senderId = user.id;
           // Display-only until the pull replaces this row with the server
           // version, which carries the real name from user_profiles. Writing
@@ -74,12 +101,35 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
     }
   }
 
+  const confirmDeleteMessage = (message: Message) =>
+    Alert.alert('Delete this message?', message.body, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => removeMessage.mutate(message.remoteId) },
+    ]);
+  const confirmDeleteChannel = () =>
+    Alert.alert(`Delete ${title}?`, 'Its messages are deleted for everyone.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => removeChannel.mutate() },
+    ]);
+
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-gray-50"
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <Stack.Screen options={{ title: channel?.name ?? 'Channel', headerShown: true }} />
+      <Stack.Screen
+        options={{
+          title,
+          headerShown: true,
+          headerRight: detail.data?.canDeleteChannel
+            ? () => (
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete channel" hitSlop={8} onPress={confirmDeleteChannel}>
+                  <Text className="text-white text-base font-semibold">Delete</Text>
+                </TouchableOpacity>
+              )
+            : undefined,
+        }}
+      />
 
       <FlatList
         data={messages}
@@ -91,28 +141,14 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
             <Text className="py-10 text-center text-gray-500">No messages yet.</Text>
           </View>
         }
-        renderItem={({ item: message }) => {
-          const isOwn = message.senderId === user?.id;
-          return (
-            <View className={`mb-3 max-w-xs ${isOwn ? 'self-end' : 'self-start'}`}>
-              {!isOwn && (
-                <Text className="text-xs text-gray-500 mb-0.5 ml-1">
-                  {message.senderName ?? 'Unknown'}
-                </Text>
-              )}
-              <View
-                className={`rounded-2xl px-4 py-2.5 ${
-                  isOwn ? 'bg-brand-700 rounded-br-sm' : 'bg-white border border-gray-200 rounded-bl-sm'
-                }`}
-              >
-                <Text className={isOwn ? 'text-white' : 'text-gray-900'}>{message.body}</Text>
-              </View>
-              <Text className="text-xs text-gray-400 mt-0.5 mx-1">
-                {formatTime(new Date(message.createdAt))}
-              </Text>
-            </View>
-          );
-        }}
+        renderItem={({ item: message }) => (
+          <MessageBubble
+            message={message}
+            isOwn={message.senderId === user?.id}
+            detail={detail.data}
+            onDelete={confirmDeleteMessage}
+          />
+        )}
       />
 
       {canPost ? (
@@ -144,6 +180,50 @@ function MessageThread({ messages, channel }: MessageThreadProps) {
   );
 }
 
+interface MessageBubbleProps {
+  message: Message;
+  isOwn: boolean;
+  detail: ChannelDetailResponse | undefined;
+  onDelete: (message: Message) => void;
+}
+
+/**
+ * One message. Long press deletes your own, or any for a coach — once it has
+ * reached the server (a message still queued offline has nothing to delete).
+ */
+function MessageBubble({ message, isOwn, detail, onDelete }: MessageBubbleProps) {
+  const canDelete = message.syncedAt != null && (isOwn || detail?.isCoach === true);
+  const badge = roleBadge(detail?.memberRoles[message.senderId]);
+  return (
+    <TouchableOpacity
+      activeOpacity={0.8}
+      disabled={!canDelete}
+      accessibilityHint={canDelete ? 'Long press to delete' : undefined}
+      onLongPress={() => onDelete(message)}
+      className={`mb-3 max-w-xs ${isOwn ? 'self-end' : 'self-start'}`}
+    >
+      {!isOwn && (
+        <View className="flex-row items-center mb-0.5 ml-1">
+          <Text className="text-xs text-gray-500">{message.senderName ?? 'Unknown'}</Text>
+          {badge && (
+            <Text className={`text-[10px] font-medium rounded-full overflow-hidden px-1.5 ml-1.5 ${badge.className}`}>{badge.label}</Text>
+          )}
+        </View>
+      )}
+      <View
+        className={`rounded-2xl px-4 py-2.5 ${
+          isOwn ? 'bg-brand-700 rounded-br-sm' : 'bg-white border border-gray-200 rounded-bl-sm'
+        }`}
+      >
+        <Text className={isOwn ? 'text-white' : 'text-gray-900'}>{message.body}</Text>
+      </View>
+      <Text className="text-xs text-gray-400 mt-0.5 mx-1">
+        {formatTime(new Date(message.createdAt))}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 const EnhancedMessageThread = withObservables(
   ['channelRemoteId'],
   ({ channelRemoteId }: { channelRemoteId: string }) => ({
@@ -161,11 +241,11 @@ const EnhancedMessageThread = withObservables(
       .observe()
       .pipe(map((channels: Channel[]) => channels[0])),
   }),
-)((props: { messages: Message[]; channel: Channel | undefined }) => (
-  <MessageThread messages={props.messages} channel={props.channel} />
+)((props: { channelRemoteId: string; messages: Message[]; channel: Channel | undefined }) => (
+  <MessageThread channelRemoteId={props.channelRemoteId} messages={props.messages} channel={props.channel} />
 ));
 
 export default function ChannelScreen() {
-  const { channelId } = useLocalSearchParams<{ channelId: string }>();
+  const { channelId = '' } = useLocalSearchParams<{ channelId: string }>();
   return <EnhancedMessageThread channelRemoteId={channelId} />;
 }
