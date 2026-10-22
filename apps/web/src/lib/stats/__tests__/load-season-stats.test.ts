@@ -96,6 +96,15 @@ describe('loadTeamSeasonStats', () => {
     });
   });
 
+  it('should throw rather than pass a failed read off as an empty one', async () => {
+    const { db } = fakeDb({
+      'seasons.select': seasons,
+      'games.select': { data: [] },
+      'players.select': { data: null, error: { message: 'timeout' } },
+    });
+    await expect(loadTeamSeasonStats(db, 't1', OPTIONS)).rejects.toThrow('players query failed: timeout');
+  });
+
   it('should count active players whose waiver is missing or expired', async () => {
     const { db, calls } = fakeDb({
       'seasons.select': seasons,

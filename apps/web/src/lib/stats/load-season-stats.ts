@@ -85,15 +85,15 @@ type PlayerRef = { id: string; firstName: string; lastName: string };
  * innings and opponent stats load only when asked for, since the web page
  * shows one tab at a time.
  *
- * Throws when the event log can't be read in full (`fetchAllEventsForGames`)
- * rather than deriving stats from part of a season.
+ * Throws when any read fails, including an event log it can't read in full
+ * (`fetchAllEventsForGames`), rather than deriving stats from part of a season.
  */
 export async function loadTeamSeasonStats(
   db: SupabaseClient,
   teamId: string,
   options: LoadSeasonStatsOptions,
 ): Promise<TeamSeasonStats> {
-  const [{ data: teamData }, { data: allSeasons }] = await Promise.all([
+  const [teamResult, seasonsResult] = await Promise.all([
     db.from('teams').select('level').eq('id', teamId).maybeSingle(),
     db
       .from('seasons')
@@ -101,6 +101,8 @@ export async function loadTeamSeasonStats(
       .eq('team_id', teamId)
       .order('start_date', { ascending: false }),
   ]);
+  const teamData = rowsOf(teamResult, 'teams');
+  const allSeasons = rowsOf(seasonsResult, 'seasons');
 
   const seasons = (allSeasons ?? []).map((s) => ({ id: s.id as string, name: s.name as string, isActive: Boolean(s.is_active) }));
   const season = pickSeason(seasons, options.seasonId);
@@ -111,8 +113,7 @@ export async function loadTeamSeasonStats(
     .eq('team_id', teamId)
     .in('status', ['completed', 'in_progress']);
   if (season) gamesQuery = gamesQuery.eq('season_id', season.id);
-  const { data: gamesData } = await gamesQuery;
-  const games = (gamesData ?? []) as GameRow[];
+  const games = (rowsOf(await gamesQuery, 'games') ?? []) as GameRow[];
   const gameIds = games.map((g) => g.id);
 
   // Paginated: a season with 12+ scored games easily exceeds PostgREST's
@@ -126,10 +127,10 @@ export async function loadTeamSeasonStats(
 
   // ALL players (not just active) so deactivated players who played in past
   // games still resolve their names.
-  const { data: players } = await db
-    .from('players')
-    .select('id, first_name, last_name, is_active')
-    .eq('team_id', teamId);
+  const players = rowsOf(
+    await db.from('players').select('id, first_name, last_name, is_active').eq('team_id', teamId),
+    'players',
+  );
   const playerList: PlayerRef[] = (players ?? []).map((p) => ({
     id: p.id as string,
     firstName: p.first_name as string,
@@ -173,6 +174,15 @@ export async function loadTeamSeasonStats(
   };
 }
 
+/**
+ * A query's rows, or a throw naming the failed query: a failed read must not
+ * pass for an empty one (no games, no pitch counts) and render a wrong season.
+ */
+function rowsOf<T>(result: { data: T | null; error: { message: string } | null }, query: string): T | null {
+  if (result.error) throw new Error(`${query} query failed: ${result.error.message}`);
+  return result.data;
+}
+
 /** The stat tier a team's level starts on. */
 export function statTierForLevel(level: string | null): StatTier {
   if (level === 'youth' || level === 'middle_school') return 'youth';
@@ -197,7 +207,7 @@ async function loadPitcherCompliance(
   const complianceMap: Record<string, PitcherComplianceInfo> = {};
   if (pitcherIds.length === 0) return complianceMap;
 
-  const [{ data: pitchCounts }, { data: rolling7d }] = await Promise.all([
+  const [pitchCountsResult, rolling7dResult] = await Promise.all([
     db
       .from('pitch_counts')
       .select('player_id, pitch_count, required_rest_days, can_pitch_next_day, game_date')
@@ -209,6 +219,8 @@ async function loadPitcherCompliance(
       .in('player_id', pitcherIds)
       .order('game_date', { ascending: false }),
   ]);
+  const pitchCounts = rowsOf(pitchCountsResult, 'pitch_counts');
+  const rolling7d = rowsOf(rolling7dResult, 'v_pitcher_rolling_7d');
 
   for (const row of pitchCounts ?? []) {
     if (complianceMap[row.player_id]) continue;
@@ -230,12 +242,15 @@ async function loadPitcherCompliance(
 /** Active players without a current (non-expired) liability waiver. */
 async function countMissingWaivers(db: SupabaseClient, activePlayerIds: string[]): Promise<number> {
   if (activePlayerIds.length === 0) return 0;
-  const { data: waiverRows } = await db
-    .from('player_documents')
-    .select('player_id, expires_on')
-    .eq('document_type', 'liability_waiver')
-    .eq('is_current', true)
-    .in('player_id', activePlayerIds);
+  const waiverRows = rowsOf(
+    await db
+      .from('player_documents')
+      .select('player_id, expires_on')
+      .eq('document_type', 'liability_waiver')
+      .eq('is_current', true)
+      .in('player_id', activePlayerIds),
+    'player_documents',
+  );
 
   const today = new Date().toISOString().slice(0, 10);
   const covered = new Set(
@@ -257,7 +272,7 @@ async function loadCatcherInnings(
     .in('player_id', playerList.map((p) => p.id))
     .order('game_date', { ascending: false });
   if (seasonId) query = query.eq('season_id', seasonId);
-  const { data } = await query;
+  const data = rowsOf(await query, 'catcher_innings');
 
   const names = new Map(playerList.map((p) => [p.id, `${p.firstName} ${p.lastName}`]));
   const byPlayer = new Map<string, CatcherInningsSummary>();
@@ -287,11 +302,12 @@ async function loadOpponentStats(
   const oppTeamIds = [...new Set(games.map((g) => g.opponent_team_id).filter((id): id is string => id != null))];
   if (oppTeamIds.length === 0) return [];
 
-  const [{ data: oppTeams }, { data: oppPlayersData }] = await Promise.all([
+  const [oppTeamsResult, oppPlayersResult] = await Promise.all([
     db.from('opponent_teams').select('id, name, abbreviation').in('id', oppTeamIds),
     db.from('opponent_players').select('id, opponent_team_id, first_name, last_name').in('opponent_team_id', oppTeamIds),
   ]);
-  const oppPlayers = oppPlayersData ?? [];
+  const oppTeams = rowsOf(oppTeamsResult, 'opponent_teams');
+  const oppPlayers = rowsOf(oppPlayersResult, 'opponent_players') ?? [];
 
   const nameMap = new Map<string, string>(oppPlayers.map((p) => [p.id, `${p.first_name} ${p.last_name}`]));
   const playerToTeam = new Map<string, string>(oppPlayers.map((p) => [p.id, p.opponent_team_id]));
