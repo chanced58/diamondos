@@ -208,11 +208,10 @@ export interface LocalChildRow {
  * own reconciliation path in `lineup-sync.ts` instead — see the sync engine
  * for why), only the two unbounded tables this function is used for.
  *
- * This is exact, not an approximation, for tables that are only ever
- * removed server-side via their parent's cascade (game_events is
- * append-only and has no standalone delete path; messages have no
- * standalone delete feature today — see the sync engine for that
- * limitation). No syncedAt guard is needed here: once the parent is
+ * This is exact for what it covers: rows removed server-side by their
+ * parent's cascade (game_events is append-only and has no other delete
+ * path; a single message is soft-deleted, which the pull handles through
+ * `./message-deletions.ts`). No syncedAt guard is needed here: once the parent is
  * confirmed gone, every local child row referencing it — synced or not —
  * corresponds to a game/channel that no longer exists.
  */
