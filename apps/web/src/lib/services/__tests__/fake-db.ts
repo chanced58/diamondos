@@ -49,6 +49,8 @@ export function fakeDb(results: Record<string, FakeResult | FakeResult[]> = {}) 
         gte: (col: string, val: unknown) => { call.filters[`${col}>=`] = val; return builder; },
         lt: (col: string, val: unknown) => { call.filters[`${col}<`] = val; return builder; },
         gt: (col: string, val: unknown) => { call.filters[`${col}>`] = val; return builder; },
+        neq: (col: string, val: unknown) => { call.filters[`${col}!=`] = val; return builder; },
+        is: (col: string, val: unknown) => { call.filters[`${col} is`] = val; return builder; },
         // A PostgREST `or` expression records as-is under `or`.
         or: (expression: string) => { call.filters.or = expression; return builder; },
         not: () => builder,
