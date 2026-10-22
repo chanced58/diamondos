@@ -126,8 +126,15 @@ function MessageThread({ channelRemoteId, messages, channel }: MessageThreadProp
           headerShown: true,
           headerRight: detail.data?.canDeleteChannel
             ? () => (
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete channel" hitSlop={8} onPress={confirmDeleteChannel}>
-                  <Text className="text-white text-base font-semibold">Delete</Text>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Delete channel"
+                  accessibilityState={{ disabled: removeChannel.isPending }}
+                  disabled={removeChannel.isPending}
+                  hitSlop={8}
+                  onPress={confirmDeleteChannel}
+                >
+                  <Text className={`text-white text-base font-semibold ${removeChannel.isPending ? 'opacity-40' : ''}`}>Delete</Text>
                 </TouchableOpacity>
               )
             : undefined,
@@ -149,6 +156,7 @@ function MessageThread({ channelRemoteId, messages, channel }: MessageThreadProp
             message={message}
             isOwn={message.senderId === user?.id}
             detail={detail.data}
+            deleting={removeMessage.isPending}
             onDelete={confirmDeleteMessage}
           />
         )}
@@ -187,6 +195,8 @@ interface MessageBubbleProps {
   message: Message;
   isOwn: boolean;
   detail: ChannelDetailResponse | undefined;
+  /** A delete is in flight; hold off another until it settles. */
+  deleting: boolean;
   onDelete: (message: Message) => void;
 }
 
@@ -194,8 +204,8 @@ interface MessageBubbleProps {
  * One message. Long press deletes your own, or any for a coach — once it has
  * reached the server (a message still queued offline has nothing to delete).
  */
-function MessageBubble({ message, isOwn, detail, onDelete }: MessageBubbleProps) {
-  const canDelete = message.syncedAt != null && (isOwn || detail?.isCoach === true);
+function MessageBubble({ message, isOwn, detail, deleting, onDelete }: MessageBubbleProps) {
+  const canDelete = !deleting && message.syncedAt != null && (isOwn || detail?.isCoach === true);
   const badge = roleBadge(detail?.memberRoles[message.senderId]);
   return (
     <TouchableOpacity

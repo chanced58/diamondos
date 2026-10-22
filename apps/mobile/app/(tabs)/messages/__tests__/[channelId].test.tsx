@@ -247,4 +247,24 @@ describe('MessageThread — managing messages', () => {
     renderScreen();
     expect(screen.queryByLabelText('Delete channel')).toBeNull();
   });
+
+  it('should send one delete however often a coach taps while it is in flight', async () => {
+    mockMessages = [sent];
+    mockUseChannelDetail.mockReturnValue(detail(true));
+    mockDeleteMessage.mockReturnValue(new Promise(() => {}));
+    mockDeleteChannel.mockReturnValue(new Promise(() => {}));
+    renderScreen();
+    // react-query publishes isPending on a setTimeout(0) tick.
+    const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    fireEvent(screen.getByText('Hello world'), 'longPress');
+    await settle();
+    fireEvent(screen.getByText('Hello world'), 'longPress');
+    expect(mockDeleteMessage).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(screen.getByLabelText('Delete channel'));
+    await settle();
+    fireEvent.press(screen.getByLabelText('Delete channel'));
+    expect(mockDeleteChannel).toHaveBeenCalledTimes(1);
+  });
 });
