@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * Whether `userId` is permitted to watch live game `gameId`. Mirrors the
@@ -26,8 +26,18 @@ export async function canViewLiveGame(gameId: string, userId: string): Promise<b
     return false;
   }
 
-  const db = createClient(supabaseUrl, serviceRoleKey);
+  return canViewLiveGameWith(createClient(supabaseUrl, serviceRoleKey), gameId, userId);
+}
 
+/**
+ * `canViewLiveGame` against a given service-role client — for services that
+ * already hold one (the mobile `/api/m/v1` live route).
+ */
+export async function canViewLiveGameWith(
+  db: SupabaseClient,
+  gameId: string,
+  userId: string,
+): Promise<boolean> {
   // Platform admins can view anything.
   const { data: profile, error: profileError } = await db
     .from('user_profiles')
