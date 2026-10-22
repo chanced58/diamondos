@@ -27,6 +27,9 @@ const SECTION_OPTIONS = [
   { value: 'pitching', label: 'Pitching' },
 ] as const;
 
+// Names carry their team, "Luke Fox (Huskies)".
+const LEAGUE_NAME_WIDTH = 176;
+
 const DEFAULT_SORTS: Record<Section, SortState> = {
   hitting: { key: 'plateAppearances', ascending: false },
   pitching: { key: 'inningsPitchedOuts', ascending: false },
@@ -110,6 +113,7 @@ export default function LeagueStatsScreen() {
             totals={seasonBattingTotals(stats.batting, tier, false)}
             emptyText="No hitting data across league teams yet."
             labelHeader="Batter"
+            labelWidth={LEAGUE_NAME_WIDTH}
             sort={sorts.hitting}
             onSort={onSort}
           />
@@ -122,6 +126,7 @@ export default function LeagueStatsScreen() {
             totals={seasonPitchingTotals(stats.pitching, tier, false)}
             emptyText="No pitching data across league teams yet."
             labelHeader="Pitcher"
+            labelWidth={LEAGUE_NAME_WIDTH}
             sort={sorts.pitching}
             onSort={onSort}
           />

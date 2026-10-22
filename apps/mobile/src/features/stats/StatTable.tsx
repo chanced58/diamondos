@@ -21,6 +21,8 @@ interface StatTableProps<Row> {
   emptyText: string;
   /** Header for the pinned name column. */
   labelHeader?: string;
+  /** The pinned name column's width; wider for names carrying a team. */
+  labelWidth?: number;
   /** The sorted column, marked with an arrow. Rows arrive already sorted. */
   sort?: { key: string; ascending: boolean };
   /** Makes the headers tappable; the name header sends `NAME_COLUMN_KEY`. */
@@ -31,7 +33,7 @@ interface StatTableProps<Row> {
   highlightRow?: (row: Row) => boolean;
 }
 
-const NAME_WIDTH = 132;
+const DEFAULT_NAME_WIDTH = 132;
 const CELL_WIDTH = 48;
 
 /**
@@ -46,6 +48,7 @@ export function StatTable<Row>({
   totals,
   emptyText,
   labelHeader = 'Player',
+  labelWidth = DEFAULT_NAME_WIDTH,
   sort,
   onSort,
   onPressRow,
@@ -61,7 +64,7 @@ export function StatTable<Row>({
 
   return (
     <View className="flex-row bg-white">
-      <View style={{ width: NAME_WIDTH }}>
+      <View style={{ width: labelWidth }}>
         <TouchableOpacity
           disabled={!onSort}
           accessibilityRole={onSort ? 'button' : undefined}

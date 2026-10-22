@@ -63,6 +63,7 @@ export default function TeamComparisonScreen() {
           columns={COMPARISON_COLUMNS}
           emptyText="No teams in this league yet."
           labelHeader="Team"
+          labelWidth={176}
           sort={sort}
           onSort={(key) => setSort(nextSort(sort, key))}
           highlightRow={(r) => r.teamId === activeTeam.teamId}
