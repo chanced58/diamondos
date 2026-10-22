@@ -63,6 +63,8 @@ export default function GameDetailScreen() {
 
   const showError = (title: string) => (error: unknown) => Alert.alert(title, describeApiError(error));
 
+  const openLive = () => router.push({ pathname: '/(tabs)/schedule/games/[gameId]/live', params: { gameId: game.id } });
+
   const openScorer = () =>
     router.push({
       pathname: '/(tabs)/schedule/games/[gameId]/score',
@@ -195,7 +197,7 @@ export default function GameDetailScreen() {
               label={sections.score.label}
               size="lg"
               variant={sections.score.kind === 'final' ? 'secondary' : 'primary'}
-              onPress={openScorer}
+              onPress={sections.score.kind === 'continue' && !canScore ? openLive : openScorer}
             />
           )}
         </View>
@@ -231,6 +233,9 @@ export default function GameDetailScreen() {
 
       <SectionHeader title="Game recap" />
       <ListGroup>
+        {game.status === 'in_progress' && (
+          <ListRow title="Live view" subtitle="Score, count and runners as they happen" onPress={openLive} />
+        )}
         {sections.showStatsAndHistory && (
           <ListRow
             title="Box score"
