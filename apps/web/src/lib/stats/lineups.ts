@@ -16,11 +16,13 @@ type GameLike = {
  *
  * On a Supabase read failure this logs the error and returns an empty Map —
  * batting stats still derive (without stub recovery) rather than 500ing the
- * page. Callers should treat this context as best-effort.
+ * page. Callers should treat this context as best-effort, unless they pass
+ * `strict`, which throws instead.
  */
 export async function buildLineupsByGameId(
   db: SupabaseClient,
   games: GameLike[],
+  options: { strict?: boolean } = {},
 ): Promise<Map<string, BattingLineupContext>> {
   const lineupsByGameId = new Map<string, BattingLineupContext>();
   if (games.length === 0) return lineupsByGameId;
@@ -35,6 +37,7 @@ export async function buildLineupsByGameId(
     console.error(
       `[stats/lineups] game_lineups query failed for ${gameIds.length} game(s): ${error.message}`,
     );
+    if (options.strict) throw new Error(`game_lineups query failed: ${error.message}`);
     return lineupsByGameId;
   }
 
