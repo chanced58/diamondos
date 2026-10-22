@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { GET as getBoxScore } from '../box-score/route';
+import { GET as getExport } from '../export/route';
 import { GET as getNotes, PUT as putNotes } from '../notes/route';
 import { PUT as putPlayerNotes } from '../notes/players/[playerId]/route';
 import { GET as getOpponentLineup, PUT as putOpponentLineup } from '../opponent-lineup/route';
@@ -10,6 +11,7 @@ import { DELETE as deleteOpponentPlayer, PATCH as patchOpponentPlayer } from '..
 
 const mockRequireApiUser = jest.fn();
 const mockLoadGameBoxScore = jest.fn();
+const mockBuildGameExport = jest.fn();
 const mockLoadGameNotes = jest.fn();
 const mockSaveGameNotes = jest.fn();
 const mockSavePlayerGameNotes = jest.fn();
@@ -27,6 +29,9 @@ jest.mock('@/lib/api/bearer-auth', () => ({
 }));
 jest.mock('@/lib/services/games/load-game-box-score', () => ({
   loadGameBoxScore: (...args: unknown[]) => mockLoadGameBoxScore(...args),
+}));
+jest.mock('@/lib/services/games/build-game-export', () => ({
+  buildGameExport: (...args: unknown[]) => mockBuildGameExport(...args),
 }));
 jest.mock('@/lib/services/games/load-game-notes', () => ({
   loadGameNotes: (...args: unknown[]) => mockLoadGameNotes(...args),
@@ -63,6 +68,31 @@ const request = (method = 'GET', body?: unknown) =>
 beforeEach(() => {
   jest.clearAllMocks();
   mockRequireApiUser.mockResolvedValue({ user: { id: 'u1' }, db: DB });
+});
+
+describe('export route', () => {
+  it('should respond 401 without building an export', async () => {
+    mockRequireApiUser.mockResolvedValue({ response: NextResponse.json({ error: 'Not authenticated' }, { status: 401 }) });
+    expect((await getExport(request(), gameParams)).status).toBe(401);
+    expect(mockBuildGameExport).not.toHaveBeenCalled();
+  });
+
+  it('should send the zip as a download for the bearer user and the path game', async () => {
+    const content = new TextEncoder().encode('PK').buffer;
+    mockBuildGameExport.mockResolvedValue({ ok: true, data: { filename: 'home-team-a-vs-b.zip', content } });
+    const res = await getExport(request(), gameParams);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('application/zip');
+    expect(res.headers.get('content-disposition')).toBe('attachment; filename="home-team-a-vs-b.zip"');
+    expect(mockBuildGameExport).toHaveBeenCalledWith(DB, 'u1', { gameId: 'game-1' });
+  });
+
+  it('should answer a non-coach with 403 JSON', async () => {
+    mockBuildGameExport.mockResolvedValue({ ok: false, code: 'forbidden', error: 'Coach access required.' });
+    const res = await getExport(request(), gameParams);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Coach access required.', code: 'forbidden' });
+  });
 });
 
 describe('box score route', () => {
