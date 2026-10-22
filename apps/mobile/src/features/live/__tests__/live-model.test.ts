@@ -68,6 +68,19 @@ describe('plays', () => {
     expect(recentPlays(data(events), 10).some((p) => p.id === 'e2')).toBe(false);
   });
 
+  it('should leave out a play that was voided or undone since', () => {
+    const events = [
+      ev('game_start'),
+      ev('walk', { batterId: 'b1' }),
+      ev('event_voided', { voidedEventId: 'e2', voidedSequenceNumber: 2 }),
+      ev('pitch_thrown', { outcome: 'ball', batterId: 'b1' }),
+      ev('pitch_thrown', { outcome: 'called_strike', batterId: 'b1' }),
+      ev('pitch_reverted', { revertToSequenceNumber: 4 }),
+    ];
+    // The voided walk (e2) and the undone strike (e5) are gone.
+    expect(recentPlays(data(events), 10).map((p) => p.id)).toEqual(['e4', 'e1']);
+  });
+
   it('should label players with their jersey, and unknowns with a dash', () => {
     const { players } = data([]);
     expect(livePlayerLabel(players, 'p1')).toBe('#07 Cobb');

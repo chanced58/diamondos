@@ -56,6 +56,12 @@ describe('buildGameExport', () => {
     expect(await buildGameExport(tbd.db, 'coach', { gameId: GAME_ID })).toMatchObject({ ok: false, code: 'conflict' });
   });
 
+  it('should answer a stat-load failure with a structured failure, not a throw', async () => {
+    mockLoadGameStats.mockRejectedValue(new Error('Failed to load stats'));
+    const { db } = fakeDb({ 'games.select': meta(), 'team_members.select': { data: { role: 'head_coach' } } });
+    expect(await buildGameExport(db, 'coach', { gameId: GAME_ID })).toMatchObject({ ok: false, code: 'failed' });
+  });
+
   it('should report a failed game read as failed and reject a malformed id', async () => {
     const broken = fakeDb({ 'games.select': { error: { message: 'boom' } } });
     expect(await buildGameExport(broken.db, 'coach', { gameId: GAME_ID })).toMatchObject({ ok: false, code: 'failed' });

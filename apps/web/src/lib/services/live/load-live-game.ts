@@ -3,6 +3,7 @@ import type { TypedSupabaseClient } from '@baseball/database';
 import { gameIdInputSchema, type HistoryEvent, type LiveGameResponse } from '@baseball/shared';
 import { canViewLiveGameWith } from '@/lib/live/viewer-access';
 import { buildLivePlayerNameMap } from '@/lib/live/player-name-map';
+import { fetchGameEventLog } from '@/lib/games/fetch-game-event-log';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 
 /**
@@ -31,7 +32,7 @@ export async function loadLiveGame(
 
   const opponentTeamId = game.opponent_team_id as string | null;
   const [events, team, players] = await Promise.all([
-    db.from('game_events').select('*').eq('game_id', gameId).order('sequence_number'),
+    fetchGameEventLog(db, gameId),
     db.from('teams').select('name').eq('id', game.team_id).maybeSingle(),
     buildLivePlayerNameMap(db as unknown as TypedSupabaseClient, [game.team_id as string], opponentTeamId ? [opponentTeamId] : []),
   ]);
