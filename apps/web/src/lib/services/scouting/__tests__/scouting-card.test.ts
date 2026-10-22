@@ -63,9 +63,11 @@ describe('loadScoutingCard', () => {
 
 describe('generateScoutingCard', () => {
   it('should refuse before calling the model when there are no games against them', async () => {
-    const { db } = fakeDb({ ...coach, ...ownedOpponent, 'games.select': { data: [] }, 'opponent_players.select': { data: [] } });
+    const { db, calls } = fakeDb({ ...coach, ...ownedOpponent, 'games.select': { data: [] }, 'opponent_players.select': { data: [] } });
     expect(await generateScoutingCard(db, 'coach-1', { opponentTeamId: OPP })).toMatchObject({ ok: false, code: 'conflict' });
     expect(mockGenerate).not.toHaveBeenCalled();
+    // A scheduled game has no plays, so it isn't part of the sample.
+    expect(calls.find((c) => c.table === 'games')?.filters).toMatchObject({ status: ['completed', 'in_progress'] });
   });
 
   it("should card their hitters from our games, leaving out undone plays, and find our pitchers by enum position", async () => {

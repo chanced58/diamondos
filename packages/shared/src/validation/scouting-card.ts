@@ -56,7 +56,7 @@ export const persistedScoutingCardSchema = z.object({
 
 export const scoutingCardResponseSchema = z.object({
   opponentTeam: opponentTeamSummarySchema,
-  /** Games we've played against them; a card needs at least one. */
+  /** Games played against them (completed or in progress); a card needs at least one. */
   priorGames: z.number().int().nonnegative(),
   /** The latest card; null before the first is generated. */
   card: persistedScoutingCardSchema.nullable(),

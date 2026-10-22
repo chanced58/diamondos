@@ -1,4 +1,4 @@
-import { loadTeamComparison, winPct } from '../team-comparison';
+import { loadTeamComparison } from '../team-comparison';
 import { fakeDb } from '@/lib/services/__tests__/fake-db';
 
 const mockGetLeagueTeams = jest.fn();
@@ -93,12 +93,5 @@ describe('loadTeamComparison', () => {
   it('should be empty for a league with no teams', async () => {
     mockGetLeagueTeams.mockResolvedValue([]);
     expect(await loadTeamComparison(fakeDb().db, 'l1')).toEqual([]);
-  });
-});
-
-describe('winPct', () => {
-  it('should count ties as games and be 0 with none played', () => {
-    expect(winPct({ wins: 2, losses: 1, ties: 1 })).toBe(0.5);
-    expect(winPct({ wins: 0, losses: 0, ties: 0 })).toBe(0);
   });
 });

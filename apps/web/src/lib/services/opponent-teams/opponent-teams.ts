@@ -25,6 +25,9 @@ import { resolveGameViewer } from '../games/authorize';
 
 type OwnedOpponentTeam = OpponentTeamSummary & { teamId: string };
 
+/** Games that count as played against an opponent: a scheduled one has no plays to read. */
+export const PLAYED_GAME_STATUSES = ['completed', 'in_progress'];
+
 async function authorizeTeamCoach(db: SupabaseClient, actorUserId: string, teamId: string): Promise<ServiceResult<null>> {
   const viewer = await resolveGameViewer(db, actorUserId, teamId);
   if (!viewer) return serviceError('not_found', 'Team not found.');
@@ -113,7 +116,8 @@ export async function loadOpponentTeam(
       .from('games')
       .select('id', { count: 'exact', head: true })
       .eq('team_id', teamId)
-      .eq('opponent_team_id', opponentTeamId),
+      .eq('opponent_team_id', opponentTeamId)
+      .in('status', PLAYED_GAME_STATUSES),
   ]);
   if (playersResult.error) return writeFailed('loadOpponentTeam', opponentTeamId, actorUserId, playersResult.error);
   if (gamesResult.error) return writeFailed('loadOpponentTeam', opponentTeamId, actorUserId, gamesResult.error);

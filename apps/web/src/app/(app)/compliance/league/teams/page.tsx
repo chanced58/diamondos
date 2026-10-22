@@ -7,7 +7,8 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
 import type { Database } from '@baseball/database';
-import { loadTeamComparison, winPct } from '@/lib/stats/team-comparison';
+import { winPct } from '@baseball/shared';
+import { loadTeamComparison } from '@/lib/stats/team-comparison';
 
 export const metadata: Metadata = { title: 'Team Comparison' };
 

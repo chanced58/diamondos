@@ -94,7 +94,7 @@ export const opponentTeamDetailResponseSchema = z.object({
   team: opponentTeamSummarySchema,
   /** Active roster, by jersey number. */
   players: z.array(opponentTeamPlayerSchema),
-  /** Games we've played against them (scored or not) — what a scouting card draws on. */
+  /** Games played against them (completed or in progress) — what a scouting card draws on. */
   priorGames: z.number().int().nonnegative(),
 });
 export type OpponentTeamDetailResponse = z.infer<typeof opponentTeamDetailResponseSchema>;

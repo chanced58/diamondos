@@ -46,7 +46,7 @@ describe('listOpponentTeams', () => {
 
 describe('loadOpponentTeam', () => {
   it('should give a coach the roster and the games played against them', async () => {
-    const { db } = fakeDb({
+    const { db, calls } = fakeDb({
       ...coach,
       ...ownedOpponent,
       'opponent_players.select': {
@@ -61,6 +61,9 @@ describe('loadOpponentTeam', () => {
     expect(result.data.team).toEqual({ id: OPP, name: 'Eagles', abbreviation: 'EAG', city: 'Boise', stateCode: 'ID' });
     expect(result.data.players[0]).toMatchObject({ lastName: 'Kling', jerseyNumber: '7', bats: 'left' });
     expect(result.data.priorGames).toBe(3);
+    expect(calls.find((c) => c.table === 'games')?.filters).toEqual({
+      team_id: TEAM, opponent_team_id: OPP, status: ['completed', 'in_progress'],
+    });
   });
 
   it("should not reveal another team's opponent, or a league-owned one", async () => {

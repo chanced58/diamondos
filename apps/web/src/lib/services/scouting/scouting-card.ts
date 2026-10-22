@@ -14,7 +14,7 @@ import { computeOpponentPitcherStats } from '@/lib/ai/opponent-pitcher-stats';
 import { logAiGeneration } from '@/lib/ai/log-generation';
 import { AI_MODELS } from '@/lib/ai/client';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
-import { authorizeOpponentTeam } from '../opponent-teams/opponent-teams';
+import { PLAYED_GAME_STATUSES, authorizeOpponentTeam } from '../opponent-teams/opponent-teams';
 
 /**
  * An opponent's AI scouting card (the web /games/opponents/[id]/card page):
@@ -37,7 +37,12 @@ export async function loadScoutingCard(
 
   try {
     const [{ count, error }, card] = await Promise.all([
-      db.from('games').select('id', { count: 'exact', head: true }).eq('team_id', teamId).eq('opponent_team_id', opponentTeamId),
+      db
+        .from('games')
+        .select('id', { count: 'exact', head: true })
+        .eq('team_id', teamId)
+        .eq('opponent_team_id', opponentTeamId)
+        .in('status', PLAYED_GAME_STATUSES),
       getLatestScoutingCard(db as never, opponentTeamId, teamId),
     ]);
     if (error) throw new Error(`games count failed: ${error.message}`);
@@ -133,7 +138,7 @@ const PAGE_SIZE = 1000;
 /** What the card draws on: their hitters' and pitchers' lines from our games against them, and our pitchers. */
 async function loadScoutingContext(db: SupabaseClient, teamId: string, opponentTeamId: string): Promise<ScoutingContext> {
   const [gamesResult, oppPlayersResult] = await Promise.all([
-    db.from('games').select('id').eq('team_id', teamId).eq('opponent_team_id', opponentTeamId),
+    db.from('games').select('id').eq('team_id', teamId).eq('opponent_team_id', opponentTeamId).in('status', PLAYED_GAME_STATUSES),
     db.from('opponent_players').select('id, first_name, last_name, primary_position, bats, throws').eq('opponent_team_id', opponentTeamId),
   ]);
   if (gamesResult.error) throw new Error(gamesResult.error.message);

@@ -246,7 +246,8 @@ function ZoneGrid({ label, cells, tone }: { label: string; cells: number[]; tone
   return (
     <View accessibilityLabel={`${label}: ${cells.length > 0 ? cells.join(', ') : 'none'}`}>
       <Text className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">{label}</Text>
-      <View className="flex-row flex-wrap border border-gray-300" style={{ width: 62, height: 62, padding: 1, gap: 1 }}>
+      {/* 3 × 19pt cells + 2 gaps = 59pt; border and padding sit inside the width, so 59 + 4 → 64 keeps 3 per row. */}
+      <View className="flex-row flex-wrap border border-gray-300" style={{ width: 64, height: 64, padding: 1, gap: 1 }}>
         {ZONES.map((zone) => (
           <View key={zone} style={{ width: 19, height: 19 }} className={active.has(zone) ? fill : 'bg-gray-100'} />
         ))}

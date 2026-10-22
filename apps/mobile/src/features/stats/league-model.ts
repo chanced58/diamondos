@@ -1,14 +1,8 @@
-import { formatSeasonStat, type TeamComparisonRowWire } from '@baseball/shared';
+import { formatSeasonStat, winPct, type TeamComparisonRowWire } from '@baseball/shared';
 import type { StatColumn } from './StatTable';
 import { statValue } from './season-stats-model';
 
 /** The web Team Comparison table's columns. */
-
-/** Winning percentage; 0 with no games (shown ".000", like the web). */
-export function winPct(row: Pick<TeamComparisonRowWire, 'wins' | 'losses' | 'ties'>): number {
-  const total = row.wins + row.losses + row.ties;
-  return total > 0 ? row.wins / total : 0;
-}
 
 export const COMPARISON_COLUMNS: StatColumn<TeamComparisonRowWire>[] = [
   { key: 'gamesPlayed', label: 'GP', value: (r) => r.gamesPlayed },

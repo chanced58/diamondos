@@ -7,6 +7,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getUserAccess } from '@/lib/user-access';
 import { getLatestScoutingCard } from '@baseball/database';
+import { PLAYED_GAME_STATUSES } from '@/lib/services/opponent-teams/opponent-teams';
 import { ScoutingCardClient } from './ScoutingCardClient';
 
 export const metadata: Metadata = { title: 'Scouting card' };
@@ -48,7 +49,8 @@ export default async function ScoutingCardPage({
     .from('games')
     .select('id', { count: 'exact', head: true })
     .eq('team_id', activeTeam.id)
-    .eq('opponent_team_id', opponentTeamId);
+    .eq('opponent_team_id', opponentTeamId)
+    .in('status', PLAYED_GAME_STATUSES);
 
   const existingCard = await getLatestScoutingCard(
     db as never,

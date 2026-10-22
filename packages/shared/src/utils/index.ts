@@ -38,3 +38,4 @@ export * from './game-rsvp-summary';
 export * from './due-batter';
 export * from './format-event';
 export * from './season-stat-columns';
+export * from './team-record';

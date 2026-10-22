@@ -1,5 +1,5 @@
 import type { TeamComparisonRowWire } from '@baseball/shared';
-import { COMPARISON_COLUMNS, comparisonSortValue, winPct } from '../league-model';
+import { COMPARISON_COLUMNS, comparisonSortValue } from '../league-model';
 import { sortStatRows } from '../season-stats-model';
 
 function team(id: string, over: Partial<TeamComparisonRowWire> = {}): TeamComparisonRowWire {
@@ -17,7 +17,6 @@ describe('team comparison', () => {
   });
 
   it('should sort by winning percentage, counting ties as games', () => {
-    expect(winPct({ wins: 2, losses: 1, ties: 1 })).toBe(0.5);
     const rows = [team('a', { wins: 1, losses: 3 }), team('b', { wins: 3, losses: 1 }), team('c', { wins: 2, losses: 1, ties: 1 })];
     expect(sortStatRows(rows, { key: 'pct', ascending: false }, (r) => r.teamName, comparisonSortValue).map((r) => r.teamId))
       .toEqual(['b', 'c', 'a']);

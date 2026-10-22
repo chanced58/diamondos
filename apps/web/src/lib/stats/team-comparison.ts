@@ -6,6 +6,7 @@ import {
   deriveBattingStats,
   filterResetAndReverted,
   weAreHome,
+  winPct,
   type GameEvent,
 } from '@baseball/shared';
 import { RELEVANT_EVENT_TYPES } from '@/app/(app)/compliance/constants';
@@ -188,10 +189,4 @@ function rates(hits: number, atBats: number, pitching: { outs: number; earnedRun
     totalHits: hits,
     totalStrikeouts: pitching.strikeouts,
   };
-}
-
-/** Winning percentage; 0 with no games. */
-export function winPct(row: Pick<TeamComparisonRow, 'wins' | 'losses' | 'ties'>): number {
-  const total = row.wins + row.losses + row.ties;
-  return total > 0 ? row.wins / total : 0;
 }
