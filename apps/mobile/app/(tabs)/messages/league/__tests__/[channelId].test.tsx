@@ -65,6 +65,7 @@ describe('LeagueChannelScreen', () => {
   it('should keep the draft and say why when posting fails', async () => {
     mockUseLeagueChannel.mockReturnValue(detail('topic', true));
     mockPost.mockRejectedValue(new Error('new row violates row-level security policy'));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
     renderScreen();
 
     fireEvent.changeText(screen.getByPlaceholderText('Write a message...'), 'Rain delay');

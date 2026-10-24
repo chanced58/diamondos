@@ -27,11 +27,14 @@ export function fetchLeagueChannel(leagueChannelId: string, client: ApiClient = 
   return client.get(`/league-channels/${encodeURIComponent(leagueChannelId)}`, leagueChannelDetailResponseSchema);
 }
 
+/** Throws the database error; the screen shows a generic message, so the detail is logged here. */
 export async function postLeagueMessage(leagueChannelId: string, senderId: string, body: string): Promise<void> {
   const { error } = await getSupabaseClient()
     .from('league_messages')
     .insert({ league_channel_id: leagueChannelId, sender_id: senderId, body });
-  if (error) throw error;
+  if (!error) return;
+  console.warn(`[postLeagueMessage] channel=${leagueChannelId} sender=${senderId} failed:`, error);
+  throw error;
 }
 
 export function useLeagueChannels(teamId: string | undefined) {
@@ -72,6 +75,10 @@ export function useLeagueChannelRealtime(leagueChannelId: string): void {
       .subscribe((status) => {
         // Anything posted between the first fetch and the subscription opening.
         if (status === 'SUBSCRIBED') refetch();
+        // Live updates stop until the channel is reopened; say so rather than go quiet.
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`[useLeagueChannelRealtime] channel=${leagueChannelId} status=${status}`);
+        }
       });
     return () => {
       void supabase.removeChannel(channel);
