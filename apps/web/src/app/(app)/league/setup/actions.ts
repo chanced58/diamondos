@@ -115,7 +115,8 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
     if (lmError) return { error: `Failed to add team "${teamName}" to league: ${lmError.message}` };
   }
 
-  // 4. Create default League Announcements channel + add admin as member
+  // 4. Create default League Announcements channel. A trigger adds its
+  // members: league staff (with post permission) and coaches of member teams.
   const { data: existingChannel } = await db
     .from('league_channels')
     .select('id')
@@ -125,7 +126,7 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
     .maybeSingle();
 
   if (!existingChannel) {
-    const { data: channel, error: channelError } = await db
+    const { error: channelError } = await db
       .from('league_channels')
       .insert({
         league_id: input.leagueId,
@@ -133,26 +134,11 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
         name: 'League Announcements',
         description: 'Official league announcements',
         created_by: user.id,
-      })
-      .select('id')
-      .single();
+      });
 
     if (channelError) {
       console.error('Failed to create league announcements channel:', channelError.message);
       return { error: 'Failed to create announcements channel: ' + channelError.message };
-    }
-
-    if (channel) {
-      const { error: memberError } = await db.from('league_channel_members').insert({
-        league_channel_id: channel.id,
-        user_id: user.id,
-        can_post: true,
-      });
-
-      if (memberError) {
-        console.error('Failed to add admin to announcements channel:', memberError.message);
-        return { error: 'Failed to add admin to announcements channel: ' + memberError.message };
-      }
     }
   }
 
