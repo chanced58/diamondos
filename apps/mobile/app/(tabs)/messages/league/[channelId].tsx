@@ -34,7 +34,18 @@ export default function LeagueChannelScreen() {
     },
   });
 
-  const header = <Stack.Screen options={{ title: query.data?.channel.name ?? 'League channel' }} />;
+  const header = (
+    <Stack.Screen
+      options={{
+        title: query.data?.channel.name ?? 'League channel',
+        headerRight: () => (
+          <View className="bg-amber-50 rounded-full px-2.5 py-0.5">
+            <Text className="text-xs font-semibold text-amber-800">League</Text>
+          </View>
+        ),
+      }}
+    />
+  );
 
   if (query.isPending) {
     return (
@@ -64,10 +75,11 @@ export default function LeagueChannelScreen() {
   return (
     <KeyboardAvoidingView className="flex-1 bg-gray-50" behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       {header}
-      <View className="bg-white border-b border-gray-200 px-4 py-2 flex-row items-center">
-        <Text className="flex-1 text-xs text-gray-500">{channel.description ?? ''}</Text>
-        <Text className="text-[10px] font-medium text-amber-700 bg-amber-50 rounded-full overflow-hidden px-2 py-0.5 ml-2">League</Text>
-      </View>
+      {channel.description && (
+        <View className="bg-white border-b border-gray-200 px-4 py-2">
+          <Text className="text-xs text-gray-500">{channel.description}</Text>
+        </View>
+      )}
 
       <FlatList
         data={[...messages].reverse()}
