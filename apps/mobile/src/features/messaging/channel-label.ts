@@ -82,3 +82,20 @@ export function resolveChannelLabel(input: ResolveChannelLabelInput): string {
 
   return DIRECT_MESSAGE_FALLBACK;
 }
+
+/**
+ * The channels the team's plan shows, as the web sidebar decides: topic
+ * channels need topic channels on the plan, DMs need direct messages;
+ * announcements always show. Plan unknown (offline, nothing cached) hides
+ * both, failing closed like every other capability.
+ */
+export function visibleChannels<T extends { channelType: string }>(
+  channels: readonly T[],
+  plan: { canTopics: boolean; canDms: boolean },
+): T[] {
+  return channels.filter((channel) => {
+    if (channel.channelType === 'topic') return plan.canTopics;
+    if (channel.channelType === 'direct') return plan.canDms;
+    return true;
+  });
+}

@@ -4,82 +4,24 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { startDirectMessage } from '@/lib/services/messaging/team-messaging';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
+/** Opens (or creates) a DM — a thin wrapper over `startDirectMessage`, shared with the mobile route. */
 export async function startDmAction(formData: FormData): Promise<void> {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) redirect('/login');
 
-  const teamId       = formData.get('teamId') as string;
-  const targetUserId = formData.get('targetUserId') as string;
-
-  if (!teamId || !targetUserId) return;
-  if (!UUID_RE.test(teamId) || !UUID_RE.test(targetUserId)) return;
-  if (targetUserId === user.id)  return;
-
-  const db = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
-
-  // Both people must be active members of the team the DM belongs to.
-  const { data: members } = await db
-    .from('team_members')
-    .select('user_id')
-    .eq('team_id', teamId)
-    .eq('is_active', true)
-    .in('user_id', [user.id, targetUserId]);
-  if ((members ?? []).length !== 2) return;
-
-  // Find existing DM channel between these two users for this team:
-  // Get all direct channel IDs where the current user is a member
-  const { data: myDmMemberships } = await db
-    .from('channel_members')
-    .select('channel_id, channels!inner(id, team_id, channel_type)')
-    .eq('user_id', user.id)
-    .eq('channels.channel_type', 'direct')
-    .eq('channels.team_id', teamId);
-
-  const candidateChannelIds =
-    (myDmMemberships ?? []).map((m) => m.channel_id);
-
-  if (candidateChannelIds.length > 0) {
-    // Check if the target user is in any of those channels
-    const { data: match } = await db
-      .from('channel_members')
-      .select('channel_id')
-      .eq('user_id', targetUserId)
-      .in('channel_id', candidateChannelIds)
-      .limit(1)
-      .maybeSingle();
-
-    if (match) {
-      revalidatePath('/messages', 'layout');
-      redirect(`/messages/${match.channel_id}`);
-    }
+  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const result = await startDirectMessage(db, user.id, {
+    teamId: formData.get('teamId'),
+    targetUserId: formData.get('targetUserId'),
+  });
+  if (!result.ok) {
+    console.warn(`[startDmAction] actor=${user.id} refused: ${result.code} ${result.error}`);
+    return;
   }
 
-  // No existing DM — create one
-  const { data: channel, error } = await db
-    .from('channels')
-    .insert({
-      team_id:      teamId,
-      channel_type: 'direct',
-      name:         null,
-      created_by:   user.id,
-    })
-    .select('id')
-    .single();
-
-  if (error) return;
-
-  await db.from('channel_members').insert([
-    { channel_id: channel.id, user_id: user.id,       can_post: true },
-    { channel_id: channel.id, user_id: targetUserId,  can_post: true },
-  ]);
-
   revalidatePath('/messages', 'layout');
-  redirect(`/messages/${channel.id}`);
+  redirect(`/messages/${result.data.channelId}`);
 }

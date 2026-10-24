@@ -1,6 +1,6 @@
 import { Alert } from 'react-native';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { renderWithQuery } from '../../../../../src/__tests__/render-with-query';
 import type { OpponentTeamDetailResponse, OpponentTeamsResponse, ScoutingCardResponse } from '@baseball/shared';
 
 const mockPush = jest.fn();
@@ -46,10 +46,7 @@ const ScoutingCardScreen = require('../[opponentTeamId]/card').default;
 
 const loaded = <T,>(data: T) => ({ data, isPending: false, isRefetching: false, refetch: jest.fn() });
 
-function renderWithQueries(ui: React.ReactElement) {
-  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
-}
+const renderWithQueries = renderWithQuery;
 
 const team = { id: 'o1', name: 'Eagles', abbreviation: 'EAG', city: 'Boise', stateCode: 'ID' };
 const detail: OpponentTeamDetailResponse = {

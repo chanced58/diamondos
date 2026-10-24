@@ -1,4 +1,4 @@
-import { resolveChannelLabel, type ResolveChannelLabelInput } from '../channel-label';
+import { resolveChannelLabel, visibleChannels, type ResolveChannelLabelInput } from '../channel-label';
 
 /**
  * W10 (M7): direct channels store `channels.name = null`, so the channel
@@ -133,5 +133,15 @@ describe('resolveChannelLabel', () => {
     );
 
     expect(label).toBe('Jamie Rivera');
+  });
+});
+
+describe('visibleChannels', () => {
+  const channels = [{ channelType: 'announcement' }, { channelType: 'topic' }, { channelType: 'direct' }];
+
+  it('should always show announcements, and topics and DMs only on plans with them', () => {
+    expect(visibleChannels(channels, { canTopics: false, canDms: false }).map((c) => c.channelType)).toEqual(['announcement']);
+    expect(visibleChannels(channels, { canTopics: true, canDms: false }).map((c) => c.channelType)).toEqual(['announcement', 'topic']);
+    expect(visibleChannels(channels, { canTopics: true, canDms: true })).toHaveLength(3);
   });
 });

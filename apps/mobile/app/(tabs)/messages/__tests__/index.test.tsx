@@ -1,5 +1,5 @@
 import { Q } from '@nozbe/watermelondb';
-import { render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 
 /**
  * The channel list used to query every locally mirrored channel, so a user on
@@ -24,10 +24,20 @@ jest.mock('@nozbe/with-observables', () => {
   };
 });
 
-jest.mock('../../../../src/providers/RoleProvider', () => ({ useRole: jest.fn() }));
+const mockUseCan = jest.fn((_capability: string) => false);
+jest.mock('../../../../src/providers/RoleProvider', () => ({
+  useRole: jest.fn(),
+  useCan: (capability: string) => mockUseCan(capability),
+}));
 jest.mock('../../../../src/providers/AuthProvider', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }));
 jest.mock('../../../../src/features/teams/TeamSwitcher', () => ({ TeamSwitcher: () => null }));
-jest.mock('expo-router', () => ({ __esModule: true, router: { push: jest.fn() } }));
+const mockPush = jest.fn();
+jest.mock('expo-router', () => ({
+  __esModule: true,
+  router: { push: (...args: unknown[]) => mockPush(...args) },
+  // Render the header's right button so tests can press it.
+  Stack: { Screen: ({ options }: { options?: { headerRight?: () => JSX.Element } }) => options?.headerRight?.() ?? null },
+}));
 
 // Required after the mocks so `withObservables` captures the producer.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -60,5 +70,33 @@ describe('messages/index — team scoping', () => {
     render(<MessagesScreen />);
 
     expect(screen.getByText('No channels yet.')).toBeTruthy();
+  });
+});
+
+describe('messages/index — starting a conversation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUseRole.mockReturnValue({ activeTeam: { teamId: 'huskies' }, loading: false });
+  });
+
+  it('should offer nothing to a parent on a plan without direct messages', () => {
+    mockUseCan.mockReturnValue(false);
+    render(<MessagesScreen />);
+    expect(screen.queryByLabelText('New conversation')).toBeNull();
+  });
+
+  it('should go straight to the only choice there is', () => {
+    mockUseCan.mockImplementation((capability: string) => capability === 'direct_messages');
+    render(<MessagesScreen />);
+    fireEvent.press(screen.getByLabelText('New conversation'));
+    expect(mockPush).toHaveBeenCalledWith('/(tabs)/messages/new-dm');
+  });
+
+  it('should let a coach with direct messages pick a channel or a DM', () => {
+    mockUseCan.mockReturnValue(true);
+    render(<MessagesScreen />);
+    fireEvent.press(screen.getByLabelText('New conversation'));
+    fireEvent.press(screen.getByText('New channel'));
+    expect(mockPush).toHaveBeenCalledWith('/(tabs)/messages/new');
   });
 });

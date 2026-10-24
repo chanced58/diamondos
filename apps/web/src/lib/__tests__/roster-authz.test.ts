@@ -54,6 +54,10 @@ jest.mock('@/lib/roster-access', () => ({
   canManageRoster: (...args: unknown[]) => mockCanManageRoster(...args),
 }));
 jest.mock('next/cache', () => ({ revalidatePath: jest.fn() }));
+const mockStartDirectMessage = jest.fn();
+jest.mock('@/lib/services/messaging/team-messaging', () => ({
+  startDirectMessage: (...args: unknown[]) => mockStartDirectMessage(...args),
+}));
 jest.mock('next/navigation', () => ({
   redirect: (url: string) => { throw Object.assign(new Error(url), { digest: 'NEXT_REDIRECT' }); },
 }));
@@ -189,6 +193,10 @@ describe('team admin role changes', () => {
   });
 });
 
+// The DM guards (both people active on the team, not yourself, the plan has
+// DMs) live in `startDirectMessage`, shared with the mobile route — see
+// lib/services/messaging/__tests__/team-messaging.test.ts. The action only
+// passes the form through and redirects on success.
 describe('startDmAction', () => {
   const DM_TEAM = '11111111-1111-4111-8111-111111111111';
   const CALLER = '22222222-2222-4222-8222-222222222222';
@@ -203,25 +211,18 @@ describe('startDmAction', () => {
 
   beforeEach(() => {
     mockGetUser.mockResolvedValue({ data: { user: { id: CALLER } } });
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
-  it('should ignore a malformed target id without querying the database', async () => {
-    await startDmAction(dmForm('not-a-uuid'));
-    expect(mockDb.from).not.toHaveBeenCalled();
+  it('should pass the caller and form to the service, and stay put when it refuses', async () => {
+    mockStartDirectMessage.mockResolvedValue({ ok: false, code: 'not_found', error: "That person isn't on this team." });
+    // The redirect mock throws, so resolving means no redirect.
+    await expect(startDmAction(dmForm())).resolves.toBeUndefined();
+    expect(mockStartDirectMessage).toHaveBeenCalledWith(mockDb, CALLER, { teamId: DM_TEAM, targetUserId: TARGET });
   });
 
-  it('should not open a DM with someone who is not on the team', async () => {
-    results['team_members.select'] = { data: [{ user_id: CALLER }], error: null };
-    await startDmAction(dmForm());
-    expect(writesTo('channels')).toHaveLength(0);
-    expect(writesTo('channel_members')).toHaveLength(0);
-  });
-
-  it('should open a DM when both people are on the team', async () => {
-    results['team_members.select'] = { data: [{ user_id: CALLER }, { user_id: TARGET }], error: null };
-    results['channel_members.select'] = { data: [], error: null };
-    results['channels.insert'] = { data: { id: 'ch1' }, error: null };
+  it('should open the DM the service returns', async () => {
+    mockStartDirectMessage.mockResolvedValue({ ok: true, data: { channelId: 'ch1' } });
     await expect(startDmAction(dmForm())).rejects.toThrow('/messages/ch1');
-    expect(writesTo('channels')).toHaveLength(1);
   });
 });

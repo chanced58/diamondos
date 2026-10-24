@@ -22,6 +22,7 @@ import type { Player } from '../db/models/Player';
 import { getSupabaseClient } from '../lib/supabase';
 import type { Database as RemoteDatabase, Json } from '@baseball/database';
 import { pushTournamentEventQueue, reconcilePendingSequences, type TournamentSyncRejection } from './tournament-event-sync';
+import { deletedMessagesSince, splitDeletedMessages } from './message-deletions';
 import {
   EMPTY_TEAM_BACKFILL,
   fetchAllByParentIds,
@@ -147,10 +148,10 @@ async function quarantineEventIds(ids: string[]): Promise<void> {
 // messages) — a local re-derivation of two of the server's FK cascades from
 // games.id / channels.id, not a mirror of the server's cascade as a whole.
 // This is exact for game_events (append-only, only ever removed via the game
-// cascade) and for messages EXCEPT for the case of a single message deleted
-// server-side while its channel survives — there is no such feature today,
-// so that case is out of scope; covering it would require the unbounded id
-// fetch this design exists to avoid. game_lineups gets the same treatment
+// cascade). A single message deleted while its channel survives is a soft
+// delete (deleted_at), so it arrives through the pull's own window instead —
+// `deleted_at >= since`, see ./message-deletions.ts — with no id fetch of the
+// whole table. game_lineups gets the same treatment
 // for its dirty-row gap (see below) — cascaded from `games`, not id-fetched.
 //
 // game_lineups also cascades from games.id server-side, and is PARTIALLY
@@ -804,7 +805,7 @@ export async function syncWithSupabase(): Promise<void> {
       if (serverTimeResult.error) throw serverTimeResult.error;
       const pullTimestamp = new Date(serverTimeResult.data as string).getTime();
 
-      const [gamesResult, eventsResult, playersResult, leagueIdentitiesResult, channelsResult, messagesResult, lineupsResult, leaguePlayersResult, oppPlayersResult, pulledDirtyState] =
+      const [gamesResult, eventsResult, playersResult, leagueIdentitiesResult, channelsResult, messagesResult, deletedMessagesResult, lineupsResult, leaguePlayersResult, oppPlayersResult, pulledDirtyState] =
         await Promise.all([
           supabase.from('games').select('*').gte('updated_at', gamesSince),
           supabase.from('game_events').select('*').gte('synced_at', since),
@@ -818,13 +819,16 @@ export async function syncWithSupabase(): Promise<void> {
             .eq('channel_members.user_id', userId)
             .gte('updated_at', since),
           supabase.from('messages').select('*, user_profiles!sender_id(first_name, last_name)').gte('created_at', since),
+          // Older messages deleted since the last pull: their rows predate the
+          // created_at window, so only their ids come (see message-deletions.ts).
+          supabase.from('messages').select('id').gte('deleted_at', deletedMessagesSince(since)),
           supabase.from('game_lineups').select('*').gte('updated_at', lineupsSince),
           supabase.from('league_players').select('*').gte('registered_at', leaguePlayersSince),
           supabase.from('opponent_players').select('*').gte('updated_at', oppPlayersSince),
           getDirtyLineupState(database),
         ]);
 
-      const firstError = [gamesResult, eventsResult, playersResult, leagueIdentitiesResult, channelsResult, messagesResult, lineupsResult, leaguePlayersResult, oppPlayersResult]
+      const firstError = [gamesResult, eventsResult, playersResult, leagueIdentitiesResult, channelsResult, messagesResult, deletedMessagesResult, lineupsResult, leaguePlayersResult, oppPlayersResult]
         .map((r) => r.error)
         .find((e) => e != null);
       if (firstError) throw firstError;
@@ -1023,6 +1027,14 @@ export async function syncWithSupabase(): Promise<void> {
         }
       }
 
+      // Soft-deleted messages come off the device instead of arriving blank,
+      // whether pulled with deleted_at set or deleted since the last pull.
+      const messageChanges = splitDeletedMessages(
+        pulledMessageRows,
+        (deletedMessagesResult.data ?? []).map((row) => row.id as string),
+        deletions.messages,
+      );
+
       // Every pulled row goes in `updated`, never `created`.
       //
       // The pull is a timestamp window (`gte(updated_at, since)`) — it cannot
@@ -1061,8 +1073,8 @@ export async function syncWithSupabase(): Promise<void> {
           },
           messages: {
             created: [],
-            updated: pulledMessageRows.map(mapMessage),
-            deleted: deletions.messages,
+            updated: messageChanges.live.map(mapMessage),
+            deleted: messageChanges.deletedIds,
           },
           game_lineups: {
             created: [],

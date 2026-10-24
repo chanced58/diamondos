@@ -7,6 +7,8 @@ export default function MessagesLayout() {
   return (
     <Stack screenOptions={BRAND_STACK_OPTIONS}>
       <Stack.Screen name="index" options={{ title: 'Messages' }} />
+      <Stack.Screen name="new" options={{ title: 'New channel' }} />
+      <Stack.Screen name="new-dm" options={{ title: 'New message' }} />
     </Stack>
   );
 }
