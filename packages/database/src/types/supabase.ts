@@ -5212,6 +5212,10 @@ export type Database = {
         Args: { p_team_id: string; p_user_id: string }
         Returns: boolean
       }
+      is_league_channel_member: {
+        Args: { p_league_channel_id: string; p_user_id: string }
+        Returns: boolean
+      }
       is_league_coach: {
         Args: { p_league_id: string; p_user_id: string }
         Returns: boolean
