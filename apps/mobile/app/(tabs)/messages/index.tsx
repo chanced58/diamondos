@@ -12,6 +12,8 @@ import { useCan, useRole } from '../../../src/providers/RoleProvider';
 import { TeamSwitcher } from '../../../src/features/teams/TeamSwitcher';
 import { OptionSheet } from '../../../src/features/opponents/OptionSheet';
 import { resolveChannelLabel, visibleChannels } from '../../../src/features/messaging/channel-label';
+import { useLeagueChannels } from '../../../src/features/messaging/league-messaging-api';
+import { LeagueChannelSection, type LeagueSectionState } from '../../../src/features/messaging/LeagueChannelSection';
 
 interface ChannelWithMessages {
   channel: Channel;
@@ -21,6 +23,7 @@ interface ChannelWithMessages {
 interface ChannelListProps {
   channelsWithMessages: ChannelWithMessages[];
   currentUserId: string | null;
+  league?: LeagueSectionState;
 }
 
 const CHANNEL_TYPE_LABELS: Record<string, string> = {
@@ -29,8 +32,9 @@ const CHANNEL_TYPE_LABELS: Record<string, string> = {
   direct: '👤',
 };
 
-function ChannelList({ channelsWithMessages, currentUserId }: ChannelListProps) {
-  if (channelsWithMessages.length === 0) {
+function ChannelList({ channelsWithMessages, currentUserId, league }: ChannelListProps) {
+  const hasLeagueChannels = (league?.data?.channels.length ?? 0) > 0;
+  if (channelsWithMessages.length === 0 && !hasLeagueChannels && !league?.error) {
     return (
       <View className="flex-1 items-center justify-center">
         <Text className="text-gray-400 text-base">No channels yet.</Text>
@@ -43,6 +47,8 @@ function ChannelList({ channelsWithMessages, currentUserId }: ChannelListProps) 
       data={channelsWithMessages}
       keyExtractor={({ channel }) => channel.id}
       contentContainerStyle={{ padding: 16 }}
+      ListHeaderComponent={league ? <LeagueChannelSection league={league} /> : null}
+      ListEmptyComponent={<Text className="text-gray-400 text-sm">No team channels yet.</Text>}
       renderItem={({ item: { channel, messages } }) => {
         const label = resolveChannelLabel({
           channel: { name: channel.name ?? null, channelType: channel.channelType },
@@ -100,13 +106,18 @@ const ChannelListEnhanced = withObservables(['teamId'], ({ teamId }: { teamId: s
   const { user } = useAuth();
   const canTopics = useCan(Feature.TOPIC_CHANNELS);
   const canDms = useCan(Feature.DIRECT_MESSAGES);
+  const league = useLeagueChannels(props.teamId);
   const channelsWithMessages: ChannelWithMessages[] = visibleChannels(props.channels, { canTopics, canDms }).map((channel) => ({
     channel,
     messages: props.messages.filter((m) => m.channelRemoteId === channel.remoteId),
   }));
 
   return (
-    <ChannelList channelsWithMessages={channelsWithMessages} currentUserId={user?.id ?? null} />
+    <ChannelList
+      channelsWithMessages={channelsWithMessages}
+      currentUserId={user?.id ?? null}
+      league={{ data: league.data, error: league.error, refetch: league.refetch }}
+    />
   );
 });
 

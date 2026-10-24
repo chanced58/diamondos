@@ -9,6 +9,7 @@ export default function MessagesLayout() {
       <Stack.Screen name="index" options={{ title: 'Messages' }} />
       <Stack.Screen name="new" options={{ title: 'New channel' }} />
       <Stack.Screen name="new-dm" options={{ title: 'New message' }} />
+      <Stack.Screen name="league/[channelId]" options={{ title: 'League channel' }} />
     </Stack>
   );
 }
