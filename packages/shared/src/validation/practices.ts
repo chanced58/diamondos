@@ -80,11 +80,26 @@ const categoryNotes = Object.fromEntries(
 
 export const practicePlayerCoachNotesSchema = z.object({ playerId: uuid('Missing player.'), ...categoryNotes });
 
-/** The coach's notes: overall (the team sees them), private coach notes, and per-player notes. */
+/**
+ * Like optionalText, but a field left out stays undefined, so a save can
+ * leave it alone; blank or null still clears it.
+ */
+const keptUnlessSent = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullish()
+    .transform((value) => (value === undefined ? undefined : value ? value : null));
+
+/**
+ * The coach's notes: overall (the team sees them), private coach notes, and
+ * per-player notes. Overall and coach notes not sent are left as they are.
+ */
 export const savePracticeNotesInputSchema = z.object({
   practiceId: uuid('Missing practice.'),
-  overallNotes: optionalText(20000),
-  coachNotes: optionalText(20000),
+  overallNotes: keptUnlessSent(20000),
+  coachNotes: keptUnlessSent(20000),
   /** Only the players whose notes are being saved; others are left as they are. */
   players: z.array(practicePlayerCoachNotesSchema).max(200).default([]),
 });

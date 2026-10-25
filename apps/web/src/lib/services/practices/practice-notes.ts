@@ -59,21 +59,27 @@ export async function savePracticeNotes(
   }
 
   const now = new Date().toISOString();
-  const { error: notesError } = await db.from('practice_notes').upsert(
-    {
-      practice_id: input.practiceId,
-      overall_notes: input.overallNotes,
-      coach_notes: input.coachNotes,
-      updated_by: actorUserId,
-      updated_at: now,
-    },
-    { onConflict: 'practice_id' },
-  );
-  if (notesError) return failed('savePracticeNotes', input.practiceId, actorUserId, notesError);
+  // Overall and coach notes left out of the request stay as they are.
+  if (input.overallNotes !== undefined || input.coachNotes !== undefined) {
+    const { error: notesError } = await db.from('practice_notes').upsert(
+      {
+        practice_id: input.practiceId,
+        ...(input.overallNotes !== undefined && { overall_notes: input.overallNotes }),
+        ...(input.coachNotes !== undefined && { coach_notes: input.coachNotes }),
+        updated_by: actorUserId,
+        updated_at: now,
+      },
+      { onConflict: 'practice_id' },
+    );
+    if (notesError) return failed('savePracticeNotes', input.practiceId, actorUserId, notesError);
+  }
 
-  if (input.players.length > 0) {
+  // One row per player (the last one sent wins): Postgres refuses an upsert
+  // that would update the same row twice.
+  const players = [...new Map(input.players.map((player) => [player.playerId, player])).values()];
+  if (players.length > 0) {
     // player_notes is the player's own column and is never sent, so the upsert leaves it alone.
-    const rows = input.players.map((player) => ({
+    const rows = players.map((player) => ({
       practice_id: input.practiceId,
       player_id: player.playerId,
       ...Object.fromEntries(PRACTICE_NOTE_CATEGORIES.map(({ key }) => [key, player[key]])),

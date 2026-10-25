@@ -38,9 +38,10 @@ export function notesInput(original: NotesDraft, draft: NotesDraft): Omit<SavePr
   const changed = Object.entries(draft.players).filter(([playerId, notes]) =>
     PRACTICE_NOTE_CATEGORIES.some(({ key }) => notes[key] !== original.players[playerId]?.[key]),
   );
+  // Overall and coach notes go only when edited here, like players' notes.
   return {
-    overallNotes: draft.overallNotes,
-    coachNotes: draft.coachNotes,
+    ...(draft.overallNotes !== original.overallNotes && { overallNotes: draft.overallNotes }),
+    ...(draft.coachNotes !== original.coachNotes && { coachNotes: draft.coachNotes }),
     players: changed.map(([playerId, notes]) => ({ playerId, ...notes })),
   };
 }

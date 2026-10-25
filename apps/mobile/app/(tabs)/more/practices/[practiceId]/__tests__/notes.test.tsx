@@ -54,7 +54,6 @@ describe('PracticeNotesScreen', () => {
 
     expect(mockSaveNotes).toHaveBeenCalledWith('p1', {
       overallNotes: 'Sharp day',
-      coachNotes: 'Private',
       players: [{ playerId: 'ann', pitching: '', hitting: 'Shorter stride', fielding_catching: '', baserunning: '', athleticism: '', attitude: '' }],
     });
     await waitFor(() => expect(mockBack).toHaveBeenCalled());

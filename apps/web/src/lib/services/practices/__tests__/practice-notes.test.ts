@@ -55,6 +55,37 @@ describe('savePracticeNotes', () => {
     expect(playerNotes[0]).not.toHaveProperty('player_notes');
   });
 
+  it('should leave overall and coach notes alone when a save leaves them out', async () => {
+    const { db, calls } = fakeDb({
+      'practices.select': practiceRow(),
+      'team_members.select': role('head_coach'),
+      'players.select': { data: [{ id: PLAYER }] },
+    });
+    expect(await savePracticeNotes(db, 'c', { practiceId: PRACTICE, coachNotes: '', players: [{ playerId: PLAYER, hitting: 'x' }] })).toMatchObject({ ok: true });
+    const notes = calls.find((c) => c.table === 'practice_notes')?.payload as Record<string, unknown>;
+    expect(notes).toMatchObject({ coach_notes: null });
+    expect(notes).not.toHaveProperty('overall_notes');
+
+    const playersOnly = fakeDb({ 'practices.select': practiceRow(), 'team_members.select': role('head_coach'), 'players.select': { data: [{ id: PLAYER }] } });
+    await savePracticeNotes(playersOnly.db, 'c', { practiceId: PRACTICE, players: [{ playerId: PLAYER, hitting: 'x' }] });
+    expect(playersOnly.calls.some((c) => c.table === 'practice_notes')).toBe(false);
+  });
+
+  it('should write one row per player when a player is sent twice, the last one winning', async () => {
+    const { db, calls } = fakeDb({
+      'practices.select': practiceRow(),
+      'team_members.select': role('head_coach'),
+      'players.select': { data: [{ id: PLAYER }] },
+    });
+    await savePracticeNotes(db, 'c', {
+      practiceId: PRACTICE,
+      players: [{ playerId: PLAYER, hitting: 'first' }, { playerId: PLAYER, hitting: 'second' }],
+    });
+    const rows = calls.find((c) => c.table === 'practice_player_notes')?.payload as Record<string, unknown>[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ player_id: PLAYER, hitting: 'second' });
+  });
+
   it("should refuse notes about another team's player, before writing anything", async () => {
     const { db, calls } = fakeDb({
       'practices.select': practiceRow(),

@@ -74,7 +74,6 @@ describe('notes draft', () => {
 
     const edited = { ...original, coachNotes: 'Watch p2', players: { ...original.players, p2: { ...original.players.p2, attitude: 'Great' } } };
     expect(notesInput(original, edited)).toEqual({
-      overallNotes: 'Good day',
       coachNotes: 'Watch p2',
       players: [{ playerId: 'p2', pitching: '', hitting: '', fielding_catching: '', baserunning: '', athleticism: '', attitude: 'Great' }],
     });
