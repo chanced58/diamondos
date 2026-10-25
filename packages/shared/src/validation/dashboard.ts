@@ -51,6 +51,8 @@ export type DashboardNextGame = z.infer<typeof nextGameSchema>;
 const upcomingItemSchema = z.object({
   kind: z.enum(['game', 'practice', 'event']),
   id: z.string(),
+  /** Whose item: another league team's game in the league view, else ours. */
+  teamId: z.string(),
   date: z.string(),
   /** A game's zone; null for practices, events and games without one (the viewer's zone). */
   timeZone: z.string().nullable(),
@@ -61,6 +63,7 @@ export type DashboardUpcomingItem = z.infer<typeof upcomingItemSchema>;
 
 const recentGameSchema = z.object({
   id: z.string(),
+  teamId: z.string(),
   date: z.string(),
   timeZone: z.string().nullable(),
   /** Prefixed with the team's name for another team's game in the league view. */

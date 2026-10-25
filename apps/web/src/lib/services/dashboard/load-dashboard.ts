@@ -156,6 +156,7 @@ async function loadUpcoming(
       return {
         kind: 'game' as const,
         id: g.id,
+        teamId: g.team_id,
         date: g.scheduled_at,
         timeZone: g.time_zone,
         label: `${weAreHome(g.location_type, g.neutral_home_team) ? 'vs' : '@'} ${g.opponent_name ?? 'TBD'}`,
@@ -165,6 +166,7 @@ async function loadUpcoming(
     ...((practices.data ?? []) as Array<{ id: string; scheduled_at: string; location: string | null; duration_minutes: number | null }>).map((p) => ({
       kind: 'practice' as const,
       id: p.id,
+      teamId,
       date: p.scheduled_at,
       timeZone: null,
       label: 'Practice',
@@ -173,6 +175,7 @@ async function loadUpcoming(
     ...((events.data ?? []) as Array<{ id: string; title: string; event_type: string; starts_at: string }>).map((e) => ({
       kind: 'event' as const,
       id: e.id,
+      teamId,
       date: e.starts_at,
       timeZone: null,
       label: e.title,
@@ -253,6 +256,7 @@ async function loadRecentGames(
     const teamLabel = view === 'league' && g.team_id !== teamId ? teamNames[g.team_id] : null;
     return {
       id: g.id,
+      teamId: g.team_id,
       date: g.completed_at ?? g.scheduled_at,
       timeZone: g.time_zone,
       opponent: teamLabel ? `${teamLabel}: ${g.opponent_name}` : g.opponent_name,
