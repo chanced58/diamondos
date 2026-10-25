@@ -4,6 +4,7 @@ import { useState, type JSX } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { planPracticeAction } from './actions';
 import { AddressAutocomplete } from '@/components/maps/AddressAutocomplete';
+import { BrowserTimeZoneInput } from '@/components/game/BrowserTimeZoneInput';
 import type { PracticeDrill } from '@baseball/shared';
 import { DrillPicker } from '../templates/DrillPicker';
 
@@ -42,6 +43,7 @@ export function PlanPracticeForm({ teamId, drills }: Props): JSX.Element | null 
     <>
     <form action={formAction} className="space-y-5">
       <input type="hidden" name="teamId" value={teamId} />
+      <BrowserTimeZoneInput />
       <input
         type="hidden"
         name="drill_ids"

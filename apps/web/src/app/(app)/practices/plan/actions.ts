@@ -3,7 +3,8 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { PracticeBlockType } from '@baseball/shared';
+import { PracticeBlockType, zonedDateTimeToUtc } from '@baseball/shared';
+import { resolveGameTimeZone } from '@/lib/games/game-time-zone';
 
 export async function planPracticeAction(
   _prevState: string | null | undefined,
@@ -53,7 +54,17 @@ export async function planPracticeAction(
     drillIds = [];
   }
 
-  const scheduledAt = new Date(`${date}T${time}`).toISOString();
+  // The typed time is wall-clock at the venue (or in the coach's browser when
+  // no venue was picked). This action runs in UTC, so never let `new Date()`
+  // interpret it.
+  const timeZone =
+    resolveGameTimeZone({ latitude, longitude, browserTimeZone: formData.get('browserTimeZone') as string | null }) ?? 'UTC';
+  let scheduledAt: string;
+  try {
+    scheduledAt = zonedDateTimeToUtc(date, time, timeZone);
+  } catch {
+    return 'Invalid practice date or time.';
+  }
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -94,17 +105,21 @@ export async function planPracticeAction(
 
   if (error) return `Failed to create practice: ${error.message}`;
 
-  // Save the plan as coach_notes if provided
+  // Save the plan as coach notes if provided. practice_notes has no team_id
+  // or created_by column; writing them made every upsert fail unnoticed.
   if (plan) {
-    await supabase.from('practice_notes').upsert(
+    const { error: notesError } = await supabase.from('practice_notes').upsert(
       {
         practice_id: practice.id,
-        team_id: teamId,
         coach_notes: plan,
-        created_by: user.id,
+        updated_by: user.id,
+        updated_at: new Date().toISOString(),
       },
       { onConflict: 'practice_id' },
     );
+    if (notesError) {
+      console.error(`[planPracticeAction] failed to save the plan for practice ${practice.id}:`, notesError);
+    }
   }
 
   // Create structured practice_blocks from selected drills. Block insert
