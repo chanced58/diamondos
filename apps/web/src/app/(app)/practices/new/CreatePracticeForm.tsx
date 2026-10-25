@@ -4,6 +4,7 @@ import type { JSX } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { createPracticeAction } from './actions';
 import { AddressAutocomplete } from '@/components/maps/AddressAutocomplete';
+import { BrowserTimeZoneInput } from '@/components/game/BrowserTimeZoneInput';
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -30,6 +31,7 @@ export function CreatePracticeForm({ teamId }: { teamId: string }): JSX.Element 
   return (
     <form action={formAction} className="space-y-5">
       <input type="hidden" name="teamId" value={teamId} />
+      <BrowserTimeZoneInput />
 
       <div className="grid grid-cols-2 gap-4">
         <div>

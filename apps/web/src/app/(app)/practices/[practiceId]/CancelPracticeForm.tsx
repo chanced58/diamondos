@@ -2,6 +2,7 @@
 import type { JSX } from 'react';
 
 import { useFormState, useFormStatus } from 'react-dom';
+import { BrowserTimeZoneInput } from '@/components/game/BrowserTimeZoneInput';
 import { cancelPracticeAction } from './actions';
 
 function CancelButton() {
@@ -26,6 +27,7 @@ export function CancelPracticeForm({ practiceId }: { practiceId: string }): JSX.
   return (
     <form action={formAction} className="flex flex-col items-end gap-2">
       <input type="hidden" name="practiceId" value={practiceId} />
+      <BrowserTimeZoneInput />
       <label className="flex items-center gap-1.5 cursor-pointer select-none">
         <input
           type="checkbox"
