@@ -5,4 +5,5 @@
 import { savePracticeNotes } from '@/lib/services/practices/practice-notes';
 import { practiceBodyRoute } from '@/lib/api/practice-route';
 
+/** Saves the coach's notes; see `savePracticeNotes`. */
 export const PUT = practiceBodyRoute(savePracticeNotes);

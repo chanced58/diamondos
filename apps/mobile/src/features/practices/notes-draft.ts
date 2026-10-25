@@ -22,6 +22,7 @@ export interface NotesDraft {
 const emptyCategories = (): CategoryDraft =>
   Object.fromEntries(PRACTICE_NOTE_CATEGORIES.map(({ key }) => [key, ''])) as CategoryDraft;
 
+/** The form's starting values from the practice: every roster player, blank where nothing is written. */
 export function notesDraftFrom(detail: PracticeDetailResponse): NotesDraft {
   const coach = detail.coach;
   const players: Record<string, CategoryDraft> = {};
@@ -34,6 +35,7 @@ export function notesDraftFrom(detail: PracticeDetailResponse): NotesDraft {
   return { overallNotes: detail.overallNotes ?? '', coachNotes: coach?.coachNotes ?? '', players };
 }
 
+/** The save request: overall and coach notes only when edited, and only the players whose notes changed. */
 export function notesInput(original: NotesDraft, draft: NotesDraft): Omit<SavePracticeNotesInput, 'practiceId'> {
   const changed = Object.entries(draft.players).filter(([playerId, notes]) =>
     PRACTICE_NOTE_CATEGORIES.some(({ key }) => notes[key] !== original.players[playerId]?.[key]),

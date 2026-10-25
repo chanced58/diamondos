@@ -5,6 +5,7 @@ import { useFormState, useFormStatus } from 'react-dom';
 import { BrowserTimeZoneInput } from '@/components/game/BrowserTimeZoneInput';
 import { cancelPracticeAction } from './actions';
 
+/** The submit button, which asks before cancelling. */
 function CancelButton() {
   const { pending } = useFormStatus();
   return (
@@ -21,6 +22,7 @@ function CancelButton() {
   );
 }
 
+/** Cancels the practice through `cancelPracticeAction`, optionally announcing it to the team. */
 export function CancelPracticeForm({ practiceId }: { practiceId: string }): JSX.Element | null {
   const [error, formAction] = useFormState(cancelPracticeAction, null);
 

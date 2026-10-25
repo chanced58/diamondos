@@ -209,6 +209,7 @@ export default function PracticeRunScreen() {
   );
 }
 
+/** One centered card, for the runner's ready and finished states. */
 function Centered({ header, children }: { header: React.ReactNode; children: React.ReactNode }) {
   return (
     <View className="flex-1 bg-gray-50 p-4">

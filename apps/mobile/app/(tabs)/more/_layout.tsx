@@ -3,6 +3,7 @@ import { BRAND_STACK_OPTIONS } from '../../../src/navigation/stack-options';
 
 export const unstable_settings = { initialRouteName: 'index' };
 
+/** The More tab's stack: Roster, Practices, Facilities and Opponents push within the tab. */
 export default function MoreLayout() {
   return (
     <Stack screenOptions={BRAND_STACK_OPTIONS}>

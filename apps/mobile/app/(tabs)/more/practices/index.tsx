@@ -98,6 +98,7 @@ export default function PracticesIndex() {
   );
 }
 
+/** One practice in the list: when and where, with its game-prep and run-status badges. */
 function PracticeRow({ practice }: { practice: PracticeSummary }) {
   const status = RUN_STATUS_LABELS[practice.runStatus];
   return (

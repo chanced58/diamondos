@@ -17,10 +17,12 @@ export interface PracticeFormValues {
   notifyTeam: boolean;
 }
 
+/** A new practice's defaults: today at 4:00 PM for two hours, no venue, no announcement. */
 export function emptyPracticeFormValues(today: { date: string }): PracticeFormValues {
   return { date: today.date, time: '16:00', duration: '120', venue: null, notifyTeam: false };
 }
 
+/** The create request for the form's values, the typed wall clock converted on the device. */
 export function practiceInput(teamId: string, values: PracticeFormValues, timeZone: string | null): CreatePracticeInput {
   const duration = values.duration.trim();
   return {

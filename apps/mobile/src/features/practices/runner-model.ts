@@ -6,14 +6,17 @@ import { computeBlockRemaining, type BlockTimerState, type PracticeRunBlock } fr
  * the next pending one after it.
  */
 
+/** The block on screen: the active one, else the first pending. */
 export function currentBlock(blocks: PracticeRunBlock[]): PracticeRunBlock | null {
   return blocks.find((b) => b.status === 'active') ?? blocks.find((b) => b.status === 'pending') ?? null;
 }
 
+/** The first pending block after the given position: the one completing a block starts next. */
 export function nextPendingAfter(blocks: PracticeRunBlock[], position: number): PracticeRunBlock | null {
   return blocks.find((b) => b.position > position && b.status === 'pending') ?? null;
 }
 
+/** Every block completed or skipped. */
 export function allBlocksDone(blocks: PracticeRunBlock[]): boolean {
   return blocks.every((b) => b.status === 'completed' || b.status === 'skipped');
 }
@@ -24,6 +27,7 @@ export function actualMinutes(block: PracticeRunBlock, now: Date): number {
   return Math.max(1, Math.round((now.getTime() - Date.parse(block.startedAt)) / 60_000));
 }
 
+/** The countdown for a block, from its start time and planned minutes. */
 export function blockTimer(block: PracticeRunBlock, now: Date): BlockTimerState {
   return computeBlockRemaining({ startedAt: block.startedAt, plannedDurationMinutes: block.plannedDurationMinutes }, now);
 }

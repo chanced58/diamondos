@@ -92,6 +92,7 @@ export async function loadPractice(
   }
 }
 
+/** The game a prep practice is for, when it is linked to one of the team's games. */
 async function loadPrep(db: SupabaseClient, teamId: string, linkedGameId: string | null, focusSummary: string | null) {
   if (!linkedGameId) return null;
   const { data, error } = await db
@@ -151,6 +152,7 @@ async function loadOwnPlayers(db: SupabaseClient, actorUserId: string, teamId: s
   });
 }
 
+/** What only coaches see: their notes, the roster, every player's notes and the ranked hitters. */
 async function loadCoachView(db: SupabaseClient, teamId: string, practiceId: string, coachNotes: string | null) {
   const since = new Date(Date.now() - HITTER_LOOKBACK_DAYS * 24 * 3600 * 1000);
   const [playersResult, notesResult, reps] = await Promise.all([
@@ -185,6 +187,7 @@ async function loadCoachView(db: SupabaseClient, teamId: string, practiceId: str
   };
 }
 
+/** A `practice_player_notes` row in the response's shape. */
 function toPlayerNotes(row: NotesRow): PracticePlayerNotes {
   return {
     pitching: row.pitching,

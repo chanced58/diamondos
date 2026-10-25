@@ -21,6 +21,7 @@ async function authenticate() {
   return { user, db };
 }
 
+/** Cancels the practice (announcing it when asked) and returns to the practice list. */
 export async function cancelPracticeAction(_prevState: string | null | undefined, formData: FormData) {
   const session = await authenticate();
   if (!session) return 'Not authenticated.';
@@ -40,6 +41,7 @@ export async function cancelPracticeAction(_prevState: string | null | undefined
 
 // ─── Coach: save overall, coach, and per-player categorical notes ─────────────
 
+/** Saves the coach notes form; per-player fields arrive as `player_<id>_<category>`. */
 export async function savePracticeNotesAction(
   _prevState: string | null | undefined,
   formData: FormData,
@@ -72,6 +74,7 @@ export async function savePracticeNotesAction(
 
 // ─── Player: save only their own self-reflection notes ───────────────────────
 
+/** Saves a player's own reflection from the player view. */
 export async function savePlayerSelfNotesAction(
   _prevState: string | null | undefined,
   formData: FormData,
@@ -91,6 +94,7 @@ export async function savePlayerSelfNotesAction(
   return result.ok ? 'saved' : result.error;
 }
 
+/** Saves the practice's plan text. */
 export async function savePracticePlanAction(
   _prevState: string | null | undefined,
   formData: FormData,

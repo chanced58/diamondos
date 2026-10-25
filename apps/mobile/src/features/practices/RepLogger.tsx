@@ -96,6 +96,7 @@ export function RepLogger({ practiceId, players, onLogged }: Props) {
   );
 }
 
+/** A selectable pill, for the hitter and coach-tag pickers. */
 function Chip({ label, selected, onPress, small }: { label: string; selected: boolean; onPress: () => void; small?: boolean }) {
   return (
     <TouchableOpacity

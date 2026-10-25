@@ -6,6 +6,7 @@ import { createPracticeAction } from './actions';
 import { AddressAutocomplete } from '@/components/maps/AddressAutocomplete';
 import { BrowserTimeZoneInput } from '@/components/game/BrowserTimeZoneInput';
 
+/** The submit button, disabled while the practice is being created. */
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
@@ -22,6 +23,7 @@ function SubmitButton() {
 const inputClass =
   'w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent';
 
+/** The Log practice form; the browser's time zone rides along so the server reads the typed time correctly. */
 export function CreatePracticeForm({ teamId }: { teamId: string }): JSX.Element | null {
   const [error, formAction] = useFormState(createPracticeAction, null);
 

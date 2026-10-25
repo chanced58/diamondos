@@ -26,14 +26,17 @@ async function run(input: RunPracticeInput): Promise<Result> {
   return {};
 }
 
+/** Starts the practice (head coaches and athletic directors). */
 export async function startPracticeAction(args: { practiceId: string }): Promise<Result> {
   return run({ practiceId: args.practiceId, action: 'start' });
 }
 
+/** Starts a block, pointing the practice at it when this start wins. */
 export async function startBlockAction(args: { practiceId: string; blockId: string }): Promise<Result> {
   return run({ practiceId: args.practiceId, action: 'startBlock', blockId: args.blockId });
 }
 
+/** Completes a block with the minutes it actually ran. */
 export async function completeBlockAction(args: {
   practiceId: string;
   blockId: string;
@@ -47,10 +50,12 @@ export async function completeBlockAction(args: {
   });
 }
 
+/** Skips a block that hasn't been completed. */
 export async function skipBlockAction(args: { practiceId: string; blockId: string }): Promise<Result> {
   return run({ practiceId: args.practiceId, action: 'skipBlock', blockId: args.blockId });
 }
 
+/** Finishes the practice (head coaches and athletic directors). */
 export async function completePracticeAction(args: { practiceId: string }): Promise<Result> {
   return run({ practiceId: args.practiceId, action: 'complete' });
 }

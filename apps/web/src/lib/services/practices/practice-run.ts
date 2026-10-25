@@ -28,6 +28,7 @@ import { failed } from './practice-lookup';
 
 type Practice = NonNullable<Awaited<ReturnType<typeof getPracticeWithBlocks>>>;
 
+/** The runner for a coach of the practice's team. */
 export async function loadPracticeRun(
   db: SupabaseClient,
   actorUserId: string,
@@ -92,6 +93,7 @@ export async function runPractice(
   }
 }
 
+/** The practice with its blocks and the actor's team role, when the actor coaches the team. */
 async function authorize(
   db: SupabaseClient,
   practiceId: string,
@@ -117,14 +119,17 @@ async function authorize(
   return { practice, role };
 }
 
+/** Head coaches and athletic directors run the whole practice. */
 function isHeadCoachOrAD(role: string | null) {
   return role === 'head_coach' || role === 'athletic_director';
 }
 
+/** Head coaches and athletic directors control every block; an assistant only the blocks assigned to them. */
 function canControlBlock(role: string | null, actorUserId: string, assignedCoachId: string | undefined) {
   return isHeadCoachOrAD(role) || assignedCoachId === actorUserId;
 }
 
+/** The runner response: blocks in order, each saying whether the actor controls it. */
 function toRunResponse(practice: Practice, role: string | null, actorUserId: string): PracticeRunResponse {
   return {
     practice: {

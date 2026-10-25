@@ -7,6 +7,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { resolveGameTimeZone } from '@/lib/games/game-time-zone';
 import { createPractice } from '@/lib/services/practices/practices';
 
+/** Converts the typed date and time in the venue's or browser's zone, creates the practice through the shared service, and opens it. */
 export async function createPracticeAction(_prevState: string | null | undefined, formData: FormData) {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();

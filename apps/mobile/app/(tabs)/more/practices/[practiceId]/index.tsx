@@ -136,6 +136,7 @@ export default function PracticeScreen() {
   );
 }
 
+/** The rows that lead off the page: the runner, attendance and the web plan builder for coaches; the rotation card for a player. */
 function Actions({ detail }: { detail: PracticeDetailResponse }) {
   const { practice } = detail;
   const practiceId = practice.id;
@@ -183,12 +184,14 @@ function Actions({ detail }: { detail: PracticeDetailResponse }) {
   );
 }
 
+/** The notes row's subtitle: whether overall notes exist, and how many players have notes. */
 function notesSummary(detail: PracticeDetailResponse): string {
   const written = Object.keys(detail.coach?.playerNotes ?? {}).length;
   const overall = detail.overallNotes ? 'Overall notes written' : 'No overall notes yet';
   return written > 0 ? `${overall} · ${written} player${written === 1 ? '' : 's'}` : overall;
 }
 
+/** The coach's plan text, with a Save button that appears once it is edited. */
 function PlanEditor({ practiceId, plan, onSaved }: { practiceId: string; plan: string; onSaved: () => void }) {
   const [draft, setDraft] = useState(plan);
   const save = useMutation({ mutationFn: () => savePracticePlan(practiceId, draft), onSuccess: onSaved });
@@ -212,6 +215,7 @@ function PlanEditor({ practiceId, plan, onSaved }: { practiceId: string; plan: s
   );
 }
 
+/** Cancels the practice once the coach picks quietly or with a team announcement, then leaves the page. */
 function CancelButton({ practiceId, teamId, scheduledAt }: { practiceId: string; teamId: string; scheduledAt: string }) {
   const queryClient = useQueryClient();
   const cancel = useMutation({

@@ -11,6 +11,7 @@ export type PracticeParams = { params: { practiceId: string } };
 
 type PracticeService<T> = (db: SupabaseClient, actorUserId: string, input: unknown) => Promise<ServiceResult<T>>;
 
+/** A write: authenticate, merge the JSON body with the path's practice id (which wins), call the service. */
 export function practiceBodyRoute<T>(service: PracticeService<T>) {
   return async (req: Request, { params }: PracticeParams) => {
     const auth = await requireApiUser(req);

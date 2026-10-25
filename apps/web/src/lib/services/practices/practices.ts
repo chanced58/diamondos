@@ -61,6 +61,7 @@ export async function listPractices(
   });
 }
 
+/** Logs a practice for a coach of the team, announcing it when asked. Not plan-gated: the web schedule lets every coach log one. */
 export async function createPractice(
   db: SupabaseClient,
   actorUserId: string,
@@ -105,6 +106,7 @@ export async function createPractice(
   return serviceOk({ practiceId: practice.id as string });
 }
 
+/** Cancels a practice for a coach of its own team, announcing it when asked; cancelling twice is a no-op. */
 export async function cancelPractice(
   db: SupabaseClient,
   actorUserId: string,

@@ -7,4 +7,5 @@
 import { loadPractice } from '@/lib/services/practices/load-practice';
 import { practiceReadRoute } from '@/lib/api/practice-route';
 
+/** The practice for the caller's role; see `loadPractice`. */
 export const GET = practiceReadRoute(loadPractice);

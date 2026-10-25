@@ -169,6 +169,7 @@ export async function logPracticeRep(
   return serviceOk({ practiceId: input.practiceId });
 }
 
+/** The practice, when the actor coaches its own team; otherwise the not_found or forbidden result. */
 async function authorizeCoach(db: SupabaseClient, service: string, practiceId: string, actorUserId: string, refusal: string) {
   const lookup = await loadPracticeRow(db, service, practiceId, actorUserId);
   if ('result' in lookup) return lookup;

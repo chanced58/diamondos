@@ -13,6 +13,7 @@ import { createPractice, listPractices } from '@/lib/services/practices/practice
 
 type Params = { params: { teamId: string } };
 
+/** The team's practices; see `listPractices`. */
 export async function GET(req: Request, { params }: Params) {
   const auth = await requireApiUser(req);
   if (auth.response) return auth.response;
@@ -20,6 +21,7 @@ export async function GET(req: Request, { params }: Params) {
   return serviceResponse(await listPractices(auth.db, auth.user.id, { teamId: params.teamId }));
 }
 
+/** Logs a practice for the team in the path; see `createPractice`. */
 export async function POST(req: Request, { params }: Params) {
   const auth = await requireApiUser(req);
   if (auth.response) return auth.response;

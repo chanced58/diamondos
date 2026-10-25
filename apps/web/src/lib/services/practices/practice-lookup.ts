@@ -33,6 +33,7 @@ export async function loadPracticeRow(
   return { practice: data as PracticeRow };
 }
 
+/** Logs the error with its context and returns the generic `failed` result, keeping database detail off the client. */
 export function failed<T = never>(service: string, id: string, actorUserId: string, error: unknown): ServiceResult<T> {
   console.error(`[${service}] id=${id} actor=${actorUserId} failed:`, error);
   return serviceError('failed', 'Something went wrong. Please try again.');

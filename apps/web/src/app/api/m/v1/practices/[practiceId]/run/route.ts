@@ -7,5 +7,7 @@
 import { loadPracticeRun, runPractice } from '@/lib/services/practices/practice-run';
 import { practiceBodyRoute, practiceReadRoute } from '@/lib/api/practice-route';
 
+/** The runner; see `loadPracticeRun`. */
 export const GET = practiceReadRoute(loadPracticeRun);
+/** Applies one runner action; see `runPractice`. */
 export const POST = practiceBodyRoute(runPractice);
