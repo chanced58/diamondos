@@ -44,7 +44,7 @@ describe('PracticesIndex', () => {
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/more/practices/[practiceId]', params: { practiceId: 'next' } });
   });
 
-  it('should give coaches a sheet to log, generate or prep a practice, or open templates', () => {
+  it('should give coaches a sheet to log, plan, generate or prep a practice, and everyone the drill library', () => {
     mockUsePractices.mockReturnValue({ data: { teamId: 't1', isCoach: true, practices: [] } });
     renderWithQuery(<PracticesIndex />);
     fireEvent.press(screen.getByLabelText('New practice'));
@@ -53,6 +53,11 @@ describe('PracticesIndex', () => {
     fireEvent.press(screen.getByLabelText('New practice'));
     fireEvent.press(screen.getByText('Log a practice'));
     expect(mockPush).toHaveBeenLastCalledWith('/(tabs)/more/practices/new');
+    fireEvent.press(screen.getByLabelText('New practice'));
+    fireEvent.press(screen.getByText('Plan from drills'));
+    expect(mockPush).toHaveBeenLastCalledWith('/(tabs)/more/practices/plan');
+    fireEvent.press(screen.getByText('Drill library'));
+    expect(mockPush).toHaveBeenLastCalledWith('/(tabs)/more/practices/drills');
     expect(screen.getByText('Tap + to log a practice.')).toBeTruthy();
   });
 
