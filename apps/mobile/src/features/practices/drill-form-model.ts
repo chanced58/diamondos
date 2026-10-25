@@ -81,9 +81,17 @@ export function drillFields(values: DrillFormValues, existing?: PracticeDrill): 
       .filter(Boolean),
     positions: existing?.positions,
     ageLevels: existing?.ageLevels,
-    diagramUrl: existing?.diagramUrl,
-    videoUrl: existing?.videoUrl,
+    diagramUrl: webLinkOrUndefined(existing?.diagramUrl),
+    videoUrl: webLinkOrUndefined(existing?.videoUrl),
   };
+}
+
+/**
+ * A saved media link worth carrying over: older drills may hold a non-web link
+ * the server now refuses, and the phone can't show or fix it, so it is cleared.
+ */
+function webLinkOrUndefined(url: string | undefined): string | undefined {
+  return url && /^https?:\/\//i.test(url) ? url : undefined;
 }
 
 /** The first problem the server would report, or null. */

@@ -178,6 +178,12 @@ describe('planPractice', () => {
     expect(calls.map((c) => c.table)).not.toContain('practice_blocks');
   });
 
+  it("should refuse a platform admin who isn't a coach on the team, before creating anything", async () => {
+    const { db, calls } = fakeDb({ 'user_profiles.select': { data: { is_platform_admin: true } }, 'team_members.select': { data: null } });
+    expect(await planPractice(db, 'admin', { teamId: TEAM, scheduledAt: scheduledAt() })).toMatchObject({ ok: false, code: 'forbidden' });
+    expect(calls.map((c) => c.table)).not.toContain('practices');
+  });
+
   it('should refuse a parent, a team without practice planning, and a date more than a year away', async () => {
     expect(await planPractice(fakeDb({ 'team_members.select': member('parent') }).db, 'p', { teamId: TEAM, scheduledAt: scheduledAt() })).toMatchObject({ ok: false, code: 'forbidden' });
     mockResolveTeamTier.mockResolvedValue(SubscriptionTier.FREE);

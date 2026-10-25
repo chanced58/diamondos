@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { PracticeBlockType, planPracticeInputSchema } from '@baseball/shared';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
-import { resolveGameViewer } from '../games/authorize';
+import { checkCoachOnTeam } from '@/lib/practices/authz';
 import { failed, requirePracticePlanning } from './practice-lookup';
 
 /**
@@ -28,8 +28,13 @@ export async function planPractice(
     return serviceError('invalid', 'Practice date must be within a year of today.');
   }
 
-  const viewer = await resolveGameViewer(db, actorUserId, input.teamId);
-  if (!viewer?.isCoach) return serviceError('forbidden', 'Only coaches can plan practices.');
+  // An active coach on the team, as the web Plan practice action has always required (not an off-team platform admin).
+  try {
+    const { isCoach } = await checkCoachOnTeam(db, actorUserId, input.teamId);
+    if (!isCoach) return serviceError('forbidden', 'Only coaches can plan practices.');
+  } catch (error) {
+    return failed('planPractice', input.teamId, actorUserId, error);
+  }
   const gate = await requirePracticePlanning(db, input.teamId);
   if (gate) return gate;
 

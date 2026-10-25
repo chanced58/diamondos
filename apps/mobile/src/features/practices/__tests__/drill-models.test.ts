@@ -82,6 +82,11 @@ describe('drill form', () => {
     });
   });
 
+  it('should drop an older non-web media link the server would refuse', () => {
+    const saved = drill({ name: 'Tee', videoUrl: 'tel:5551234', diagramUrl: 'https://example.com/d.png' });
+    expect(drillFields(drillFormValuesFrom(saved), saved)).toMatchObject({ videoUrl: undefined, diagramUrl: 'https://example.com/d.png' });
+  });
+
   it('should toggle and move items in a list', () => {
     expect(toggled(['a', 'b'], 'a')).toEqual(['b']);
     expect(toggled(['a'], 'b')).toEqual(['a', 'b']);
