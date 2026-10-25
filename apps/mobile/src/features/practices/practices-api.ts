@@ -91,10 +91,14 @@ export function usePractice(practiceId: string) {
   });
 }
 
+/** Several coaches can run one practice (each their own blocks), so the runner polls until it is finished. */
+export const PRACTICE_RUN_POLL_MS = 15_000;
+
 export function usePracticeRun(practiceId: string) {
   return useQuery({
     queryKey: practiceRunQueryKey(practiceId),
     queryFn: () => fetchPracticeRun(practiceId),
     enabled: practiceId.length > 0,
+    refetchInterval: (query) => (query.state.data?.practice.runStatus === 'completed' ? false : PRACTICE_RUN_POLL_MS),
   });
 }

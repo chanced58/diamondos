@@ -19,7 +19,9 @@ export function HittersPanel({ hitters, players }: { hitters: Hitters; players: 
     <View className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
       <View className="flex-row items-center justify-between mb-2">
         <Text className="text-sm font-semibold text-gray-900">Recent BP performance</Text>
-        <Text className="text-xs text-gray-500">{hitters.totalReps} reps · last 3 days</Text>
+        <Text className="text-xs text-gray-500">
+          {hitters.totalReps} rep{hitters.totalReps === 1 ? '' : 's'} · last 3 days
+        </Text>
       </View>
       {hitters.hot.length === 0 && hitters.cold.length === 0 && (
         <Text className="text-xs text-gray-500">No hitter has enough reps (5+ in the last 3 days) to rank yet.</Text>
