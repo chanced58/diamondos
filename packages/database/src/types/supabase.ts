@@ -5237,6 +5237,13 @@ export type Database = {
         Args: { p_player_id: string; p_user_id: string }
         Returns: boolean
       }
+      league_channel_eligible_members: {
+        Args: { p_league_id: string }
+        Returns: {
+          user_id: string
+          can_post: boolean
+        }[]
+      }
       league_player_identities: {
         Args: { p_since?: string }
         Returns: {
@@ -5287,6 +5294,10 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      sync_league_channel_membership: {
+        Args: { p_league_id: string; p_user_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       ai_generation_feature:

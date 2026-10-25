@@ -131,7 +131,8 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Create default league announcements channel
+  // Create default league announcements channel. A trigger adds its members:
+  // the creator (with post permission) and coaches of member teams.
   const { data: channel, error: channelError } = await serviceClient
     .from('league_channels')
     .insert({
@@ -148,22 +149,6 @@ Deno.serve(async (req: Request) => {
     console.error('Error creating league channel, rolling back:', channelError);
     await serviceClient.from('leagues').delete().eq('id', league.id);
     return new Response(JSON.stringify({ error: channelError?.message ?? 'Failed to create league channel' }), {
-      status: 500,
-      headers: corsHeaders,
-    });
-  }
-
-  // Add creator as channel member with post permission
-  const { error: memberError } = await serviceClient.from('league_channel_members').insert({
-    league_channel_id: channel.id,
-    user_id: user.id,
-    can_post: true,
-  });
-
-  if (memberError) {
-    console.error(`Error adding channel member (channel=${channel.id}, user=${user.id}), rolling back:`, memberError);
-    await serviceClient.from('leagues').delete().eq('id', league.id);
-    return new Response(JSON.stringify({ error: memberError.message ?? 'Failed to add channel member' }), {
       status: 500,
       headers: corsHeaders,
     });

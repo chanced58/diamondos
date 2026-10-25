@@ -110,7 +110,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Add to league_staff
+  // Add to league_staff. A trigger adds them to the league's channels with
+  // post permission.
   const { error: staffError } = await supabase.from('league_staff').insert({
     league_id: leagueId,
     user_id: staffUserId,
@@ -121,30 +122,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: staffError.message }, { status: 500 });
   }
 
-  // Add to league announcement channel
-  const { data: channels } = await supabase
-    .from('league_channels')
-    .select('id')
-    .eq('league_id', leagueId)
-    .eq('channel_type', 'announcement')
-    .limit(1);
-
-  let channelWarning: string | undefined;
-  if (channels?.[0]) {
-    const { error: channelMemberError } = await supabase.from('league_channel_members').insert({
-      league_channel_id: channels[0].id,
-      user_id: staffUserId,
-      can_post: role === 'league_admin',
-    });
-    if (channelMemberError) {
-      channelWarning = `Staff added but announcement channel access failed: ${channelMemberError.message}`;
-    }
-  }
-
   const action = existingUser ? 'added' : 'invited';
   return NextResponse.json({
     message: `Staff member ${action} successfully`,
     userId: staffUserId,
-    ...(channelWarning ? { warning: channelWarning } : {}),
   });
 }

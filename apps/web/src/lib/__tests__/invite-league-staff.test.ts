@@ -55,3 +55,15 @@ it('invites league staff without optional names using non-null profile defaults'
     league_id: 'league', user_id: 'invited-staff', role: 'league_admin',
   });
 });
+
+it('leaves league channel membership to the database trigger', async () => {
+  const request = new NextRequest('https://example.com/api/admin/invite-league-staff', {
+    method: 'POST',
+    body: JSON.stringify({ leagueId: 'league', email: 'staff@example.com', role: 'league_manager' }),
+  });
+
+  const response = await POST(request);
+
+  expect(response.status).toBe(200);
+  expect(mockClient.from).not.toHaveBeenCalledWith('league_channel_members');
+});

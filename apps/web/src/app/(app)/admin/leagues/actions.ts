@@ -140,8 +140,9 @@ export async function inviteLeagueAdminAction(_prevState: string | null | undefi
     return `Staff assignment failed: ${staffError.message}`;
   }
 
-  // 4. Create default Announcements channel
-  const { data: channel, error: channelError } = await db
+  // 4. Create default Announcements channel. A trigger adds its members: the
+  // league admin (with post permission) and coaches of member teams.
+  const { error: channelError } = await db
     .from('league_channels')
     .insert({
       league_id: league.id,
@@ -149,26 +150,13 @@ export async function inviteLeagueAdminAction(_prevState: string | null | undefi
       name: 'League Announcements',
       description: 'Official league-wide announcements',
       created_by: user.id,
-    })
-    .select()
-    .single();
+    });
   if (channelError) {
     await rollbackLeague();
     return `Channel creation failed: ${channelError.message}`;
   }
 
-  // 5. Add admin to channel
-  const { error: cmError } = await db.from('league_channel_members').insert({
-    league_channel_id: channel.id,
-    user_id: adminUserId,
-    can_post: true,
-  });
-  if (cmError) {
-    await rollbackLeague();
-    return `Channel member failed: ${cmError.message}`;
-  }
-
-  // 6. Create league subscription
+  // 5. Create league subscription
   const { error: subError } = await db.from('subscriptions').insert({
     entity_type: 'league',
     league_id: league.id,
