@@ -1,6 +1,7 @@
 import { ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { ListRow, SectionHeader } from '@baseball/ui';
+import { Feature } from '@baseball/shared';
 import { useAuth } from '../../../src/providers/AuthProvider';
 import { useCan, useRole } from '../../../src/providers/RoleProvider';
 import { ListGroup } from '../../../src/features/navigation/ListGroup';
@@ -16,6 +17,8 @@ export default function MoreScreen() {
   const { user, signOut } = useAuth();
   const { leagueRoles } = useRole();
   const isCoach = useCan('team.coach');
+  // As on the web, the league page is on plans with league management.
+  const hasLeague = useCan(Feature.LEAGUE_MANAGEMENT);
   const hasWeb = webUrl('/') !== null;
 
   return (
@@ -32,6 +35,13 @@ export default function MoreScreen() {
           subtitle="Upcoming practices and attendance"
           onPress={() => router.push('/(tabs)/more/practices')}
         />
+        {hasLeague && (
+          <ListRow
+            title="League"
+            subtitle="Standings, divisions and staff"
+            onPress={() => router.push('/(tabs)/more/league')}
+          />
+        )}
         <ListRow
           title="Tournaments"
           subtitle="Tournament teams, games and stats"
