@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -19,17 +19,22 @@ export default function PracticeNotesScreen() {
   const { practiceId = '' } = useLocalSearchParams<{ practiceId: string }>();
   const queryClient = useQueryClient();
   const query = usePractice(practiceId);
-  const original = useMemo(() => (query.data ? notesDraftFrom(query.data) : null), [query.data]);
+  // The form is seeded once and diffed against that same snapshot: a later
+  // refetch must neither wipe what the coach is typing nor make players whose
+  // notes another coach saved meanwhile look edited here (and overwrite them).
+  const [seed, setSeed] = useState<NotesDraft | null>(null);
   const [draft, setDraft] = useState<NotesDraft | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
-  // Seed the form once; a later refetch must not wipe what the coach is typing.
   useEffect(() => {
-    if (original && !draft) setDraft(original);
-  }, [original, draft]);
+    if (!query.data || seed) return;
+    const initial = notesDraftFrom(query.data);
+    setSeed(initial);
+    setDraft(initial);
+  }, [query.data, seed]);
 
   const save = useMutation({
-    mutationFn: () => savePracticeNotes(practiceId, notesInput(original!, draft!)),
+    mutationFn: () => savePracticeNotes(practiceId, notesInput(seed!, draft!)),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: practiceQueryKey(practiceId) });
       router.back();

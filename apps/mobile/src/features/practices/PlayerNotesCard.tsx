@@ -52,7 +52,7 @@ export function PlayerNotesCard({ practiceId, player, showName, onSaved }: { pra
             placeholder="How did practice go?"
             placeholderTextColor="#9ca3af"
           />
-          <Text className="text-xs text-gray-400 mb-2">Only you and your coaches can see this.</Text>
+          <Text className="text-xs text-gray-400 mb-2">You, your coaches and your parents can see this.</Text>
           {save.isError && (
             <Text accessibilityRole="alert" className="text-xs text-red-700 mb-2">{describeApiError(save.error)}</Text>
           )}

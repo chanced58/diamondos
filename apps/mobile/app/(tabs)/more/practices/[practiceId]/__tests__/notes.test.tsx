@@ -60,6 +60,33 @@ describe('PracticeNotesScreen', () => {
     await waitFor(() => expect(mockBack).toHaveBeenCalled());
   });
 
+  it("should not resend another coach's notes that arrive in a refetch after the form opened", async () => {
+    mockUsePractice.mockReturnValue(detail);
+    mockSaveNotes.mockResolvedValue({ practiceId: 'p1' });
+    renderWithQuery(<PracticeNotesScreen />);
+
+    // Another coach saved notes for Sam; the background refetch brings them in.
+    const refreshed = {
+      data: {
+        ...detail.data,
+        coach: {
+          ...detail.data.coach!,
+          playerNotes: {
+            sam: { pitching: null, hitting: 'Hands inside', fielding_catching: null, baserunning: null, athleticism: null, attitude: null, playerNotes: null },
+          },
+        },
+      } as PracticeDetailResponse,
+    };
+    mockUsePractice.mockReturnValue(refreshed);
+    fireEvent.changeText(screen.getByLabelText('Overall notes'), 'Sharp day');
+    await act(async () => {
+      fireEvent.press(screen.getByText('Save notes'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(mockSaveNotes).toHaveBeenCalledWith('p1', expect.objectContaining({ overallNotes: 'Sharp day', players: [] }));
+  });
+
   it('should refuse anyone but a coach', () => {
     mockUsePractice.mockReturnValue({ data: { ...detail.data, coach: null } });
     renderWithQuery(<PracticeNotesScreen />);
