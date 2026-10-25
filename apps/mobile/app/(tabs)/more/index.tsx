@@ -33,6 +33,11 @@ export default function MoreScreen() {
           onPress={() => router.push('/(tabs)/more/practices')}
         />
         <ListRow
+          title="Tournaments"
+          subtitle="Tournament teams, games and stats"
+          onPress={() => router.push('/(tabs)/more/tournaments')}
+        />
+        <ListRow
           title="Facilities"
           subtitle="Cage, field and bullpen bookings"
           onPress={() => router.push('/(tabs)/more/facilities')}

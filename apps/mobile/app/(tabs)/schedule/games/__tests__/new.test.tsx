@@ -2,10 +2,12 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { renderWithQuery } from '../../../../../src/__tests__/render-with-query';
 
 const mockReplace = jest.fn();
+const mockParams = jest.fn();
 jest.mock('expo-router', () => ({
   __esModule: true,
   router: { replace: (...args: unknown[]) => mockReplace(...args) },
   Stack: { Screen: () => null },
+  useLocalSearchParams: () => mockParams(),
 }));
 const mockUseRole = jest.fn();
 jest.mock('../../../../../src/providers/RoleProvider', () => ({ useRole: () => mockUseRole() }));
@@ -31,7 +33,8 @@ const OPP = '22222222-2222-4222-8222-222222222222';
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockUseRole.mockReturnValue({ activeTeam: { teamId: TEAM, teamName: 'Huskies', isCoach: true } });
+  mockParams.mockReturnValue({});
+  mockUseRole.mockReturnValue({ activeTeam: { teamId: TEAM, teamName: 'Huskies', isCoach: true }, memberships: [] });
   mockFetchOptions.mockResolvedValue({ opponentTeams: [{ id: OPP, name: 'Eagles', city: 'Boise' }] });
 });
 
@@ -84,4 +87,36 @@ it("should show the server's reason when scheduling fails", async () => {
 
   await waitFor(() => expect(screen.getByText('Selected opponent team does not belong to your team or league.')).toBeTruthy());
   expect(mockReplace).not.toHaveBeenCalled();
+});
+
+it("should add a tournament game for the tournament's team, not the active one", async () => {
+  const TOURNAMENT_TEAM = '33333333-3333-4333-8333-333333333333';
+  const TOURNAMENT = '44444444-4444-4444-8444-444444444444';
+  mockParams.mockReturnValue({ tournamentId: TOURNAMENT, teamId: TOURNAMENT_TEAM, tournamentName: 'Fall Classic' });
+  mockUseRole.mockReturnValue({
+    activeTeam: { teamId: TEAM, teamName: 'Huskies', isCoach: true },
+    memberships: [
+      { teamId: TEAM, teamName: 'Huskies', isCoach: true },
+      { teamId: TOURNAMENT_TEAM, teamName: 'Idaho Natives', isCoach: true },
+    ],
+  });
+  mockCreateGame.mockResolvedValue({ gameId: 'g2' });
+  renderWithQuery(<NewGameScreen />);
+  await waitFor(() => expect(screen.getByText('Schedule game')).toBeTruthy());
+  expect(screen.getByText('Fall Classic · Idaho Natives')).toBeTruthy();
+
+  fireEvent.changeText(screen.getByLabelText('Opponent name'), 'Eagles');
+  await act(async () => {
+    fireEvent.press(screen.getByText('Schedule game'));
+  });
+
+  expect(mockFetchOptions).toHaveBeenCalledWith(TOURNAMENT_TEAM);
+  expect(mockCreateGame).toHaveBeenCalledWith(expect.objectContaining({ teamId: TOURNAMENT_TEAM, tournamentId: TOURNAMENT }));
+});
+
+it("should keep out someone who doesn't coach the tournament's team", () => {
+  mockParams.mockReturnValue({ tournamentId: '44444444-4444-4444-8444-444444444444', teamId: 'not-mine' });
+  renderWithQuery(<NewGameScreen />);
+  expect(screen.getByText('Coaches only')).toBeTruthy();
+  expect(mockFetchOptions).not.toHaveBeenCalled();
 });
