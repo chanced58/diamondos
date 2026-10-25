@@ -2,247 +2,112 @@
 
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import { PRACTICE_NOTE_CATEGORIES } from '@baseball/shared';
 import { createServerClient } from '@/lib/supabase/server';
-import { formatDate } from '@baseball/shared';
-import { postEventAlert } from '@/app/(app)/messages/notify';
+import { cancelPractice } from '@/lib/services/practices/practices';
+import { savePracticeNotes, savePracticePlan, savePracticeSelfNotes } from '@/lib/services/practices/practice-notes';
 
-export async function cancelPracticeAction(_prevState: string | null | undefined, formData: FormData) {
+/**
+ * The practice page's forms. Each is a thin wrapper over the service the
+ * mobile `/api/m/v1/practices/:id/*` routes share, which authorizes against
+ * the practice's own team.
+ */
+
+async function authenticate() {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
-  if (!user) return 'Not authenticated.';
+  if (!user) return null;
+  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  return { user, db };
+}
+
+/** Cancels the practice (announcing it when asked) and returns to the practice list. */
+export async function cancelPracticeAction(_prevState: string | null | undefined, formData: FormData) {
+  const session = await authenticate();
+  if (!session) return 'Not authenticated.';
 
   const practiceId = formData.get('practiceId') as string;
   if (!practiceId) return 'Missing practice ID.';
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
-
-  const { data: practice } = await supabase
-    .from('practices')
-    .select('team_id, scheduled_at')
-    .eq('id', practiceId)
-    .single();
-
-  if (!practice) return 'Practice not found.';
-
-  const { data: membership } = await supabase
-    .from('team_members')
-    .select('role')
-    .eq('team_id', practice.team_id)
-    .eq('user_id', user.id)
-    .single();
-
-  const isCoach =
-    membership?.role === 'head_coach' ||
-    membership?.role === 'assistant_coach' ||
-    membership?.role === 'athletic_director';
-
-  if (!isCoach) return 'Only coaches can cancel practices.';
-
-  const { error } = await supabase
-    .from('practices')
-    .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-    .eq('id', practiceId);
-
-  if (error) return `Failed to cancel practice: ${error.message}`;
-
-  if (formData.get('notifyTeam') === 'on') {
-    const msg = `❌ Practice on ${formatDate(practice.scheduled_at)} has been cancelled.`;
-    await postEventAlert(supabase, practice.team_id, user.id, msg);
-  }
+  const result = await cancelPractice(session.db, session.user.id, {
+    practiceId,
+    notifyTeam: formData.get('notifyTeam') === 'on',
+    timeZone: (formData.get('browserTimeZone') as string | null) || null,
+  });
+  if (!result.ok) return result.error;
 
   redirect('/practices');
 }
 
 // ─── Coach: save overall, coach, and per-player categorical notes ─────────────
 
+/** Saves the coach notes form; per-player fields arrive as `player_<id>_<category>`. */
 export async function savePracticeNotesAction(
   _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
-  const authClient = createServerClient();
-  const { data: { user } } = await authClient.auth.getUser();
-  if (!user) return 'Not authenticated — please log in again.';
+  const session = await authenticate();
+  if (!session) return 'Not authenticated — please log in again.';
 
   const practiceId = formData.get('practiceId') as string;
-  const teamId = formData.get('teamId') as string;
-  if (!practiceId || !teamId) return 'Missing required IDs.';
+  if (!practiceId) return 'Missing required IDs.';
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
-
-  const { data: membership } = await supabase
-    .from('team_members')
-    .select('role')
-    .eq('team_id', teamId)
-    .eq('user_id', user.id)
-    .single();
-
-  const isCoach =
-    membership?.role === 'head_coach' ||
-    membership?.role === 'assistant_coach' ||
-    membership?.role === 'athletic_director';
-
-  if (!isCoach) return 'Only coaches can save practice notes.';
-
-  const overallNotes = (formData.get('overall_notes') as string) ?? '';
-  const coachNotes = (formData.get('coach_notes') as string) ?? '';
-
-  const { error: notesError } = await supabase
-    .from('practice_notes')
-    .upsert(
-      {
-        practice_id: practiceId,
-        overall_notes: overallNotes || null,
-        coach_notes: coachNotes || null,
-        updated_by: user.id,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'practice_id' },
-    );
-  if (notesError) return `Failed to save notes: ${notesError.message}`;
-
-  // Collect player categorical notes (keys: player_<uuid>_<category>)
-  const playerMap = new Map<string, Record<string, string>>();
+  // Player categorical notes arrive as player_<uuid>_<category>.
+  const categories = new Set<string>(PRACTICE_NOTE_CATEGORIES.map(({ key }) => key));
+  const players = new Map<string, Record<string, string>>();
   for (const [key, value] of formData.entries()) {
     const match = key.match(/^player_([0-9a-f-]{36})_(.+)$/);
-    if (!match) continue;
-    const [, playerId, category] = match;
-    if (!playerMap.has(playerId)) playerMap.set(playerId, {});
-    playerMap.get(playerId)![category] = value as string;
+    if (!match || !categories.has(match[2])) continue;
+    const notes = players.get(match[1]) ?? {};
+    notes[match[2]] = value as string;
+    players.set(match[1], notes);
   }
 
-  if (playerMap.size > 0) {
-    const rows = Array.from(playerMap.entries()).map(([playerId, notes]) => ({
-      practice_id: practiceId,
-      player_id: playerId,
-      pitching: notes.pitching || null,
-      hitting: notes.hitting || null,
-      fielding_catching: notes.fielding_catching || null,
-      baserunning: notes.baserunning || null,
-      athleticism: notes.athleticism || null,
-      attitude: notes.attitude || null,
-      updated_by: user.id,
-      updated_at: new Date().toISOString(),
-    }));
-
-    const { error: playerError } = await supabase
-      .from('practice_player_notes')
-      .upsert(rows, { onConflict: 'practice_id,player_id' });
-    if (playerError) return `Failed to save player notes: ${playerError.message}`;
-  }
-
-  return 'saved';
+  const result = await savePracticeNotes(session.db, session.user.id, {
+    practiceId,
+    overallNotes: (formData.get('overall_notes') as string) ?? '',
+    coachNotes: (formData.get('coach_notes') as string) ?? '',
+    players: [...players].map(([playerId, notes]) => ({ playerId, ...notes })),
+  });
+  return result.ok ? 'saved' : result.error;
 }
 
 // ─── Player: save only their own self-reflection notes ───────────────────────
 
+/** Saves a player's own reflection from the player view. */
 export async function savePlayerSelfNotesAction(
   _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
-  const authClient = createServerClient();
-  const { data: { user } } = await authClient.auth.getUser();
-  if (!user) return 'Not authenticated — please log in again.';
+  const session = await authenticate();
+  if (!session) return 'Not authenticated — please log in again.';
 
   const practiceId = formData.get('practiceId') as string;
   const playerId = formData.get('playerId') as string;
-  const playerNotes = (formData.get('player_notes') as string) || null;
-
   if (!practiceId || !playerId) return 'Missing required IDs.';
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
-
-  // Verify the player record belongs to this user
-  const { data: player } = await supabase
-    .from('players')
-    .select('id, team_id')
-    .eq('id', playerId)
-    .eq('user_id', user.id)
-    .single();
-
-  if (!player) return 'Player record not found for your account.';
-
-  // Verify the practice belongs to the same team
-  const { data: practice } = await supabase
-    .from('practices')
-    .select('id')
-    .eq('id', practiceId)
-    .eq('team_id', player.team_id)
-    .single();
-
-  if (!practice) return 'Practice not found.';
-
-  // Upsert only the player_notes column — coach categorical notes are untouched
-  const { error } = await supabase
-    .from('practice_player_notes')
-    .upsert(
-      {
-        practice_id: practiceId,
-        player_id: playerId,
-        player_notes: playerNotes,
-        updated_by: user.id,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'practice_id,player_id' },
-    );
-  if (error) return `Failed to save notes: ${error.message}`;
-
-  return 'saved';
+  const result = await savePracticeSelfNotes(session.db, session.user.id, {
+    practiceId,
+    playerId,
+    playerNotes: (formData.get('player_notes') as string) || null,
+  });
+  return result.ok ? 'saved' : result.error;
 }
 
+/** Saves the practice's plan text. */
 export async function savePracticePlanAction(
   _prevState: string | null | undefined,
   formData: FormData,
 ): Promise<string | null> {
-  const authClient = createServerClient();
-  const { data: { user } } = await authClient.auth.getUser();
-  if (!user) return 'Not authenticated.';
+  const session = await authenticate();
+  if (!session) return 'Not authenticated.';
 
   const practiceId = formData.get('practiceId') as string;
-  const plan = formData.get('plan') as string;
   if (!practiceId) return 'Missing practice ID.';
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
-
-  const { data: practice } = await supabase
-    .from('practices')
-    .select('team_id')
-    .eq('id', practiceId)
-    .single();
-
-  if (!practice) return 'Practice not found.';
-
-  const { data: membership } = await supabase
-    .from('team_members')
-    .select('role')
-    .eq('team_id', practice.team_id)
-    .eq('user_id', user.id)
-    .single();
-
-  const isCoach =
-    membership?.role === 'head_coach' ||
-    membership?.role === 'assistant_coach' ||
-    membership?.role === 'athletic_director';
-
-  if (!isCoach) return 'Only coaches can edit the practice plan.';
-
-  const { error } = await supabase
-    .from('practices')
-    .update({ plan })
-    .eq('id', practiceId);
-
-  if (error) return `Failed to save plan: ${error.message}`;
-
-  return 'saved';
+  const result = await savePracticePlan(session.db, session.user.id, {
+    practiceId,
+    plan: (formData.get('plan') as string) ?? '',
+  });
+  return result.ok ? 'saved' : result.error;
 }

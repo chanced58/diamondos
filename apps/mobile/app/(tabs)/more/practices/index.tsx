@@ -1,151 +1,121 @@
-import { Link, Stack } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from 'react-native';
-import { getSupabaseClient } from '../../../../src/lib/supabase';
+import { ActivityIndicator, RefreshControl, SectionList, Text, TouchableOpacity, View } from 'react-native';
+import { Stack, router } from 'expo-router';
+import { Badge, EmptyState, ErrorState, ListRow, SectionHeader } from '@baseball/ui';
+import type { PracticeSummary } from '@baseball/shared';
 import { useRole } from '../../../../src/providers/RoleProvider';
 import { TeamSwitcher } from '../../../../src/features/teams/TeamSwitcher';
+import { usePractices } from '../../../../src/features/practices/practices-api';
+import { RUN_STATUS_LABELS, practiceWhen, splitPractices } from '../../../../src/features/practices/practice-format';
+import { describeApiError, isApiError } from '../../../../src/lib/api-client';
 
-interface PracticeRow {
-  id: string;
-  scheduled_at: string;
-  location: string | null;
-  run_status: string;
-}
-
-const PRACTICES_FETCH_ERROR = "Couldn't load practices.";
-
+/**
+ * The team's practices (the web Practices list): upcoming first, then past.
+ * Coaches log a new one from the header. On a plan without practice planning
+ * the server refuses, and so does this screen.
+ */
 export default function PracticesIndex() {
   const { activeTeam, loading: roleLoading } = useRole();
-  const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState<PracticeRow[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const requestIdRef = useRef(0);
+  const query = usePractices(activeTeam?.teamId);
+  const isCoach = query.data?.isCoach ?? false;
 
-  const load = useCallback(async () => {
-    const requestId = ++requestIdRef.current;
-    if (!activeTeam) {
-      setRows([]);
-      setError(null);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      const supabase = getSupabaseClient();
-      const { data, error: fetchError } = await supabase
-        .from('practices')
-        .select('id, scheduled_at, location, run_status')
-        .eq('team_id', activeTeam.teamId)
-        .gte('scheduled_at', new Date(Date.now() - 24 * 3600 * 1000).toISOString())
-        .order('scheduled_at', { ascending: true });
-      if (requestId !== requestIdRef.current) return;
-      if (fetchError) {
-        console.warn('practices fetch failed', fetchError);
-        setRows([]);
-        setError(PRACTICES_FETCH_ERROR);
-      } else {
-        setRows((data ?? []) as unknown as PracticeRow[]);
-        setError(null);
-      }
-    } catch (err) {
-      console.warn('practices fetch failed', err);
-      if (requestId === requestIdRef.current) {
-        setRows([]);
-        setError(PRACTICES_FETCH_ERROR);
-      }
-    } finally {
-      if (requestId === requestIdRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [activeTeam?.teamId]);
+  const header = (
+    <Stack.Screen
+      options={{
+        title: 'Practices',
+        headerRight: isCoach
+          ? () => (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="New practice"
+                hitSlop={8}
+                onPress={() => router.push('/(tabs)/more/practices/new')}
+              >
+                <Text className="text-white text-2xl font-semibold">+</Text>
+              </TouchableOpacity>
+            )
+          : undefined,
+      }}
+    />
+  );
 
-  useEffect(() => {
-    load();
-    return () => {
-      requestIdRef.current += 1;
-    };
-  }, [load]);
-
-  if (roleLoading || loading) {
+  if (roleLoading || (activeTeam && query.isPending)) {
     return (
       <View className="flex-1 items-center justify-center bg-gray-50">
+        {header}
         <ActivityIndicator />
       </View>
     );
   }
-
   if (!activeTeam) {
     return (
-      <View className="flex-1 items-center justify-center bg-gray-50 p-4">
-        <Text className="text-gray-500">No team selected.</Text>
+      <View className="flex-1 bg-gray-50">
+        {header}
+        <EmptyState title="No team" message="Join a team to see its practices." />
+      </View>
+    );
+  }
+  if (!query.data) {
+    const notOnPlan = isApiError(query.error) && query.error.kind === 'forbidden';
+    return (
+      <View className="flex-1 bg-gray-50">
+        {header}
+        <TeamSwitcher />
+        {notOnPlan ? (
+          <EmptyState title="Practice planning" message="Practice planning is available on the Starter plan and above." />
+        ) : (
+          <ErrorState message={describeApiError(query.error)} onRetry={() => void query.refetch()} />
+        )}
       </View>
     );
   }
 
-  if (error) {
-    return (
-      <>
-        <Stack.Screen options={{ title: 'Practices' }} />
-        <TeamSwitcher />
-        <View className="flex-1 items-center justify-center bg-gray-50 px-6">
-          <View className="w-full bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
-            <Text className="text-sm text-red-700">{error}</Text>
-          </View>
-          <TouchableOpacity
-            className="px-4 py-2 rounded-lg bg-white border border-gray-200"
-            onPress={() => {
-              load();
-            }}
-          >
-            <Text className="text-sm font-semibold text-gray-700">Try again</Text>
-          </TouchableOpacity>
-        </View>
-      </>
-    );
-  }
+  const { upcoming, past } = splitPractices(query.data.practices);
+  const sections = [
+    { title: 'Upcoming', data: upcoming },
+    { title: 'Past', data: past },
+  ].filter((section) => section.data.length > 0);
 
   return (
-    <>
-      <Stack.Screen options={{ title: 'Practices' }} />
+    <View className="flex-1 bg-gray-50">
+      {header}
       <TeamSwitcher />
-      <FlatList
-        className="bg-gray-50"
-        contentContainerStyle={{ padding: 16 }}
-        data={rows}
-        keyExtractor={(r) => r.id}
-        renderItem={({ item }) => {
-          const dest = activeTeam.isCoach
-            ? ({
-                pathname: '/(tabs)/more/practices/[practiceId]/attendance',
-                params: { practiceId: item.id },
-              } as const)
-            : ({
-                pathname: '/(tabs)/more/practices/[practiceId]/card',
-                params: { practiceId: item.id },
-              } as const);
-          return (
-            <Link href={dest} asChild>
-              <View className="bg-white rounded-xl border border-gray-200 px-4 py-3 mb-2">
-                <Text className="font-semibold text-gray-900">
-                  {new Date(item.scheduled_at).toLocaleString()}
-                </Text>
-                {item.location ? (
-                  <Text className="text-gray-600 text-sm mt-1">{item.location}</Text>
-                ) : null}
-                <Text className="text-xs text-gray-500 mt-1 capitalize">
-                  {item.run_status.replace('_', ' ')}
-                </Text>
-              </View>
-            </Link>
-          );
-        }}
+      <SectionList
+        sections={sections}
+        keyExtractor={(practice) => practice.id}
+        contentContainerStyle={{ padding: 16, paddingBottom: 48 }}
+        stickySectionHeadersEnabled={false}
+        refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} />}
+        renderSectionHeader={({ section }) => <SectionHeader title={section.title} />}
+        renderItem={({ item }) => <PracticeRow practice={item} />}
         ListEmptyComponent={
-          <View className="items-center justify-center py-10">
-            <Text className="text-gray-500">No upcoming practices.</Text>
-          </View>
+          <EmptyState
+            title="No practices yet"
+            message={isCoach ? 'Tap + to log a practice.' : 'Practices your coaches schedule show up here.'}
+          />
         }
       />
-    </>
+    </View>
+  );
+}
+
+/** One practice in the list: when and where, with its game-prep and run-status badges. */
+function PracticeRow({ practice }: { practice: PracticeSummary }) {
+  const status = RUN_STATUS_LABELS[practice.runStatus];
+  return (
+    <View className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-2">
+      <ListRow
+        title={practiceWhen(practice)}
+        subtitle={practice.location ?? undefined}
+        right={
+          practice.isPrep || status ? (
+            <View className="items-end gap-1">
+              {practice.isPrep && <Badge label="Game prep" variant="warning" />}
+              {status && <Badge label={status} variant={practice.runStatus === 'running' ? 'safe' : 'default'} />}
+            </View>
+          ) : undefined
+        }
+        onPress={() => router.push({ pathname: '/(tabs)/more/practices/[practiceId]', params: { practiceId: practice.id } })}
+      />
+    </View>
   );
 }

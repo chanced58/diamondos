@@ -33,3 +33,4 @@ export * from './opponent-team';
 export * from './scouting-card';
 export * from './team-messaging';
 export * from './league-messaging';
+export * from './practices';
