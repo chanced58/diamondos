@@ -130,10 +130,12 @@ export function moved<T>(list: readonly T[], index: number, direction: -1 | 1): 
   return next;
 }
 
+/** The trimmed text, or undefined when blank. */
 function textOrUndefined(typed: string): string | undefined {
   return typed.trim() || undefined;
 }
 
+/** The typed whole number, or undefined when blank (validation has checked the digits). */
 function numberOrUndefined(typed: string): number | undefined {
   const trimmed = typed.trim();
   return trimmed ? Number(trimmed) : undefined;

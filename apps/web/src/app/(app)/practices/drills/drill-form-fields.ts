@@ -27,14 +27,17 @@ export function drillFormFields(formData: FormData): Partial<Record<keyof Create
   };
 }
 
+/** Every text value of a multi-select field. */
 function getAll(formData: FormData, key: string): string[] {
   return formData.getAll(key).filter((v): v is string => typeof v === 'string');
 }
 
+/** The trimmed text, or undefined when blank. */
 function stringOrUndef(v: FormDataEntryValue | null): string | undefined {
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
 }
 
+/** The typed number, or undefined when blank or not a number. */
 function numberOrUndef(v: FormDataEntryValue | null): number | undefined {
   if (typeof v !== 'string' || v.trim().length === 0) return undefined;
   const n = Number(v);
