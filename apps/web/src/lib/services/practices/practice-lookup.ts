@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { Feature, hasFeature } from '@baseball/shared';
+import { resolveTeamTier } from '@/lib/team-tier';
 import { serviceError, type ServiceResult } from '../result';
 
 /**
@@ -12,6 +14,7 @@ export type PracticeRow = {
   team_id: string;
   scheduled_at: string;
   status: string;
+  run_status: string;
   latitude: number | null;
   longitude: number | null;
 };
@@ -25,12 +28,21 @@ export async function loadPracticeRow(
 ): Promise<{ practice: PracticeRow } | { result: ServiceResult<never> }> {
   const { data, error } = await db
     .from('practices')
-    .select('id, team_id, scheduled_at, status, latitude, longitude')
+    .select('id, team_id, scheduled_at, status, run_status, latitude, longitude')
     .eq('id', practiceId)
     .maybeSingle();
   if (error) return { result: failed(service, practiceId, actorUserId, error) };
   if (!data) return { result: serviceError('not_found', 'Practice not found.') };
   return { practice: data as PracticeRow };
+}
+
+/**
+ * Refuses a team whose plan lacks practice planning — the gate on the web
+ * Practices area, which AI-drafted and prep practices belong to.
+ */
+export async function requirePracticePlanning(db: SupabaseClient, teamId: string): Promise<ServiceResult<never> | null> {
+  const tier = await resolveTeamTier(db, teamId);
+  return hasFeature(tier, Feature.PRACTICE_PLANNING) ? null : serviceError('forbidden', "Practice planning isn't on this team's plan.");
 }
 
 /** Logs the error with its context and returns the generic `failed` result, keeping database detail off the client. */

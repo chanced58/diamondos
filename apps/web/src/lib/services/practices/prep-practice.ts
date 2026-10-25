@@ -19,7 +19,7 @@ import {
 import { createPrepPractice, getNextGameForTeam } from '@baseball/database';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import { resolveGameViewer } from '../games/authorize';
-import { failed } from './practice-lookup';
+import { failed, requirePracticePlanning } from './practice-lookup';
 import { mapDrillRow } from './team-drills';
 
 /**
@@ -54,6 +54,8 @@ export async function loadPrepPreview(
 
   const viewer = await resolveGameViewer(db, actorUserId, teamId);
   if (!viewer?.isCoach) return serviceError('forbidden', 'Only coaches can generate prep practices.');
+  const gate = await requirePracticePlanning(db, teamId);
+  if (gate) return gate;
 
   try {
     const nextGame = await getNextGameForTeam(db as never, teamId);
@@ -121,6 +123,8 @@ export async function createPrepPracticeFromPlan(
 
   const viewer = await resolveGameViewer(db, actorUserId, input.teamId);
   if (!viewer?.isCoach) return serviceError('forbidden', 'Only coaches can create prep practices.');
+  const gate = await requirePracticePlanning(db, input.teamId);
+  if (gate) return gate;
 
   const { data: game, error: gameError } = await db
     .from('games')

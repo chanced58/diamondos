@@ -73,8 +73,8 @@ export default function AiPracticeScreen() {
       return;
     }
     setProblem(null);
-    const { teamId: _team, ...fields } = request.input;
-    generate.mutate(fields);
+    const { coachPrompt, durationMinutes, playerCount, availableFieldSpaces } = request.input;
+    generate.mutate({ coachPrompt, durationMinutes, playerCount, availableFieldSpaces });
   };
 
   if (preview) {

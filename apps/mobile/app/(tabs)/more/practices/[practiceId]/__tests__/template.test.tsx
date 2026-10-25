@@ -9,7 +9,11 @@ jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useLocalSearchParams: () => ({ practiceId: 'p1' }),
 }));
-jest.mock('../../../../../../src/providers/RoleProvider', () => ({ useRole: () => ({ activeTeam: { teamId: 't1' } }) }));
+jest.mock('../../../../../../src/features/practices/practices-api', () => ({
+  practiceQueryKey: (id: string) => ['practices', id],
+  practiceRunQueryKey: (id: string) => ['practices', id, 'run'],
+  usePractice: () => ({ data: { practice: { teamId: 'practice-team' } }, isPending: false }),
+}));
 const mockUseTemplates = jest.fn();
 const mockApply = jest.fn();
 jest.mock('../../../../../../src/features/practices/planning-api', () => ({
@@ -38,6 +42,8 @@ describe('ApplyTemplateScreen', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(alert).toHaveBeenCalledWith('Use Tuesday?', "Its blocks replace this practice's blocks.", expect.any(Array));
+    // The practice's team's templates, whatever team is active.
+    expect(mockUseTemplates).toHaveBeenCalledWith('practice-team');
     expect(mockApply).toHaveBeenCalledWith('p1', 'tpl1');
     await waitFor(() => expect(mockBack).toHaveBeenCalled());
   });

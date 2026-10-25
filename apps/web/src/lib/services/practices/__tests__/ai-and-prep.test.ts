@@ -1,4 +1,4 @@
-import { PracticeBlockType, aiPracticePreviewResponseSchema, prepPreviewResponseSchema } from '@baseball/shared';
+import { PracticeBlockType, SubscriptionTier, aiPracticePreviewResponseSchema, prepPreviewResponseSchema } from '@baseball/shared';
 import { createPracticeFromAiPlan, previewAiPractice } from '../ai-practice';
 import { createPrepPracticeFromPlan, loadPrepPreview } from '../prep-practice';
 import { fakeDb } from '../../__tests__/fake-db';
@@ -8,6 +8,8 @@ const mockLog = jest.fn();
 jest.mock('@/lib/ai/practice-generator', () => ({ generatePractice: (...args: unknown[]) => mockGenerate(...args) }));
 jest.mock('@/lib/ai/log-generation', () => ({ logAiGeneration: (...args: unknown[]) => mockLog(...args) }));
 jest.mock('@/lib/ai/client', () => ({ AI_MODELS: { opus: 'opus', sonnet: 'sonnet' } }));
+const mockResolveTeamTier = jest.fn();
+jest.mock('@/lib/team-tier', () => ({ resolveTeamTier: (...args: unknown[]) => mockResolveTeamTier(...args) }));
 const mockCreateAi = jest.fn();
 const mockCreatePrep = jest.fn();
 const mockNextGame = jest.fn();
@@ -37,6 +39,7 @@ const plan = { focusSummary: 'Hitting', blocks: [block(DRILL), block(HIDDEN_DRIL
 beforeEach(() => {
   jest.clearAllMocks();
   mockLog.mockResolvedValue(undefined);
+  mockResolveTeamTier.mockResolvedValue(SubscriptionTier.PRO);
 });
 
 describe('previewAiPractice', () => {
@@ -58,6 +61,15 @@ describe('previewAiPractice', () => {
     expect(await previewAiPractice(fakeDb({ 'team_members.select': { data: { role: 'player' } } }).db, 'p', input)).toMatchObject({ ok: false, code: 'forbidden' });
     expect(await previewAiPractice(fakeDb().db, 'c', { ...input, coachPrompt: 'hi' })).toMatchObject({ ok: false, code: 'invalid' });
     expect(mockGenerate).not.toHaveBeenCalled();
+  });
+
+  it('should refuse AI and prep on a plan without practice planning, before any work', async () => {
+    mockResolveTeamTier.mockResolvedValue(SubscriptionTier.FREE);
+    const db = () => fakeDb({ 'team_members.select': coach }).db;
+    expect(await previewAiPractice(db(), 'c', input)).toMatchObject({ ok: false, code: 'forbidden', error: "Practice planning isn't on this team's plan." });
+    expect(await loadPrepPreview(db(), 'c', { teamId: TEAM })).toMatchObject({ ok: false, code: 'forbidden' });
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockNextGame).not.toHaveBeenCalled();
   });
 
   it('should log a failed generation and hide its detail', async () => {

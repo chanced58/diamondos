@@ -95,7 +95,7 @@ export async function archivePracticeTemplate(
   }
 }
 
-/** Replaces the practice's blocks with the template's; both must be the same team's. */
+/** Replaces the practice's blocks with the template's, before it starts; both must be the same team's. */
 export async function applyPracticeTemplate(
   db: SupabaseClient,
   actorUserId: string,
@@ -108,6 +108,10 @@ export async function applyPracticeTemplate(
   const lookup = await loadPracticeRow(db, 'applyPracticeTemplate', practiceId, actorUserId);
   if ('result' in lookup) return lookup.result;
   const teamId = lookup.practice.team_id;
+  // Applying replaces every block, recorded status and minutes included.
+  if (lookup.practice.status === 'cancelled' || lookup.practice.run_status !== 'not_started') {
+    return serviceError('conflict', 'A template can only be applied before the practice starts.');
+  }
 
   const role = await coachRole(db, teamId, actorUserId, 'applyPracticeTemplate');
   if ('result' in role) return role.result;

@@ -3,10 +3,9 @@ import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { EmptyState, ErrorState, ListRow } from '@baseball/ui';
 import { SEASON_PHASE_LABELS, TEMPLATE_KIND_LABELS, type PracticeTemplateSummary } from '@baseball/shared';
-import { useRole } from '../../../../../src/providers/RoleProvider';
 import { ListGroup } from '../../../../../src/features/navigation/ListGroup';
 import { applyPracticeTemplate, usePracticeTemplates } from '../../../../../src/features/practices/planning-api';
-import { practiceQueryKey, practiceRunQueryKey } from '../../../../../src/features/practices/practices-api';
+import { practiceQueryKey, practiceRunQueryKey, usePractice } from '../../../../../src/features/practices/practices-api';
 import { describeApiError } from '../../../../../src/lib/api-client';
 
 /**
@@ -16,9 +15,10 @@ import { describeApiError } from '../../../../../src/lib/api-client';
  */
 export default function ApplyTemplateScreen() {
   const { practiceId = '' } = useLocalSearchParams<{ practiceId: string }>();
-  const { activeTeam } = useRole();
   const queryClient = useQueryClient();
-  const query = usePracticeTemplates(activeTeam?.teamId);
+  // The practice's own team, which may not be the active one (a link or notification).
+  const practice = usePractice(practiceId);
+  const query = usePracticeTemplates(practice.data?.practice.teamId);
 
   const apply = useMutation({
     mutationFn: (templateId: string) => applyPracticeTemplate(practiceId, templateId),
@@ -39,7 +39,8 @@ export default function ApplyTemplateScreen() {
     ]);
 
   const header = <Stack.Screen options={{ title: 'Apply a template' }} />;
-  if (query.isPending || apply.isPending) {
+  // The templates query waits for the practice, and stays pending if that fails.
+  if (practice.isPending || (practice.data && query.isPending) || apply.isPending) {
     return (
       <View className="flex-1 items-center justify-center bg-gray-50">
         {header}
@@ -51,7 +52,10 @@ export default function ApplyTemplateScreen() {
     return (
       <View className="flex-1 bg-gray-50">
         {header}
-        <ErrorState message={describeApiError(query.error)} onRetry={() => void query.refetch()} />
+        <ErrorState
+          message={describeApiError(practice.error ?? query.error)}
+          onRetry={() => void (practice.data ? query.refetch() : practice.refetch())}
+        />
       </View>
     );
   }

@@ -11,7 +11,7 @@ import { logAiGeneration } from '@/lib/ai/log-generation';
 import { AI_MODELS } from '@/lib/ai/client';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import { resolveGameViewer } from '../games/authorize';
-import { failed } from './practice-lookup';
+import { failed, requirePracticePlanning } from './practice-lookup';
 import { loadTeamDrills } from './team-drills';
 
 /**
@@ -34,6 +34,8 @@ export async function previewAiPractice(
 
   const viewer = await resolveGameViewer(db, actorUserId, input.teamId);
   if (!viewer?.isCoach) return serviceError('forbidden', 'Only coaches can generate AI practices.');
+  const gate = await requirePracticePlanning(db, input.teamId);
+  if (gate) return gate;
 
   const start = Date.now();
   try {
@@ -94,6 +96,8 @@ export async function createPracticeFromAiPlan(
 
   const viewer = await resolveGameViewer(db, actorUserId, input.teamId);
   if (!viewer?.isCoach) return serviceError('forbidden', 'Only coaches can create practices.');
+  const gate = await requirePracticePlanning(db, input.teamId);
+  if (gate) return gate;
 
   try {
     // A plan held in the app may name a drill the team can no longer see: drop it.

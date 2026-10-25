@@ -31,7 +31,7 @@ const TEMPLATE = '33333333-3333-4333-8333-333333333333';
 const SAM = '44444444-4444-4444-8444-444444444444';
 const GHOST = '55555555-5555-4555-8555-555555555555';
 
-const practiceRow = { data: { id: PRACTICE, team_id: TEAM, scheduled_at: '2026-10-25T23:00:00Z', duration_minutes: 90, prep_focus_summary: null, status: 'scheduled', latitude: null, longitude: null } };
+const practiceRow = { data: { id: PRACTICE, team_id: TEAM, scheduled_at: '2026-10-25T23:00:00Z', duration_minutes: 90, prep_focus_summary: null, status: 'scheduled', run_status: 'not_started', latitude: null, longitude: null } };
 const member = (role: string) => ({ data: { role, is_active: true } });
 
 beforeEach(() => {
@@ -116,6 +116,18 @@ describe('practice templates', () => {
 
     const assistant = fakeDb({ 'practices.select': practiceRow, 'team_members.select': member('assistant_coach') });
     expect(await applyPracticeTemplate(assistant.db, 'a', { practiceId: PRACTICE, templateId: TEMPLATE })).toMatchObject({ ok: false, code: 'forbidden' });
+  });
+
+  it('should refuse a practice that has started or been cancelled, before touching its blocks', async () => {
+    for (const changed of [{ run_status: 'running' }, { status: 'cancelled' }]) {
+      const { db } = fakeDb({
+        'practices.select': { data: { ...practiceRow.data, ...changed } },
+        'team_members.select': member('head_coach'),
+        'practice_templates.select': template,
+      });
+      expect(await applyPracticeTemplate(db, 'hc', { practiceId: PRACTICE, templateId: TEMPLATE })).toMatchObject({ ok: false, code: 'conflict' });
+    }
+    expect(mockInstantiate).not.toHaveBeenCalled();
   });
 
   it("should refuse another team's template", async () => {
