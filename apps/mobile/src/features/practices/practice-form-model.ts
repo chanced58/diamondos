@@ -1,4 +1,4 @@
-import { createPracticeInputSchema, type CreatePracticeInput } from '@baseball/shared';
+import { createPracticeInputSchema, planPracticeInputSchema, type CreatePracticeInput, type PlanPracticeInput } from '@baseball/shared';
 import { localDateFromParts } from '../forms/date-parts';
 import type { Venue } from '../places/VenueSearchField';
 
@@ -47,5 +47,36 @@ export function validatePracticeForm(teamId: string, values: PracticeFormValues)
   if (parsed.success) return null;
   const issue = parsed.error.issues[0];
   if (issue?.path[0] === 'durationMinutes') return 'Duration must be between 1 and 600 minutes.';
+  return issue?.message ?? 'Check the practice details.';
+}
+
+/** A practice planned from drills: the form's when and where, the coach's plan, and the drills in order. */
+export function planPracticeFields(
+  values: PracticeFormValues,
+  plan: string,
+  drillIds: readonly string[],
+): Omit<PlanPracticeInput, 'teamId'> {
+  const practice = practiceInput('', values, null);
+  return {
+    scheduledAt: practice.scheduledAt,
+    durationMinutes: practice.durationMinutes,
+    location: practice.location,
+    address: practice.address,
+    latitude: practice.latitude,
+    longitude: practice.longitude,
+    placeId: practice.placeId,
+    plan: plan.trim() || null,
+    drillIds: [...drillIds],
+  };
+}
+
+/** The first problem the server would report for a planned practice, or null. */
+export function validatePlanForm(teamId: string, values: PracticeFormValues, plan: string, drillIds: readonly string[]): string | null {
+  const problem = validatePracticeForm(teamId, values);
+  if (problem) return problem;
+  const parsed = planPracticeInputSchema.safeParse({ teamId, ...planPracticeFields(values, plan, drillIds) });
+  if (parsed.success) return null;
+  const issue = parsed.error.issues[0];
+  if (issue?.path[0] === 'plan') return 'The plan must be 20,000 characters or fewer.';
   return issue?.message ?? 'Check the practice details.';
 }
