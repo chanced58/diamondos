@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { formatInTimeZone } from '@baseball/shared';
+import { computeDefaultScheduledAt } from './default-start';
 import { loadPrepPreview } from '@/lib/services/practices/prep-practice';
 import { PrepPreviewForm } from './PrepPreviewForm';
 
@@ -100,7 +101,7 @@ export default async function PrepNewPage({ searchParams }: PageProps): Promise<
       <PrepPreviewForm
         teamId={activeTeam.id}
         linkedGameId={nextGame.id}
-        scheduledAt={computeDefaultScheduledAt(nextGame.scheduledAt, new Date())}
+        scheduledAt={computeDefaultScheduledAt(nextGame.scheduledAt, new Date(), nextGame.timeZone)}
         durationMinutes={preview.durationMinutes}
         focusSummary={preview.focusSummary}
         blocks={preview.blocks}
@@ -110,20 +111,4 @@ export default async function PrepNewPage({ searchParams }: PageProps): Promise<
       />
     </div>
   );
-}
-
-/**
- * Default the practice to 48 hours before the next game at 3pm, or tomorrow
- * at 3pm if that is already past. The form lets the coach change it.
- */
-function computeDefaultScheduledAt(gameIso: string, now: Date): string {
-  const target = new Date(new Date(gameIso).getTime() - 2 * 24 * 3600 * 1000);
-  target.setHours(15, 0, 0, 0);
-  if (target.getTime() < now.getTime()) {
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(15, 0, 0, 0);
-    return tomorrow.toISOString();
-  }
-  return target.toISOString();
 }
