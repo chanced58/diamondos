@@ -28,6 +28,15 @@ describe('standings model', () => {
     expect(sortStandings(rows, DEFAULT_STANDINGS_SORT).map((r) => r.name)).toEqual(['Best', 'Half, more wins', 'Half', 'Unplayed']);
   });
 
+  it('should never let wins outrank a better percentage', () => {
+    const rows = [
+      row('More wins, lower pct', { wins: 101, losses: 167, pct: 101 / 268, gamesPlayed: 268 }),
+      row('Fewer wins, higher pct', { wins: 75, losses: 124, pct: 75 / 199, gamesPlayed: 199 }),
+    ];
+    expect(sortStandings(rows, DEFAULT_STANDINGS_SORT).map((r) => r.name)).toEqual(['Fewer wins, higher pct', 'More wins, lower pct']);
+    expect(sortStandings(rows, { key: 'pct', ascending: true }).map((r) => r.name)).toEqual(['More wins, lower pct', 'Fewer wins, higher pct']);
+  });
+
   it('should start losses and runs allowed low to high, and flip on a second tap', () => {
     expect(nextStandingsSort(DEFAULT_STANDINGS_SORT, 'ra')).toEqual({ key: 'ra', ascending: true });
     expect(nextStandingsSort(DEFAULT_STANDINGS_SORT, 'wins')).toEqual({ key: 'wins', ascending: false });

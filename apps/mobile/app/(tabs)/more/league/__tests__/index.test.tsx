@@ -3,7 +3,11 @@ import { ApiError } from '../../../../../src/lib/api-client';
 import { renderWithQuery } from '../../../../../src/__tests__/render-with-query';
 
 jest.mock('expo-router', () => ({ __esModule: true, Stack: { Screen: () => null } }));
-jest.mock('../../../../../src/providers/RoleProvider', () => ({ useRole: () => ({ activeTeam: { teamId: 't1' } }) }));
+const mockCan = jest.fn();
+jest.mock('../../../../../src/providers/RoleProvider', () => ({
+  useRole: () => ({ activeTeam: { teamId: 't1' } }),
+  useCan: (capability: string) => mockCan(capability),
+}));
 jest.mock('../../../../../src/features/teams/TeamSwitcher', () => ({ TeamSwitcher: () => null }));
 const mockOpenOnWeb = jest.fn();
 jest.mock('../../../../../src/lib/web-links', () => ({
@@ -37,7 +41,10 @@ const page = (extra = {}) => ({
   ...extra,
 });
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockCan.mockReturnValue(true);
+});
 
 describe('LeagueScreen', () => {
   it('should show the counters, the standings best first with your team marked, and the staff', () => {
@@ -63,6 +70,25 @@ describe('LeagueScreen', () => {
     renderWithQuery(<LeagueScreen />);
     fireEvent.press(screen.getByText('Manage the league on the web'));
     expect(mockOpenOnWeb).toHaveBeenCalledWith('/league/admin');
+  });
+
+  it("should not load the league for a team whose plan lacks league management", () => {
+    mockCan.mockReturnValue(false);
+    mockUseLeaguePage.mockReturnValue({ data: undefined, isPending: true });
+    renderWithQuery(<LeagueScreen />);
+    expect(mockCan).toHaveBeenCalledWith('league_management');
+    expect(mockUseLeaguePage).toHaveBeenCalledWith(undefined);
+    expect(screen.getByText('The league page is on plans with league management.')).toBeTruthy();
+  });
+
+  it('should say when a refresh fails, keeping the standings on screen', () => {
+    const refetch = jest.fn();
+    mockUseLeaguePage.mockReturnValue({ data: page(), isRefetchError: true, error: new ApiError('offline', 'offline'), refetch });
+    renderWithQuery(<LeagueScreen />);
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.getByText('Huskies (you)')).toBeTruthy();
+    fireEvent.press(screen.getByText('Retry'));
+    expect(refetch).toHaveBeenCalled();
   });
 
   it('should say when the team is in no league', () => {

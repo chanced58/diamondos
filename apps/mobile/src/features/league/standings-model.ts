@@ -62,8 +62,7 @@ function sortValue(row: StandingsTeamRow, key: string): number | null {
     case 'diff':
       return row[key];
     case 'pct':
-      // Ties on percentage go to the team with more wins.
-      return row.gamesPlayed === 0 ? null : row.pct + row.wins / 1e6;
+      return row.gamesPlayed === 0 ? null : row.pct;
     case 'streak':
       if (!row.streak) return null;
       return row.streak.type === 'W' ? row.streak.count : row.streak.type === 'L' ? -row.streak.count : 0;
@@ -76,5 +75,12 @@ function sortValue(row: StandingsTeamRow, key: string): number | null {
 
 /** A division's teams in the chosen order. */
 export function sortStandings(rows: StandingsTeamRow[], sort: SortState): StandingsTeamRow[] {
-  return sortStatRows(rows, sort, (r) => r.name, sortValue);
+  if (sort.key !== 'pct') return sortStatRows(rows, sort, (r) => r.name, sortValue);
+  // Win percentage first; only an exact tie goes to the team with more wins. Teams yet to play stay last.
+  const direction = sort.ascending ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const played = Number(b.gamesPlayed > 0) - Number(a.gamesPlayed > 0);
+    if (played !== 0) return played;
+    return direction * (a.pct - b.pct || a.wins - b.wins);
+  });
 }

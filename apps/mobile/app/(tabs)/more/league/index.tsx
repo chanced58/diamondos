@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { Badge, Button, EmptyState, ErrorState, ListRow, SectionHeader } from '@baseball/ui';
-import type { LeaguePageResponse } from '@baseball/shared';
-import { useRole } from '../../../../src/providers/RoleProvider';
+import { Feature, type LeaguePageResponse } from '@baseball/shared';
+import { useCan, useRole } from '../../../../src/providers/RoleProvider';
 import { TeamSwitcher } from '../../../../src/features/teams/TeamSwitcher';
 import { ListGroup } from '../../../../src/features/navigation/ListGroup';
 import { StatTable } from '../../../../src/features/stats/StatTable';
@@ -25,10 +25,21 @@ import { openOnWeb, webUrl } from '../../../../src/lib/web-links';
  */
 export default function LeagueScreen() {
   const { activeTeam } = useRole();
-  const query = useLeaguePage(activeTeam?.teamId);
+  // As on the web, on plans with league management; checked again after a team switch.
+  const onPlan = useCan(Feature.LEAGUE_MANAGEMENT);
+  const query = useLeaguePage(onPlan ? activeTeam?.teamId : undefined);
   const [sort, setSort] = useState(DEFAULT_STANDINGS_SORT);
 
-  const header = <Stack.Screen options={{ title: query.data?.league.name ?? 'League' }} />;
+  const header = <Stack.Screen options={{ title: (onPlan && query.data?.league.name) || 'League' }} />;
+  if (activeTeam && !onPlan) {
+    return (
+      <View className="flex-1 bg-gray-50">
+        {header}
+        <TeamSwitcher />
+        <EmptyState title="League" message="The league page is on plans with league management." />
+      </View>
+    );
+  }
   if (query.isPending && activeTeam) {
     return (
       <View className="flex-1 items-center justify-center bg-gray-50">
@@ -61,6 +72,14 @@ export default function LeagueScreen() {
     >
       {header}
       <TeamSwitcher />
+      {query.isRefetchError && (
+        <View className="mx-4 mt-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex-row items-center justify-between">
+          <Text accessibilityRole="alert" className="text-sm text-red-700 flex-1 mr-2">
+            Couldn't refresh the standings: {describeApiError(query.error)}
+          </Text>
+          <Button label="Retry" variant="ghost" size="sm" onPress={() => void query.refetch()} />
+        </View>
+      )}
       <View className="px-4 pt-4">
         <Text className="text-2xl font-bold text-gray-900">{page.league.name}</Text>
         {page.league.description && <Text className="text-sm text-gray-500 mt-1">{page.league.description}</Text>}
