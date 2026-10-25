@@ -83,7 +83,9 @@ export async function loadPractice(
       },
       viewer: viewer.isCoach ? 'coach' : own.some((p) => p.canEditSelfNotes) ? 'player' : own.length > 0 ? 'parent' : 'member',
       overallNotes: (notes.data?.overall_notes as string | null) ?? null,
-      coach: viewer.isCoach ? await loadCoachView(db, teamId, practiceId, (notes.data?.coach_notes as string | null) ?? null) : null,
+      coach: viewer.isCoach
+        ? await loadCoachView(db, teamId, practiceId, (notes.data?.coach_notes as string | null) ?? null, viewer.role)
+        : null,
       myPlayers: own,
     };
     return serviceOk(detail);
@@ -153,7 +155,7 @@ async function loadOwnPlayers(db: SupabaseClient, actorUserId: string, teamId: s
 }
 
 /** What only coaches see: their notes, the roster, every player's notes and the ranked hitters. */
-async function loadCoachView(db: SupabaseClient, teamId: string, practiceId: string, coachNotes: string | null) {
+async function loadCoachView(db: SupabaseClient, teamId: string, practiceId: string, coachNotes: string | null, role: string | null) {
   const since = new Date(Date.now() - HITTER_LOOKBACK_DAYS * 24 * 3600 * 1000);
   const [playersResult, notesResult, reps] = await Promise.all([
     db.from('players').select('id, first_name, last_name, jersey_number').eq('team_id', teamId).eq('is_active', true).order('last_name'),
@@ -171,6 +173,8 @@ async function loadCoachView(db: SupabaseClient, teamId: string, practiceId: str
   });
 
   return {
+    // The web plan editor's rule for structural changes (assertHeadCoachOrAD).
+    canEditStructure: role === 'head_coach' || role === 'athletic_director',
     coachNotes,
     players: ((playersResult.data ?? []) as PlayerRow[]).map((p) => ({
       id: p.id,

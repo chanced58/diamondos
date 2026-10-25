@@ -10,12 +10,11 @@ import {
   templateBlockSchema,
 } from '@baseball/shared';
 import {
-  archiveTemplate,
   createTemplateWithBlocks,
-  duplicateTemplate,
   replaceTemplateBlocks,
   updateTemplate,
 } from '@baseball/database';
+import { archivePracticeTemplate, duplicatePracticeTemplate } from '@/lib/services/practices/practice-templates';
 import {
   assertCoachOnTeam,
   createPracticeServiceClient,
@@ -136,6 +135,7 @@ export async function saveTemplateAction(input: SaveTemplateInput): Promise<Save
   }
 }
 
+/** Copies a template under a new name; a wrapper over the service `/api/m/v1` shares. */
 export async function duplicateTemplateAction(args: {
   sourceTemplateId: string;
   teamId: string;
@@ -147,37 +147,14 @@ export async function duplicateTemplateAction(args: {
   } = await auth.auth.getUser();
   if (!user) return { error: 'Not authenticated.' };
 
-  const supabase = createPracticeServiceClient();
-
-  // Authorize against the source template's real team_id, not the caller's
-  // claimed teamId.
-  const { data: src } = await supabase
-    .from('practice_templates')
-    .select('team_id')
-    .eq('id', args.sourceTemplateId)
-    .maybeSingle();
-  if (!src) return { error: 'Template not found.' };
-  const srcTeamId = src.team_id as string;
-
-  try {
-    await assertCoachOnTeam(supabase, user.id, srcTeamId);
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : 'Not authorized.' };
-  }
-
-  try {
-    const dup = await duplicateTemplate(
-      supabase,
-      args.sourceTemplateId,
-      args.newName,
-      user.id,
-    );
-    return { templateId: dup.id };
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : 'Failed to duplicate.' };
-  }
+  const result = await duplicatePracticeTemplate(createPracticeServiceClient(), user.id, {
+    templateId: args.sourceTemplateId,
+    newName: args.newName,
+  });
+  return result.ok ? { templateId: result.data.templateId } : { error: result.error };
 }
 
+/** Archives a template; a wrapper over the service `/api/m/v1` shares. */
 export async function archiveTemplateAction(args: {
   id: string;
   teamId: string;
@@ -188,27 +165,6 @@ export async function archiveTemplateAction(args: {
   } = await auth.auth.getUser();
   if (!user) return { error: 'Not authenticated.' };
 
-  const supabase = createPracticeServiceClient();
-
-  // Authorize against the template's real team_id.
-  const { data: tpl } = await supabase
-    .from('practice_templates')
-    .select('team_id')
-    .eq('id', args.id)
-    .maybeSingle();
-  if (!tpl) return { error: 'Template not found.' };
-  const tplTeamId = tpl.team_id as string;
-
-  try {
-    await assertCoachOnTeam(supabase, user.id, tplTeamId);
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : 'Not authorized.' };
-  }
-
-  try {
-    await archiveTemplate(supabase, args.id, true);
-    return {};
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : 'Failed to archive.' };
-  }
+  const result = await archivePracticeTemplate(createPracticeServiceClient(), user.id, { templateId: args.id });
+  return result.ok ? {} : { error: result.error };
 }

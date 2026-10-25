@@ -52,6 +52,7 @@ describe('loadPractice', () => {
     expect(result.data.practice.prep).toEqual({ opponentName: 'Wolves', scheduledAt: '2026-10-26T23:00:00Z', focusSummary: 'Lefty starter' });
     expect(result.data.practice.plan).toBeNull();
     expect(result.data.coach).toMatchObject({
+      canEditStructure: true,
       coachNotes: 'Watch Sam',
       players: [{ id: PLAYER, jerseyNumber: 7 }],
       playerNotes: { [PLAYER]: { hitting: 'Stay back' } },
