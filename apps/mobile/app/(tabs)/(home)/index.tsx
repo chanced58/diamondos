@@ -1,172 +1,158 @@
-import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { router } from 'expo-router';
-import { Q } from '@nozbe/watermelondb';
-import withObservables from '@nozbe/with-observables';
-import { weAreHome } from '@baseball/shared';
-import { useAuth } from '../../../src/providers/AuthProvider';
+import { EmptyState, ErrorState, SegmentedControl } from '@baseball/ui';
+import type { DashboardView } from '@baseball/shared';
 import { useSyncContext } from '../../../src/providers/SyncProvider';
 import { useRole } from '../../../src/providers/RoleProvider';
-import { useGameState } from '../../../src/features/scoring/use-game-state';
 import { TeamSwitcher } from '../../../src/features/teams/TeamSwitcher';
-import { database } from '../../../src/db';
-import type { Game } from '../../../src/db/models/Game';
+import { ResumeScoringCards } from '../../../src/features/home/ResumeScoringCards';
+import { useDashboard } from '../../../src/features/home/dashboard-api';
+import { recordTiles, remoteLiveGames } from '../../../src/features/home/dashboard-format';
+import {
+  AnnouncementList,
+  CardAction,
+  DashboardCard,
+  LiveGameRow,
+  NextUpCard,
+  RecentGamesList,
+  StatTile,
+  UpcomingList,
+} from '../../../src/features/home/DashboardSections';
+import { describeApiError } from '../../../src/lib/api-client';
 
 /**
- * Resume control for a game being scored right now.
- *
- * A scorer who backs out mid-game — to check a message, or because the app
- * was killed — otherwise has to remember which game they were on and dig it
- * out of the games list. This puts it first on the home screen, where it is
- * the only thing they are likely to want.
- *
- * The score comes from replaying the local event log rather than from the
- * games mirror's home_score/away_score columns: those are written server-side
- * at finalisation, so mid-game they still read 0-0 while the real score has
- * moved on.
+ * Home (the web dashboard): live games, the next game, the recent record and
+ * run differential, the next four weeks, announcements and recent results,
+ * with the web's My Team / league switch for a team in a league. A scorer's
+ * own live games resume from local data, so that card works offline; the rest
+ * is online and refreshes on pull (and every 30 s while a game is live).
  */
-function LiveGameCard({ game }: { game: Game }) {
-  const { activeTeam } = useRole();
-  const { gameState } = useGameState(game.remoteId, game.teamId);
-
-  const isHome = weAreHome(game.locationType, game.neutralHomeTeam ?? null);
-  const opponentName = game.opponentName || 'TBD';
-  const teamName = activeTeam?.teamName ?? 'Home';
-  const ourScore = gameState ? (isHome ? gameState.homeScore : gameState.awayScore) : null;
-  const theirScore = gameState ? (isHome ? gameState.awayScore : gameState.homeScore) : null;
-
-  return (
-    <TouchableOpacity
-      accessibilityRole="button"
-      accessibilityLabel={`Game in progress against ${opponentName}. Resume scoring.`}
-      className="bg-white rounded-xl border-2 border-red-200 p-5 mb-3"
-      onPress={() =>
-        router.push({
-          pathname: '/(tabs)/schedule/games/[gameId]/score',
-          params: {
-            gameId: game.remoteId,
-            teamId: game.teamId,
-            opponentName,
-            teamName,
-          },
-        })
-      }
-    >
-      <View className="flex-row items-center mb-1.5">
-        <View className="w-2 h-2 rounded-full bg-red-500 mr-2" />
-        <Text className="text-[11px] font-bold text-red-700 tracking-wide">
-          GAME IN PROGRESS
-        </Text>
-      </View>
-
-      <Text className="text-lg font-semibold text-gray-900">vs {opponentName}</Text>
-
-      {gameState ? (
-        <Text className="text-gray-500 text-sm mt-0.5">
-          <Text className="font-semibold text-gray-900">
-            {ourScore}–{theirScore}
-          </Text>
-          <Text>
-            {'  ·  '}
-            {gameState.isTopOfInning ? 'Top' : 'Bot'} {gameState.inning} · {gameState.outs} out
-          </Text>
-        </Text>
-      ) : (
-        <Text className="text-gray-500 text-sm mt-0.5">Tap to resume scoring</Text>
-      )}
-    </TouchableOpacity>
-  );
-}
-
-// Scoped to one team: a device that has synced games for more than one team
-// would otherwise surface — and offer to resume — another team's live game.
-const LiveGames = withObservables(['teamId'], ({ teamId }: { teamId: string }) => ({
-  games: database
-    .get<Game>('games')
-    .query(
-      Q.where('status', 'in_progress'),
-      Q.where('team_id', teamId),
-      Q.sortBy('scheduled_at', Q.asc),
-    )
-    .observe(),
-}))(({ games }: { games: Game[] }) => (
-  <>
-    {games.map((game) => (
-      <LiveGameCard key={game.id} game={game} />
-    ))}
-  </>
-));
-
 export default function HomeScreen() {
-  const { user, signOut } = useAuth();
   const { isSyncing } = useSyncContext();
-  const { activeTeam } = useRole();
+  const { activeTeam, loading: roleLoading } = useRole();
+  const [view, setView] = useState<DashboardView>('team');
+  const query = useDashboard(activeTeam?.teamId, view);
+
+  if (!activeTeam) {
+    return (
+      <View className="flex-1 bg-gray-50">
+        {roleLoading ? (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator />
+          </View>
+        ) : (
+          <EmptyState title="No team yet" message="When a coach adds you to a team, its schedule and news show up here." />
+        )}
+      </View>
+    );
+  }
+
+  const teamId = activeTeam.teamId;
+  const canScore = activeTeam.isCoach || activeTeam.role === 'scorekeeper';
+  const dashboard = query.data;
+  const tiles = dashboard ? recordTiles(dashboard.record, dashboard.recentGames.length) : null;
+  const channelId = dashboard?.announcementChannelId;
 
   return (
-    <ScrollView className="flex-1 bg-gray-50">
+    <ScrollView
+      className="flex-1 bg-gray-50"
+      contentContainerStyle={{ paddingBottom: 32 }}
+      refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} />}
+    >
       <TeamSwitcher />
-      <View className="px-5 pt-6 pb-4">
-        <Text className="text-2xl font-bold text-gray-900">Dashboard</Text>
-        <Text className="text-gray-500 text-sm mt-1">{user?.email}</Text>
+      <View className="px-4 pt-5 pb-3">
+        <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          {view === 'league' && dashboard?.league ? dashboard.league.name : 'Team dashboard'}
+        </Text>
+        <Text className="text-2xl font-bold text-gray-900 mt-0.5">{activeTeam.teamName}</Text>
+        {dashboard?.league && (
+          <View className="mt-3">
+            <SegmentedControl
+              options={[
+                { value: 'team', label: 'My team' },
+                { value: 'league', label: dashboard.league.name },
+              ]}
+              value={view}
+              onChange={setView}
+            />
+          </View>
+        )}
       </View>
 
       {isSyncing && (
-        <View className="mx-5 mb-4 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2">
+        <View className="mx-4 mb-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2">
           <Text className="text-blue-700 text-sm">Syncing...</Text>
         </View>
       )}
 
-      <View className="px-5 space-y-3">
-        {/* Renders nothing when no game is live, so the home screen keeps its
-            usual shape the rest of the time. */}
-        {activeTeam && <LiveGames teamId={activeTeam.teamId} />}
+      <View className="px-4">
+        {canScore && <ResumeScoringCards teamId={teamId} />}
 
-        <TouchableOpacity
-          className="bg-white rounded-xl border border-gray-200 p-5"
-          onPress={() => router.push({ pathname: '/(tabs)/schedule', params: { view: 'games' } })}
-        >
-          <Text className="text-lg font-semibold text-gray-900 mb-1">Today's Games</Text>
-          <Text className="text-gray-500 text-sm">View schedule and score a game</Text>
-        </TouchableOpacity>
+        {!dashboard ? (
+          query.isPending ? (
+            <View className="py-10 items-center">
+              <ActivityIndicator />
+            </View>
+          ) : (
+            <ErrorState message={describeApiError(query.error)} onRetry={() => void query.refetch()} />
+          )
+        ) : (
+          <>
+            {remoteLiveGames(dashboard.liveGames, teamId, canScore).map((game) => (
+              <LiveGameRow key={game.id} game={game} activeTeamId={teamId} />
+            ))}
 
-        <TouchableOpacity
-          className="bg-white rounded-xl border border-gray-200 p-5"
-          onPress={() => router.push({ pathname: '/(tabs)/schedule', params: { view: 'all' } })}
-        >
-          <Text className="text-lg font-semibold text-gray-900 mb-1">Schedule</Text>
-          <Text className="text-gray-500 text-sm">Upcoming games and RSVPs</Text>
-        </TouchableOpacity>
+            <NextUpCard game={dashboard.nextGame} activeTeamId={teamId} isCoach={activeTeam.isCoach} />
 
-        <TouchableOpacity
-          className="bg-white rounded-xl border border-gray-200 p-5"
-          onPress={() => router.push('/(tabs)/more/practices')}
-        >
-          <Text className="text-lg font-semibold text-gray-900 mb-1">Practices</Text>
-          <Text className="text-gray-500 text-sm">Upcoming practices and attendance</Text>
-        </TouchableOpacity>
+            {tiles && (
+              <View className="flex-row gap-3 mb-3">
+                <StatTile label="Recent record" value={tiles.record} detail={tiles.tracked} />
+                <StatTile label="Run diff" value={tiles.runDiff} detail={tiles.runs} tone={tiles.trend} />
+              </View>
+            )}
 
-        <TouchableOpacity
-          className="bg-white rounded-xl border border-gray-200 p-5"
-          onPress={() => router.push('/(tabs)/more/roster')}
-        >
-          <Text className="text-lg font-semibold text-gray-900 mb-1">Roster</Text>
-          <Text className="text-gray-500 text-sm">Players and pitch counts</Text>
-        </TouchableOpacity>
+            <DashboardCard
+              title="Upcoming games"
+              action={<CardAction label="Schedule" onPress={() => router.push({ pathname: '/(tabs)/schedule', params: { view: 'games' } })} />}
+            >
+              <UpcomingList
+                items={dashboard.upcoming.filter((i) => i.kind === 'game')}
+                activeTeamId={teamId}
+                emptyText="No games scheduled in the next 4 weeks."
+              />
+            </DashboardCard>
 
-        <TouchableOpacity
-          className="bg-white rounded-xl border border-gray-200 p-5"
-          onPress={() => router.push('/(tabs)/messages')}
-        >
-          <Text className="text-lg font-semibold text-gray-900 mb-1">Messages</Text>
-          <Text className="text-gray-500 text-sm">Team channels and announcements</Text>
-        </TouchableOpacity>
+            <DashboardCard
+              title="Practices & events"
+              action={<CardAction label="Full schedule" onPress={() => router.push({ pathname: '/(tabs)/schedule', params: { view: 'all' } })} />}
+            >
+              <UpcomingList
+                items={dashboard.upcoming.filter((i) => i.kind !== 'game')}
+                activeTeamId={teamId}
+                emptyText="No practices or events scheduled."
+              />
+            </DashboardCard>
+
+            <DashboardCard
+              title="Announcements"
+              action={
+                channelId ? (
+                  <CardAction label="Post" onPress={() => router.push({ pathname: '/(tabs)/messages/[channelId]', params: { channelId } })} />
+                ) : (
+                  <CardAction label="Messages" onPress={() => router.push('/(tabs)/messages')} />
+                )
+              }
+            >
+              <AnnouncementList announcements={dashboard.announcements} />
+            </DashboardCard>
+
+            <DashboardCard title="Recent games">
+              <RecentGamesList games={dashboard.recentGames} activeTeamId={teamId} />
+            </DashboardCard>
+          </>
+        )}
       </View>
-
-      <TouchableOpacity
-        className="mx-5 mt-8 mb-6 py-3 rounded-xl border border-gray-300 items-center"
-        onPress={signOut}
-      >
-        <Text className="text-gray-600 font-medium">Sign out</Text>
-      </TouchableOpacity>
     </ScrollView>
   );
 }

@@ -3,8 +3,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 /**
  * A chainable Supabase client fake for service tests. Results are keyed
  * `table.op` (op = select | insert | update | upsert | delete); an array is consumed in
- * call order, its last entry repeating. Every call is recorded with its
- * filters and payload so tests can assert scoping.
+ * call order, its last entry repeating, and a function picks the result from
+ * the call (its filters, say) when one table is read several ways. Every call
+ * is recorded with its filters and payload so tests can assert scoping.
  */
 
 export type FakeOp = 'select' | 'insert' | 'update' | 'upsert' | 'delete';
@@ -15,13 +16,15 @@ export interface FakeCall {
   payload?: unknown;
 }
 export type FakeResult = { data?: unknown; error?: unknown; count?: number };
+export type FakeResultFor = (call: FakeCall) => FakeResult;
 
-export function fakeDb(results: Record<string, FakeResult | FakeResult[]> = {}) {
+export function fakeDb(results: Record<string, FakeResult | FakeResult[] | FakeResultFor> = {}) {
   const calls: FakeCall[] = [];
   const consumed: Record<string, number> = {};
 
-  function next(key: string): FakeResult {
+  function next(key: string, call: FakeCall): FakeResult {
     const entry = results[key];
+    if (typeof entry === 'function') return entry(call);
     if (!Array.isArray(entry)) return entry ?? {};
     const index = consumed[key] ?? 0;
     consumed[key] = index + 1;
@@ -34,7 +37,7 @@ export function fakeDb(results: Record<string, FakeResult | FakeResult[]> = {}) 
       calls.push(call);
       let settled: Promise<FakeResult> | null = null;
       const resolve = () => {
-        settled ??= Promise.resolve({ data: null, error: null, ...next(`${table}.${call.op}`) });
+        settled ??= Promise.resolve({ data: null, error: null, ...next(`${table}.${call.op}`, call) });
         return settled;
       };
       const builder: Record<string, unknown> = {
@@ -48,6 +51,7 @@ export function fakeDb(results: Record<string, FakeResult | FakeResult[]> = {}) 
         // Range filters record as `col>=` / `col<`, so a test can tell them apart.
         gte: (col: string, val: unknown) => { call.filters[`${col}>=`] = val; return builder; },
         lt: (col: string, val: unknown) => { call.filters[`${col}<`] = val; return builder; },
+        lte: (col: string, val: unknown) => { call.filters[`${col}<=`] = val; return builder; },
         gt: (col: string, val: unknown) => { call.filters[`${col}>`] = val; return builder; },
         neq: (col: string, val: unknown) => { call.filters[`${col}!=`] = val; return builder; },
         is: (col: string, val: unknown) => { call.filters[`${col} is`] = val; return builder; },
