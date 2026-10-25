@@ -1,14 +1,14 @@
 import { NextRequest } from 'next/server';
-import { readBearerToken, requireApiUser } from '../bearer-auth';
+import { noStoreFetch, readBearerToken, requireApiUser } from '../bearer-auth';
 
 const mockGetUser = jest.fn();
-const mockCreateClient = jest.fn((_url: string, key: string) => ({
+const mockCreateClient = jest.fn((_url: string, key: string, _options?: unknown) => ({
   key,
   auth: { getUser: mockGetUser },
 }));
 
 jest.mock('@supabase/supabase-js', () => ({
-  createClient: (url: string, key: string) => mockCreateClient(url, key),
+  createClient: (url: string, key: string, options?: unknown) => mockCreateClient(url, key, options),
 }));
 
 function requestWith(authorization?: string): NextRequest {
@@ -74,7 +74,20 @@ describe('requireApiUser', () => {
     expect(result.user).toEqual({ id: 'user-1' });
     expect(result.db).toMatchObject({ key: 'service-key' });
     // Token verified with the anon key, never the service role.
-    expect(mockCreateClient).toHaveBeenNthCalledWith(1, 'https://db.example.com', 'anon-key');
+    expect(mockCreateClient).toHaveBeenNthCalledWith(1, 'https://db.example.com', 'anon-key', expect.anything());
+  });
+
+  it("should never let Next's data cache answer the token check or the reads", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null });
+    await requireApiUser(requestWith('Bearer good'));
+
+    for (const [, , options] of mockCreateClient.mock.calls) {
+      expect(options).toMatchObject({ global: { fetch: noStoreFetch } });
+    }
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(new Response('{}'));
+    await noStoreFetch('https://db.example.com/rest/v1/team_members', { headers: { apikey: 'k' } });
+    expect(fetchSpy).toHaveBeenCalledWith('https://db.example.com/rest/v1/team_members', { headers: { apikey: 'k' }, cache: 'no-store' });
+    fetchSpy.mockRestore();
   });
 
   it('should respond 500 when the service-role key is not configured', async () => {

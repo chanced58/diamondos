@@ -20,8 +20,19 @@ export type ApiAuthResult =
 
 const BEARER_RE = /^Bearer\s+(\S+)\s*$/i;
 
-// Per-request server clients: no session storage or refresh timers.
-const SERVER_AUTH_OPTIONS = { auth: { persistSession: false, autoRefreshToken: false } } as const;
+/**
+ * Every Supabase read behind the mobile API goes to the database. Next's data
+ * cache otherwise keeps GET fetches made from route handlers — even
+ * `force-dynamic` ones — so the token check and the reads would replay old
+ * responses: a team the user just joined missing from `/me`, for one.
+ */
+export const noStoreFetch: typeof fetch = (input, init) => fetch(input, { ...init, cache: 'no-store' });
+
+// Per-request server clients: no session storage or refresh timers, nothing cached.
+const SERVER_AUTH_OPTIONS = {
+  auth: { persistSession: false, autoRefreshToken: false },
+  global: { fetch: noStoreFetch },
+} as const;
 
 /** JSON error body shared by every mobile API route: `{ error, code? }`. */
 export function apiError(status: number, error: string, code?: string): NextResponse {
