@@ -99,6 +99,13 @@ describe('NewTournamentScreen', () => {
     expect(mockCreate.mock.calls[0][0].team).toEqual({ type: 'existing', teamId: TEAM });
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     expect(mockReplace).not.toHaveBeenCalled();
+
+    // Editing the form clears the refusal.
+    await act(async () => {
+      fireEvent.changeText(screen.getByLabelText('Tournament name'), 'Fall Classic II');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 

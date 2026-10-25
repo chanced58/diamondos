@@ -75,7 +75,12 @@ export default function NewTournamentScreen() {
     );
   }
 
-  const set = (patch: Partial<TournamentFormValues>) => setValues((current) => (current ? { ...current, ...patch } : current));
+  // An edit clears the last refusal, so the message never outlives what it was about.
+  const set = (patch: Partial<TournamentFormValues>) => {
+    setValues((current) => (current ? { ...current, ...patch } : current));
+    setValidationError(null);
+    if (create.isError) create.reset();
+  };
   const submit = () => {
     const parsed = parseTournamentForm(values, requestId);
     setValidationError(parsed.ok ? null : parsed.error);
