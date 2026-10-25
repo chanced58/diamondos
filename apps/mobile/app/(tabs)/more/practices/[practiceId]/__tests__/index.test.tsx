@@ -12,6 +12,7 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ practiceId: 'p1' }),
 }));
 jest.mock('../../../../../../src/lib/web-links', () => ({ webUrl: () => 'https://example.com/', openOnWeb: jest.fn() }));
+jest.mock('../../../../../../src/features/practices/SummaryCard', () => ({ SummaryCard: () => null }));
 
 const mockUsePractice = jest.fn();
 const mockCancel = jest.fn();
@@ -48,6 +49,7 @@ const base = (extra: Partial<PracticeDetailResponse>): { data: PracticeDetailRes
 const coachView = base({
   viewer: 'coach',
   coach: {
+    canEditStructure: true,
     coachNotes: null,
     players: [{ id: 'sam', firstName: 'Sam', lastName: 'Lee', jerseyNumber: 7 }],
     playerNotes: {},
@@ -65,6 +67,9 @@ describe('PracticeScreen', () => {
 
     fireEvent.press(screen.getByText('Run practice'));
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/more/practices/[practiceId]/run', params: { practiceId: 'p1' } });
+    // A head coach, before the practice starts, can swap in a template's blocks.
+    fireEvent.press(screen.getByText('Apply a template'));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/more/practices/[practiceId]/template', params: { practiceId: 'p1' } });
     fireEvent.press(screen.getByText('Practice notes'));
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/more/practices/[practiceId]/notes', params: { practiceId: 'p1' } });
     expect(screen.getByText(/Lee, Sam #7/)).toBeTruthy();

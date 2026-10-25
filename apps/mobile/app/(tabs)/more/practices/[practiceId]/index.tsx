@@ -16,6 +16,7 @@ import { practiceWhen } from '../../../../../src/features/practices/practice-for
 import { RepLogger } from '../../../../../src/features/practices/RepLogger';
 import { HittersPanel } from '../../../../../src/features/practices/HittersPanel';
 import { PlayerNotesCard } from '../../../../../src/features/practices/PlayerNotesCard';
+import { SummaryCard } from '../../../../../src/features/practices/SummaryCard';
 import { deviceTimeZone } from '../../../../../src/features/games/game-form-model';
 import { describeApiError } from '../../../../../src/lib/api-client';
 import { openOnWeb, webUrl } from '../../../../../src/lib/web-links';
@@ -101,6 +102,8 @@ export default function PracticeScreen() {
               <SectionHeader title="Batting practice" />
               <RepLogger practiceId={practiceId} players={coach.players} onLogged={refresh} />
               <HittersPanel hitters={coach.hitters} players={coach.players} />
+              <SectionHeader title="Summary" />
+              <SummaryCard practiceId={practiceId} players={coach.players} />
             </>
           )}
           {!cancelled && <CancelButton practiceId={practiceId} teamId={practice.teamId} scheduledAt={practice.scheduledAt} />}
@@ -154,6 +157,15 @@ function Actions({ detail }: { detail: PracticeDetailResponse }) {
       title: 'Attendance',
       onPress: () => router.push({ pathname: '/(tabs)/more/practices/[practiceId]/attendance', params: { practiceId } }),
     });
+    // Applying a template replaces the blocks, so only before the practice starts.
+    if (detail.coach?.canEditStructure && practice.runStatus === 'not_started') {
+      rows.push({
+        key: 'template',
+        title: 'Apply a template',
+        subtitle: "Replaces the practice's blocks",
+        onPress: () => router.push({ pathname: '/(tabs)/more/practices/[practiceId]/template', params: { practiceId } }),
+      });
+    }
     if (webUrl('/')) {
       rows.push({
         key: 'plan',

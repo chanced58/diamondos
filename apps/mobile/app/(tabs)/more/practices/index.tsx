@@ -1,22 +1,30 @@
+import { useState } from 'react';
 import { ActivityIndicator, RefreshControl, SectionList, Text, TouchableOpacity, View } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { Badge, EmptyState, ErrorState, ListRow, SectionHeader } from '@baseball/ui';
 import type { PracticeSummary } from '@baseball/shared';
 import { useRole } from '../../../../src/providers/RoleProvider';
 import { TeamSwitcher } from '../../../../src/features/teams/TeamSwitcher';
+import { OptionSheet } from '../../../../src/features/opponents/OptionSheet';
 import { usePractices } from '../../../../src/features/practices/practices-api';
 import { RUN_STATUS_LABELS, practiceWhen, splitPractices } from '../../../../src/features/practices/practice-format';
 import { describeApiError, isApiError } from '../../../../src/lib/api-client';
 
 /**
  * The team's practices (the web Practices list): upcoming first, then past.
- * Coaches log a new one from the header. On a plan without practice planning
- * the server refuses, and so does this screen.
+ * Coaches start a new one from the header — logged, generated with AI or
+ * prepped for the next game — and reach the team's templates there. On a
+ * plan without practice planning the server refuses, and so does this screen.
  */
 export default function PracticesIndex() {
   const { activeTeam, loading: roleLoading } = useRole();
   const query = usePractices(activeTeam?.teamId);
   const isCoach = query.data?.isCoach ?? false;
+  const [choosing, setChoosing] = useState(false);
+  const go = (path: '/(tabs)/more/practices/new' | '/(tabs)/more/practices/ai' | '/(tabs)/more/practices/prep' | '/(tabs)/more/practices/templates') => () => {
+    setChoosing(false);
+    router.push(path);
+  };
 
   const header = (
     <Stack.Screen
@@ -28,7 +36,7 @@ export default function PracticesIndex() {
                 accessibilityRole="button"
                 accessibilityLabel="New practice"
                 hitSlop={8}
-                onPress={() => router.push('/(tabs)/more/practices/new')}
+                onPress={() => setChoosing(true)}
               >
                 <Text className="text-white text-2xl font-semibold">+</Text>
               </TouchableOpacity>
@@ -78,6 +86,16 @@ export default function PracticesIndex() {
   return (
     <View className="flex-1 bg-gray-50">
       {header}
+      <OptionSheet
+        title={choosing ? 'Practices' : null}
+        options={[
+          { key: 'new', label: 'Log a practice', onPress: go('/(tabs)/more/practices/new') },
+          { key: 'ai', label: 'Generate with AI', onPress: go('/(tabs)/more/practices/ai') },
+          { key: 'prep', label: 'Prep for next game', onPress: go('/(tabs)/more/practices/prep') },
+          { key: 'templates', label: 'Templates', onPress: go('/(tabs)/more/practices/templates') },
+        ]}
+        onClose={() => setChoosing(false)}
+      />
       <TeamSwitcher />
       <SectionList
         sections={sections}
