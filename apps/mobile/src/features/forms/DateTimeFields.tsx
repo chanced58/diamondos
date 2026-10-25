@@ -10,16 +10,18 @@ interface DateTimeFieldsProps {
   testID?: string;
   /** False shows the time alone (an end time on the start's day). */
   showDate?: boolean;
+  /** False shows the date alone (a tournament's first and last day). */
+  showTime?: boolean;
 }
 
 /**
  * A date and a time, as the coach means them at the field. iOS shows the
  * compact inline pickers; Android opens its dialog from a button.
  */
-export function DateTimeFields({ date, time, onChange, testID, showDate = true }: DateTimeFieldsProps) {
+export function DateTimeFields({ date, time, onChange, testID, showDate = true, showTime = true }: DateTimeFieldsProps) {
   const [androidPicker, setAndroidPicker] = useState<'date' | 'time' | null>(null);
   const value = localDateFromParts(date, time);
-  const modes = showDate ? (['date', 'time'] as const) : (['time'] as const);
+  const modes = !showDate ? (['time'] as const) : showTime ? (['date', 'time'] as const) : (['date'] as const);
 
   const handle = (mode: 'date' | 'time') => (event: DateTimePickerEvent, picked?: Date) => {
     setAndroidPicker(null);

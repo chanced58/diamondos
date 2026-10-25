@@ -23,6 +23,9 @@ export default function MoreLayout() {
       <Stack.Screen name="practices/drills/new" options={{ title: 'New drill' }} />
       <Stack.Screen name="practices/drills/[drillId]/index" options={{ title: 'Drill' }} />
       <Stack.Screen name="practices/drills/[drillId]/edit" options={{ title: 'Edit drill' }} />
+      <Stack.Screen name="tournaments/index" options={{ title: 'Tournaments' }} />
+      <Stack.Screen name="tournaments/new" options={{ title: 'New tournament' }} />
+      <Stack.Screen name="tournaments/[tournamentId]" options={{ title: 'Tournament' }} />
       <Stack.Screen name="facilities/index" options={{ title: 'Facilities' }} />
       <Stack.Screen name="facilities/new-booking" options={{ title: 'Book a facility' }} />
       <Stack.Screen name="facilities/manage" options={{ title: 'Manage facilities' }} />

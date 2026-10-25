@@ -37,3 +37,4 @@ export * from './practices';
 export * from './practice-planning';
 export * from './drill-library';
 export * from './dashboard';
+export * from './tournament-detail';
