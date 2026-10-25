@@ -42,7 +42,9 @@ export async function listTeamDrills(
   if (gate) return gate;
 
   try {
-    return serviceOk({ teamId, isCoach: viewer.isCoach, drills: await listDrills(db as never, teamId) });
+    // The same check the drill writes make (platform admins aren't team coaches), so the app never offers what the server refuses.
+    const { isCoach } = await checkCoachOnTeam(db, actorUserId, teamId);
+    return serviceOk({ teamId, isCoach, drills: await listDrills(db as never, teamId) });
   } catch (error) {
     return failed('listTeamDrills', teamId, actorUserId, error);
   }

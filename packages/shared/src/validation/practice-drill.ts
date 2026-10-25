@@ -25,6 +25,12 @@ const playerRangeMessage: { message: string; path: Array<string | number> } = {
   path: ['maxPlayers'],
 };
 
+/** A web link: drill media opens in a browser, so other schemes (javascript:, tel:, app links) are refused. */
+const httpUrl = z
+  .string()
+  .url()
+  .refine((value) => /^https?:\/\//i.test(value), 'Use an http or https link');
+
 export const createDrillSchema = z
   .object({
     name: z.string().min(1, 'Name is required').max(120),
@@ -50,8 +56,8 @@ export const createDrillSchema = z
     maxPlayers: z.number().int().min(1).max(50).optional(),
     coachingPoints: z.string().max(4000).optional(),
     tags: z.array(z.string().min(1).max(30)).max(20).optional().default([]),
-    diagramUrl: z.string().url().optional().or(z.literal('')),
-    videoUrl: z.string().url().optional().or(z.literal('')),
+    diagramUrl: httpUrl.optional().or(z.literal('')),
+    videoUrl: httpUrl.optional().or(z.literal('')),
   })
   .refine(playerRangeRefine, playerRangeMessage);
 
@@ -70,8 +76,8 @@ export const updateDrillSchema = z
     maxPlayers: z.number().int().min(1).max(50).optional(),
     coachingPoints: z.string().max(4000).optional(),
     tags: z.array(z.string().min(1).max(30)).max(20).optional(),
-    diagramUrl: z.string().url().optional().or(z.literal('')),
-    videoUrl: z.string().url().optional().or(z.literal('')),
+    diagramUrl: httpUrl.optional().or(z.literal('')),
+    videoUrl: httpUrl.optional().or(z.literal('')),
   })
   .refine(playerRangeRefine, playerRangeMessage);
 

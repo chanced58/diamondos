@@ -126,11 +126,21 @@ function DrillBody({ detail }: { detail: DrillDetailResponse }) {
         </>
       )}
 
-      {drill.videoUrl && (
+      {drill.videoUrl && isWebLink(drill.videoUrl) && (
         <View className="mt-4">
-          <Button label="Watch the video" variant="ghost" onPress={() => void Linking.openURL(drill.videoUrl ?? '')} />
+          <Button label="Watch the video" variant="ghost" onPress={() => openVideo(drill.videoUrl ?? '')} />
         </View>
       )}
     </View>
   );
+}
+
+/** Only web links open: a drill's link is coach-typed, and older drills predate the server's http(s) check. */
+function isWebLink(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
+/** Opens the drill's video in the browser, saying so when the device can't. */
+function openVideo(url: string) {
+  Linking.openURL(url).catch(() => Alert.alert('Couldn’t open the video', 'Try the link on the web.'));
 }

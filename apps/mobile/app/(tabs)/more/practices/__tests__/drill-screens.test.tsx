@@ -109,6 +109,19 @@ describe('DrillDetailScreen', () => {
     expect(screen.getByText('Curated')).toBeTruthy();
     expect(screen.queryByText('Edit drill')).toBeNull();
   });
+
+  it('should offer only a web video link', () => {
+    mockParams.mockReturnValue({ drillId: TEE });
+    const detail = (videoUrl: string) => ({ data: { drill: { ...library.drills[0], videoUrl }, canEdit: false, fixes: { primary: [], secondary: [] } } });
+    mockUseDrill.mockReturnValue(detail('tel:5551234'));
+    const { unmount } = renderWithQuery(<DrillDetailScreen />);
+    expect(screen.queryByText('Watch the video')).toBeNull();
+    unmount();
+
+    mockUseDrill.mockReturnValue(detail('https://example.com/video'));
+    renderWithQuery(<DrillDetailScreen />);
+    expect(screen.getByText('Watch the video')).toBeTruthy();
+  });
 });
 
 describe('PlanPracticeScreen', () => {

@@ -57,6 +57,12 @@ describe('listTeamDrills', () => {
     expect(result.data.drills).toHaveLength(2);
   });
 
+  it("should not call a platform admin who isn't on the team a coach, since the drill writes refuse them", async () => {
+    mockListDrills.mockResolvedValue([]);
+    const { db } = fakeDb({ 'user_profiles.select': { data: { is_platform_admin: true } }, 'team_members.select': { data: null } });
+    expect(await listTeamDrills(db, 'admin', { teamId: TEAM })).toMatchObject({ ok: true, data: { isCoach: false } });
+  });
+
   it('should refuse a team without practice planning and an outsider', async () => {
     mockResolveTeamTier.mockResolvedValue(SubscriptionTier.FREE);
     expect(await listTeamDrills(fakeDb({ 'team_members.select': member('head_coach') }).db, 'c', { teamId: TEAM })).toMatchObject({ ok: false, code: 'forbidden' });
@@ -107,9 +113,10 @@ describe('team drill writes', () => {
     expect(mockCreateDrill).toHaveBeenCalledWith(db, expect.objectContaining({ teamId: TEAM, name: 'Soft toss', createdBy: 'c', diagramUrl: undefined }));
   });
 
-  it('should refuse a player, and a drill without a skill category', async () => {
+  it('should refuse a player, a drill without a skill category, and a link that is not http(s)', async () => {
     expect(await createTeamDrill(fakeDb({ 'team_members.select': member('player') }).db, 'p', { teamId: TEAM, drill: form })).toMatchObject({ ok: false, code: 'forbidden' });
     expect(await createTeamDrill(fakeDb().db, 'c', { teamId: TEAM, drill: { ...form, skillCategories: [] } })).toMatchObject({ ok: false, code: 'invalid' });
+    expect(await createTeamDrill(fakeDb().db, 'c', { teamId: TEAM, drill: { ...form, videoUrl: 'javascript:alert(1)' } })).toMatchObject({ ok: false, code: 'invalid' });
     expect(mockCreateDrill).not.toHaveBeenCalled();
   });
 
