@@ -207,6 +207,8 @@ export const practiceDetailResponseSchema = z.object({
   /** Coaches only. */
   coach: z
     .object({
+      /** Head coaches and athletic directors change the practice's blocks (applying a template replaces them). */
+      canEditStructure: z.boolean(),
       coachNotes: nullableText,
       players: z.array(practiceRosterPlayerSchema),
       playerNotes: z.record(z.string(), practicePlayerNotesSchema),

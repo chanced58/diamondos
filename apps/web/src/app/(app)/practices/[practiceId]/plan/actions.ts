@@ -11,7 +11,6 @@ import {
   applyWeatherSwap,
   assignPlayersToBlock,
   deleteBlock,
-  instantiatePracticeFromTemplate,
   persistCompressedBlocks,
   reorderBlocks,
   upsertBlock,
@@ -21,6 +20,7 @@ import {
   assertHeadCoachOrAD,
   createPracticeServiceClient,
 } from '@/lib/practices/authz';
+import { applyPracticeTemplate } from '@/lib/services/practices/practice-templates';
 
 type Result = { error?: string };
 
@@ -235,21 +235,24 @@ async function detectStructuralChange(
   return { structural, existingAssignedCoachId: row.assigned_coach_id };
 }
 
+/**
+ * Replaces the practice's blocks with a template's (head coaches and athletic
+ * directors); a wrapper over the service `/api/m/v1/practices/:id/apply-template` shares.
+ */
 export async function instantiateFromTemplateAction(args: {
   practiceId: string;
   templateId: string;
 }): Promise<Result> {
-  const check = await authorize(args.practiceId, true);
-  if (check.error !== undefined) return { error: check.error };
-  const scopeErr = await assertTemplateInTeam(check.supabase, check.teamId, args.templateId);
-  if (scopeErr) return { error: scopeErr };
-  try {
-    await instantiatePracticeFromTemplate(check.supabase, args);
-    revalidatePath(`/practices/${args.practiceId}/plan`);
-    return {};
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : 'Failed to instantiate.' };
-  }
+  const auth = createServerClient();
+  const {
+    data: { user },
+  } = await auth.auth.getUser();
+  if (!user) return { error: 'Not authenticated.' };
+
+  const result = await applyPracticeTemplate(createPracticeServiceClient(), user.id, args);
+  if (!result.ok) return { error: result.error };
+  revalidatePath(`/practices/${args.practiceId}/plan`);
+  return {};
 }
 
 export async function upsertBlockAction(args: {

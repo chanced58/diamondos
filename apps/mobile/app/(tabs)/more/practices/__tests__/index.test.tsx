@@ -44,11 +44,15 @@ describe('PracticesIndex', () => {
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/more/practices/[practiceId]', params: { practiceId: 'next' } });
   });
 
-  it('should give coaches a new-practice button', () => {
+  it('should give coaches a sheet to log, generate or prep a practice, or open templates', () => {
     mockUsePractices.mockReturnValue({ data: { teamId: 't1', isCoach: true, practices: [] } });
     renderWithQuery(<PracticesIndex />);
     fireEvent.press(screen.getByLabelText('New practice'));
-    expect(mockPush).toHaveBeenCalledWith('/(tabs)/more/practices/new');
+    fireEvent.press(screen.getByText('Generate with AI'));
+    expect(mockPush).toHaveBeenCalledWith('/(tabs)/more/practices/ai');
+    fireEvent.press(screen.getByLabelText('New practice'));
+    fireEvent.press(screen.getByText('Log a practice'));
+    expect(mockPush).toHaveBeenLastCalledWith('/(tabs)/more/practices/new');
     expect(screen.getByText('Tap + to log a practice.')).toBeTruthy();
   });
 
