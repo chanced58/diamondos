@@ -3,33 +3,9 @@
 import { Fragment, useState } from 'react';
 import Link from 'next/link';
 
-export type GameResult = 'W' | 'L' | 'T';
+import type { StandingsDivision, StandingsTeamRow, StandingsGameResult as GameResult } from '@baseball/shared';
 
-export interface StandingsTeamRow {
-  key: string;
-  name: string;
-  organization?: string | null;
-  /** platform team id (null for opponent-only teams) — drives the "You" match and team link */
-  teamId: string | null;
-  isActive: boolean;
-  isOpponent: boolean;
-  wins: number;
-  losses: number;
-  ties: number;
-  pct: number;
-  rf: number;
-  ra: number;
-  diff: number;
-  gamesPlayed: number;
-  last5: GameResult[];
-  streak: { type: GameResult; count: number } | null;
-}
-
-export interface StandingsDivision {
-  id: string;
-  name: string;
-  teams: StandingsTeamRow[];
-}
+export type { StandingsDivision, StandingsTeamRow, StandingsGameResult as GameResult } from '@baseball/shared';
 
 type SortKey = 'wins' | 'losses' | 'pct' | 'rf' | 'ra' | 'diff';
 type SortDir = 'asc' | 'desc';
