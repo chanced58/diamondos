@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -9,6 +9,7 @@ import { GameForm } from '../../../../src/features/games/GameForm';
 import { createGame, fetchGameFormOptions, gameFormOptionsQueryKey } from '../../../../src/features/games/game-form-api';
 import { emptyGameFormValues, gameFormFields, type GameFormValues } from '../../../../src/features/games/game-form-model';
 import { describeApiError } from '../../../../src/lib/api-client';
+import { notifyTeamMembershipChange } from '../../../../src/sync/team-backfill';
 
 /**
  * Schedule a game (the web's /games/new). Coaches only. From a tournament it
@@ -21,9 +22,16 @@ export default function NewGameScreen() {
   const { activeTeam, memberships } = useRole();
   const { triggerSync } = useSyncContext();
   const tournamentId = params.tournamentId || null;
-  const team = tournamentId && params.teamId ? memberships.find((m) => m.teamId === params.teamId) : activeTeam;
+  // A tournament game belongs to the tournament's team only; without it, nothing is offered.
+  const team = tournamentId ? memberships.find((m) => m.teamId === params.teamId) : activeTeam;
   const teamId = team?.teamId ?? '';
   const [initialValues] = useState(() => emptyGameFormValues());
+
+  // A tournament team made moments ago may not be in the team list yet: reload it once.
+  const missingTournamentTeam = Boolean(tournamentId) && !team;
+  useEffect(() => {
+    if (missingTournamentTeam) notifyTeamMembershipChange();
+  }, [missingTournamentTeam]);
 
   const options = useQuery({
     queryKey: gameFormOptionsQueryKey(teamId),

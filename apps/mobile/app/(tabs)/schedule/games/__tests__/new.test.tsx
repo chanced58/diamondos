@@ -114,6 +114,13 @@ it("should add a tournament game for the tournament's team, not the active one",
   expect(mockCreateGame).toHaveBeenCalledWith(expect.objectContaining({ teamId: TOURNAMENT_TEAM, tournamentId: TOURNAMENT }));
 });
 
+it("should never fall back to the active team for a tournament game without its team", () => {
+  mockParams.mockReturnValue({ tournamentId: '44444444-4444-4444-8444-444444444444' });
+  renderWithQuery(<NewGameScreen />);
+  expect(screen.getByText('Coaches only')).toBeTruthy();
+  expect(mockFetchOptions).not.toHaveBeenCalled();
+});
+
 it("should keep out someone who doesn't coach the tournament's team", () => {
   mockParams.mockReturnValue({ tournamentId: '44444444-4444-4444-8444-444444444444', teamId: 'not-mine' });
   renderWithQuery(<NewGameScreen />);

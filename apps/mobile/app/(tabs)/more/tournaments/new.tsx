@@ -10,6 +10,7 @@ import { useSyncContext } from '../../../../src/providers/SyncProvider';
 import { DateTimeFields } from '../../../../src/features/forms/DateTimeFields';
 import { ChoiceChips } from '../../../../src/features/practices/ChoiceChips';
 import { deviceTimeZone } from '../../../../src/features/games/game-form-model';
+import { notifyTeamMembershipChange } from '../../../../src/sync/team-backfill';
 import { createTournament, tournamentsQueryKey, useTournamentTeamOptions } from '../../../../src/features/tournaments/tournaments-api';
 import {
   emptyTournamentFormValues,
@@ -48,7 +49,9 @@ export default function NewTournamentScreen() {
     mutationFn: createTournament,
     onSuccess: ({ tournamentId }) => {
       void queryClient.invalidateQueries({ queryKey: tournamentsQueryKey });
-      // A new tournament team joins the user's teams; pull it so the team switcher shows it.
+      // A new tournament team joins the user's teams: reload them now (Add game needs it)
+      // and pull its rows for the offline mirror.
+      notifyTeamMembershipChange();
       void triggerSync();
       router.replace({ pathname: '/(tabs)/more/tournaments/[tournamentId]', params: { tournamentId } });
     },
