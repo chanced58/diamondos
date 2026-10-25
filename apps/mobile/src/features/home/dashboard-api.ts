@@ -26,6 +26,9 @@ export function useDashboard(teamId: string | undefined, view: DashboardView) {
     queryKey: dashboardQueryKey(teamId ?? '', view),
     queryFn: () => fetchDashboard(teamId ?? '', view),
     enabled: Boolean(teamId),
+    // While switching between My team and the league, keep the same team's other view on screen
+    // (and its switch usable); never carry one team's dashboard over to another team.
+    placeholderData: (previous) => (previous?.teamId === teamId ? previous : undefined),
     refetchInterval: (query) => ((query.state.data?.liveGames.length ?? 0) > 0 ? LIVE_REFRESH_MS : false),
   });
 }

@@ -8,6 +8,7 @@ import { formatInTimeZone, formatTime, type DashboardUpcomingItem } from '@baseb
 import { NewAnnouncementForm } from '../messages/NewAnnouncementForm';
 import type { Database } from '@baseball/database';
 import { loadDashboard } from '@/lib/services/dashboard/load-dashboard';
+import { fetchGameEventLog } from '@/lib/games/fetch-game-event-log';
 import { CardHero } from '@/components/ui/Card';
 import { StatTile } from '@/components/ui/StatTile';
 import { Badge } from '@/components/ui/Badge';
@@ -370,26 +371,36 @@ type LiveCardData = { game: GameRow; events: EventRow[]; playerNameMap: Record<s
 
 /**
  * What the web's realtime live cards start from: each live game's row, its
- * event log and the names of both rosters. The dashboard service has already
- * picked which games are live for the viewer.
+ * whole event log (paged, so a long game isn't cut off) and the names of both
+ * rosters. The dashboard service has already picked which games are live for
+ * the viewer; a failed read fails the page rather than showing a card without
+ * its log or names.
  */
 async function loadLiveCardData(
   db: ReturnType<typeof createClient<Database>>,
   liveGameIds: string[],
 ): Promise<LiveCardData[]> {
   if (liveGameIds.length === 0) return [];
-  const { data: gameRows } = await db.from('games').select('*').in('id', liveGameIds);
+  const { data: gameRows, error: gamesError } = await db.from('games').select('*').in('id', liveGameIds);
+  if (gamesError) throw gamesError;
   const games = (gameRows ?? []) as GameRow[];
   const teamIds = [...new Set(games.map((g) => g.team_id))];
   const opponentTeamIds = [...new Set(games.map((g) => g.opponent_team_id).filter((id): id is string => id != null))];
 
-  const [eventRows, teamPlayers, opponentPlayers] = await Promise.all([
-    db.from('game_events').select('*').in('game_id', liveGameIds).order('sequence_number'),
+  const [logs, teamPlayers, opponentPlayers] = await Promise.all([
+    Promise.all(liveGameIds.map((id) => fetchGameEventLog(db as never, id))),
     db.from('players').select('id, last_name, jersey_number').in('team_id', teamIds),
     opponentTeamIds.length > 0
       ? db.from('opponent_players').select('id, last_name, jersey_number').in('opponent_team_id', opponentTeamIds)
-      : Promise.resolve({ data: [] }),
+      : Promise.resolve({ data: [], error: null }),
   ]);
+  if (teamPlayers.error) throw teamPlayers.error;
+  if (opponentPlayers.error) throw opponentPlayers.error;
+  const eventsByGame = new Map<string, EventRow[]>();
+  logs.forEach((log, index) => {
+    if (log.error) throw new Error(`events for live game ${liveGameIds[index]}: ${log.error.message}`);
+    eventsByGame.set(liveGameIds[index], log.data as unknown as EventRow[]);
+  });
 
   const playerNameMap: Record<string, PlayerName> = {};
   for (const p of [...(teamPlayers.data ?? []), ...(opponentPlayers.data ?? [])] as Array<{
@@ -398,10 +409,6 @@ async function loadLiveCardData(
     jersey_number: string | number | null;
   }>) {
     playerNameMap[p.id] = { lastName: p.last_name, jerseyNumber: p.jersey_number };
-  }
-  const eventsByGame = new Map<string, EventRow[]>();
-  for (const row of (eventRows.data ?? []) as EventRow[]) {
-    eventsByGame.set(row.game_id, [...(eventsByGame.get(row.game_id) ?? []), row]);
   }
   // In the dashboard's order (oldest start first).
   return liveGameIds

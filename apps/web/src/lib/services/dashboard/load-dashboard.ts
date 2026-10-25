@@ -53,6 +53,7 @@ type UpcomingGameRow = {
 type LiveGameRow = { id: string; team_id: string; opponent_name: string | null; location_type: LocationType; neutral_home_team: NeutralHomeTeam };
 type RecentGameRow = UpcomingGameRow & { home_score: number | null; away_score: number | null; completed_at: string | null };
 
+/** The dashboard for a member of the team; `view: 'league'` widens games to its league when it has one. */
 export async function loadDashboard(
   db: SupabaseClient,
   actorUserId: string,
