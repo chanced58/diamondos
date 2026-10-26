@@ -39,3 +39,4 @@ export * from './drill-library';
 export * from './dashboard';
 export * from './tournament-detail';
 export * from './league-page';
+export * from './league-home';

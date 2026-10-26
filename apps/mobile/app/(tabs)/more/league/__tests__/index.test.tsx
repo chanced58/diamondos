@@ -2,7 +2,12 @@ import { fireEvent, screen } from '@testing-library/react-native';
 import { ApiError } from '../../../../../src/lib/api-client';
 import { renderWithQuery } from '../../../../../src/__tests__/render-with-query';
 
-jest.mock('expo-router', () => ({ __esModule: true, Stack: { Screen: () => null } }));
+const mockPush = jest.fn();
+jest.mock('expo-router', () => ({
+  __esModule: true,
+  router: { push: (...args: unknown[]) => mockPush(...args) },
+  Stack: { Screen: () => null },
+}));
 const mockCan = jest.fn();
 jest.mock('../../../../../src/providers/RoleProvider', () => ({
   useRole: () => ({ activeTeam: { teamId: 't1' } }),
@@ -60,8 +65,9 @@ describe('LeagueScreen', () => {
     const names = screen.getAllByText(/^(Huskies \(you\)|Rams)$/).map((node) => node.props.children);
     expect(names).toEqual(['Huskies (you)', 'Rams']);
 
-    fireEvent.press(screen.getByText('View the public league home'));
-    expect(mockOpenOnWeb).toHaveBeenCalledWith('/l/idaho-2a');
+    fireEvent.press(screen.getByText('League home: leaders and results'));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/more/league/home', params: { slug: 'idaho-2a' } });
+    expect(mockOpenOnWeb).not.toHaveBeenCalled();
     expect(screen.queryByText('Manage the league on the web')).toBeNull();
   });
 
