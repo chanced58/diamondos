@@ -40,3 +40,4 @@ export * from './dashboard';
 export * from './tournament-detail';
 export * from './league-page';
 export * from './league-home';
+export * from './training';

@@ -1,6 +1,7 @@
 import 'server-only';
 import { createClient } from '@supabase/supabase-js';
-import { CURRICULUM_VERSION, isCurriculumComplete, type TrainingProgress } from '@baseball/shared';
+import { CURRICULUM_VERSION, type TrainingProgress } from '@baseball/shared';
+import { hasCoachingRole as hasCoachingRoleWith, readTrainingProgress } from '@/lib/services/training/training';
 
 function service() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -9,6 +10,7 @@ function service() {
   return createClient(url, key);
 }
 
+/** The user's training progress (the same read the mobile app gets); empty when it can't be read. */
 export async function getTrainingProgress(userId: string): Promise<TrainingProgress> {
   const empty: TrainingProgress = {
     completedSlugs: [],
@@ -20,28 +22,7 @@ export async function getTrainingProgress(userId: string): Promise<TrainingProgr
   if (!db) return empty;
 
   try {
-    const [{ data: completions }, { data: cert }] = await Promise.all([
-      db
-        .from('training_module_completions')
-        .select('module_slug')
-        .eq('user_id', userId)
-        .eq('curriculum_version', CURRICULUM_VERSION),
-      db
-        .from('user_certifications')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('curriculum_version', CURRICULUM_VERSION)
-        .maybeSingle(),
-    ]);
-
-    const completedSlugs = (completions ?? []).map((r) => r.module_slug);
-    const isCertified = !!cert || isCurriculumComplete(completedSlugs);
-
-    return {
-      completedSlugs,
-      isCertified,
-      curriculumVersion: CURRICULUM_VERSION,
-    };
+    return await readTrainingProgress(db, userId);
   } catch {
     // Migration may not have run yet in this environment; surface an empty state
     // instead of crashing the app layout.
@@ -49,21 +30,13 @@ export async function getTrainingProgress(userId: string): Promise<TrainingProgr
   }
 }
 
-const COACHING_ROLES = new Set([
-  'head_coach',
-  'assistant_coach',
-  'scorekeeper',
-  'staff',
-  'athletic_director',
-]);
-
+/** Whether the user holds a coaching role (the sidebar's Training entry); false when it can't be read. */
 export async function hasCoachingRole(userId: string): Promise<boolean> {
   const db = service();
   if (!db) return false;
-  const { data } = await db
-    .from('team_members')
-    .select('role')
-    .eq('user_id', userId)
-    .eq('is_active', true);
-  return (data ?? []).some((row) => COACHING_ROLES.has(row.role));
+  try {
+    return await hasCoachingRoleWith(db, userId);
+  } catch {
+    return false;
+  }
 }
