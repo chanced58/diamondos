@@ -97,11 +97,6 @@ export async function acceptInvitation(
 
   await addToTeamChannels(db, teamId, user.id, role);
 
-  await db
-    .from('team_invitations')
-    .update({ status: 'accepted', accepted_at: new Date().toISOString() })
-    .eq('id', invite.id);
-
   const { data: profile } = await db
     .from('user_profiles')
     .select('first_name, last_name, email')
@@ -115,13 +110,26 @@ export async function acceptInvitation(
     await db.from('user_profiles').update(updates).eq('id', user.id);
   }
 
-  if (role === 'player') await claimPlayer(db, user.id, teamId, emailLower, playerId);
+  let linked = true;
+  if (role === 'player') linked = await claimPlayer(db, user.id, teamId, emailLower, playerId);
   if (role === 'parent') {
     // The invitation records the children the coach chose. Only invitations
     // from before it did (player_ids null) fall back to the link's list.
     const recorded = invite.player_ids as string[] | null;
     const requested = recorded ?? (playersParam ? playersParam.split(',') : []);
-    await linkChildren(db, user.id, teamId, requested);
+    linked = await linkChildren(db, user.id, teamId, requested);
+  }
+
+  // Accepted only once the claim or links are in: a failure leaves the
+  // invitation pending, so the next sign-in retries (every write above is
+  // safe to repeat).
+  if (!linked) return;
+  const { error: acceptError } = await db
+    .from('team_invitations')
+    .update({ status: 'accepted', accepted_at: new Date().toISOString() })
+    .eq('id', invite.id);
+  if (acceptError) {
+    console.error(`[process-invite] invitation accept failed team=${teamId} user=${user.id}:`, acceptError.message);
   }
 }
 
@@ -130,10 +138,16 @@ export async function acceptInvitation(
  * it lowercased) to the new account, when it isn't claimed yet: the player the
  * link names, or the only such player when it names none. A malformed id, or
  * several players sharing the email (siblings under a parent's address),
- * claims nothing.
+ * claims nothing. False only when a read or write failed, so it can be retried.
  */
-async function claimPlayer(db: SupabaseClient, userId: string, teamId: string, emailLower: string, playerId: string | null) {
-  if (playerId !== null && !UUID_RE.test(playerId)) return;
+async function claimPlayer(
+  db: SupabaseClient,
+  userId: string,
+  teamId: string,
+  emailLower: string,
+  playerId: string | null,
+): Promise<boolean> {
+  if (playerId !== null && !UUID_RE.test(playerId)) return true;
 
   const { data: matches, error: lookupError } = await db
     .from('players')
@@ -143,11 +157,11 @@ async function claimPlayer(db: SupabaseClient, userId: string, teamId: string, e
     .is('user_id', null);
   if (lookupError) {
     console.error(`[process-invite] player lookup failed team=${teamId} user=${userId}:`, lookupError.message);
-    return;
+    return false;
   }
   const ids = ((matches ?? []) as Array<{ id: string }>).map((p) => p.id);
   const claimId = playerId ?? (ids.length === 1 ? ids[0] : null);
-  if (!claimId || !ids.includes(claimId)) return;
+  if (!claimId || !ids.includes(claimId)) return true;
 
   const { error } = await db
     .from('players')
@@ -155,13 +169,20 @@ async function claimPlayer(db: SupabaseClient, userId: string, teamId: string, e
     .eq('id', claimId)
     .eq('team_id', teamId)
     .is('user_id', null);
-  if (error) console.error(`[process-invite] player claim failed team=${teamId} user=${userId}:`, error.message);
+  if (error) {
+    console.error(`[process-invite] player claim failed team=${teamId} user=${userId}:`, error.message);
+    return false;
+  }
+  return true;
 }
 
-/** Links a parent to the requested children that are active players on the invited team. */
-async function linkChildren(db: SupabaseClient, userId: string, teamId: string, playerIds: readonly string[]) {
+/**
+ * Links a parent to the requested children that are active players on the
+ * invited team. False only when a read or write failed, so it can be retried.
+ */
+async function linkChildren(db: SupabaseClient, userId: string, teamId: string, playerIds: readonly string[]): Promise<boolean> {
   const requested = [...new Set(playerIds.filter((id) => UUID_RE.test(id)))];
-  if (requested.length === 0) return;
+  if (requested.length === 0) return true;
 
   const { data: players, error } = await db
     .from('players')
@@ -171,12 +192,16 @@ async function linkChildren(db: SupabaseClient, userId: string, teamId: string, 
     .in('id', requested);
   if (error) {
     console.error(`[process-invite] child lookup failed team=${teamId} user=${userId}:`, error.message);
-    return;
+    return false;
   }
   const rows = ((players ?? []) as Array<{ id: string }>).map((p) => ({ parent_user_id: userId, player_id: p.id }));
-  if (rows.length === 0) return;
+  if (rows.length === 0) return true;
   const { error: linkError } = await db
     .from('parent_player_links')
     .upsert(rows, { onConflict: 'parent_user_id,player_id', ignoreDuplicates: true });
-  if (linkError) console.error(`[process-invite] parent links failed team=${teamId} user=${userId}:`, linkError.message);
+  if (linkError) {
+    console.error(`[process-invite] parent links failed team=${teamId} user=${userId}:`, linkError.message);
+    return false;
+  }
+  return true;
 }

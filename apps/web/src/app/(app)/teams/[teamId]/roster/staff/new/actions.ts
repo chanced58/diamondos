@@ -144,12 +144,16 @@ export async function inviteStaffAction(
     }
 
     // An invite never changes the role of someone already on the team.
-    const { data: currentMembership } = await supabase
+    const { data: currentMembership, error: membershipError } = await supabase
       .from('team_members')
       .select('role, is_active')
       .eq('team_id', teamId)
       .eq('user_id', resolvedUserId)
       .maybeSingle();
+    if (membershipError) {
+      console.error(`[invite-staff] membership lookup failed team=${teamId}:`, membershipError.message);
+      return 'Could not check their current membership. Please try again.';
+    }
     if (currentMembership?.is_active && currentMembership.role !== role) {
       return 'They are already on this team with another role. Change their role from the team admin page instead.';
     }

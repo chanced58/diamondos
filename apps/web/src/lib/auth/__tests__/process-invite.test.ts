@@ -96,6 +96,24 @@ describe('acceptInvitation', () => {
     expect(writes(calls, 'parent_player_links')[0].payload).toEqual([{ parent_user_id: 'u1', player_id: CHILD }]);
   });
 
+  it('should leave the invitation pending when linking fails, so the next sign-in retries', async () => {
+    const { db, calls } = fakeDb({
+      'team_invitations.select': { data: { id: 'inv1', role: 'parent', first_name: null, last_name: null, player_ids: [CHILD] } },
+      'players.select': { data: [{ id: CHILD }] },
+      'parent_player_links.upsert': { error: { message: 'boom' } },
+    });
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    await accept(db);
+    expect(writes(calls, 'team_invitations')).toHaveLength(0);
+  });
+
+  it('should mark the invitation accepted after the claim', async () => {
+    const { db, calls } = fakeDb({ ...pendingInvite('player'), 'players.select': { data: [{ id: CHILD }] } });
+    await accept(db);
+    const order = calls.filter((c) => c.op !== 'select').map((c) => c.table);
+    expect(order.indexOf('players')).toBeLessThan(order.indexOf('team_invitations'));
+  });
+
   it('should not claim players or link children for a coach invitation', async () => {
     const { db, calls } = fakeDb(pendingInvite('head_coach'));
     await accept(db, { playerId: CHILD, playersParam: CHILD });
