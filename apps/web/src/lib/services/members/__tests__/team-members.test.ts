@@ -51,13 +51,15 @@ describe('loadTeamMembers', () => {
       'players.select': {
         data: [
           { id: CHILD, first_name: 'Sam', last_name: 'Lee', jersey_number: 7, email: 'sam@example.com', user_id: null },
-          { id: 'p2', first_name: 'Bo', last_name: 'Diaz', jersey_number: null, email: null, user_id: 'kid' },
+          { id: 'p2', first_name: 'Bo', last_name: 'Diaz', jersey_number: null, email: 'bo@example.com', user_id: null },
         ],
       },
       'team_invitations.select': {
         data: [
-          { id: 'inv1', email: 'sam@example.com', first_name: 'Sam', last_name: 'Lee', role: 'player', invited_at: '2026-10-20T00:00:00Z' },
-          { id: 'inv2', email: 'noemail_1@placeholder.internal', first_name: 'Al', last_name: null, role: 'staff', invited_at: '2026-10-19T00:00:00Z' },
+          { id: 'inv1', email: 'parent@example.com', first_name: 'Sam', last_name: 'Lee', role: 'player', invited_at: '2026-10-20T00:00:00Z', player_ids: [CHILD] },
+          { id: 'inv2', email: 'noemail_1@placeholder.internal', first_name: 'Al', last_name: null, role: 'staff', invited_at: '2026-10-19T00:00:00Z', player_ids: null },
+          // A parent invited at Bo's roster address doesn't make Bo's invite pending.
+          { id: 'inv3', email: 'bo@example.com', first_name: 'Ma', last_name: 'Diaz', role: 'parent', invited_at: '2026-10-18T00:00:00Z', player_ids: ['p9'] },
         ],
       },
       'user_profiles.select': {
@@ -75,11 +77,12 @@ describe('loadTeamMembers', () => {
     expect(result.data.ownMemberId).toBe(OWN_MEMBER);
     expect(result.data.staff.map((m) => m.lastName)).toEqual(['Abel', 'Young']);
     expect(result.data.parents).toEqual([expect.objectContaining({ userId: PARENT, children: [{ playerId: CHILD, name: 'Sam Lee' }] })]);
+    // Sam's invitation went to a parent's address but records Sam.
     expect(result.data.players).toEqual([
       expect.objectContaining({ playerId: CHILD, hasAccount: false, invitePending: true }),
-      expect.objectContaining({ playerId: 'p2', hasAccount: true, invitePending: false }),
+      expect.objectContaining({ playerId: 'p2', hasAccount: false, invitePending: false }),
     ]);
-    expect(result.data.invitations.map((i) => i.email)).toEqual(['sam@example.com', null]);
+    expect(result.data.invitations.map((i) => i.email)).toEqual(['parent@example.com', null, 'bo@example.com']);
   });
 });
 

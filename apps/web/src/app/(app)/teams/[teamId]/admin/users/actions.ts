@@ -59,11 +59,24 @@ export async function unlinkParentFromPlayerAction(_prevState: string | null | u
   return run(teamId, unlinkParent, { parentUserId: formData.get('parentUserId'), playerId: formData.get('playerId') });
 }
 
-/** Invites a player at the email on their roster entry. Returns 'invited' on success. */
+/**
+ * Invites a player at the email on their roster entry. Returns the outcome on
+ * success: 'invited' (an email went out) or 'added' (an existing account was
+ * connected).
+ */
 export async function resendPlayerInviteAction(_prevState: string | null | undefined, formData: FormData): Promise<string | null> {
   const teamId = formData.get('teamId') as string;
-  const error = await run(teamId, invitePlayer, { playerId: formData.get('playerId') });
-  return error ?? 'invited';
+  let outcome = 'invited';
+  const error = await run(
+    teamId,
+    async (db, actorUserId, input) => {
+      const result = await invitePlayer(db, actorUserId, input);
+      if (result.ok) outcome = result.data.outcome;
+      return result;
+    },
+    { playerId: formData.get('playerId') },
+  );
+  return error ?? outcome;
 }
 
 /** Connects a player to an account at the given email: an existing one at once, else by invite. */

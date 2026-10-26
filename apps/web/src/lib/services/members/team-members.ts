@@ -52,7 +52,7 @@ export async function loadTeamMembers(
       .order('last_name'),
     db
       .from('team_invitations')
-      .select('id, email, first_name, last_name, role, invited_at')
+      .select('id, email, first_name, last_name, role, invited_at, player_ids')
       .eq('team_id', teamId)
       .eq('status', 'pending')
       .order('invited_at', { ascending: false }),
@@ -116,8 +116,14 @@ export async function loadTeamMembers(
     last_name: string | null;
     role: string;
     invited_at: string;
+    player_ids: string[] | null;
   }>;
-  const pendingEmails = new Set(invitations.map((i) => i.email.toLowerCase()));
+  // A player's invite is pending when a pending player invitation records them;
+  // older ones (no player_ids) match the roster email instead. Parent and staff
+  // invitations at a shared address don't count.
+  const playerInvitations = invitations.filter((i) => i.role === 'player');
+  const pendingPlayerIds = new Set(playerInvitations.flatMap((i) => i.player_ids ?? []));
+  const pendingEmails = new Set(playerInvitations.filter((i) => !i.player_ids?.length).map((i) => i.email.toLowerCase()));
 
   return serviceOk({
     staff: people.filter((m) => m.role !== 'parent').map(toMember).sort(byName),
@@ -132,7 +138,7 @@ export async function loadTeamMembers(
       jerseyNumber: p.jersey_number,
       email: p.email,
       hasAccount: p.user_id !== null,
-      invitePending: p.email !== null && pendingEmails.has(p.email.toLowerCase()),
+      invitePending: pendingPlayerIds.has(p.id) || (p.email !== null && pendingEmails.has(p.email.toLowerCase())),
     })),
     invitations: invitations.map((i) => ({
       invitationId: i.id,
