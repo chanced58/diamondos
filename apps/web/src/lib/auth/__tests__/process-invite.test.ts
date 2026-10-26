@@ -68,7 +68,26 @@ describe('acceptInvitation', () => {
     expect(writes(unmatched.calls, 'players')).toHaveLength(0);
   });
 
-  it('should link a parent only to active players on the invited team', async () => {
+  it('should link a parent to the children the invitation records, whatever the link lists', async () => {
+    const { db, calls } = fakeDb({
+      'team_invitations.select': { data: { id: 'inv1', role: 'parent', first_name: null, last_name: null, player_ids: [CHILD] } },
+      'players.select': { data: [{ id: CHILD }] },
+    });
+    await accept(db, { playersParam: `${CHILD},${OTHER_TEAM_PLAYER}` });
+
+    expect(calls.find((c) => c.table === 'players')?.filters).toEqual({ team_id: TEAM, is_active: true, id: [CHILD] });
+    expect(writes(calls, 'parent_player_links')[0].payload).toEqual([{ parent_user_id: 'u1', player_id: CHILD }]);
+  });
+
+  it('should link no children when the invitation records none', async () => {
+    const { db, calls } = fakeDb({
+      'team_invitations.select': { data: { id: 'inv1', role: 'parent', first_name: null, last_name: null, player_ids: [] } },
+    });
+    await accept(db, { playersParam: CHILD });
+    expect(calls.some((c) => c.table === 'players' || c.table === 'parent_player_links')).toBe(false);
+  });
+
+  it('should hold an older invitation’s link list to active players on the invited team', async () => {
     const { db, calls } = fakeDb({ ...pendingInvite('parent'), 'players.select': { data: [{ id: CHILD }] } });
     await accept(db, { playersParam: `${CHILD},${OTHER_TEAM_PLAYER},not-a-uuid` });
 

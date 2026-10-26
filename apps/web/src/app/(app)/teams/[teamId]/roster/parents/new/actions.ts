@@ -68,6 +68,7 @@ export async function inviteParentAction(
       last_name: lastName,
       phone,
       role: 'parent',
+      player_ids: linkedPlayerIds,
       invited_by: user.id,
       status: 'pending',
     });
@@ -120,6 +121,7 @@ export async function inviteParentAction(
         last_name: lastName,
         phone,
         role: 'parent',
+        player_ids: linkedPlayerIds,
         invited_by: user.id,
         status: 'accepted',
         accepted_at: new Date().toISOString(),
@@ -140,7 +142,8 @@ export async function inviteParentAction(
 
   if (inviteError) return `Failed to send invite: ${inviteError.message}`;
 
-  await supabase.from('team_invitations').upsert(
+  // The children recorded here are the ones accepting the invitation links the parent to.
+  const { error: recordError } = await supabase.from('team_invitations').upsert(
     {
       team_id: teamId,
       email,
@@ -148,11 +151,16 @@ export async function inviteParentAction(
       last_name: lastName,
       phone,
       role: 'parent',
+      player_ids: linkedPlayerIds,
       invited_by: user.id,
       status: 'pending',
     },
     { onConflict: 'team_id,email' },
   );
+  if (recordError) {
+    console.error(`[invite-parent] invitation record failed team=${teamId}:`, recordError.message);
+    return 'The invite email went out, but the invitation could not be saved. Please send it again.';
+  }
 
   return 'invited';
 }

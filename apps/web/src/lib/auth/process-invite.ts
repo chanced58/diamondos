@@ -39,8 +39,8 @@ export function resolveInviteParams(user: User | null, params: InviteParams): In
  * The team, role and player ids arrive in a URL, a request body or user
  * metadata, all of which the user controls, so none of them grants anything
  * alone: the role comes from the invitation, a player is claimed only when
- * their roster email is the user's, and a parent links only to the team's
- * active players.
+ * their roster email is the user's, and a parent links only to the children
+ * the invitation records (`player_ids`), among the team's active players.
  *
  * Non-fatal — errors are logged and swallowed so auth still completes.
  * Self-healing logic in the app layout retries any missing links.
@@ -75,7 +75,7 @@ export async function acceptInvitation(
 
   const { data: invite, error: inviteError } = await db
     .from('team_invitations')
-    .select('id, role, first_name, last_name')
+    .select('id, role, first_name, last_name, player_ids')
     .eq('team_id', teamId)
     .eq('email', emailLower)
     .eq('status', 'pending')
@@ -116,7 +116,13 @@ export async function acceptInvitation(
   }
 
   if (role === 'player') await claimPlayer(db, user.id, teamId, emailLower, playerId);
-  if (role === 'parent' && playersParam) await linkChildren(db, user.id, teamId, playersParam);
+  if (role === 'parent') {
+    // The invitation records the children the coach chose. Only invitations
+    // from before it did (player_ids null) fall back to the link's list.
+    const recorded = invite.player_ids as string[] | null;
+    const requested = recorded ?? (playersParam ? playersParam.split(',') : []);
+    await linkChildren(db, user.id, teamId, requested);
+  }
 }
 
 /**
@@ -152,9 +158,9 @@ async function claimPlayer(db: SupabaseClient, userId: string, teamId: string, e
   if (error) console.error(`[process-invite] player claim failed team=${teamId} user=${userId}:`, error.message);
 }
 
-/** Links a parent to the children named in their invite link, if they are active players on the invited team. */
-async function linkChildren(db: SupabaseClient, userId: string, teamId: string, playersParam: string) {
-  const requested = [...new Set(playersParam.split(',').filter((id) => UUID_RE.test(id)))];
+/** Links a parent to the requested children that are active players on the invited team. */
+async function linkChildren(db: SupabaseClient, userId: string, teamId: string, playerIds: readonly string[]) {
+  const requested = [...new Set(playerIds.filter((id) => UUID_RE.test(id)))];
   if (requested.length === 0) return;
 
   const { data: players, error } = await db

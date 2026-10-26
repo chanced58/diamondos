@@ -82,4 +82,18 @@ describe('inviteParentAction', () => {
     expect(result).toContain('already on this team');
     expect(memberWrites()).toHaveLength(0);
   });
+
+  it('should record the chosen children on a new parent’s invitation', async () => {
+    mockDb = fakeDb({
+      'team_members.select': { data: { role: 'head_coach' } },
+      'players.select': { data: [{ id: 'p1' }, { id: 'p2' }] },
+      'user_profiles.select': { data: null },
+    });
+    const inviteUserByEmail = jest.fn().mockResolvedValue({ data: {}, error: null });
+    Object.assign(mockDb.db, { auth: { admin: { inviteUserByEmail } } });
+
+    expect(await inviteParentAction(null, form({ teamId: TEAM, email: 'pat@example.com', playerIds: ['p1'] }))).toBe('invited');
+    const invitation = mockDb.calls.find((c) => c.table === 'team_invitations' && c.op === 'upsert');
+    expect(invitation?.payload).toMatchObject({ team_id: TEAM, email: 'pat@example.com', role: 'parent', status: 'pending', player_ids: ['p1'] });
+  });
 });
