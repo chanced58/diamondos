@@ -42,6 +42,13 @@ describe('league home routes', () => {
     expect(mockTeam).toHaveBeenCalledWith(DB, 'u1', { slug: 'idaho-2a', teamId: 't1', season: '2025' });
   });
 
+  it("should keep both routes' fetches out of Next's data cache", async () => {
+    const home = await import('../[slug]/home/route');
+    const team = await import('../[slug]/teams/[teamId]/route');
+    expect(home.fetchCache).toBe('force-no-store');
+    expect(team.fetchCache).toBe('force-no-store');
+  });
+
   it('should map not found to 404', async () => {
     mockHome.mockResolvedValue({ ok: false, code: 'not_found', error: 'League not found.' });
     expect((await homeRoute(request(), { params: { slug: 'nope' } })).status).toBe(404);

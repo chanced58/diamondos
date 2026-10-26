@@ -8,6 +8,10 @@ import { requireApiUser } from '@/lib/api/bearer-auth';
 import { serviceResponse } from '@/lib/api/service-response';
 import { loadLeagueTeam } from '@/lib/services/league-home/load-league-team';
 
+// `getTeamStatPageData` makes its own Supabase client: keep every fetch in this
+// route out of Next's data cache, so the team's stats are never stale.
+export const fetchCache = 'force-no-store';
+
 /** See `loadLeagueTeam`. */
 export async function GET(req: Request, { params }: { params: { slug: string; teamId: string } }) {
   const auth = await requireApiUser(req);
