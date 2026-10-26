@@ -120,19 +120,35 @@ export async function acceptInvitation(
 }
 
 /**
- * Links the player row the coach added with this email (add player stores it
- * lowercased) to the new account, when it isn't claimed yet. A player id from
- * the link narrows the match but never widens it.
+ * Links the one player row the coach added with this email (add player stores
+ * it lowercased) to the new account, when it isn't claimed yet: the player the
+ * link names, or the only such player when it names none. A malformed id, or
+ * several players sharing the email (siblings under a parent's address),
+ * claims nothing.
  */
 async function claimPlayer(db: SupabaseClient, userId: string, teamId: string, emailLower: string, playerId: string | null) {
-  let query = db
+  if (playerId !== null && !UUID_RE.test(playerId)) return;
+
+  const { data: matches, error: lookupError } = await db
     .from('players')
-    .update({ user_id: userId })
+    .select('id')
     .eq('team_id', teamId)
     .eq('email', emailLower)
     .is('user_id', null);
-  if (playerId && UUID_RE.test(playerId)) query = query.eq('id', playerId);
-  const { error } = await query;
+  if (lookupError) {
+    console.error(`[process-invite] player lookup failed team=${teamId} user=${userId}:`, lookupError.message);
+    return;
+  }
+  const ids = ((matches ?? []) as Array<{ id: string }>).map((p) => p.id);
+  const claimId = playerId ?? (ids.length === 1 ? ids[0] : null);
+  if (!claimId || !ids.includes(claimId)) return;
+
+  const { error } = await db
+    .from('players')
+    .update({ user_id: userId })
+    .eq('id', claimId)
+    .eq('team_id', teamId)
+    .is('user_id', null);
   if (error) console.error(`[process-invite] player claim failed team=${teamId} user=${userId}:`, error.message);
 }
 

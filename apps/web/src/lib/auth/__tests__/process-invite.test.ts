@@ -38,13 +38,34 @@ describe('acceptInvitation', () => {
     expect(writes(calls, 'user_profiles')[0].payload).toEqual({ email: 'New.Coach@Example.com', first_name: 'Ana', last_name: 'Ruiz' });
   });
 
-  it('should claim only the unclaimed player with the user’s email on the team', async () => {
-    const { db, calls } = fakeDb(pendingInvite('player'));
+  it('should claim the named player only when they are unclaimed with the user’s email on the team', async () => {
+    const { db, calls } = fakeDb({ ...pendingInvite('player'), 'players.select': { data: [{ id: CHILD }, { id: OTHER_TEAM_PLAYER }] } });
     await accept(db, { playerId: CHILD });
 
+    expect(calls.find((c) => c.table === 'players')?.filters).toEqual({ team_id: TEAM, email: 'new.coach@example.com', 'user_id is': null });
     const claim = writes(calls, 'players')[0];
     expect(claim.payload).toEqual({ user_id: 'u1' });
-    expect(claim.filters).toEqual({ team_id: TEAM, email: 'new.coach@example.com', 'user_id is': null, id: CHILD });
+    expect(claim.filters).toEqual({ id: CHILD, team_id: TEAM, 'user_id is': null });
+  });
+
+  it('should claim the only matching player when the link names none, and nothing when several match', async () => {
+    const one = fakeDb({ ...pendingInvite('player'), 'players.select': { data: [{ id: CHILD }] } });
+    await accept(one.db);
+    expect(writes(one.calls, 'players')[0].filters).toMatchObject({ id: CHILD });
+
+    const siblings = fakeDb({ ...pendingInvite('player'), 'players.select': { data: [{ id: CHILD }, { id: OTHER_TEAM_PLAYER }] } });
+    await accept(siblings.db);
+    expect(writes(siblings.calls, 'players')).toHaveLength(0);
+  });
+
+  it('should claim nothing for a malformed or unmatched player id', async () => {
+    const malformed = fakeDb({ ...pendingInvite('player'), 'players.select': { data: [{ id: CHILD }] } });
+    await accept(malformed.db, { playerId: 'not-a-uuid' });
+    expect(malformed.calls.some((c) => c.table === 'players')).toBe(false);
+
+    const unmatched = fakeDb({ ...pendingInvite('player'), 'players.select': { data: [{ id: CHILD }] } });
+    await accept(unmatched.db, { playerId: OTHER_TEAM_PLAYER });
+    expect(writes(unmatched.calls, 'players')).toHaveLength(0);
   });
 
   it('should link a parent only to active players on the invited team', async () => {
