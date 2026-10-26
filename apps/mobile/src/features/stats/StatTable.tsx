@@ -29,6 +29,8 @@ interface StatTableProps<Row> {
   onSort?: (key: string) => void;
   /** Makes each name tappable, e.g. to open the player's detail. */
   onPressRow?: (row: Row) => void;
+  /** Which rows `onPressRow` applies to (default every row), e.g. teams that have a page. */
+  isRowPressable?: (row: Row) => boolean;
   /** Tints a row, e.g. your own team in a league table. */
   highlightRow?: (row: Row) => boolean;
 }
@@ -52,6 +54,7 @@ export function StatTable<Row>({
   sort,
   onSort,
   onPressRow,
+  isRowPressable,
   highlightRow,
 }: StatTableProps<Row>) {
   if (rows.length === 0) return <Text className="text-sm text-gray-400 px-4 py-4">{emptyText}</Text>;
@@ -77,19 +80,22 @@ export function StatTable<Row>({
             {arrow(NAME_COLUMN_KEY)}
           </Text>
         </TouchableOpacity>
-        {rows.map((row) => (
-          <TouchableOpacity
-            key={rowKey(row)}
-            disabled={!onPressRow}
-            accessibilityRole={onPressRow ? 'button' : undefined}
-            onPress={() => onPressRow?.(row)}
-            className={`${rowClass} px-3 ${tint(row)}`}
-          >
-            <Text className={`text-sm font-medium ${onPressRow ? 'text-blue-700' : 'text-gray-900'}`} numberOfLines={1}>
-              {rowLabel(row)}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {rows.map((row) => {
+          const pressable = Boolean(onPressRow) && (isRowPressable?.(row) ?? true);
+          return (
+            <TouchableOpacity
+              key={rowKey(row)}
+              disabled={!pressable}
+              accessibilityRole={pressable ? 'button' : undefined}
+              onPress={() => onPressRow?.(row)}
+              className={`${rowClass} px-3 ${tint(row)}`}
+            >
+              <Text className={`text-sm font-medium ${pressable ? 'text-blue-700' : 'text-gray-900'}`} numberOfLines={1}>
+                {rowLabel(row)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
         {totals && (
           <View className={`${rowClass} px-3 bg-gray-50`}>
             <Text className="text-sm font-semibold text-gray-700">Totals</Text>

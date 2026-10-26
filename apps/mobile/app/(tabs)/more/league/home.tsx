@@ -134,6 +134,8 @@ function StandingsTable({ rows, onTeam }: { rows: LeagueHomeStandingRow[]; onTea
       labelWidth={150}
       columns={HOME_STANDINGS_COLUMNS}
       onPressRow={(row) => onTeam(row.teamId)}
+      // A league opponent (no platform team) has no page.
+      isRowPressable={(row) => row.teamId !== null}
       emptyText="No standings yet this season."
     />
   );

@@ -63,7 +63,8 @@ describe('LeagueHomeScreen', () => {
     fireEvent.press(screen.getAllByText('Huskies')[0]);
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/more/league/team/[teamId]', params: { teamId: 't1', slug: 'idaho-2a', season: '2026' } });
 
-    // A league opponent has no page.
+    // A league opponent has no page, so its name isn't a button.
+    expect(screen.getByText('Eagles').parent?.props.accessibilityRole).not.toBe('button');
     mockPush.mockClear();
     fireEvent.press(screen.getByText('Eagles'));
     expect(mockPush).not.toHaveBeenCalled();
