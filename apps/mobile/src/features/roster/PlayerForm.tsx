@@ -39,7 +39,12 @@ interface PlayerFormProps {
 export function PlayerForm({ initialValues, submitLabel, saving, saveError, emailHint, onSubmit, saved }: PlayerFormProps) {
   const [values, setValues] = useState(initialValues);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const set = (patch: Partial<PlayerFormValues>) => setValues((current) => ({ ...current, ...patch }));
+  // The values last sent: the server's refusal only shows until the coach changes them.
+  const [submitted, setSubmitted] = useState<PlayerFormValues | null>(null);
+  const set = (patch: Partial<PlayerFormValues>) => {
+    setValidationError(null);
+    setValues((current) => ({ ...current, ...patch }));
+  };
 
   useDiscardGuard(!saved && JSON.stringify(values) !== JSON.stringify(initialValues));
 
@@ -50,10 +55,11 @@ export function PlayerForm({ initialValues, submitLabel, saving, saveError, emai
       return;
     }
     setValidationError(null);
+    setSubmitted(values);
     onSubmit(result.fields);
   };
 
-  const error = validationError ?? saveError;
+  const error = validationError ?? (submitted === values ? saveError : null);
   const secondaryOptions = POSITION_OPTIONS.filter((p) => p !== values.primaryPosition);
   return (
     <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={96}>

@@ -38,10 +38,15 @@ export default function AvailabilityScreen() {
   const queryClient = useQueryClient();
   const today = localToday();
 
+  // Counts saved flags, so the add form clears after a save and keeps its entry after a refusal.
+  const [savedCount, setSavedCount] = useState(0);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: playerAvailabilityQueryKey(teamId ?? '', playerId) });
   const add = useMutation({
     mutationFn: (flag: NewInjuryFlag) => addInjuryFlag(teamId as string, playerId, flag),
-    onSuccess: refresh,
+    onSuccess: () => {
+      setSavedCount((count) => count + 1);
+      refresh();
+    },
   });
   const end = useMutation({
     mutationFn: (flagId: string) => endInjuryFlag(teamId as string, playerId, flagId, localToday()),
@@ -92,6 +97,8 @@ export default function AvailabilityScreen() {
             title="Active flags"
             flags={active}
             catalogBySlug={catalogBySlug}
+            // A flag that already ends today has nothing left to end.
+            canEnd={(flag) => !flag.effectiveTo || flag.effectiveTo > today}
             onEnd={(flag) =>
               Alert.alert('End this flag today?', catalogBySlug.get(flag.injurySlug)?.name ?? flag.injurySlug, [
                 { text: 'Cancel', style: 'cancel' },
@@ -109,7 +116,7 @@ export default function AvailabilityScreen() {
           today={today}
           saving={add.isPending}
           saveError={add.isError ? describeApiError(add.error) : null}
-          savedCount={add.isSuccess ? add.submittedAt : 0}
+          savedCount={savedCount}
           onSubmit={(flag) => add.mutate(flag)}
         />
 
@@ -123,12 +130,14 @@ function FlagSection({
   title,
   flags,
   catalogBySlug,
+  canEnd,
   onEnd,
   ending,
 }: {
   title: string;
   flags: InjuryFlag[];
   catalogBySlug: Map<string, InjuryCatalogEntry>;
+  canEnd?: (flag: InjuryFlag) => boolean;
   onEnd?: (flag: InjuryFlag) => void;
   ending?: string;
 }) {
@@ -149,7 +158,7 @@ function FlagSection({
                   </Text>
                   {flag.notes && <Text className="text-sm text-gray-800 mt-1">{flag.notes}</Text>}
                 </View>
-                {onEnd && (
+                {onEnd && canEnd?.(flag) !== false && (
                   <TouchableOpacity
                     accessibilityRole="button"
                     accessibilityLabel={`End ${injury?.name ?? flag.injurySlug} today`}

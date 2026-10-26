@@ -212,12 +212,15 @@ describe('EditPlayerScreen', () => {
     expect(mockTriggerSync).toHaveBeenCalled();
   });
 
-  it('should show the server’s refusal under the form', async () => {
+  it('should show the server’s refusal under the form until the coach changes it', async () => {
     mockApi.update.mockRejectedValue(new ApiError('conflict', 'Jersey #7 is already taken on this team.'));
     renderWithQuery(<EditPlayerScreen />);
     fireEvent.press(screen.getByText('Save changes'));
     expect(await screen.findByText('Jersey #7 is already taken on this team.')).toBeTruthy();
     expect(mockBack).not.toHaveBeenCalled();
+
+    fireEvent.changeText(screen.getByLabelText('Jersey number'), '8');
+    expect(screen.queryByText('Jersey #7 is already taken on this team.')).toBeNull();
   });
 
   it('should not edit a disabled player', () => {
@@ -252,6 +255,26 @@ describe('AvailabilityScreen', () => {
     fireEvent.press(screen.getByLabelText('End Shoulder soreness today'));
     pressAlertButton('End today');
     await waitFor(() => expect(mockApi.endFlag).toHaveBeenCalledWith(TEAM, PLAYER, 'f-active', '2026-10-25'));
+  });
+
+  it('should not offer to end a flag that already ends today', () => {
+    mockUseAvailability.mockReturnValue({
+      data: { ...availability, flags: [{ ...availability.flags[0], effectiveTo: '2026-10-25' }] },
+    });
+    renderWithQuery(<AvailabilityScreen />);
+    expect(screen.getByText('Active flags')).toBeTruthy();
+    expect(screen.queryByLabelText('End Shoulder soreness today')).toBeNull();
+  });
+
+  it('should keep the entry when the server refuses the flag', async () => {
+    mockUseAvailability.mockReturnValue({ data: availability });
+    mockApi.addFlag.mockRejectedValue(new ApiError('conflict', 'This player already has an open-ended flag for that injury.'));
+    renderWithQuery(<AvailabilityScreen />);
+
+    fireEvent.press(screen.getAllByText('Shoulder soreness')[1]);
+    fireEvent.press(screen.getByText('Add flag'));
+    expect(await screen.findByText('This player already has an open-ended flag for that injury.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Shoulder soreness', selected: true })).toBeTruthy();
   });
 
   it('should add an open-ended flag from today for the picked injury', async () => {
