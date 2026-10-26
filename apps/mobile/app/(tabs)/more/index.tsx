@@ -1,7 +1,7 @@
 import { ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { ListRow, SectionHeader } from '@baseball/ui';
-import { Feature } from '@baseball/shared';
+import { Feature, TRAINING_ROLES } from '@baseball/shared';
 import { useAuth } from '../../../src/providers/AuthProvider';
 import { useCan, useRole } from '../../../src/providers/RoleProvider';
 import { ListGroup } from '../../../src/features/navigation/ListGroup';
@@ -15,8 +15,10 @@ const LEAGUE_ROLE_LABELS = { league_admin: 'League admin', league_manager: 'Leag
  */
 export default function MoreScreen() {
   const { user, signOut } = useAuth();
-  const { leagueRoles } = useRole();
+  const { leagueRoles, memberships } = useRole();
   const isCoach = useCan('team.coach');
+  // As on the web, training is for anyone with a coaching role on any team.
+  const offersTraining = memberships.some((m) => TRAINING_ROLES.includes(m.role));
   // As on the web, the league page is on plans with league management.
   const hasLeague = useCan(Feature.LEAGUE_MANAGEMENT);
   const hasWeb = webUrl('/') !== null;
@@ -57,6 +59,13 @@ export default function MoreScreen() {
             title="Opponents"
             subtitle="Opponent rosters and scouting cards"
             onPress={() => router.push('/(tabs)/more/opponents')}
+          />
+        )}
+        {offersTraining && (
+          <ListRow
+            title="Training"
+            subtitle="Learn DiamondOS and get Certified"
+            onPress={() => router.push('/(tabs)/more/training')}
           />
         )}
       </ListGroup>
