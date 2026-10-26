@@ -36,6 +36,7 @@ function query(table: string) {
     upsert: (payload: unknown) => { call.op = 'upsert'; call.payload = payload; return builder; },
     eq: (col: string, val: unknown) => { call.filters.push(['eq', col, val]); return builder; },
     in: (col: string, val: unknown) => { call.filters.push(['in', col, val]); return builder; },
+    not: (col: string, op: string, val: unknown) => { call.filters.push([`not ${op}`, col, val]); return builder; },
     limit: () => builder,
     single: resolve,
     maybeSingle: resolve,
@@ -236,6 +237,31 @@ describe('roster member actions', () => {
     expect(await updateInvitationAction(TEAM, 'inv-1', { firstName: 'A', lastName: 'B', phone: '', role: 'athletic_director' })).toBe(refusal);
     expect(writesTo('team_members')).toHaveLength(0);
     expect(writesTo('team_invitations')).toHaveLength(0);
+  });
+
+  it('should refuse when the role can’t be read, and keep an assistant’s writes off leadership rows', async () => {
+    mockDb.from.mockImplementation((table: string) => {
+      const builder = query(table) as Record<string, unknown>;
+      if (table === 'team_members') {
+        const call = calls[calls.length - 1];
+        builder.maybeSingle = () =>
+          Promise.resolve(call.filters.some(([, col]) => col === 'id')
+            ? { data: null, error: { message: 'timeout' } }
+            : { data: { role: 'assistant_coach' }, error: null });
+      }
+      return builder;
+    });
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(await removeMemberAction(TEAM, 'm-hc')).toBe('Something went wrong. Please try again.');
+    expect(writesTo('team_members')).toHaveLength(0);
+
+    mockDb.from.mockImplementation(query);
+    results['team_members.select'] = { data: { role: 'assistant_coach' }, error: null };
+    results['team_members.update'] = { data: [{ id: 'm1' }], error: null };
+    const staff = { firstName: 'A', lastName: 'B', email: '', phone: '', role: 'scorekeeper', jerseyNumber: null };
+    expect(await updateStaffMemberAction(TEAM, 'm1', 'u1', staff)).toBeNull();
+    const [update] = writesTo('team_members');
+    expect(update.filters).toContainEqual(['not in', 'role', '(head_coach,athletic_director)']);
   });
 });
 

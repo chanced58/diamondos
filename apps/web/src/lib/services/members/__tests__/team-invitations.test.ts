@@ -224,6 +224,17 @@ describe('the head coach and athletic director roles', () => {
     expect(await inviteStaff(headCoach.db, ACTOR, { teamId: TEAM, email: 'hc@example.com', role: 'scorekeeper' })).toMatchObject({ ok: true });
   });
 
+  it('should not replace a pending invitation for another role, even for a head coach', async () => {
+    const other = setup({ 'team_invitations.select': { data: { role: 'parent', status: 'pending' } } });
+    expect(await inviteStaff(other.db, ACTOR, { teamId: TEAM, email: 'pat@example.com', role: 'scorekeeper' })).toMatchObject({ code: 'conflict' });
+    expect(other.inviteUserByEmail).not.toHaveBeenCalled();
+    expect(writes(other.calls, 'team_invitations')).toHaveLength(0);
+
+    // Inviting the same role again sends it again.
+    const same = setup({ 'team_invitations.select': { data: { role: 'scorekeeper', status: 'pending' } } });
+    expect(await inviteStaff(same.db, ACTOR, { teamId: TEAM, email: 'pat@example.com', role: 'scorekeeper' })).toMatchObject({ ok: true });
+  });
+
   it('should not let an assistant resend or cancel a head coach invitation', async () => {
     const resend = setup(
       { 'team_invitations.select': { data: { team_id: TEAM, email: 'hc@example.com', role: 'head_coach', status: 'pending', invited_by: 'x' } } },

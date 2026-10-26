@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   invitationIdInputSchema,
@@ -23,7 +24,7 @@ import { authorizeMemberManager, refuseLeadershipChange } from './authorize';
  * never changes the role of someone already active on the team, and only
  * head coaches, athletic directors and platform admins invite, resend or
  * cancel those two roles, or replace an open invitation for one
- * (`refuseLeadershipChange`, `refuseLeadershipOverwrite`).
+ * (`refuseLeadershipChange`, `refuseInvitationOverwrite`).
  */
 
 /** Stands in for the email of someone recorded without one. */
@@ -119,27 +120,31 @@ async function sendInvitation(
 
 /**
  * Saving an invitation replaces the one already open (pending or accepted) at
- * that address on the team, role included, so an actor without
- * `canManageLeadership` may not invite an address whose open invitation is
- * for the head coach or athletic director role. Null when allowed.
+ * that address on the team, role and children included. So an invite for
+ * `role` is refused over a pending invitation for another role (cancel that
+ * one first), and, for an actor without `canManageLeadership`, over an open
+ * head coach or athletic director invitation. Null when allowed.
  */
-async function refuseLeadershipOverwrite(
+async function refuseInvitationOverwrite(
   db: SupabaseClient,
   actorUserId: string,
   teamId: string,
   email: string,
+  role: string,
   canManageLeadership: boolean,
 ): Promise<ServiceResult<never> | null> {
-  if (canManageLeadership) return null;
   const { data: open, error } = await db
     .from('team_invitations')
-    .select('role')
+    .select('role, status')
     .eq('team_id', teamId)
     .eq('email', email)
     .in('status', ['pending', 'accepted'])
     .maybeSingle();
-  if (error) return failed('refuseLeadershipOverwrite', teamId, actorUserId, error);
-  return refuseLeadershipChange(false, open?.role as string | undefined);
+  if (error) return failed('refuseInvitationOverwrite', teamId, actorUserId, error);
+  if (open?.status === 'pending' && open.role !== role) {
+    return serviceError('conflict', 'This address already has a pending invitation for another role. Cancel it first.');
+  }
+  return refuseLeadershipChange(canManageLeadership, open?.role as string | undefined);
 }
 
 /** The account with this email, if there is one (profiles first, then auth). */
@@ -198,7 +203,7 @@ async function recordAccepted(db: SupabaseClient, row: InvitationRow) {
 async function recordPlaceholder(db: SupabaseClient, actorUserId: string, row: Omit<InvitationRow, 'email'>): Promise<ServiceResult<InviteResult>> {
   const { error } = await db.from('team_invitations').insert({
     ...row,
-    email: `noemail_${Date.now()}${PLACEHOLDER_DOMAIN}`,
+    email: `noemail_${randomUUID()}${PLACEHOLDER_DOMAIN}`,
     status: 'pending',
   });
   if (error) return failed('recordPlaceholder', row.team_id, actorUserId, error);
@@ -217,7 +222,7 @@ export async function inviteStaff(db: SupabaseClient, actorUserId: string, rawIn
 
   const row = { team_id: teamId, role, first_name: firstName, last_name: lastName, phone, jersey_number: jerseyNumber, invited_by: actorUserId };
   if (!email) return recordPlaceholder(db, actorUserId, row);
-  const overwrite = await refuseLeadershipOverwrite(db, actorUserId, teamId, email, authorized.data.canManageLeadership);
+  const overwrite = await refuseInvitationOverwrite(db, actorUserId, teamId, email, role, authorized.data.canManageLeadership);
   if (overwrite) return overwrite;
 
   const account = await findAccount(db, email);
@@ -275,7 +280,7 @@ export async function inviteParent(db: SupabaseClient, actorUserId: string, rawI
 
   const row = { team_id: teamId, role: 'parent', first_name: firstName, last_name: lastName, phone, player_ids: playerIds, invited_by: actorUserId };
   if (!email) return recordPlaceholder(db, actorUserId, row);
-  const overwrite = await refuseLeadershipOverwrite(db, actorUserId, teamId, email, authorized.data.canManageLeadership);
+  const overwrite = await refuseInvitationOverwrite(db, actorUserId, teamId, email, 'parent', authorized.data.canManageLeadership);
   if (overwrite) return overwrite;
 
   const account = await findAccount(db, email);
@@ -340,7 +345,7 @@ export async function invitePlayerToApp(
 
   const email = emailOverride ?? ((player.email as string | null)?.trim().toLowerCase() || null);
   if (!email) return serviceError('invalid', 'Add an email to invite this player.');
-  const overwrite = await refuseLeadershipOverwrite(db, actorUserId, teamId, email, canManageLeadership);
+  const overwrite = await refuseInvitationOverwrite(db, actorUserId, teamId, email, 'player', canManageLeadership);
   if (overwrite) return overwrite;
 
   const account = await findAccount(db, email);
