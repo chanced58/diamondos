@@ -1,7 +1,7 @@
 'use server';
 
 import { createClient } from '@supabase/supabase-js';
-import { isTeamRole } from '@baseball/shared';
+import { isHeadCoachOrAdRole, isTeamRole } from '@baseball/shared';
 import { createServerClient } from '@/lib/supabase/server';
 import { cancelTeamInvitationsForUser } from '@/lib/membership-self-heal';
 
@@ -38,6 +38,38 @@ async function getCallerRole(teamId: string): Promise<string | null> {
 
 const CAN_MANAGE = ['head_coach', 'assistant_coach', 'athletic_director'];
 
+// Only head coaches, athletic directors and platform admins (who read as
+// head_coach above) change, remove, grant or invite those two roles.
+const LEADERSHIP_REFUSAL = 'Only head coaches and athletic directors can manage the head coach and athletic director roles.';
+
+function mayTouchRoles(callerRole: string, ...roles: Array<string | null | undefined>): boolean {
+  return isHeadCoachOrAdRole(callerRole) || !roles.some((role) => isHeadCoachOrAdRole(role));
+}
+
+// Writes by a caller who can't manage those roles also skip leadership rows,
+// in case a role changed after it was checked.
+const NOT_LEADERSHIP = '(head_coach,athletic_director)';
+
+/**
+ * The role of a team member or invitation on the team, `{ role: null }` when
+ * there's none, or null when the read failed (the caller then refuses).
+ */
+async function currentRole(
+  db: ReturnType<typeof serviceClient>,
+  table: 'team_members' | 'team_invitations',
+  teamId: string,
+  id: string,
+): Promise<{ role: string | null } | null> {
+  const { data, error } = await db.from(table).select('role').eq('id', id).eq('team_id', teamId).maybeSingle();
+  if (error) {
+    console.error(`[member-actions] ${table} role lookup failed team=${teamId} id=${id}:`, error);
+    return null;
+  }
+  return { role: (data?.role as string | undefined) ?? null };
+}
+
+const LOOKUP_FAILED = 'Something went wrong. Please try again.';
+
 async function isMemberOfTeam(
   db: ReturnType<typeof serviceClient>,
   teamId: string,
@@ -65,12 +97,12 @@ export async function removeMemberAction(
   if (!role || !CAN_MANAGE.includes(role)) return 'Not authorized.';
 
   const db = serviceClient();
-  const { data: removed, error } = await db
-    .from('team_members')
-    .delete()
-    .eq('id', memberId)
-    .eq('team_id', teamId)
-    .select('user_id');
+  const current = await currentRole(db, 'team_members', teamId, memberId);
+  if (!current) return LOOKUP_FAILED;
+  if (!mayTouchRoles(role, current.role)) return LEADERSHIP_REFUSAL;
+  let removal = db.from('team_members').delete().eq('id', memberId).eq('team_id', teamId);
+  if (!isHeadCoachOrAdRole(role)) removal = removal.not('role', 'in', NOT_LEADERSHIP);
+  const { data: removed, error } = await removal.select('user_id');
   if (error) return error.message;
 
   for (const row of (removed ?? []) as Array<{ user_id: string }>) {
@@ -89,11 +121,12 @@ export async function removeInvitationAction(
   if (!role || !CAN_MANAGE.includes(role)) return 'Not authorized.';
 
   const db = serviceClient();
-  const { error } = await db
-    .from('team_invitations')
-    .delete()
-    .eq('id', invitationId)
-    .eq('team_id', teamId);
+  const current = await currentRole(db, 'team_invitations', teamId, invitationId);
+  if (!current) return LOOKUP_FAILED;
+  if (!mayTouchRoles(role, current.role)) return LEADERSHIP_REFUSAL;
+  let removal = db.from('team_invitations').delete().eq('id', invitationId).eq('team_id', teamId);
+  if (!isHeadCoachOrAdRole(role)) removal = removal.not('role', 'in', NOT_LEADERSHIP);
+  const { error } = await removal;
   return error ? error.message : null;
 }
 
@@ -110,17 +143,21 @@ export async function updateStaffMemberAction(
   if (!isTeamRole(data.role)) return 'Invalid role.';
 
   const db = serviceClient();
+  const current = await currentRole(db, 'team_members', teamId, memberId);
+  if (!current) return LOOKUP_FAILED;
+  if (!mayTouchRoles(callerRole, current.role, data.role)) return LEADERSHIP_REFUSAL;
 
   // Update role and jersey_number in team_members. Scoping to this team and
   // user also proves userId belongs to the team before its profile is edited.
-  const { data: updatedMembers, error: roleErr } = await db
+  let memberUpdate = db
     .from('team_members')
     .update({ role: data.role, jersey_number: data.jerseyNumber })
     .eq('id', memberId)
     .eq('team_id', teamId)
     .eq('user_id', userId)
-    .eq('is_active', true)
-    .select('id');
+    .eq('is_active', true);
+  if (!isHeadCoachOrAdRole(callerRole)) memberUpdate = memberUpdate.not('role', 'in', NOT_LEADERSHIP);
+  const { data: updatedMembers, error: roleErr } = await memberUpdate.select('id');
   if (roleErr) return roleErr.message;
   if (!updatedMembers?.length) return 'Member not found on this team.';
 
@@ -178,6 +215,9 @@ export async function updateInvitationAction(
   if (data.role && !isTeamRole(data.role)) return 'Invalid role.';
 
   const db = serviceClient();
+  const current = await currentRole(db, 'team_invitations', teamId, invitationId);
+  if (!current) return LOOKUP_FAILED;
+  if (!mayTouchRoles(callerRole, current.role, data.role)) return LEADERSHIP_REFUSAL;
   const update: Record<string, string | number | null> = {
     first_name: data.firstName || null,
     last_name: data.lastName || null,
@@ -186,10 +226,8 @@ export async function updateInvitationAction(
   if (data.role) update.role = data.role;
   if (data.jerseyNumber !== undefined) update.jersey_number = data.jerseyNumber;
 
-  const { error } = await db
-    .from('team_invitations')
-    .update(update)
-    .eq('id', invitationId)
-    .eq('team_id', teamId);
+  let invitationUpdate = db.from('team_invitations').update(update).eq('id', invitationId).eq('team_id', teamId);
+  if (!isHeadCoachOrAdRole(callerRole)) invitationUpdate = invitationUpdate.not('role', 'in', NOT_LEADERSHIP);
+  const { error } = await invitationUpdate;
   return error ? error.message : null;
 }

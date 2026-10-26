@@ -48,6 +48,17 @@ describe('acceptInvitation', () => {
     expect(claim.filters).toEqual({ id: CHILD, team_id: TEAM, 'user_id is': null });
   });
 
+  it('should claim the player a player invitation records, whatever their roster email and the link', async () => {
+    const { db, calls } = fakeDb({
+      'team_invitations.select': { data: { id: 'inv1', role: 'player', first_name: null, last_name: null, player_ids: [CHILD] } },
+    });
+    await accept(db, { playerId: OTHER_TEAM_PLAYER });
+
+    expect(calls.some((c) => c.table === 'players' && c.op === 'select')).toBe(false);
+    expect(writes(calls, 'players')[0]).toMatchObject({ payload: { user_id: 'u1' }, filters: { id: CHILD, team_id: TEAM, 'user_id is': null } });
+    expect(writes(calls, 'team_invitations')[0].payload).toMatchObject({ status: 'accepted' });
+  });
+
   it('should claim the only matching player when the link names none, and nothing when several match', async () => {
     const one = fakeDb({ ...pendingInvite('player'), 'players.select': { data: [{ id: CHILD }] } });
     await accept(one.db);

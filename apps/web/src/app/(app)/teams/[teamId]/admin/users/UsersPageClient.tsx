@@ -177,10 +177,10 @@ function ResendPlayerInviteForm({ playerId, teamId }: { playerId: string; teamId
     <form action={action}>
       <input type="hidden" name="teamId" value={teamId} />
       <input type="hidden" name="playerId" value={playerId} />
-      {result && result !== 'invited' && (
+      {result && result !== 'invited' && result !== 'added' && (
         <p className="text-xs text-red-600 mb-1">{result}</p>
       )}
-      <ActionButton>{result === 'invited' ? 'Sent ✓' : 'Resend invite'}</ActionButton>
+      <ActionButton>{result === 'invited' ? 'Sent ✓' : result === 'added' ? 'Connected ✓' : 'Resend invite'}</ActionButton>
     </form>
   );
 }

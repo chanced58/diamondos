@@ -38,9 +38,10 @@ export function resolveInviteParams(user: User | null, params: InviteParams): In
  * Only a pending invitation for the user's own email on that team counts.
  * The team, role and player ids arrive in a URL, a request body or user
  * metadata, all of which the user controls, so none of them grants anything
- * alone: the role comes from the invitation, a player is claimed only when
- * their roster email is the user's, and a parent links only to the children
- * the invitation records (`player_ids`), among the team's active players.
+ * alone: the role comes from the invitation, a player invitation claims the
+ * player it records (older ones: the player whose roster email is the
+ * user's), and a parent links only to the children the invitation records
+ * (`player_ids`), among the team's active players.
  *
  * Non-fatal — errors are logged and swallowed so auth still completes.
  * Self-healing logic in the app layout retries any missing links.
@@ -111,7 +112,14 @@ export async function acceptInvitation(
   }
 
   let linked = true;
-  if (role === 'player') linked = await claimPlayer(db, user.id, teamId, emailLower, playerId);
+  if (role === 'player') {
+    // A player invitation records the player the coach invited (connecting
+    // them to any address). Older ones match the roster email instead.
+    const recordedPlayer = (invite.player_ids as string[] | null)?.[0] ?? null;
+    linked = recordedPlayer
+      ? await claimRecordedPlayer(db, user.id, teamId, recordedPlayer)
+      : await claimPlayer(db, user.id, teamId, emailLower, playerId);
+  }
   if (role === 'parent') {
     // The invitation records the children the coach chose. Only invitations
     // from before it did (player_ids null) fall back to the link's list.
@@ -131,6 +139,25 @@ export async function acceptInvitation(
   if (acceptError) {
     console.error(`[process-invite] invitation accept failed team=${teamId} user=${user.id}:`, acceptError.message);
   }
+}
+
+/**
+ * Links the player the invitation records to the new account, when they are
+ * still on the team and unclaimed. False only when the write failed, so it
+ * can be retried.
+ */
+async function claimRecordedPlayer(db: SupabaseClient, userId: string, teamId: string, playerId: string): Promise<boolean> {
+  const { error } = await db
+    .from('players')
+    .update({ user_id: userId })
+    .eq('id', playerId)
+    .eq('team_id', teamId)
+    .is('user_id', null);
+  if (error) {
+    console.error(`[process-invite] recorded player claim failed team=${teamId} user=${userId}:`, error.message);
+    return false;
+  }
+  return true;
 }
 
 /**

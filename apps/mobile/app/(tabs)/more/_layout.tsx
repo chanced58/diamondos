@@ -13,6 +13,11 @@ export default function MoreLayout() {
       <Stack.Screen name="roster/[playerId]/index" options={{ title: 'Player' }} />
       <Stack.Screen name="roster/[playerId]/edit" options={{ title: 'Edit player' }} />
       <Stack.Screen name="roster/[playerId]/availability" options={{ title: 'Availability' }} />
+      <Stack.Screen name="members/index" options={{ title: 'Team members' }} />
+      <Stack.Screen name="members/[memberId]" options={{ title: 'Member' }} />
+      <Stack.Screen name="members/invite-staff" options={{ title: 'Invite staff' }} />
+      <Stack.Screen name="members/invite-parent" options={{ title: 'Invite a parent' }} />
+      <Stack.Screen name="members/invite-player" options={{ title: 'Invite to the app' }} />
       <Stack.Screen name="practices/index" options={{ title: 'Practices' }} />
       <Stack.Screen name="practices/new" options={{ title: 'New practice' }} />
       <Stack.Screen name="practices/[practiceId]/index" options={{ title: 'Practice' }} />

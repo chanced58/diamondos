@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   createRosterPlayerInputSchema,
   deactivateRosterPlayerInputSchema,
+  isHeadCoachOrAdRole,
   reactivateRosterPlayerInputSchema,
   rosterPlayerIdInputSchema,
   updateRosterPlayerInputSchema,
@@ -11,8 +12,9 @@ import {
   type RosterPlayerResponse,
   type RosterPlayerWriteResponse,
 } from '@baseball/shared';
-import { getPlayerAccess, getRosterAccess } from '@/lib/roster-access';
+import { getPlayerAccess, getRosterAccess, type RosterAccess } from '@/lib/roster-access';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
+import { invitePlayerToApp } from '../members/team-invitations';
 
 /**
  * A team's roster players (the web /teams/:teamId/roster pages), shared by the
@@ -93,9 +95,9 @@ function toColumns(fields: RosterPlayerFields) {
 }
 
 /** Roster managers only; a viewer who can't manage is refused, anyone else learns nothing. */
-async function authorizeManager(db: SupabaseClient, actorUserId: string, teamId: string): Promise<ServiceResult<null>> {
+async function authorizeManager(db: SupabaseClient, actorUserId: string, teamId: string): Promise<ServiceResult<RosterAccess>> {
   const access = await getRosterAccess(db, teamId, actorUserId);
-  if (access.canManage) return serviceOk(null);
+  if (access.canManage) return serviceOk(access);
   if (access.canView) return serviceError('forbidden', 'Only coaches can manage the roster.');
   return serviceError('not_found', 'Team not found.');
 }
@@ -164,42 +166,28 @@ export async function createRosterPlayer(
     return failed('createRosterPlayer', teamId, playerId, actorUserId, membershipError);
   }
 
-  const invited = await invitePlayer(db, actorUserId, teamId, playerId, fields);
+  // Only a head coach or AD may replace an open head coach or AD invitation at that address.
+  const invited = await invitePlayer(db, actorUserId, teamId, playerId, fields, isHeadCoachOrAdRole(authorized.data.role));
   return serviceOk({ playerId, invited });
 }
 
-/** Emails a new player an invite to the team when they have an address; whether it was sent. */
+/**
+ * Emails a new player an invite to the team when they have an address (an
+ * existing account is connected at once); whether that worked. The invitation
+ * records the player, so accepting it claims exactly them.
+ */
 async function invitePlayer(
   db: SupabaseClient,
   actorUserId: string,
   teamId: string,
   playerId: string,
   fields: RosterPlayerFields,
+  canManageLeadership: boolean,
 ): Promise<boolean> {
-  const email = fields.email;
-  if (!email) return false;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? 'http://localhost:3000';
-  const { error: inviteError } = await db.auth.admin.inviteUserByEmail(email, {
-    data: { invited_as_player: playerId, invited_to_team: teamId, invited_role: 'player' },
-    redirectTo: `${appUrl}/auth/callback?team=${teamId}&player=${playerId}&role=player`,
-  });
-  if (inviteError) console.error(`[roster] player invite failed team=${teamId} player=${playerId}:`, inviteError);
-
-  // Track the invitation so it appears in the Pending Invitations section.
-  const { error: trackError } = await db.from('team_invitations').upsert(
-    {
-      team_id: teamId,
-      email,
-      first_name: fields.firstName,
-      last_name: fields.lastName,
-      role: 'player',
-      invited_by: actorUserId,
-      status: 'pending',
-    },
-    { onConflict: 'team_id,email' },
-  );
-  if (trackError) console.error(`[roster] player invitation record failed team=${teamId} player=${playerId}:`, trackError);
-  return !inviteError;
+  if (!fields.email) return false;
+  const result = await invitePlayerToApp(db, actorUserId, teamId, playerId, fields.email, canManageLeadership);
+  if (!result.ok) console.error(`[roster] player invite failed team=${teamId} player=${playerId}:`, result.error);
+  return result.ok;
 }
 
 /** Replaces every editable field of an active player, keeping the active membership's jersey in step. */
