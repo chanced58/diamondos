@@ -41,3 +41,4 @@ export * from './tournament-detail';
 export * from './league-page';
 export * from './league-home';
 export * from './training';
+export * from './roster-admin';
