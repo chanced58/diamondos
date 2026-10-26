@@ -9,6 +9,10 @@ export default function MoreLayout() {
     <Stack screenOptions={BRAND_STACK_OPTIONS}>
       <Stack.Screen name="index" options={{ title: 'More' }} />
       <Stack.Screen name="roster/index" options={{ title: 'Roster' }} />
+      <Stack.Screen name="roster/new" options={{ title: 'Add player' }} />
+      <Stack.Screen name="roster/[playerId]/index" options={{ title: 'Player' }} />
+      <Stack.Screen name="roster/[playerId]/edit" options={{ title: 'Edit player' }} />
+      <Stack.Screen name="roster/[playerId]/availability" options={{ title: 'Availability' }} />
       <Stack.Screen name="practices/index" options={{ title: 'Practices' }} />
       <Stack.Screen name="practices/new" options={{ title: 'New practice' }} />
       <Stack.Screen name="practices/[practiceId]/index" options={{ title: 'Practice' }} />
