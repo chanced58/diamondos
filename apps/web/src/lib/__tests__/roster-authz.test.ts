@@ -12,7 +12,10 @@ import {
   updateParentMemberAction,
   updateInvitationAction,
 } from '../../app/(app)/teams/[teamId]/roster/member-actions';
-import { updateMemberRoleAction } from '../../app/(app)/teams/[teamId]/admin/users/actions';
+import {
+  removeMemberAction as removeTeamMemberAction,
+  updateMemberRoleAction,
+} from '../../app/(app)/teams/[teamId]/admin/users/actions';
 import { startDmAction } from '../../app/(app)/messages/dm/new/actions';
 
 type Call = { table: string; op: string; filters: [string, string, unknown][]; payload?: unknown };
@@ -43,7 +46,8 @@ function query(table: string) {
 }
 
 const mockGetUser = jest.fn();
-const mockDb = { from: jest.fn(query), auth: { admin: { inviteUserByEmail: jest.fn() } } };
+const mockGetUserById = jest.fn();
+const mockDb = { from: jest.fn(query), auth: { admin: { inviteUserByEmail: jest.fn(), getUserById: mockGetUserById } } };
 const mockCanManageRoster = jest.fn();
 
 jest.mock('@supabase/supabase-js', () => ({ createClient: () => mockDb }));
@@ -128,6 +132,18 @@ describe('roster member actions', () => {
     expect(hasFilter(del, 'team_id', TEAM)).toBe(true);
   });
 
+  it('should cancel the removed member\'s invitations so self-heal cannot bring them back', async () => {
+    results['team_members.delete'] = { data: [{ user_id: 'u-removed' }], error: null };
+    mockGetUserById.mockResolvedValue({ data: { user: { email: 'Gone@Example.com' } }, error: null });
+    expect(await removeMemberAction(TEAM, 'm-removed')).toBeNull();
+
+    expect(mockGetUserById).toHaveBeenCalledWith('u-removed');
+    const [cancel] = writesTo('team_invitations');
+    expect(cancel.payload).toEqual({ status: 'cancelled' });
+    expect(hasFilter(cancel, 'team_id', TEAM)).toBe(true);
+    expect(hasFilter(cancel, 'email', 'gone@example.com')).toBe(true);
+  });
+
   it('should scope invitation removal and edits to the caller\'s team', async () => {
     await removeInvitationAction(TEAM, 'inv-1');
     await updateInvitationAction(TEAM, 'inv-1', { firstName: 'A', lastName: 'B', phone: '' });
@@ -190,6 +206,21 @@ describe('team admin role changes', () => {
     form.set('role', 'superuser');
     expect(await updateMemberRoleAction(null, form)).toBe('Invalid role.');
     expect(writesTo('team_members')).toHaveLength(0);
+  });
+
+  it('should cancel a deactivated member\'s invitations to the team', async () => {
+    results['user_profiles.select'] = { data: { is_platform_admin: true }, error: null };
+    results['team_members.update'] = { data: [{ user_id: 'u-removed' }], error: null };
+    mockGetUserById.mockResolvedValue({ data: { user: { email: 'gone@example.com' } }, error: null });
+    const form = new FormData();
+    form.set('teamId', TEAM);
+    form.set('memberId', 'm-removed');
+    expect(await removeTeamMemberAction(null, form)).toBeNull();
+
+    const [cancel] = writesTo('team_invitations');
+    expect(cancel.payload).toEqual({ status: 'cancelled' });
+    expect(hasFilter(cancel, 'team_id', TEAM)).toBe(true);
+    expect(hasFilter(cancel, 'email', 'gone@example.com')).toBe(true);
   });
 });
 
