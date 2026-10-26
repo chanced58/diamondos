@@ -62,6 +62,13 @@ jest.mock('@/lib/roster-access', () => ({
   },
 }));
 jest.mock('next/cache', () => ({ revalidatePath: jest.fn() }));
+const mockMemberServices = { updateMemberRole: jest.fn(), removeMember: jest.fn() };
+jest.mock('@/lib/services/members/team-members', () => ({
+  updateMemberRole: (...args: unknown[]) => mockMemberServices.updateMemberRole(...args),
+  removeMember: (...args: unknown[]) => mockMemberServices.removeMember(...args),
+  linkParent: jest.fn(),
+  unlinkParent: jest.fn(),
+}));
 const mockStartDirectMessage = jest.fn();
 jest.mock('@/lib/services/messaging/team-messaging', () => ({
   startDirectMessage: (...args: unknown[]) => mockStartDirectMessage(...args),
@@ -205,30 +212,25 @@ describe('roster member actions', () => {
   });
 });
 
-describe('team admin role changes', () => {
-  it('should reject a role outside the team_role enum', async () => {
-    results['user_profiles.select'] = { data: { is_platform_admin: true }, error: null };
+// The member and invitation rules live in lib/services/members (see its
+// tests); the team admin actions pass the form through and report the result.
+describe('team admin actions', () => {
+  function adminForm(fields: Record<string, string>): FormData {
     const form = new FormData();
-    form.set('teamId', TEAM);
-    form.set('memberId', 'm1');
-    form.set('role', 'superuser');
-    expect(await updateMemberRoleAction(null, form)).toBe('Invalid role.');
-    expect(writesTo('team_members')).toHaveLength(0);
+    for (const [key, value] of Object.entries({ teamId: TEAM, ...fields })) form.set(key, value);
+    return form;
+  }
+
+  it('should pass a role change through, reporting the service’s refusal', async () => {
+    mockMemberServices.updateMemberRole.mockResolvedValue({ ok: false, code: 'invalid', error: 'Invalid enum value.' });
+    expect(await updateMemberRoleAction(null, adminForm({ memberId: 'm1', role: 'superuser' }))).toBe('Invalid enum value.');
+    expect(mockMemberServices.updateMemberRole).toHaveBeenCalledWith(mockDb, 'caller', { memberId: 'm1', role: 'superuser', teamId: TEAM });
   });
 
-  it('should cancel a deactivated member\'s invitations to the team', async () => {
-    results['user_profiles.select'] = { data: { is_platform_admin: true }, error: null };
-    results['team_members.update'] = { data: [{ user_id: 'u-removed' }], error: null };
-    mockGetUserById.mockResolvedValue({ data: { user: { email: 'gone@example.com' } }, error: null });
-    const form = new FormData();
-    form.set('teamId', TEAM);
-    form.set('memberId', 'm-removed');
-    expect(await removeTeamMemberAction(null, form)).toBeNull();
-
-    const [cancel] = writesTo('team_invitations');
-    expect(cancel.payload).toEqual({ status: 'cancelled' });
-    expect(hasFilter(cancel, 'team_id', TEAM)).toBe(true);
-    expect(hasFilter(cancel, 'email', 'gone@example.com')).toBe(true);
+  it('should pass a removal through and report success as null', async () => {
+    mockMemberServices.removeMember.mockResolvedValue({ ok: true, data: { ok: true } });
+    expect(await removeTeamMemberAction(null, adminForm({ memberId: 'm-removed' }))).toBeNull();
+    expect(mockMemberServices.removeMember).toHaveBeenCalledWith(mockDb, 'caller', { memberId: 'm-removed', teamId: TEAM });
   });
 });
 

@@ -13,6 +13,7 @@ import {
 } from '@baseball/shared';
 import { getPlayerAccess, getRosterAccess } from '@/lib/roster-access';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
+import { invitePlayerToApp } from '../members/team-invitations';
 
 /**
  * A team's roster players (the web /teams/:teamId/roster pages), shared by the
@@ -168,7 +169,11 @@ export async function createRosterPlayer(
   return serviceOk({ playerId, invited });
 }
 
-/** Emails a new player an invite to the team when they have an address; whether it was sent. */
+/**
+ * Emails a new player an invite to the team when they have an address (an
+ * existing account is connected at once); whether that worked. The invitation
+ * records the player, so accepting it claims exactly them.
+ */
 async function invitePlayer(
   db: SupabaseClient,
   actorUserId: string,
@@ -176,30 +181,10 @@ async function invitePlayer(
   playerId: string,
   fields: RosterPlayerFields,
 ): Promise<boolean> {
-  const email = fields.email;
-  if (!email) return false;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? 'http://localhost:3000';
-  const { error: inviteError } = await db.auth.admin.inviteUserByEmail(email, {
-    data: { invited_as_player: playerId, invited_to_team: teamId, invited_role: 'player' },
-    redirectTo: `${appUrl}/auth/callback?team=${teamId}&player=${playerId}&role=player`,
-  });
-  if (inviteError) console.error(`[roster] player invite failed team=${teamId} player=${playerId}:`, inviteError);
-
-  // Track the invitation so it appears in the Pending Invitations section.
-  const { error: trackError } = await db.from('team_invitations').upsert(
-    {
-      team_id: teamId,
-      email,
-      first_name: fields.firstName,
-      last_name: fields.lastName,
-      role: 'player',
-      invited_by: actorUserId,
-      status: 'pending',
-    },
-    { onConflict: 'team_id,email' },
-  );
-  if (trackError) console.error(`[roster] player invitation record failed team=${teamId} player=${playerId}:`, trackError);
-  return !inviteError;
+  if (!fields.email) return false;
+  const result = await invitePlayerToApp(db, actorUserId, teamId, playerId, fields.email);
+  if (!result.ok) console.error(`[roster] player invite failed team=${teamId} player=${playerId}:`, result.error);
+  return result.ok;
 }
 
 /** Replaces every editable field of an active player, keeping the active membership's jersey in step. */

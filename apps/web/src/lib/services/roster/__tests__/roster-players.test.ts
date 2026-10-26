@@ -9,6 +9,10 @@ import { fakeDb, type FakeCall } from '../../__tests__/fake-db';
 
 const mockGetRosterAccess = jest.fn();
 const mockGetPlayerAccess = jest.fn();
+const mockInvitePlayerToApp = jest.fn();
+jest.mock('../../members/team-invitations', () => ({
+  invitePlayerToApp: (...args: unknown[]) => mockInvitePlayerToApp(...args),
+}));
 jest.mock('@/lib/roster-access', () => ({
   getRosterAccess: (...args: unknown[]) => mockGetRosterAccess(...args),
   getPlayerAccess: (...args: unknown[]) => mockGetPlayerAccess(...args),
@@ -39,12 +43,6 @@ const row = (extra = {}) => ({
 });
 const fields = (extra = {}) => ({ firstName: 'Sam', lastName: 'Lee', jerseyNumber: 7, primaryPosition: 'shortstop', ...extra });
 const writes = (calls: FakeCall[], table: string) => calls.filter((c) => c.table === table && c.op !== 'select');
-
-function withAuth(db: ReturnType<typeof fakeDb>['db'], inviteError: unknown = null) {
-  const inviteUserByEmail = jest.fn().mockResolvedValue({ data: {}, error: inviteError });
-  Object.assign(db, { auth: { admin: { inviteUserByEmail } } });
-  return inviteUserByEmail;
-}
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -95,7 +93,7 @@ describe('createRosterPlayer', () => {
 
   it('should add the player and their membership, and invite them by email', async () => {
     const { db, calls } = fakeDb({ 'players.insert': { data: { id: PLAYER } } });
-    const invite = withAuth(db);
+    mockInvitePlayerToApp.mockResolvedValue({ ok: true, data: { outcome: 'invited' } });
     const result = await createRosterPlayer(db, 'u1', { teamId: TEAM, ...fields({ email: ' Sam@Example.com ', secondaryPositions: ['pitcher'] }) });
 
     expect(result).toEqual({ ok: true, data: { playerId: PLAYER, invited: true } });
@@ -109,15 +107,14 @@ describe('createRosterPlayer', () => {
       bats: null,
     });
     expect(writes(calls, 'player_team_memberships')[0].payload).toEqual({ player_id: PLAYER, team_id: TEAM, jersey_number: 7, is_active: true });
-    expect(invite).toHaveBeenCalledWith('sam@example.com', expect.objectContaining({ data: expect.objectContaining({ invited_as_player: PLAYER }) }));
-    expect(writes(calls, 'team_invitations')[0].payload).toMatchObject({ team_id: TEAM, email: 'sam@example.com', role: 'player', status: 'pending' });
+    // The invite (saved first, recording the player) is the members service's.
+    expect(mockInvitePlayerToApp).toHaveBeenCalledWith(db, 'u1', TEAM, PLAYER, 'sam@example.com');
   });
 
   it('should not invite a player without an email', async () => {
     const { db, calls } = fakeDb({ 'players.insert': { data: { id: PLAYER } } });
-    const invite = withAuth(db);
     expect(await createRosterPlayer(db, 'u1', { teamId: TEAM, ...fields() })).toEqual({ ok: true, data: { playerId: PLAYER, invited: false } });
-    expect(invite).not.toHaveBeenCalled();
+    expect(mockInvitePlayerToApp).not.toHaveBeenCalled();
     expect(writes(calls, 'team_invitations')).toHaveLength(0);
   });
 
