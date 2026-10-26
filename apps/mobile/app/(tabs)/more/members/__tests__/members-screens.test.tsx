@@ -55,6 +55,7 @@ const CHILD = '22222222-2222-4222-8222-222222222222';
 const OTHER_CHILD = '33333333-3333-4333-8333-333333333333';
 const members = {
   ownMemberId: 'm-own',
+  canManageLeadership: true,
   staff: [
     { memberId: 'm-own', userId: 'me', role: 'head_coach', firstName: 'Cy', lastName: 'Young', email: 'cy@example.com', phone: null },
     { memberId: 'm-scorer', userId: 'scorer', role: 'scorekeeper', firstName: 'Ann', lastName: 'Abel', email: null, phone: null },
@@ -155,6 +156,23 @@ describe('MemberScreen', () => {
     fireEvent.press(screen.getByText('Sam Lee'));
     await waitFor(() => expect(mockApi.unlink).toHaveBeenCalledWith(TEAM, 'parent', CHILD));
   });
+
+  it('should leave a head coach alone, and offer no leadership roles, for an assistant', () => {
+    mockRole.mockReturnValue({ activeTeam: { teamId: TEAM, isCoach: true, role: 'assistant_coach' }, loading: false });
+    mockUseMembers.mockReturnValue({ data: { ...members, ownMemberId: 'm-scorer', canManageLeadership: false } });
+    mockParams.mockReturnValue({ memberId: 'm-own' });
+    const { unmount } = renderWithQuery(<MemberScreen />);
+    expect(screen.getByText(/Only head coaches and athletic directors can change or remove a head coach/)).toBeTruthy();
+    expect(screen.queryByText('Remove from team')).toBeNull();
+    unmount();
+
+    mockUseMembers.mockReturnValue({ data: { ...members, ownMemberId: 'm-own', canManageLeadership: false } });
+    mockParams.mockReturnValue({ memberId: 'm-scorer' });
+    renderWithQuery(<MemberScreen />);
+    expect(screen.getByText('Remove from team')).toBeTruthy();
+    expect(screen.queryByText('Head Coach')).toBeNull();
+    expect(screen.queryByText('Athletic Director')).toBeNull();
+  });
 });
 
 describe('invite screens', () => {
@@ -181,6 +199,14 @@ describe('invite screens', () => {
     );
     expect(alertSpy).toHaveBeenCalledWith('Invite sent', expect.stringContaining('new@example.com'));
     await waitFor(() => expect(mockBack).toHaveBeenCalled());
+  });
+
+  it('should not offer an assistant the head coach or AD role', () => {
+    mockRole.mockReturnValue({ activeTeam: { teamId: TEAM, isCoach: true, role: 'assistant_coach' }, loading: false });
+    renderWithQuery(<InviteStaffScreen />);
+    expect(screen.getByText('Assistant Coach')).toBeTruthy();
+    expect(screen.queryByText('Head Coach')).toBeNull();
+    expect(screen.queryByText('Athletic Director')).toBeNull();
   });
 
   it('should invite a parent for the chosen children, and show a refusal', async () => {

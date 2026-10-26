@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, RefreshControl, ScrollView, Text, TouchableOp
 import { Stack, router } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Badge, EmptyState, ErrorState, ListRow, SectionHeader } from '@baseball/ui';
-import { TEAM_ROLE_LABELS, type TeamInvitation, type TeamPlayerAccount } from '@baseball/shared';
+import { TEAM_ROLE_LABELS, isHeadCoachOrAdRole, type TeamInvitation, type TeamPlayerAccount } from '@baseball/shared';
 import { useRole } from '../../../../src/providers/RoleProvider';
 import { TeamSwitcher } from '../../../../src/features/teams/TeamSwitcher';
 import { ListGroup } from '../../../../src/features/navigation/ListGroup';
@@ -103,12 +103,18 @@ export default function MembersScreen() {
   const openMember = (memberId: string) => router.push({ pathname: '/(tabs)/more/members/[memberId]', params: { memberId } });
   const openPlayer = (player: TeamPlayerAccount) =>
     router.push({ pathname: '/(tabs)/more/members/invite-player', params: { playerId: player.playerId } });
-  const invitationActions = (invitation: TeamInvitation) =>
+  const invitationActions = (invitation: TeamInvitation) => {
+    // Head coach and AD invitations are for head coaches and ADs to manage (the server says so too).
+    if (!query.data.canManageLeadership && isHeadCoachOrAdRole(invitation.role)) {
+      Alert.alert(displayName(invitation), 'Only head coaches and athletic directors can resend or cancel this invitation.');
+      return;
+    }
     Alert.alert(displayName(invitation), invitation.email ?? 'No email on file', [
       ...(invitation.email ? [{ text: 'Resend invite', onPress: () => resend.mutate(invitation.invitationId) }] : []),
       { text: 'Cancel invitation', style: 'destructive' as const, onPress: () => cancel.mutate(invitation.invitationId) },
       { text: 'Close', style: 'cancel' as const },
     ]);
+  };
 
   return (
     <View className="flex-1 bg-gray-50">

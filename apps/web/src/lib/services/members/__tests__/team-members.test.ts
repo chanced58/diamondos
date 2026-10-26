@@ -75,6 +75,7 @@ describe('loadTeamMembers', () => {
     if (!result.ok) throw new Error(result.error);
 
     expect(result.data.ownMemberId).toBe(OWN_MEMBER);
+    expect(result.data.canManageLeadership).toBe(true);
     expect(result.data.staff.map((m) => m.lastName)).toEqual(['Abel', 'Young']);
     expect(result.data.parents).toEqual([expect.objectContaining({ userId: PARENT, children: [{ playerId: CHILD, name: 'Sam Lee' }] })]);
     // Sam's invitation went to a parent's address but records Sam.
@@ -99,6 +100,20 @@ describe('updateMemberRole and removeMember', () => {
     expect(await updateMemberRole(db, ACTOR, { teamId: TEAM, memberId: OWN_MEMBER, role: 'staff' })).toMatchObject({ code: 'conflict' });
     expect(await removeMember(db, ACTOR, { teamId: TEAM, memberId: OWN_MEMBER })).toMatchObject({ code: 'conflict' });
     expect(writes(calls, 'team_members')).toHaveLength(0);
+  });
+
+  it('should keep the head coach and AD roles for head coaches and ADs to change, grant or remove', async () => {
+    const headCoach = { data: { id: MEMBER, role: 'head_coach', user_id: 'u2' } };
+    const assistant = team('assistant_coach', { 'team_members.select': headCoach });
+    expect(await updateMemberRole(assistant.db, ACTOR, { teamId: TEAM, memberId: MEMBER, role: 'staff' })).toMatchObject({ code: 'forbidden' });
+    expect(await removeMember(assistant.db, ACTOR, { teamId: TEAM, memberId: MEMBER })).toMatchObject({ code: 'forbidden' });
+
+    const promote = team('assistant_coach', { 'team_members.select': { data: { id: MEMBER, role: 'staff', user_id: 'u2' } } });
+    expect(await updateMemberRole(promote.db, ACTOR, { teamId: TEAM, memberId: MEMBER, role: 'athletic_director' })).toMatchObject({ code: 'forbidden' });
+    expect(writes([...assistant.calls, ...promote.calls], 'team_members')).toHaveLength(0);
+
+    const ad = team('athletic_director', { 'team_members.select': headCoach });
+    expect(await updateMemberRole(ad.db, ACTOR, { teamId: TEAM, memberId: MEMBER, role: 'assistant_coach' })).toMatchObject({ ok: true });
   });
 
   it('should say not found for a member of another team', async () => {

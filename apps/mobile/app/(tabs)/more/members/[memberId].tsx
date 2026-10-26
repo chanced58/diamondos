@@ -2,7 +2,7 @@ import { ActivityIndicator, Alert, Linking, ScrollView, Text, TouchableOpacity, 
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, EmptyState, ErrorState, ListRow, SectionHeader } from '@baseball/ui';
-import { TEAM_ROLE_LABELS, UserRole, type TeamParent, type TeamStaffMember } from '@baseball/shared';
+import { TEAM_ROLE_LABELS, UserRole, isHeadCoachOrAdRole, type TeamParent, type TeamStaffMember } from '@baseball/shared';
 import { useRole } from '../../../../src/providers/RoleProvider';
 import { ListGroup } from '../../../../src/features/navigation/ListGroup';
 import { ChoiceChips } from '../../../../src/features/practices/ChoiceChips';
@@ -86,6 +86,10 @@ export default function MemberScreen() {
   }
 
   const name = displayName(member);
+  // Head coach and athletic director are for head coaches and ADs to manage (the server says so too).
+  const { canManageLeadership } = query.data;
+  const locked = !canManageLeadership && isHeadCoachOrAdRole(member.role);
+  const roleOptions = canManageLeadership ? ROLE_OPTIONS : ROLE_OPTIONS.filter((role) => !isHeadCoachOrAdRole(role));
   const pickRole = (picked: UserRole[]) => {
     const role = picked.find((r) => r !== member.role);
     if (!role) return;
@@ -129,18 +133,19 @@ export default function MemberScreen() {
         </>
       )}
 
-      <SectionHeader title="Role" />
-      <ChoiceChips
-        options={ROLE_OPTIONS}
-        labels={TEAM_ROLE_LABELS}
-        selected={[member.role as UserRole]}
-        onChange={pickRole}
-      />
-      {changeRole.isPending && <Text className="text-sm text-gray-500 mt-2">Changing role…</Text>}
+      {locked ? (
+        <Text className="text-sm text-gray-500 mt-6">Only head coaches and athletic directors can change or remove a {TEAM_ROLE_LABELS[member.role as UserRole].toLowerCase()}.</Text>
+      ) : (
+        <>
+          <SectionHeader title="Role" />
+          <ChoiceChips options={roleOptions} labels={TEAM_ROLE_LABELS} selected={[member.role as UserRole]} onChange={pickRole} />
+          {changeRole.isPending && <Text className="text-sm text-gray-500 mt-2">Changing role…</Text>}
 
-      <View className="mt-6">
-        <Button label="Remove from team" variant="danger" loading={remove.isPending} onPress={confirmRemove} />
-      </View>
+          <View className="mt-6">
+            <Button label="Remove from team" variant="danger" loading={remove.isPending} onPress={confirmRemove} />
+          </View>
+        </>
+      )}
     </ScrollView>
   );
 }

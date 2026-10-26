@@ -3,7 +3,7 @@ import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, Vie
 import { Stack, router } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, EmptyState, FormField } from '@baseball/ui';
-import { STAFF_INVITE_ROLES, TEAM_ROLE_LABELS } from '@baseball/shared';
+import { STAFF_INVITE_ROLES, TEAM_ROLE_LABELS, isHeadCoachOrAdRole } from '@baseball/shared';
 import { useRole } from '../../../../src/providers/RoleProvider';
 import { ChoiceChips } from '../../../../src/features/practices/ChoiceChips';
 import { useDiscardGuard } from '../../../../src/features/forms/use-discard-guard';
@@ -59,6 +59,8 @@ export default function InviteStaffScreen() {
     );
   }
 
+  // Head coaches and ADs invite those two roles (the server says so too).
+  const roleOptions = isHeadCoachOrAdRole(activeTeam.role) ? STAFF_INVITE_ROLES : STAFF_INVITE_ROLES.filter((role) => !isHeadCoachOrAdRole(role));
   const submit = () => {
     const result = toStaffInvite(values);
     if ('error' in result) return setProblem(result.error);
@@ -72,7 +74,7 @@ export default function InviteStaffScreen() {
         {header}
         <FormField label="Role" required>
           <ChoiceChips
-            options={STAFF_INVITE_ROLES}
+            options={roleOptions}
             labels={TEAM_ROLE_LABELS}
             selected={values.role ? [values.role as (typeof STAFF_INVITE_ROLES)[number]] : []}
             onChange={(picked) => set({ role: picked.find((r) => r !== values.role) ?? null })}

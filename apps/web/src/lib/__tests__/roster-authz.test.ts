@@ -210,6 +210,33 @@ describe('roster member actions', () => {
     expect(await updateParentMemberAction(TEAM, 'm-other', 'u-other', parent)).toBe('Member not found on this team.');
     expect(writesTo('user_profiles')).toHaveLength(0);
   });
+
+  it('should keep the head coach and AD roles for head coaches and ADs to change, grant or remove', async () => {
+    // The caller is an assistant; the member (and invitation) they touch is a head coach.
+    mockDb.from.mockImplementation((table: string) => {
+      const builder = query(table) as Record<string, unknown>;
+      if (table === 'team_members') {
+        const call = calls[calls.length - 1];
+        builder.maybeSingle = () =>
+          Promise.resolve({ data: { role: call.filters.some(([, col]) => col === 'id') ? 'head_coach' : 'assistant_coach' }, error: null });
+      }
+      return builder;
+    });
+    results['team_invitations.select'] = { data: { role: 'head_coach' }, error: null };
+    const refusal = 'Only head coaches and athletic directors can manage the head coach and athletic director roles.';
+    const staff = { firstName: 'A', lastName: 'B', email: '', phone: '', role: 'assistant_coach', jerseyNumber: null };
+
+    expect(await removeMemberAction(TEAM, 'm-hc')).toBe(refusal);
+    expect(await updateStaffMemberAction(TEAM, 'm-hc', 'u-hc', staff)).toBe(refusal);
+    expect(await removeInvitationAction(TEAM, 'inv-hc')).toBe(refusal);
+    expect(await updateInvitationAction(TEAM, 'inv-hc', { firstName: 'A', lastName: 'B', phone: '' })).toBe(refusal);
+
+    // Nor may an assistant grant those roles to a scorekeeper.
+    results['team_invitations.select'] = { data: { role: 'scorekeeper' }, error: null };
+    expect(await updateInvitationAction(TEAM, 'inv-1', { firstName: 'A', lastName: 'B', phone: '', role: 'athletic_director' })).toBe(refusal);
+    expect(writesTo('team_members')).toHaveLength(0);
+    expect(writesTo('team_invitations')).toHaveLength(0);
+  });
 });
 
 // The member and invitation rules live in lib/services/members (see its

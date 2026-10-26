@@ -143,6 +143,8 @@ export const teamMembersResponseSchema = z.object({
   invitations: z.array(teamInvitationSchema),
   /** The signed-in user's own membership, which they can't change or remove here. */
   ownMemberId: z.string().nullable(),
+  /** Whether they may change, remove, grant or invite the head coach and athletic director roles. */
+  canManageLeadership: z.boolean(),
 });
 export type TeamMembersResponse = z.infer<typeof teamMembersResponseSchema>;
 

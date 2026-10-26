@@ -17,11 +17,11 @@ type Results = Record<string, FakeResult | ((call: FakeCall) => FakeResult)>;
  * A team the actor coaches. `existing` is the account found for an email (or
  * none), `email` the invite email's outcome.
  */
-function setup(results: Results = {}, options: { existing?: boolean; emailError?: unknown } = {}) {
+function setup(results: Results = {}, options: { existing?: boolean; emailError?: unknown; actorRole?: string } = {}) {
   const { 'team_members.select': members, 'user_profiles.select': profiles, ...rest } = results;
   const fake = fakeDb({
     'team_members.select': (call) => {
-      if (call.filters.user_id === ACTOR) return { data: { id: 'own', role: 'head_coach' } };
+      if (call.filters.user_id === ACTOR) return { data: { id: 'own', role: options.actorRole ?? 'head_coach' } };
       return typeof members === 'function' ? members(call) : members ?? {};
     },
     'user_profiles.select': (call) => {
@@ -180,10 +180,37 @@ describe('resendInvitation and cancelInvitation', () => {
   });
 
   it('should cancel only a pending invitation on the team', async () => {
-    const { db, calls } = setup({ 'team_invitations.update': { data: [{ id: INVITATION }] } });
+    const { db, calls } = setup({ 'team_invitations.select': { data: { role: 'staff' } }, 'team_invitations.update': { data: [{ id: INVITATION }] } });
     expect(await cancelInvitation(db, ACTOR, { teamId: TEAM, invitationId: INVITATION })).toEqual({ ok: true, data: { ok: true } });
+    expect(calls.find((c) => c.table === 'team_invitations')?.filters).toEqual({ id: INVITATION, team_id: TEAM, status: 'pending' });
     expect(writes(calls, 'team_invitations')[0]).toMatchObject({ payload: { status: 'cancelled' }, filters: { id: INVITATION, team_id: TEAM, status: 'pending' } });
 
-    expect(await cancelInvitation(setup({ 'team_invitations.update': { data: [] } }).db, ACTOR, { teamId: TEAM, invitationId: INVITATION })).toMatchObject({ code: 'not_found' });
+    expect(await cancelInvitation(setup({ 'team_invitations.select': { data: null } }).db, ACTOR, { teamId: TEAM, invitationId: INVITATION })).toMatchObject({ code: 'not_found' });
+  });
+});
+
+describe('the head coach and athletic director roles', () => {
+  it('should let only head coaches and ADs invite them', async () => {
+    const assistant = setup({}, { actorRole: 'assistant_coach' });
+    expect(await inviteStaff(assistant.db, ACTOR, { teamId: TEAM, email: 'new@example.com', role: 'head_coach' })).toMatchObject({ code: 'forbidden' });
+    expect(await inviteStaff(assistant.db, ACTOR, { teamId: TEAM, role: 'athletic_director', firstName: 'Al' })).toMatchObject({ code: 'forbidden' });
+    expect(assistant.inviteUserByEmail).not.toHaveBeenCalled();
+    expect(writes(assistant.calls, 'team_invitations')).toHaveLength(0);
+
+    const ad = setup({}, { actorRole: 'athletic_director' });
+    expect(await inviteStaff(ad.db, ACTOR, { teamId: TEAM, email: 'new@example.com', role: 'head_coach' })).toMatchObject({ ok: true });
+  });
+
+  it('should not let an assistant resend or cancel a head coach invitation', async () => {
+    const resend = setup(
+      { 'team_invitations.select': { data: { team_id: TEAM, email: 'hc@example.com', role: 'head_coach', status: 'pending', invited_by: 'x' } } },
+      { actorRole: 'assistant_coach' },
+    );
+    expect(await resendInvitation(resend.db, ACTOR, { teamId: TEAM, invitationId: INVITATION })).toMatchObject({ code: 'forbidden' });
+    expect(resend.inviteUserByEmail).not.toHaveBeenCalled();
+
+    const cancel = setup({ 'team_invitations.select': { data: { role: 'athletic_director' } } }, { actorRole: 'assistant_coach' });
+    expect(await cancelInvitation(cancel.db, ACTOR, { teamId: TEAM, invitationId: INVITATION })).toMatchObject({ code: 'forbidden' });
+    expect(writes(cancel.calls, 'team_invitations')).toHaveLength(0);
   });
 });

@@ -1,7 +1,7 @@
 'use server';
 
 import { createClient } from '@supabase/supabase-js';
-import { isTeamRole } from '@baseball/shared';
+import { isHeadCoachOrAdRole, isTeamRole } from '@baseball/shared';
 import { createServerClient } from '@/lib/supabase/server';
 import { cancelTeamInvitationsForUser } from '@/lib/membership-self-heal';
 
@@ -38,6 +38,24 @@ async function getCallerRole(teamId: string): Promise<string | null> {
 
 const CAN_MANAGE = ['head_coach', 'assistant_coach', 'athletic_director'];
 
+// Only head coaches, athletic directors and platform admins (who read as
+// head_coach above) change, remove, grant or invite those two roles.
+const LEADERSHIP_REFUSAL = 'Only head coaches and athletic directors can manage the head coach and athletic director roles.';
+
+function mayTouchRoles(callerRole: string, ...roles: Array<string | null | undefined>): boolean {
+  return isHeadCoachOrAdRole(callerRole) || !roles.some((role) => isHeadCoachOrAdRole(role));
+}
+
+async function memberRole(db: ReturnType<typeof serviceClient>, teamId: string, memberId: string): Promise<string | null> {
+  const { data } = await db.from('team_members').select('role').eq('id', memberId).eq('team_id', teamId).maybeSingle();
+  return (data?.role as string | undefined) ?? null;
+}
+
+async function invitationRole(db: ReturnType<typeof serviceClient>, teamId: string, invitationId: string): Promise<string | null> {
+  const { data } = await db.from('team_invitations').select('role').eq('id', invitationId).eq('team_id', teamId).maybeSingle();
+  return (data?.role as string | undefined) ?? null;
+}
+
 async function isMemberOfTeam(
   db: ReturnType<typeof serviceClient>,
   teamId: string,
@@ -65,6 +83,7 @@ export async function removeMemberAction(
   if (!role || !CAN_MANAGE.includes(role)) return 'Not authorized.';
 
   const db = serviceClient();
+  if (!mayTouchRoles(role, await memberRole(db, teamId, memberId))) return LEADERSHIP_REFUSAL;
   const { data: removed, error } = await db
     .from('team_members')
     .delete()
@@ -89,6 +108,7 @@ export async function removeInvitationAction(
   if (!role || !CAN_MANAGE.includes(role)) return 'Not authorized.';
 
   const db = serviceClient();
+  if (!mayTouchRoles(role, await invitationRole(db, teamId, invitationId))) return LEADERSHIP_REFUSAL;
   const { error } = await db
     .from('team_invitations')
     .delete()
@@ -110,6 +130,7 @@ export async function updateStaffMemberAction(
   if (!isTeamRole(data.role)) return 'Invalid role.';
 
   const db = serviceClient();
+  if (!mayTouchRoles(callerRole, await memberRole(db, teamId, memberId), data.role)) return LEADERSHIP_REFUSAL;
 
   // Update role and jersey_number in team_members. Scoping to this team and
   // user also proves userId belongs to the team before its profile is edited.
@@ -178,6 +199,7 @@ export async function updateInvitationAction(
   if (data.role && !isTeamRole(data.role)) return 'Invalid role.';
 
   const db = serviceClient();
+  if (!mayTouchRoles(callerRole, await invitationRole(db, teamId, invitationId), data.role)) return LEADERSHIP_REFUSAL;
   const update: Record<string, string | number | null> = {
     first_name: data.firstName || null,
     last_name: data.lastName || null,

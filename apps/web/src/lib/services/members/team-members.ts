@@ -9,15 +9,17 @@ import {
 } from '@baseball/shared';
 import { cancelTeamInvitationsForUser } from '@/lib/membership-self-heal';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
-import { authorizeMemberManager } from './authorize';
+import { authorizeMemberManager, refuseLeadershipChange } from './authorize';
 
 /**
  * A team's members (the web team admin Users page), shared by its actions and
  * the mobile `/api/m/v1/teams/:teamId/members` routes: staff, parents and the
  * children they're linked to, players' app accounts, and pending invitations.
  * Member managers only (`authorizeMemberManager`). A manager doesn't change
- * or remove their own membership here, and every parent link stays within
- * the team: the parent must be on it and the child on its roster.
+ * or remove their own membership here, only head coaches, athletic directors
+ * and platform admins touch those two roles (`refuseLeadershipChange`), and
+ * every parent link stays within the team: the parent must be on it and the
+ * child on its roster.
  */
 
 const PLACEHOLDER_DOMAIN = '@placeholder.internal';
@@ -149,6 +151,7 @@ export async function loadTeamMembers(
       invitedAt: i.invited_at,
     })),
     ownMemberId: authorized.data.ownMemberId,
+    canManageLeadership: authorized.data.canManageLeadership,
   });
 }
 
@@ -186,6 +189,8 @@ export async function updateMemberRole(
   if (!authorized.ok) return authorized;
   const member = await otherMember(db, actorUserId, teamId, memberId, authorized.data.ownMemberId);
   if (!member.ok) return member;
+  const refused = refuseLeadershipChange(authorized.data.canManageLeadership, member.data.role, role);
+  if (refused) return refused;
 
   const { error } = await db.from('team_members').update({ role }).eq('id', memberId).eq('team_id', teamId);
   if (error) return failed('updateMemberRole', teamId, actorUserId, error);
@@ -206,6 +211,8 @@ export async function removeMember(
   if (!authorized.ok) return authorized;
   const member = await otherMember(db, actorUserId, teamId, memberId, authorized.data.ownMemberId);
   if (!member.ok) return member;
+  const refused = refuseLeadershipChange(authorized.data.canManageLeadership, member.data.role);
+  if (refused) return refused;
 
   const { error } = await db.from('team_members').update({ is_active: false }).eq('id', memberId).eq('team_id', teamId);
   if (error) return failed('removeMember', teamId, actorUserId, error);

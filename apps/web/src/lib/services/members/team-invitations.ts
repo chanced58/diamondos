@@ -9,7 +9,7 @@ import {
 } from '@baseball/shared';
 import { addToTeamChannels } from '@/lib/team-channels';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
-import { authorizeMemberManager } from './authorize';
+import { authorizeMemberManager, refuseLeadershipChange } from './authorize';
 
 /**
  * A team's invitations (the roster's Invite staff and Invite parent forms and
@@ -20,7 +20,9 @@ import { authorizeMemberManager } from './authorize';
  * Accepting an invitation goes by the `team_invitations` row alone (see
  * lib/auth/process-invite.ts), so every new-account invitation is saved
  * before its email goes out and put back if the email fails. An invitation
- * never changes the role of someone already active on the team.
+ * never changes the role of someone already active on the team, and only
+ * head coaches, athletic directors and platform admins invite, resend or
+ * cancel those two roles (`refuseLeadershipChange`).
  */
 
 /** Stands in for the email of someone recorded without one. */
@@ -184,6 +186,8 @@ export async function inviteStaff(db: SupabaseClient, actorUserId: string, rawIn
 
   const authorized = await authorizeMemberManager(db, actorUserId, teamId);
   if (!authorized.ok) return authorized;
+  const refused = refuseLeadershipChange(authorized.data.canManageLeadership, role);
+  if (refused) return refused;
 
   const row = { team_id: teamId, role, first_name: firstName, last_name: lastName, phone, jersey_number: jerseyNumber, invited_by: actorUserId };
   if (!email) return recordPlaceholder(db, actorUserId, row);
@@ -351,6 +355,8 @@ export async function resendInvitation(db: SupabaseClient, actorUserId: string, 
     .maybeSingle();
   if (error) return failed('resendInvitation', teamId, actorUserId, error);
   if (!invitation || invitation.status !== 'pending') return serviceError('not_found', 'Invitation not found.');
+  const refused = refuseLeadershipChange(authorized.data.canManageLeadership, invitation.role as string);
+  if (refused) return refused;
   if ((invitation.email as string).endsWith(PLACEHOLDER_DOMAIN)) {
     return serviceError('invalid', 'This person has no email to send an invite to.');
   }
@@ -377,6 +383,18 @@ export async function cancelInvitation(db: SupabaseClient, actorUserId: string, 
 
   const authorized = await authorizeMemberManager(db, actorUserId, teamId);
   if (!authorized.ok) return authorized;
+
+  const { data: invitation, error: readError } = await db
+    .from('team_invitations')
+    .select('role')
+    .eq('id', invitationId)
+    .eq('team_id', teamId)
+    .eq('status', 'pending')
+    .maybeSingle();
+  if (readError) return failed('cancelInvitation', teamId, actorUserId, readError);
+  if (!invitation) return serviceError('not_found', 'Invitation not found.');
+  const refused = refuseLeadershipChange(authorized.data.canManageLeadership, invitation.role as string);
+  if (refused) return refused;
 
   const { data, error } = await db
     .from('team_invitations')
