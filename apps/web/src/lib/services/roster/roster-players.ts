@@ -232,7 +232,8 @@ export async function updateRosterPlayer(
     .eq('id', playerId)
     .eq('team_id', teamId);
   if (error) {
-    await setActiveMembershipJersey(db, teamId, playerId, (current as PlayerRow).jersey_number);
+    const revert = await setActiveMembershipJersey(db, teamId, playerId, (current as PlayerRow).jersey_number);
+    if (revert.error) console.error(`[roster] updateRosterPlayer revert failed player=${playerId}:`, revert.error);
     return failed('updateRosterPlayer', teamId, playerId, actorUserId, error);
   }
   return serviceOk({ playerId });
@@ -293,10 +294,11 @@ export async function deactivateRosterPlayer(
   if (error) {
     const endedIds = ((ended ?? []) as Array<{ id: string }>).map((m) => m.id);
     if (endedIds.length > 0) {
-      await db
+      const { error: revertError } = await db
         .from('player_team_memberships')
         .update({ is_active: true, left_at: null, transfer_reason: null })
         .in('id', endedIds);
+      if (revertError) console.error(`[roster] deactivateRosterPlayer revert failed player=${playerId}:`, revertError);
     }
     return failed('deactivateRosterPlayer', teamId, playerId, actorUserId, error);
   }

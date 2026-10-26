@@ -103,6 +103,29 @@ describe('endInjuryFlag', () => {
     expect(update).toMatchObject({ payload: { effective_to: '2026-10-25' }, filters: { id: FLAG, player_id: PLAYER } });
   });
 
+  it('should leave a flag that already ends by then as is', async () => {
+    for (const endedOn of ['2026-10-01', '2026-10-25']) {
+      const { db, calls } = fakeDb({
+        'players.select': player,
+        'player_injury_flags.select': { data: { id: FLAG, effective_from: '2026-09-01', effective_to: endedOn } },
+      });
+      expect(await endInjuryFlag(db, 'u1', { teamId: TEAM, playerId: PLAYER, flagId: FLAG, endDate: '2026-10-25' })).toEqual({
+        ok: true,
+        data: { flagId: FLAG },
+      });
+      expect(calls.some((c) => c.op === 'update')).toBe(false);
+    }
+  });
+
+  it('should shorten a flag that ends later', async () => {
+    const { db, calls } = fakeDb({
+      'players.select': player,
+      'player_injury_flags.select': { data: { id: FLAG, effective_from: '2026-10-01', effective_to: '2026-11-30' } },
+    });
+    await endInjuryFlag(db, 'u1', { teamId: TEAM, playerId: PLAYER, flagId: FLAG, endDate: '2026-10-25' });
+    expect(calls.find((c) => c.op === 'update')?.payload).toEqual({ effective_to: '2026-10-25' });
+  });
+
   it('should not end another player’s flag or end one before it starts', async () => {
     const missing = fakeDb({ 'players.select': player });
     expect(await endInjuryFlag(missing.db, 'u1', { teamId: TEAM, playerId: PLAYER, flagId: FLAG, endDate: '2026-10-25' })).toMatchObject({

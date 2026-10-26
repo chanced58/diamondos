@@ -163,6 +163,16 @@ describe('updateRosterPlayer', () => {
     expect(writes(calls, 'players')).toHaveLength(0);
   });
 
+  it('should log a failed revert of the membership jersey', async () => {
+    const { db } = fakeDb({
+      'players.select': { data: row() },
+      'player_team_memberships.update': [{}, { error: { message: 'revert boom' } }],
+      'players.update': { error: { message: 'boom' } },
+    });
+    await updateRosterPlayer(db, 'u1', { teamId: TEAM, playerId: PLAYER, ...fields({ jerseyNumber: 12 }) });
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('updateRosterPlayer revert failed'), { message: 'revert boom' });
+  });
+
   it('should put the membership jersey back when the player write fails', async () => {
     const { db, calls } = fakeDb({ 'players.select': { data: row() }, 'players.update': { error: { message: 'boom' } } });
     expect(await updateRosterPlayer(db, 'u1', { teamId: TEAM, playerId: PLAYER, ...fields({ jerseyNumber: 12 }) })).toMatchObject({ code: 'failed' });
@@ -200,6 +210,16 @@ describe('deactivateRosterPlayer', () => {
     });
     expect(await deactivateRosterPlayer(db, 'u1', { teamId: TEAM, playerId: PLAYER })).toMatchObject({ code: 'failed' });
     expect(writes(calls, 'player_team_memberships')[1]).toMatchObject({ payload: { is_active: true, left_at: null }, filters: { id: ['m1'] } });
+  });
+
+  it('should log a failed reopen of the membership it ended', async () => {
+    const { db } = fakeDb({
+      'players.select': { data: row() },
+      'player_team_memberships.update': [{ data: [{ id: 'm1' }] }, { error: { message: 'revert boom' } }],
+      'players.update': { error: { message: 'boom' } },
+    });
+    await deactivateRosterPlayer(db, 'u1', { teamId: TEAM, playerId: PLAYER });
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('deactivateRosterPlayer revert failed'), { message: 'revert boom' });
   });
 
   it('should leave an inactive player as is', async () => {

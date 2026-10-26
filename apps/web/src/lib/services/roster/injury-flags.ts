@@ -156,15 +156,19 @@ export async function endInjuryFlag(
   // Scoped to the authorized player, so a flag id from another team's player matches nothing.
   const { data: flag, error: readError } = await db
     .from('player_injury_flags')
-    .select('id, effective_from')
+    .select('id, effective_from, effective_to')
     .eq('id', flagId)
     .eq('player_id', playerId)
     .maybeSingle();
   if (readError) return failed('endInjuryFlag', playerId, actorUserId, readError);
   if (!flag) return serviceError('not_found', 'Flag not found on this player.');
-  if (endDate < (flag as { effective_from: string }).effective_from) {
+  const current = flag as { effective_from: string; effective_to: string | null };
+  if (endDate < current.effective_from) {
     return serviceError('invalid', 'End date must be on or after the start date.');
   }
+  // Ending only ever shortens a flag: one that already ends by then is left as is,
+  // so a retried or stale request can't bring an ended flag back.
+  if (current.effective_to !== null && current.effective_to <= endDate) return serviceOk({ flagId });
 
   const { error } = await db.from('player_injury_flags').update({ effective_to: endDate }).eq('id', flagId).eq('player_id', playerId);
   if (error) return failed('endInjuryFlag', playerId, actorUserId, error);
