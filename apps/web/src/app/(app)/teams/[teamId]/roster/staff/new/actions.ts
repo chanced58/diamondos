@@ -1,26 +1,41 @@
 'use server';
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { addToTeamChannels } from '@/lib/team-channels';
 
 const STAFF_ROLES = ['head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper', 'staff'] as const;
 type StaffRole = typeof STAFF_ROLES[number];
 
-/** Look up whether an email belongs to an existing app user. Returns their profile or null. */
-export async function lookupUserByEmailAction(email: string): Promise<{
+/** Platform admins and the team's head coaches, assistants and athletic directors invite staff. */
+async function canInviteStaff(supabase: SupabaseClient, teamId: string, userId: string): Promise<boolean> {
+  const [{ data: adminProfile }, { data: membership }] = await Promise.all([
+    supabase.from('user_profiles').select('is_platform_admin').eq('id', userId).maybeSingle(),
+    supabase.from('team_members').select('role').eq('team_id', teamId).eq('user_id', userId).eq('is_active', true).maybeSingle(),
+  ]);
+  if (adminProfile?.is_platform_admin === true) return true;
+  return Boolean(membership && ['head_coach', 'assistant_coach', 'athletic_director'].includes(membership.role));
+}
+
+/**
+ * Look up whether an email belongs to an existing app user, for the staff
+ * invite form. Returns their profile or null. Only for those who can invite
+ * staff to the team: it tells whether an address has an account.
+ */
+export async function lookupUserByEmailAction(teamId: string, email: string): Promise<{
   id: string;
   firstName: string;
   lastName: string;
 } | null> {
   const authClient = createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
-  if (!user) return null;
+  if (!user || !teamId) return null;
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+  if (!(await canInviteStaff(supabase, teamId, user.id))) return null;
 
   // Try user_profiles first (fast)
   const { data: profile } = await supabase
@@ -79,14 +94,7 @@ export async function inviteStaffAction(
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  // Platform admins or team coaches can invite staff
-  const [{ data: adminProfile }, { data: membership }] = await Promise.all([
-    supabase.from('user_profiles').select('is_platform_admin').eq('id', user.id).maybeSingle(),
-    supabase.from('team_members').select('role').eq('team_id', teamId).eq('user_id', user.id).eq('is_active', true).maybeSingle(),
-  ]);
-  const isPlatformAdmin = adminProfile?.is_platform_admin === true;
-
-  if (!isPlatformAdmin && (!membership || !['head_coach', 'assistant_coach', 'athletic_director'].includes(membership.role))) {
+  if (!(await canInviteStaff(supabase, teamId, user.id))) {
     return 'Only head coaches and athletic directors can invite staff members.';
   }
 
@@ -133,6 +141,17 @@ export async function inviteStaffAction(
 
     if (targetProfile?.is_platform_admin) {
       return 'Platform administrators cannot be added to a team.';
+    }
+
+    // An invite never changes the role of someone already on the team.
+    const { data: currentMembership } = await supabase
+      .from('team_members')
+      .select('role, is_active')
+      .eq('team_id', teamId)
+      .eq('user_id', resolvedUserId)
+      .maybeSingle();
+    if (currentMembership?.is_active && currentMembership.role !== role) {
+      return 'They are already on this team with another role. Change their role from the team admin page instead.';
     }
 
     // User already has an account — add them to the team directly

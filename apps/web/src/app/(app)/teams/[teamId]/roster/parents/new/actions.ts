@@ -82,6 +82,17 @@ export async function inviteParentAction(
     .maybeSingle();
 
   if (existingProfile) {
+    // An invite never changes the role of someone already on the team.
+    const { data: currentMembership } = await supabase
+      .from('team_members')
+      .select('role, is_active')
+      .eq('team_id', teamId)
+      .eq('user_id', existingProfile.id)
+      .maybeSingle();
+    if (currentMembership?.is_active && currentMembership.role !== 'parent') {
+      return 'They are already on this team with another role. Change their role from the team admin page instead.';
+    }
+
     // User already has an account — add them to the team directly
     const { error: memberError } = await supabase
       .from('team_members')

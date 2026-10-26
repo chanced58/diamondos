@@ -134,13 +134,13 @@ export function StaffSection({
     }
     const timer = setTimeout(() => {
       startLookup(() => {
-        lookupUserByEmailAction(trimmed).then((found) => {
+        lookupUserByEmailAction(teamId, trimmed).then((found) => {
           setExistingUser(found);
         });
       });
     }, 600);
     return () => clearTimeout(timer);
-  }, [emailInput]);
+  }, [emailInput, teamId]);
 
   const handleClose = () => {
     setOpen(false);
