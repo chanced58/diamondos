@@ -8,7 +8,11 @@ function serviceClient(): SupabaseClient | null {
   return createClient(supabaseUrl, serviceRoleKey);
 }
 
-type RosterAccess = { canView: boolean; canManage: boolean };
+/** `role` is the user's active role on the team, if any. */
+export type RosterAccess ={ canView: boolean; canManage: boolean; role: string | null };
+
+/** Team staff who see every player's page without managing the roster. */
+const STAFF_VIEWER_ROLES = ['scorekeeper', 'staff'];
 
 /**
  * What a user may do with a team's roster, read with the given (service-role)
@@ -49,7 +53,7 @@ export async function getRosterAccess(db: SupabaseClient, teamId: string, userId
 
   // 1. Platform admin, 2. team coach
   if (profileResult.data?.is_platform_admin === true || isCoachRole(role ?? '')) {
-    return { canView: true, canManage: true };
+    return { canView: true, canManage: true, role };
   }
 
   // 3. League admin for a league that contains this team
@@ -64,10 +68,37 @@ export async function getRosterAccess(db: SupabaseClient, teamId: string, userId
       .limit(1)
       .maybeSingle();
 
-    if (membership) return { canView: true, canManage: true };
+    if (membership) return { canView: true, canManage: true, role };
   }
 
-  return { canView: isMember, canManage: false };
+  return { canView: isMember, canManage: false, role };
+}
+
+/** Whether roster access opens every player's page: roster managers and team staff. */
+export function seesEveryPlayer(access: RosterAccess): boolean {
+  return access.canManage || (access.role !== null && STAFF_VIEWER_ROLES.includes(access.role));
+}
+
+/**
+ * What a user may do with one player's page, which shows contact details and
+ * coaches' development notes. Roster managers and team staff see every
+ * player; a player sees their own page and a parent their linked children's.
+ * Other team members see the roster list only.
+ */
+export async function getPlayerAccess(
+  db: SupabaseClient,
+  teamId: string,
+  playerId: string,
+  userId: string,
+): Promise<RosterAccess> {
+  const access = await getRosterAccess(db, teamId, userId);
+  if (!access.canView || seesEveryPlayer(access)) return access;
+
+  const [ownResult, linkResult] = await Promise.all([
+    db.from('players').select('id').eq('id', playerId).eq('team_id', teamId).eq('user_id', userId).maybeSingle(),
+    db.from('parent_player_links').select('player_id').eq('player_id', playerId).eq('parent_user_id', userId).maybeSingle(),
+  ]);
+  return { ...access, canView: Boolean(ownResult.data || linkResult.data) };
 }
 
 /** Whether a user can manage the roster for a given team (see `getRosterAccess`). */
