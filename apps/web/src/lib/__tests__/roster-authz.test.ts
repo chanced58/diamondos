@@ -12,7 +12,10 @@ import {
   updateParentMemberAction,
   updateInvitationAction,
 } from '../../app/(app)/teams/[teamId]/roster/member-actions';
-import { updateMemberRoleAction } from '../../app/(app)/teams/[teamId]/admin/users/actions';
+import {
+  removeMemberAction as removeTeamMemberAction,
+  updateMemberRoleAction,
+} from '../../app/(app)/teams/[teamId]/admin/users/actions';
 import { startDmAction } from '../../app/(app)/messages/dm/new/actions';
 
 type Call = { table: string; op: string; filters: [string, string, unknown][]; payload?: unknown };
@@ -43,7 +46,9 @@ function query(table: string) {
 }
 
 const mockGetUser = jest.fn();
-const mockDb = { from: jest.fn(query), auth: { admin: { inviteUserByEmail: jest.fn() } } };
+const mockGetUserById = jest.fn();
+const mockDb = { from: jest.fn(query), auth: { admin: { inviteUserByEmail: jest.fn(), getUserById: mockGetUserById } } };
+// The roster player actions go through lib/services/roster, which asks getRosterAccess.
 const mockCanManageRoster = jest.fn();
 
 jest.mock('@supabase/supabase-js', () => ({ createClient: () => mockDb }));
@@ -51,7 +56,10 @@ jest.mock('@/lib/supabase/server', () => ({
   createServerClient: () => ({ auth: { getUser: mockGetUser } }),
 }));
 jest.mock('@/lib/roster-access', () => ({
-  canManageRoster: (...args: unknown[]) => mockCanManageRoster(...args),
+  getRosterAccess: async (_db: unknown, teamId: string, userId: string) => {
+    const canManage = Boolean(await mockCanManageRoster(teamId, userId));
+    return { canView: true, canManage, role: canManage ? 'head_coach' : 'parent' };
+  },
 }));
 jest.mock('next/cache', () => ({ revalidatePath: jest.fn() }));
 const mockStartDirectMessage = jest.fn();
@@ -72,9 +80,13 @@ function hasFilter(call: Call, col: string, val: unknown): boolean {
   return call.filters.some(([, c, v]) => c === col && v === val);
 }
 
+// The roster services validate ids, so the player actions use real-looking ones.
+const ROSTER_TEAM = '44444444-4444-4444-8444-444444444444';
+const ROSTER_PLAYER = '55555555-5555-4555-8555-555555555555';
+
 function playerForm(extra: Record<string, string> = {}): FormData {
   const form = new FormData();
-  for (const [k, v] of Object.entries({ teamId: TEAM, firstName: 'Sam', lastName: 'Lee', ...extra })) {
+  for (const [k, v] of Object.entries({ teamId: ROSTER_TEAM, firstName: 'Sam', lastName: 'Lee', ...extra })) {
     form.set(k, v);
   }
   return form;
@@ -95,21 +107,21 @@ afterEach(() => {
 describe('roster player actions', () => {
   it('should refuse to add a player for someone who cannot manage the roster', async () => {
     mockCanManageRoster.mockResolvedValue(false);
-    expect(await addPlayerAction(null, playerForm())).toContain('permission');
-    expect(mockCanManageRoster).toHaveBeenCalledWith(TEAM, 'caller');
+    expect(await addPlayerAction(null, playerForm())).toBe('Only coaches can manage the roster.');
+    expect(mockCanManageRoster).toHaveBeenCalledWith(ROSTER_TEAM, 'caller');
     expect(writesTo('players')).toHaveLength(0);
   });
 
   it('should add the player when the caller can manage the roster', async () => {
     mockCanManageRoster.mockResolvedValue(true);
-    results['players.insert'] = { data: { id: 'p1' }, error: null };
-    await expect(addPlayerAction(null, playerForm())).rejects.toThrow(`/teams/${TEAM}/roster`);
+    results['players.insert'] = { data: { id: ROSTER_PLAYER }, error: null };
+    await expect(addPlayerAction(null, playerForm())).rejects.toThrow(`/teams/${ROSTER_TEAM}/roster`);
     expect(writesTo('players')).toHaveLength(1);
   });
 
   it('should refuse to edit a player for someone who cannot manage the roster', async () => {
     mockCanManageRoster.mockResolvedValue(false);
-    expect(await updatePlayerAction(null, playerForm({ playerId: 'p1' }))).toContain('permission');
+    expect(await updatePlayerAction(null, playerForm({ playerId: ROSTER_PLAYER }))).toBe('Only coaches can manage the roster.');
     expect(writesTo('players')).toHaveLength(0);
   });
 });
@@ -126,6 +138,18 @@ describe('roster member actions', () => {
     const [del] = writesTo('team_members');
     expect(del.op).toBe('delete');
     expect(hasFilter(del, 'team_id', TEAM)).toBe(true);
+  });
+
+  it('should cancel the removed member\'s invitations so self-heal cannot bring them back', async () => {
+    results['team_members.delete'] = { data: [{ user_id: 'u-removed' }], error: null };
+    mockGetUserById.mockResolvedValue({ data: { user: { email: 'Gone@Example.com' } }, error: null });
+    expect(await removeMemberAction(TEAM, 'm-removed')).toBeNull();
+
+    expect(mockGetUserById).toHaveBeenCalledWith('u-removed');
+    const [cancel] = writesTo('team_invitations');
+    expect(cancel.payload).toEqual({ status: 'cancelled' });
+    expect(hasFilter(cancel, 'team_id', TEAM)).toBe(true);
+    expect(hasFilter(cancel, 'email', 'gone@example.com')).toBe(true);
   });
 
   it('should scope invitation removal and edits to the caller\'s team', async () => {
@@ -190,6 +214,21 @@ describe('team admin role changes', () => {
     form.set('role', 'superuser');
     expect(await updateMemberRoleAction(null, form)).toBe('Invalid role.');
     expect(writesTo('team_members')).toHaveLength(0);
+  });
+
+  it('should cancel a deactivated member\'s invitations to the team', async () => {
+    results['user_profiles.select'] = { data: { is_platform_admin: true }, error: null };
+    results['team_members.update'] = { data: [{ user_id: 'u-removed' }], error: null };
+    mockGetUserById.mockResolvedValue({ data: { user: { email: 'gone@example.com' } }, error: null });
+    const form = new FormData();
+    form.set('teamId', TEAM);
+    form.set('memberId', 'm-removed');
+    expect(await removeTeamMemberAction(null, form)).toBeNull();
+
+    const [cancel] = writesTo('team_invitations');
+    expect(cancel.payload).toEqual({ status: 'cancelled' });
+    expect(hasFilter(cancel, 'team_id', TEAM)).toBe(true);
+    expect(hasFilter(cancel, 'email', 'gone@example.com')).toBe(true);
   });
 });
 

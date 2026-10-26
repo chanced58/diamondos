@@ -3,6 +3,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { isTeamRole } from '@baseball/shared';
 import { createServerClient } from '@/lib/supabase/server';
+import { cancelTeamInvitationsForUser } from '@/lib/membership-self-heal';
 
 function serviceClient() {
   return createClient(
@@ -64,12 +65,18 @@ export async function removeMemberAction(
   if (!role || !CAN_MANAGE.includes(role)) return 'Not authorized.';
 
   const db = serviceClient();
-  const { error } = await db
+  const { data: removed, error } = await db
     .from('team_members')
     .delete()
     .eq('id', memberId)
-    .eq('team_id', teamId);
-  return error ? error.message : null;
+    .eq('team_id', teamId)
+    .select('user_id');
+  if (error) return error.message;
+
+  for (const row of (removed ?? []) as Array<{ user_id: string }>) {
+    await cancelTeamInvitationsForUser(db, teamId, row.user_id);
+  }
+  return null;
 }
 
 // ── Remove a pending invitation (team_invitations row) ──────────────────────
