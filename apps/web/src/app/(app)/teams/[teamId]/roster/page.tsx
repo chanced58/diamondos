@@ -174,12 +174,15 @@ export default async function RosterPage({ params }: { params: { teamId: string 
 
   // Every read below uses the service role, so this is the only gate. An
   // invitee whose membership the accept flow missed first heals their own
-  // invitation (and only theirs), then is checked again.
+  // pending invitation (and only theirs), then is checked again. An accepted
+  // one doesn't count here: removing a member leaves it behind.
   const promotedIds = new Set<string>();
   let rosterAccess = await getRosterAccess(db, params.teamId, user.id);
   if (!rosterAccess.canView) {
     const email = user.email?.toLowerCase();
-    const ownInvites = email ? (healableInvites ?? []).filter((inv) => inv.email.toLowerCase() === email) : [];
+    const ownInvites = email
+      ? (healableInvites ?? []).filter((inv) => inv.status === 'pending' && inv.email.toLowerCase() === email)
+      : [];
     if (ownInvites.length === 0) notFound();
     for (const id of await healPendingInvitations(db, params.teamId, ownInvites)) promotedIds.add(id);
     rosterAccess = await getRosterAccess(db, params.teamId, user.id);

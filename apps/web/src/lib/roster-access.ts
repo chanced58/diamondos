@@ -94,9 +94,16 @@ export async function getPlayerAccess(
   const access = await getRosterAccess(db, teamId, userId);
   if (!access.canView || seesEveryPlayer(access)) return access;
 
+  // Both scoped to the team, so a link to a child on another team opens nothing here.
   const [ownResult, linkResult] = await Promise.all([
     db.from('players').select('id').eq('id', playerId).eq('team_id', teamId).eq('user_id', userId).maybeSingle(),
-    db.from('parent_player_links').select('player_id').eq('player_id', playerId).eq('parent_user_id', userId).maybeSingle(),
+    db
+      .from('parent_player_links')
+      .select('player_id, players!inner(team_id)')
+      .eq('player_id', playerId)
+      .eq('parent_user_id', userId)
+      .eq('players.team_id', teamId)
+      .maybeSingle(),
   ]);
   return { ...access, canView: Boolean(ownResult.data || linkResult.data) };
 }

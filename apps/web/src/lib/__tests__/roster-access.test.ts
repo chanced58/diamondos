@@ -49,7 +49,13 @@ describe('getPlayerAccess', () => {
     await expect(getPlayerAccess(db, 't1', 'p1', 'u1')).resolves.toMatchObject({ canView: true, canManage: false });
     expect(calls.find((c) => c.table === 'players')?.filters).toEqual({ id: 'p1', team_id: 't1', user_id: 'u1' });
 
-    await expect(playerAccess({ ...member('parent'), 'parent_player_links.select': { data: { player_id: 'p1' } } })).resolves.toMatchObject({ canView: true });
+    const linked = fakeDb({ ...member('parent'), 'parent_player_links.select': { data: { player_id: 'p1' } } });
+    await expect(getPlayerAccess(linked.db, 't1', 'p1', 'u1')).resolves.toMatchObject({ canView: true });
+    expect(linked.calls.find((c) => c.table === 'parent_player_links')?.filters).toEqual({
+      player_id: 'p1',
+      parent_user_id: 'u1',
+      'players.team_id': 't1',
+    });
     await expect(playerAccess(member('parent'))).resolves.toMatchObject({ canView: false });
     await expect(playerAccess(member('player'))).resolves.toMatchObject({ canView: false });
   });
