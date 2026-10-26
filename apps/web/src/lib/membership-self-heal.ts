@@ -148,6 +148,31 @@ export async function ensureChannelMembership(
   }
 }
 
+/**
+ * Cancel a removed member's open invitations to a team. The repairs above (and
+ * the roster page's) rebuild a membership from a pending or accepted
+ * invitation, so one left behind would bring the member straight back.
+ * Invitation emails are stored lowercased.
+ */
+export async function cancelTeamInvitationsForUser(db: SupabaseClient, teamId: string, userId: string): Promise<void> {
+  const { data: authData, error: authError } = await db.auth.admin.getUserById(userId);
+  if (authError) console.warn(`[membership-self-heal] auth lookup failed user=${userId}:`, authError);
+  let email = authData?.user?.email ?? null;
+  if (!email) {
+    const { data: profile } = await db.from('user_profiles').select('email').eq('id', userId).maybeSingle();
+    email = (profile?.email as string | null | undefined) ?? null;
+  }
+  if (!email) return;
+
+  const { error } = await db
+    .from('team_invitations')
+    .update({ status: 'cancelled' })
+    .eq('team_id', teamId)
+    .eq('email', email.toLowerCase())
+    .in('status', ['pending', 'accepted']);
+  if (error) console.error(`[membership-self-heal] invitation cancel failed team=${teamId} user=${userId}:`, error);
+}
+
 function toTeamSummary(team: TeamSummary): TeamSummary {
   return {
     id: team.id,

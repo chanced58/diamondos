@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { isTeamRole } from '@baseball/shared';
 import { createServerClient } from '@/lib/supabase/server';
+import { cancelTeamInvitationsForUser } from '@/lib/membership-self-heal';
 
 const ROSTER_ADMIN_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'] as const;
 
@@ -77,13 +78,18 @@ export async function removeMemberAction(
 
   const memberId = formData.get('memberId') as string;
 
-  const { error } = await supabase
+  const { data: removed, error } = await supabase
     .from('team_members')
     .update({ is_active: false })
     .eq('id', memberId)
-    .eq('team_id', teamId);
+    .eq('team_id', teamId)
+    .select('user_id');
 
   if (error) return `Failed to remove member: ${error.message}`;
+
+  for (const row of (removed ?? []) as Array<{ user_id: string }>) {
+    await cancelTeamInvitationsForUser(supabase, teamId, row.user_id);
+  }
 
   revalidatePath(`/teams/${teamId}/admin/users`);
   return null;

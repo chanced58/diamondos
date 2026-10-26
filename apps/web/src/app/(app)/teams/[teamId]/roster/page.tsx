@@ -3,7 +3,9 @@ import { Metadata } from 'next';
 import Link from 'next/link'; // kept for the Players section and admin link
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { notFound } from 'next/navigation';
 import { getUserAccess } from '@/lib/user-access';
+import { getRosterAccess, seesEveryPlayer } from '@/lib/roster-access';
 import { addToTeamChannels } from '@/lib/team-channels';
 import {
   CURRICULUM_VERSION,
@@ -170,9 +172,26 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     console.error('[Roster] invitations query failed:', pendingErr.message);
   }
 
+  // Every read below uses the service role, so this is the only gate. An
+  // invitee whose membership the accept flow missed first heals their own
+  // pending invitation (and only theirs), then is checked again. An accepted
+  // one doesn't count here: removing a member leaves it behind.
+  const promotedIds = new Set<string>();
+  let rosterAccess = await getRosterAccess(db, params.teamId, user.id);
+  if (!rosterAccess.canView) {
+    const email = user.email?.toLowerCase();
+    const ownInvites = email
+      ? (healableInvites ?? []).filter((inv) => inv.status === 'pending' && inv.email.toLowerCase() === email)
+      : [];
+    if (ownInvites.length === 0) notFound();
+    for (const id of await healPendingInvitations(db, params.teamId, ownInvites)) promotedIds.add(id);
+    rosterAccess = await getRosterAccess(db, params.teamId, user.id);
+    if (!rosterAccess.canView) notFound();
+  }
+
   // Self-heal: promote pending invitations AND fix accepted invitations
   // that are missing their team_members rows
-  const promotedIds = await healPendingInvitations(db, params.teamId, healableInvites ?? []);
+  for (const id of await healPendingInvitations(db, params.teamId, healableInvites ?? [])) promotedIds.add(id);
 
   // Now fetch the rest of the data (team_members will include newly healed members)
   const [playersResult, disabledPlayersResult, seasonResult, membershipResult, staffMembersResult, parentMembersResult] = await Promise.all([
@@ -227,6 +246,15 @@ export default async function RosterPage({ params }: { params: { teamId: string 
   }
 
   const players = playersResult.data ?? [];
+
+  // Names link to the player pages this viewer can open (see getPlayerAccess).
+  const linkedPlayerIds = new Set<string>();
+  if (!seesEveryPlayer(rosterAccess)) {
+    const { data: links } = await db.from('parent_player_links').select('player_id').eq('parent_user_id', user.id);
+    for (const link of links ?? []) linkedPlayerIds.add(link.player_id as string);
+  }
+  const canOpenPlayer = (player: { id: string; user_id: string | null }) =>
+    seesEveryPlayer(rosterAccess) || player.user_id === user.id || linkedPlayerIds.has(player.id);
   const disabledPlayers = (disabledPlayersResult.data ?? []).map((p) => ({
     id: p.id as string,
     firstName: p.first_name as string,
@@ -482,12 +510,18 @@ export default async function RosterPage({ params }: { params: { teamId: string 
                       </td>
                       <td className="px-4 py-3 font-medium text-gray-900">
                         <div className="flex items-center gap-2">
-                          <Link
-                            href={`/teams/${params.teamId}/roster/${player.id}`}
-                            className="hover:text-brand-700 transition-colors"
-                          >
-                            {player.last_name}, {player.first_name}
-                          </Link>
+                          {canOpenPlayer(player) ? (
+                            <Link
+                              href={`/teams/${params.teamId}/roster/${player.id}`}
+                              className="hover:text-brand-700 transition-colors"
+                            >
+                              {player.last_name}, {player.first_name}
+                            </Link>
+                          ) : (
+                            <span>
+                              {player.last_name}, {player.first_name}
+                            </span>
+                          )}
                           {player.email && pendingPlayerEmails.has(player.email) ? (
                             <span className="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 px-1.5 py-0.5 rounded-full font-normal">
                               Invite pending
