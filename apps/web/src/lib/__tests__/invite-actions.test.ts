@@ -1,0 +1,168 @@
+/**
+ * The staff and parent invite actions write with the service role: the email
+ * lookup is for those who can invite, and an invite never changes the role of
+ * someone already on the team.
+ */
+import { inviteStaffAction, lookupUserByEmailAction } from '../../app/(app)/teams/[teamId]/roster/staff/new/actions';
+import { inviteParentAction } from '../../app/(app)/teams/[teamId]/roster/parents/new/actions';
+import { fakeDb, type FakeCall } from '../services/__tests__/fake-db';
+
+const TEAM = '11111111-1111-4111-8111-111111111111';
+const CALLER = 'caller';
+const TARGET = 'target';
+
+let mockDb: ReturnType<typeof fakeDb>;
+const mockGetUser = jest.fn();
+jest.mock('@supabase/supabase-js', () => ({ createClient: () => mockDb.db }));
+jest.mock('@/lib/supabase/server', () => ({ createServerClient: () => ({ auth: { getUser: mockGetUser } }) }));
+jest.mock('@/lib/team-channels', () => ({ addToTeamChannels: jest.fn() }));
+
+/** The caller's role on the team, and the target's current membership (if any). */
+function setup(callerRole: string | null, targetMembership: { role: string; is_active: boolean } | null = null) {
+  mockDb = fakeDb({
+    'user_profiles.select': (call: FakeCall) =>
+      call.filters.email ? { data: { id: TARGET, first_name: 'Pat', last_name: 'Doe' } } : { data: { is_platform_admin: false } },
+    'team_members.select': (call: FakeCall) =>
+      call.filters.user_id === CALLER ? { data: callerRole ? { role: callerRole } : null } : { data: targetMembership },
+  });
+  return mockDb;
+}
+
+const form = (fields: Record<string, string | string[]>) => {
+  const data = new FormData();
+  for (const [key, value] of Object.entries(fields)) {
+    for (const v of Array.isArray(value) ? value : [value]) data.append(key, v);
+  }
+  return data;
+};
+const memberWrites = () => mockDb.calls.filter((c) => c.table === 'team_members' && c.op !== 'select');
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockGetUser.mockResolvedValue({ data: { user: { id: CALLER } } });
+});
+
+describe('lookupUserByEmailAction', () => {
+  it('should tell nothing to someone who can’t invite staff to the team', async () => {
+    setup('parent');
+    expect(await lookupUserByEmailAction(TEAM, 'pat@example.com')).toBeNull();
+    expect(mockDb.calls.some((c) => c.table === 'user_profiles' && c.filters.email)).toBe(false);
+  });
+
+  it('should find an existing account for a coach', async () => {
+    setup('assistant_coach');
+    expect(await lookupUserByEmailAction(TEAM, ' Pat@Example.com ')).toEqual({ id: TARGET, firstName: 'Pat', lastName: 'Doe' });
+  });
+});
+
+describe('inviteStaffAction', () => {
+  it('should not change the role of someone already on the team', async () => {
+    setup('assistant_coach', { role: 'head_coach', is_active: true });
+    const result = await inviteStaffAction(null, form({ teamId: TEAM, email: 'pat@example.com', role: 'staff' }));
+    expect(result).toContain('already on this team');
+    expect(memberWrites()).toHaveLength(0);
+  });
+
+  it('should refuse when the current membership can’t be read', async () => {
+    mockDb = fakeDb({
+      'user_profiles.select': (call: FakeCall) =>
+        call.filters.email ? { data: { id: TARGET, first_name: 'Pat', last_name: 'Doe' } } : { data: { is_platform_admin: false } },
+      'team_members.select': (call: FakeCall) =>
+        call.filters.user_id === CALLER ? { data: { role: 'head_coach' } } : { error: { message: 'boom' } },
+    });
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(await inviteStaffAction(null, form({ teamId: TEAM, email: 'pat@example.com', role: 'staff' }))).toBe(
+      'Could not check their current membership. Please try again.',
+    );
+    expect(memberWrites()).toHaveLength(0);
+  });
+
+  it('should add an existing account that isn’t on the team', async () => {
+    setup('head_coach', null);
+    expect(await inviteStaffAction(null, form({ teamId: TEAM, email: 'pat@example.com', role: 'scorekeeper' }))).toBe('added');
+    expect(memberWrites()[0].payload).toMatchObject({ team_id: TEAM, user_id: TARGET, role: 'scorekeeper', is_active: true });
+  });
+});
+
+describe('inviteParentAction', () => {
+  it('should not turn a coach on the team into a parent', async () => {
+    mockDb = fakeDb({
+      'team_members.select': (call: FakeCall) =>
+        call.filters.user_id === CALLER ? { data: { role: 'assistant_coach' } } : { data: { role: 'head_coach', is_active: true } },
+      'players.select': { data: [{ id: 'p1' }] },
+      'user_profiles.select': { data: { id: TARGET } },
+    });
+    const result = await inviteParentAction(null, form({ teamId: TEAM, email: 'pat@example.com', playerIds: ['p1'] }));
+    expect(result).toContain('already on this team');
+    expect(memberWrites()).toHaveLength(0);
+  });
+
+  it('should record the chosen children on a new parent’s invitation', async () => {
+    mockDb = fakeDb({
+      'team_members.select': { data: { role: 'head_coach' } },
+      'players.select': { data: [{ id: 'p1' }, { id: 'p2' }] },
+      'user_profiles.select': { data: null },
+    });
+    const inviteUserByEmail = jest.fn().mockResolvedValue({ data: {}, error: null });
+    Object.assign(mockDb.db, { auth: { admin: { inviteUserByEmail } } });
+
+    expect(await inviteParentAction(null, form({ teamId: TEAM, email: 'pat@example.com', playerIds: ['p1'] }))).toBe('invited');
+    const invitation = mockDb.calls.find((c) => c.table === 'team_invitations' && c.op === 'upsert');
+    expect(invitation?.payload).toMatchObject({ team_id: TEAM, email: 'pat@example.com', role: 'parent', status: 'pending', player_ids: ['p1'] });
+  });
+
+  it('should save the invitation before the email, and take a new one back when the email fails', async () => {
+    mockDb = fakeDb({
+      'team_members.select': { data: { role: 'head_coach' } },
+      'players.select': { data: [{ id: 'p1' }] },
+      'user_profiles.select': { data: null },
+    });
+    const order: string[] = [];
+    const inviteUserByEmail = jest.fn(async () => {
+      order.push('email');
+      return { data: {}, error: { message: 'smtp down' } };
+    });
+    Object.assign(mockDb.db, { auth: { admin: { inviteUserByEmail } } });
+    const from = mockDb.db.from.bind(mockDb.db);
+    Object.assign(mockDb.db, { from: (table: string) => (order.push(table), from(table)) });
+
+    expect(await inviteParentAction(null, form({ teamId: TEAM, email: 'pat@example.com', playerIds: ['p1'] }))).toBe('Failed to send invite: smtp down');
+    const invitationWrites = mockDb.calls.filter((c) => c.table === 'team_invitations' && c.op !== 'select');
+    expect(invitationWrites.map((c) => c.op)).toEqual(['upsert', 'delete']);
+    expect(invitationWrites[1].filters).toEqual({ team_id: TEAM, email: 'pat@example.com' });
+    expect(order.lastIndexOf('email')).toBeGreaterThan(order.indexOf('team_invitations'));
+  });
+
+  it('should put an earlier invitation back as it was when the email fails', async () => {
+    const earlier = {
+      id: 'inv0', first_name: 'Pat', last_name: 'Doe', phone: null, role: 'parent', player_ids: ['p9'],
+      invited_by: 'coach0', invited_at: '2026-10-01T00:00:00Z', status: 'pending', accepted_at: null,
+    };
+    mockDb = fakeDb({
+      'team_members.select': { data: { role: 'head_coach' } },
+      'players.select': { data: [{ id: 'p1' }] },
+      'user_profiles.select': { data: null },
+      'team_invitations.select': { data: earlier },
+    });
+    Object.assign(mockDb.db, { auth: { admin: { inviteUserByEmail: jest.fn().mockResolvedValue({ data: {}, error: { message: 'smtp down' } }) } } });
+
+    await inviteParentAction(null, form({ teamId: TEAM, email: 'pat@example.com', playerIds: ['p1'] }));
+    const restore = mockDb.calls.find((c) => c.table === 'team_invitations' && c.op === 'update');
+    expect(restore?.filters).toEqual({ id: 'inv0' });
+    expect(restore?.payload).toMatchObject({ player_ids: ['p9'], invited_by: 'coach0', status: 'pending' });
+  });
+
+  it('should refuse when the current membership can’t be read', async () => {
+    mockDb = fakeDb({
+      'team_members.select': (call: FakeCall) =>
+        call.filters.user_id === CALLER ? { data: { role: 'head_coach' } } : { error: { message: 'boom' } },
+      'players.select': { data: [{ id: 'p1' }] },
+      'user_profiles.select': { data: { id: TARGET } },
+    });
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(await inviteParentAction(null, form({ teamId: TEAM, email: 'pat@example.com', playerIds: ['p1'] }))).toBe(
+      'Could not check their current membership. Please try again.',
+    );
+    expect(memberWrites()).toHaveLength(0);
+  });
+});

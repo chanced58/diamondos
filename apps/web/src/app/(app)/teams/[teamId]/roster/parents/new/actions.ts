@@ -68,6 +68,7 @@ export async function inviteParentAction(
       last_name: lastName,
       phone,
       role: 'parent',
+      player_ids: linkedPlayerIds,
       invited_by: user.id,
       status: 'pending',
     });
@@ -82,6 +83,21 @@ export async function inviteParentAction(
     .maybeSingle();
 
   if (existingProfile) {
+    // An invite never changes the role of someone already on the team.
+    const { data: currentMembership, error: membershipError } = await supabase
+      .from('team_members')
+      .select('role, is_active')
+      .eq('team_id', teamId)
+      .eq('user_id', existingProfile.id)
+      .maybeSingle();
+    if (membershipError) {
+      console.error(`[invite-parent] membership lookup failed team=${teamId}:`, membershipError.message);
+      return 'Could not check their current membership. Please try again.';
+    }
+    if (currentMembership?.is_active && currentMembership.role !== 'parent') {
+      return 'They are already on this team with another role. Change their role from the team admin page instead.';
+    }
+
     // User already has an account — add them to the team directly
     const { error: memberError } = await supabase
       .from('team_members')
@@ -109,6 +125,7 @@ export async function inviteParentAction(
         last_name: lastName,
         phone,
         role: 'parent',
+        player_ids: linkedPlayerIds,
         invited_by: user.id,
         status: 'accepted',
         accepted_at: new Date().toISOString(),
@@ -119,17 +136,20 @@ export async function inviteParentAction(
     return 'added';
   }
 
-  // New user — send magic-link invite; pass selected player IDs in the redirectTo URL
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? 'http://localhost:3000';
-  const playersParam = linkedPlayerIds.length > 0 ? `&players=${linkedPlayerIds.join(',')}` : '';
-  const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
-    data: { invited_to_team: teamId, invited_role: 'parent' },
-    redirectTo: `${appUrl}/auth/callback?team=${teamId}&role=parent${playersParam}`,
-  });
+  // New user. The invitation, with the children accepting it links the parent
+  // to, is saved before the email goes out: acceptance requires it.
+  const { data: previous, error: previousError } = await supabase
+    .from('team_invitations')
+    .select('id, first_name, last_name, phone, role, player_ids, invited_by, invited_at, status, accepted_at')
+    .eq('team_id', teamId)
+    .eq('email', email)
+    .maybeSingle();
+  if (previousError) {
+    console.error(`[invite-parent] invitation lookup failed team=${teamId}:`, previousError.message);
+    return 'Could not save the invitation. Please try again.';
+  }
 
-  if (inviteError) return `Failed to send invite: ${inviteError.message}`;
-
-  await supabase.from('team_invitations').upsert(
+  const { error: recordError } = await supabase.from('team_invitations').upsert(
     {
       team_id: teamId,
       email,
@@ -137,11 +157,46 @@ export async function inviteParentAction(
       last_name: lastName,
       phone,
       role: 'parent',
+      player_ids: linkedPlayerIds,
       invited_by: user.id,
       status: 'pending',
     },
     { onConflict: 'team_id,email' },
   );
+  if (recordError) {
+    console.error(`[invite-parent] invitation record failed team=${teamId}:`, recordError.message);
+    return 'Could not save the invitation. Please try again.';
+  }
+
+  // Pass selected player IDs in the redirectTo URL too (older invitations read them from there)
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? 'http://localhost:3000';
+  const playersParam = linkedPlayerIds.length > 0 ? `&players=${linkedPlayerIds.join(',')}` : '';
+  const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
+    data: { invited_to_team: teamId, invited_role: 'parent' },
+    redirectTo: `${appUrl}/auth/callback?team=${teamId}&role=parent${playersParam}`,
+  });
+
+  if (inviteError) {
+    // No email went out: put the invitation back as it was.
+    const { error: undoError } = previous
+      ? await supabase
+          .from('team_invitations')
+          .update({
+            first_name: previous.first_name,
+            last_name: previous.last_name,
+            phone: previous.phone,
+            role: previous.role,
+            player_ids: previous.player_ids,
+            invited_by: previous.invited_by,
+            invited_at: previous.invited_at,
+            status: previous.status,
+            accepted_at: previous.accepted_at,
+          })
+          .eq('id', previous.id)
+      : await supabase.from('team_invitations').delete().eq('team_id', teamId).eq('email', email);
+    if (undoError) console.error(`[invite-parent] invitation undo failed team=${teamId}:`, undoError.message);
+    return `Failed to send invite: ${inviteError.message}`;
+  }
 
   return 'invited';
 }

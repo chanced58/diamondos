@@ -4449,6 +4449,7 @@ export type Database = {
           jersey_number: number | null
           last_name: string | null
           phone: string | null
+          player_ids: string[] | null
           role: Database["public"]["Enums"]["team_role"]
           status: string
           team_id: string
@@ -4463,6 +4464,7 @@ export type Database = {
           jersey_number?: number | null
           last_name?: string | null
           phone?: string | null
+          player_ids?: string[] | null
           role: Database["public"]["Enums"]["team_role"]
           status?: string
           team_id: string
@@ -4477,6 +4479,7 @@ export type Database = {
           jersey_number?: number | null
           last_name?: string | null
           phone?: string | null
+          player_ids?: string[] | null
           role?: Database["public"]["Enums"]["team_role"]
           status?: string
           team_id?: string
