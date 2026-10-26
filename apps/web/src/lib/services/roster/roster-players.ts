@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   createRosterPlayerInputSchema,
   deactivateRosterPlayerInputSchema,
+  isHeadCoachOrAdRole,
   reactivateRosterPlayerInputSchema,
   rosterPlayerIdInputSchema,
   updateRosterPlayerInputSchema,
@@ -11,7 +12,7 @@ import {
   type RosterPlayerResponse,
   type RosterPlayerWriteResponse,
 } from '@baseball/shared';
-import { getPlayerAccess, getRosterAccess } from '@/lib/roster-access';
+import { getPlayerAccess, getRosterAccess, type RosterAccess } from '@/lib/roster-access';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import { invitePlayerToApp } from '../members/team-invitations';
 
@@ -94,9 +95,9 @@ function toColumns(fields: RosterPlayerFields) {
 }
 
 /** Roster managers only; a viewer who can't manage is refused, anyone else learns nothing. */
-async function authorizeManager(db: SupabaseClient, actorUserId: string, teamId: string): Promise<ServiceResult<null>> {
+async function authorizeManager(db: SupabaseClient, actorUserId: string, teamId: string): Promise<ServiceResult<RosterAccess>> {
   const access = await getRosterAccess(db, teamId, actorUserId);
-  if (access.canManage) return serviceOk(null);
+  if (access.canManage) return serviceOk(access);
   if (access.canView) return serviceError('forbidden', 'Only coaches can manage the roster.');
   return serviceError('not_found', 'Team not found.');
 }
@@ -165,7 +166,8 @@ export async function createRosterPlayer(
     return failed('createRosterPlayer', teamId, playerId, actorUserId, membershipError);
   }
 
-  const invited = await invitePlayer(db, actorUserId, teamId, playerId, fields);
+  // Only a head coach or AD may replace an open head coach or AD invitation at that address.
+  const invited = await invitePlayer(db, actorUserId, teamId, playerId, fields, isHeadCoachOrAdRole(authorized.data.role));
   return serviceOk({ playerId, invited });
 }
 
@@ -180,9 +182,10 @@ async function invitePlayer(
   teamId: string,
   playerId: string,
   fields: RosterPlayerFields,
+  canManageLeadership: boolean,
 ): Promise<boolean> {
   if (!fields.email) return false;
-  const result = await invitePlayerToApp(db, actorUserId, teamId, playerId, fields.email);
+  const result = await invitePlayerToApp(db, actorUserId, teamId, playerId, fields.email, canManageLeadership);
   if (!result.ok) console.error(`[roster] player invite failed team=${teamId} player=${playerId}:`, result.error);
   return result.ok;
 }

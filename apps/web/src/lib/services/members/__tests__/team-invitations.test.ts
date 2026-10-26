@@ -201,6 +201,29 @@ describe('the head coach and athletic director roles', () => {
     expect(await inviteStaff(ad.db, ACTOR, { teamId: TEAM, email: 'new@example.com', role: 'head_coach' })).toMatchObject({ ok: true });
   });
 
+  it('should not let an assistant replace an open head coach invitation by inviting its address', async () => {
+    const open = { 'team_invitations.select': { data: { role: 'head_coach' } } };
+    const staff = setup(open, { actorRole: 'assistant_coach' });
+    expect(await inviteStaff(staff.db, ACTOR, { teamId: TEAM, email: 'hc@example.com', role: 'scorekeeper' })).toMatchObject({ code: 'forbidden' });
+    expect(staff.calls.find((c) => c.table === 'team_invitations')?.filters).toMatchObject({ team_id: TEAM, email: 'hc@example.com' });
+
+    const parent = setup({ ...open, 'players.select': { data: [{ id: CHILD }] } }, { actorRole: 'assistant_coach' });
+    expect(await inviteParent(parent.db, ACTOR, { teamId: TEAM, email: 'hc@example.com', playerIds: [CHILD] })).toMatchObject({ code: 'forbidden' });
+
+    const player = setup({ ...open, 'players.select': { data: { id: PLAYER, first_name: 'Sam', last_name: 'Lee', email: null, user_id: null } } }, { actorRole: 'assistant_coach' });
+    expect(await invitePlayer(player.db, ACTOR, { teamId: TEAM, playerId: PLAYER, email: 'hc@example.com' })).toMatchObject({ code: 'forbidden' });
+
+    for (const { calls, inviteUserByEmail } of [staff, parent, player]) {
+      expect(inviteUserByEmail).not.toHaveBeenCalled();
+      expect(writes(calls, 'team_invitations')).toHaveLength(0);
+      expect(writes(calls, 'team_members')).toHaveLength(0);
+    }
+
+    // A head coach may.
+    const headCoach = setup(open);
+    expect(await inviteStaff(headCoach.db, ACTOR, { teamId: TEAM, email: 'hc@example.com', role: 'scorekeeper' })).toMatchObject({ ok: true });
+  });
+
   it('should not let an assistant resend or cancel a head coach invitation', async () => {
     const resend = setup(
       { 'team_invitations.select': { data: { team_id: TEAM, email: 'hc@example.com', role: 'head_coach', status: 'pending', invited_by: 'x' } } },

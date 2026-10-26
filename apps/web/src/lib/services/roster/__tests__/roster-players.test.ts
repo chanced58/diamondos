@@ -108,7 +108,7 @@ describe('createRosterPlayer', () => {
     });
     expect(writes(calls, 'player_team_memberships')[0].payload).toEqual({ player_id: PLAYER, team_id: TEAM, jersey_number: 7, is_active: true });
     // The invite (saved first, recording the player) is the members service's.
-    expect(mockInvitePlayerToApp).toHaveBeenCalledWith(db, 'u1', TEAM, PLAYER, 'sam@example.com');
+    expect(mockInvitePlayerToApp).toHaveBeenCalledWith(db, 'u1', TEAM, PLAYER, 'sam@example.com', true);
   });
 
   it('should not invite a player without an email', async () => {
