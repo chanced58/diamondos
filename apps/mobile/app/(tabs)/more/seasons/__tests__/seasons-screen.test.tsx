@@ -71,6 +71,10 @@ describe('SeasonsScreen', () => {
     fireEvent.press(screen.getByText(`Create Spring ${year}`));
     expect(await screen.findByText(`Spring ${year} already exists.`)).toBeTruthy();
     expect(mockTriggerSync).not.toHaveBeenCalled();
+
+    // Picking another season clears it.
+    fireEvent.press(screen.getByText('Summer'));
+    await waitFor(() => expect(screen.queryByText(`Spring ${year} already exists.`)).toBeNull());
   });
 
   it('should set a season active, or deactivate the active one', async () => {

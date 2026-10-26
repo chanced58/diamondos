@@ -54,6 +54,11 @@ export default function SeasonsScreen() {
     onSuccess: refresh,
     onError: (error) => Alert.alert('Couldn’t set the active season', describeApiError(error)),
   });
+  // A new pick clears the last create's refusal.
+  const pick = (change: () => void) => {
+    create.reset();
+    change();
+  };
   const deactivate = useMutation({
     mutationFn: (seasonId: string) => deactivateSeason(teamId as string, seasonId),
     onSuccess: refresh,
@@ -119,7 +124,7 @@ export default function SeasonsScreen() {
             options={SEASON_TERMS}
             labels={TERM_LABELS}
             selected={[term]}
-            onChange={(picked) => setTerm(picked.find((t) => t !== term) ?? term)}
+            onChange={(picked) => pick(() => setTerm(picked.find((t) => t !== term) ?? term))}
           />
         </FormField>
         <FormField label="Year">
@@ -127,7 +132,7 @@ export default function SeasonsScreen() {
             options={years.map(String)}
             labels={yearLabels}
             selected={[year]}
-            onChange={(picked) => setYear(picked.find((y) => y !== year) ?? year)}
+            onChange={(picked) => pick(() => setYear(picked.find((y) => y !== year) ?? year))}
           />
         </FormField>
         {create.isError && (
