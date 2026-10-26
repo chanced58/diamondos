@@ -48,6 +48,7 @@ function query(table: string) {
 const mockGetUser = jest.fn();
 const mockGetUserById = jest.fn();
 const mockDb = { from: jest.fn(query), auth: { admin: { inviteUserByEmail: jest.fn(), getUserById: mockGetUserById } } };
+// The roster player actions go through lib/services/roster, which asks getRosterAccess.
 const mockCanManageRoster = jest.fn();
 
 jest.mock('@supabase/supabase-js', () => ({ createClient: () => mockDb }));
@@ -55,7 +56,10 @@ jest.mock('@/lib/supabase/server', () => ({
   createServerClient: () => ({ auth: { getUser: mockGetUser } }),
 }));
 jest.mock('@/lib/roster-access', () => ({
-  canManageRoster: (...args: unknown[]) => mockCanManageRoster(...args),
+  getRosterAccess: async (_db: unknown, teamId: string, userId: string) => {
+    const canManage = Boolean(await mockCanManageRoster(teamId, userId));
+    return { canView: true, canManage, role: canManage ? 'head_coach' : 'parent' };
+  },
 }));
 jest.mock('next/cache', () => ({ revalidatePath: jest.fn() }));
 const mockStartDirectMessage = jest.fn();
@@ -76,9 +80,13 @@ function hasFilter(call: Call, col: string, val: unknown): boolean {
   return call.filters.some(([, c, v]) => c === col && v === val);
 }
 
+// The roster services validate ids, so the player actions use real-looking ones.
+const ROSTER_TEAM = '44444444-4444-4444-8444-444444444444';
+const ROSTER_PLAYER = '55555555-5555-4555-8555-555555555555';
+
 function playerForm(extra: Record<string, string> = {}): FormData {
   const form = new FormData();
-  for (const [k, v] of Object.entries({ teamId: TEAM, firstName: 'Sam', lastName: 'Lee', ...extra })) {
+  for (const [k, v] of Object.entries({ teamId: ROSTER_TEAM, firstName: 'Sam', lastName: 'Lee', ...extra })) {
     form.set(k, v);
   }
   return form;
@@ -99,21 +107,21 @@ afterEach(() => {
 describe('roster player actions', () => {
   it('should refuse to add a player for someone who cannot manage the roster', async () => {
     mockCanManageRoster.mockResolvedValue(false);
-    expect(await addPlayerAction(null, playerForm())).toContain('permission');
-    expect(mockCanManageRoster).toHaveBeenCalledWith(TEAM, 'caller');
+    expect(await addPlayerAction(null, playerForm())).toBe('Only coaches can manage the roster.');
+    expect(mockCanManageRoster).toHaveBeenCalledWith(ROSTER_TEAM, 'caller');
     expect(writesTo('players')).toHaveLength(0);
   });
 
   it('should add the player when the caller can manage the roster', async () => {
     mockCanManageRoster.mockResolvedValue(true);
-    results['players.insert'] = { data: { id: 'p1' }, error: null };
-    await expect(addPlayerAction(null, playerForm())).rejects.toThrow(`/teams/${TEAM}/roster`);
+    results['players.insert'] = { data: { id: ROSTER_PLAYER }, error: null };
+    await expect(addPlayerAction(null, playerForm())).rejects.toThrow(`/teams/${ROSTER_TEAM}/roster`);
     expect(writesTo('players')).toHaveLength(1);
   });
 
   it('should refuse to edit a player for someone who cannot manage the roster', async () => {
     mockCanManageRoster.mockResolvedValue(false);
-    expect(await updatePlayerAction(null, playerForm({ playerId: 'p1' }))).toContain('permission');
+    expect(await updatePlayerAction(null, playerForm({ playerId: ROSTER_PLAYER }))).toBe('Only coaches can manage the roster.');
     expect(writesTo('players')).toHaveLength(0);
   });
 });
