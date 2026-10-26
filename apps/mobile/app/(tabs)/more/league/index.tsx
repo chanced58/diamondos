@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, Text, View } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { Badge, Button, EmptyState, ErrorState, ListRow, SectionHeader } from '@baseball/ui';
 import { Feature, type LeaguePageResponse } from '@baseball/shared';
 import { useCan, useRole } from '../../../../src/providers/RoleProvider';
@@ -20,8 +20,8 @@ import { openOnWeb, webUrl } from '../../../../src/lib/web-links';
 /**
  * The team's league (the web /league page): its counters, standings by
  * division from completed games — your team highlighted, every column
- * sortable — and its staff. The public league home and league admin open on
- * the web for now.
+ * sortable — and its staff, with the league home (leaders, spotlights,
+ * results) one tap away. League admin opens on the web.
  */
 export default function LeagueScreen() {
   const { activeTeam } = useRole();
@@ -147,14 +147,21 @@ function Counters({ counters }: { counters: LeaguePageResponse['counters'] }) {
   );
 }
 
-/** The public league home and, for league admins, league management, on the web. */
+/** The league home in the app and, for league admins, league management on the web. */
 function WebLinks({ page }: { page: LeaguePageResponse }) {
-  if (!webUrl('/')) return null;
   const slug = page.league.slug;
+  const canManage = page.isLeagueAdmin && webUrl('/') !== null;
+  if (!slug && !canManage) return null;
   return (
     <View className="gap-2 mt-4">
-      {slug && <Button label="View the public league home" variant="secondary" onPress={() => void openOnWeb(`/l/${slug}`)} />}
-      {page.isLeagueAdmin && <Button label="Manage the league on the web" variant="ghost" onPress={() => void openOnWeb('/league/admin')} />}
+      {slug && (
+        <Button
+          label="League home: leaders and results"
+          variant="secondary"
+          onPress={() => router.push({ pathname: '/(tabs)/more/league/home', params: { slug } })}
+        />
+      )}
+      {canManage && <Button label="Manage the league on the web" variant="ghost" onPress={() => void openOnWeb('/league/admin')} />}
     </View>
   );
 }

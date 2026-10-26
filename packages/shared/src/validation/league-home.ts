@@ -77,7 +77,12 @@ export const leagueHomeResponseSchema = z.object({
   /** Per division, alphabetically; empty when the league has none. */
   divisions: z.array(z.object({ id: z.string(), name: z.string(), rows: z.array(standingRowSchema) })),
   /** League Leaders by tab; custom boards are under Special when the league shows them. */
-  leaders: z.record(z.enum(LEADER_TABS), z.array(leaderBoardSchema)),
+  leaders: z.object({
+    batting: z.array(leaderBoardSchema),
+    pitching: z.array(leaderBoardSchema),
+    team: z.array(leaderBoardSchema),
+    special: z.array(leaderBoardSchema),
+  }),
   spotlights: z.array(
     z.object({
       kind: z.enum(['player', 'team']),
