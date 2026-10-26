@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Badge, Button, EmptyState, SectionHeader } from '@baseball/ui';
@@ -20,13 +20,13 @@ export default function TrainingModuleScreen() {
   const queryClient = useQueryClient();
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [results, setResults] = useState<Record<string, QuizResult> | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
 
   const complete = useMutation({
     mutationFn: () => completeTrainingModule(slug),
     onSuccess: (data) => {
       queryClient.setQueryData(trainingProgressQueryKey, data.progress);
-      setMessage(data.certifiedNow ? 'Module complete — you are now DiamondOS Certified!' : 'Module complete.');
+      // The screen is replaced below, so certification is announced in an alert that outlives it.
+      if (data.certifiedNow) Alert.alert('DiamondOS Certified', 'Module complete — you are now DiamondOS Certified!');
       if (data.nextSlug) router.replace({ pathname: '/(tabs)/more/training/[slug]', params: { slug: data.nextSlug } });
       else router.replace('/(tabs)/more/training');
     },
@@ -46,7 +46,6 @@ export default function TrainingModuleScreen() {
   const pick = (questionId: string, optionId: string) => {
     setAnswers((current) => ({ ...current, [questionId]: optionId }));
     setResults(null);
-    setMessage(null);
   };
   const passed = results ? allRight(results, module.quiz) : false;
 
@@ -88,7 +87,6 @@ export default function TrainingModuleScreen() {
           {describeApiError(complete.error)}
         </Text>
       )}
-      {message && <Text className="text-sm font-semibold text-green-800 mb-2">{message}</Text>}
       {passed ? (
         <Button label={done ? 'Complete again' : 'Complete module'} size="lg" loading={complete.isPending} onPress={() => complete.mutate()} />
       ) : (

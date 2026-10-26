@@ -32,3 +32,12 @@ export function nextIncompleteSlug(
   const next = TRAINING_MODULES.find((m) => !set.has(m.slug));
   return next?.slug ?? null;
 }
+
+/** Team roles offered training (the web sidebar entry and the mobile More row). */
+export const TRAINING_ROLES: readonly string[] = [
+  'head_coach',
+  'assistant_coach',
+  'scorekeeper',
+  'staff',
+  'athletic_director',
+];

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   CURRICULUM_VERSION,
+  TRAINING_ROLES,
   completeTrainingModuleInputSchema,
   getModuleBySlug,
   isCurriculumComplete,
@@ -20,7 +21,7 @@ import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../re
  */
 
 /** Roles offered training, as the web sidebar decides. */
-const COACHING_ROLES = new Set(['head_coach', 'assistant_coach', 'scorekeeper', 'staff', 'athletic_director']);
+const COACHING_ROLES = new Set(TRAINING_ROLES);
 
 /** The user's completions and certification in the current curriculum version. */
 export async function readTrainingProgress(db: SupabaseClient, userId: string): Promise<TrainingProgress> {

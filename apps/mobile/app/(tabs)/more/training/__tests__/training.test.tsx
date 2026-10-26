@@ -1,3 +1,4 @@
+import { Alert } from 'react-native';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { TRAINING_MODULES } from '@baseball/shared';
 import { ApiError } from '../../../../../src/lib/api-client';
@@ -27,7 +28,7 @@ const TrainingModuleScreen = require('../[slug]').default;
 
 const [first, second] = TRAINING_MODULES;
 const last = TRAINING_MODULES[TRAINING_MODULES.length - 1];
-const progress = (completedSlugs: string[], isCertified = false) => ({ completedSlugs, isCertified, curriculumVersion: 1, offered: true });
+const progress = (completedSlugs: string[], isCertified = false) => ({ completedSlugs, isCertified, curriculumVersion: '2026-05-23', offered: true });
 
 /** Picks an option for every question of the module; `correct` picks the right one, otherwise a wrong one. */
 function answerAll(module: (typeof TRAINING_MODULES)[number], correct: boolean) {
@@ -39,6 +40,8 @@ function answerAll(module: (typeof TRAINING_MODULES)[number], correct: boolean) 
     offset += question.options.length;
   }
 }
+
+const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -98,6 +101,7 @@ describe('TrainingModuleScreen', () => {
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith({ pathname: '/(tabs)/more/training/[slug]', params: { slug: second.slug } }));
     expect(mockComplete).toHaveBeenCalledWith(first.slug);
+    expect(alertSpy).not.toHaveBeenCalled();
   });
 
   it('should return to the list after the last module and say so when the coach is certified', async () => {
@@ -111,7 +115,7 @@ describe('TrainingModuleScreen', () => {
     fireEvent.press(screen.getByText('Complete module'));
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(tabs)/more/training'));
-    expect(screen.getByText('Module complete — you are now DiamondOS Certified!')).toBeTruthy();
+    expect(alertSpy).toHaveBeenCalledWith('DiamondOS Certified', 'Module complete — you are now DiamondOS Certified!');
   });
 
   it('should show why completion failed', async () => {

@@ -34,6 +34,3 @@ export function progressLabel(completedSlugs: readonly string[], modules: readon
 export function totalMinutes(modules: readonly TrainingModule[] = TRAINING_MODULES): number {
   return modules.reduce((sum, m) => sum + m.estimatedMinutes, 0);
 }
-
-/** Roles offered training, as the web sidebar decides (cosmetic: the server says so too). */
-export const TRAINING_ROLES: readonly string[] = ['head_coach', 'assistant_coach', 'scorekeeper', 'staff', 'athletic_director'];

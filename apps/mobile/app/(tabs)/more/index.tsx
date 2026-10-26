@@ -1,11 +1,10 @@
 import { ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { ListRow, SectionHeader } from '@baseball/ui';
-import { Feature } from '@baseball/shared';
+import { Feature, TRAINING_ROLES } from '@baseball/shared';
 import { useAuth } from '../../../src/providers/AuthProvider';
 import { useCan, useRole } from '../../../src/providers/RoleProvider';
 import { ListGroup } from '../../../src/features/navigation/ListGroup';
-import { TRAINING_ROLES } from '../../../src/features/training/quiz-model';
 import { openOnWeb, webUrl } from '../../../src/lib/web-links';
 
 const LEAGUE_ROLE_LABELS = { league_admin: 'League admin', league_manager: 'League manager' } as const;
