@@ -43,3 +43,4 @@ export * from './league-home';
 export * from './training';
 export * from './roster-admin';
 export * from './team-members';
+export * from './team-seasons';
