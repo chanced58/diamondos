@@ -62,7 +62,14 @@ export function sortPlayerRows(rows: PlayerRow[], sort: SortState): PlayerRow[] 
   const visible = rows.filter((r) => !r.optedOut);
   const hidden = rows.filter((r) => r.optedOut).sort((a, b) => a.name.localeCompare(b.name));
   visible.sort((a, b) => {
-    const d = direction * ((a.cells[sort.key]?.value ?? 0) - (b.cells[sort.key]?.value ?? 0));
+    // A value the server didn't send sorts after every number, in both directions.
+    const av = a.cells[sort.key]?.value ?? null;
+    const bv = b.cells[sort.key]?.value ?? null;
+    if (av === null || bv === null) {
+      if (av === bv) return a.name.localeCompare(b.name);
+      return av === null ? 1 : -1;
+    }
+    const d = direction * (av - bv);
     return d !== 0 ? d : a.name.localeCompare(b.name);
   });
   return [...visible, ...hidden];

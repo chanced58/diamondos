@@ -33,6 +33,11 @@ describe('league home model', () => {
     expect(names(sortPlayerRows(table.rows, era))).toEqual(['Bo', 'Ann', 'Cy', 'Hal']);
     expect(names(sortPlayerRows(table.rows, nextPlayerSort(table, era, 'era')))).toEqual(['Cy', 'Ann', 'Bo', 'Hal']);
 
+    // A visible player without a value sorts after the numbers either way.
+    const withGap = [...table.rows, { playerId: 'n', name: 'Ned', optedOut: false, cells: { era: { value: null, display: '—' } } }];
+    expect(names(sortPlayerRows(withGap, era)).slice(-2)).toEqual(['Ned', 'Hal']);
+    expect(names(sortPlayerRows(withGap, { key: 'era', ascending: false })).slice(-2)).toEqual(['Ned', 'Hal']);
+
     // Names sort every row, hidden ones included.
     expect(names(sortPlayerRows(table.rows, nextPlayerSort(table, era, 'name')))).toEqual(['Ann', 'Bo', 'Cy', 'Hal']);
   });

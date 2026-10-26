@@ -74,7 +74,7 @@ export default function LeagueHomeScreen() {
       {home.sections.map((section) => {
         switch (section) {
           case 'hero':
-            return <Hero key="hero" home={home} onSeason={setSeason} />;
+            return <Hero key="hero" home={home} selectedSeason={season ?? home.season} onSeason={setSeason} />;
           case 'standings':
             return <Standings key="standings" home={home} onTeam={openTeam} />;
           case 'spotlights':
@@ -91,8 +91,8 @@ export default function LeagueHomeScreen() {
   );
 }
 
-/** The league's name, its counters, when stats were last updated, and the season switch. */
-function Hero({ home, onSeason }: { home: LeagueHomeResponse; onSeason: (season: string) => void }) {
+/** The league's name, its counters, when stats were last updated, and the season switch (showing the one picked while it loads). */
+function Hero({ home, selectedSeason, onSeason }: { home: LeagueHomeResponse; selectedSeason: string; onSeason: (season: string) => void }) {
   const updated = updatedLabel(home.updatedAt);
   return (
     <View className="bg-brand-700 px-4 pt-5 pb-4">
@@ -104,7 +104,7 @@ function Hero({ home, onSeason }: { home: LeagueHomeResponse; onSeason: (season:
       {home.seasons.length > 1 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-3" contentContainerStyle={{ gap: 8 }}>
           {home.seasons.map((s) => {
-            const active = s === home.season;
+            const active = s === selectedSeason;
             return (
               <TouchableOpacity
                 key={s}

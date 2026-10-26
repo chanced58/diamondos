@@ -36,6 +36,8 @@ export function useLeagueHome(slug: string, season: string | undefined, teamId: 
     queryKey: [...leagueHomeQueryKey(slug, season ?? ''), teamId ?? ''],
     queryFn: () => fetchLeagueHome(slug, season, teamId),
     enabled: slug.length > 0,
+    // While another season loads (or fails), keep this league's page — and its season switch — on screen.
+    placeholderData: (previous) => (previous?.slug === slug ? previous : undefined),
   });
 }
 
