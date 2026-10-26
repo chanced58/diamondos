@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
+import { getRosterAccess } from '@/lib/roster-access';
 import {
   POSITION_ABBREVIATIONS,
   formatDate,
@@ -50,6 +51,9 @@ export default async function PlayerPage({
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  // Every read below uses the service role, so this is the only gate.
+  if (!(await getRosterAccess(db, params.teamId, user.id)).canView) notFound();
 
   const [playerResult, notesResult, access] = await Promise.all([
     db

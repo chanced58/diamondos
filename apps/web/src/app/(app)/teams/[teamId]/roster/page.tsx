@@ -3,7 +3,9 @@ import { Metadata } from 'next';
 import Link from 'next/link'; // kept for the Players section and admin link
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { notFound } from 'next/navigation';
 import { getUserAccess } from '@/lib/user-access';
+import { getRosterAccess } from '@/lib/roster-access';
 import { addToTeamChannels } from '@/lib/team-channels';
 import {
   CURRICULUM_VERSION,
@@ -158,6 +160,9 @@ export default async function RosterPage({ params }: { params: { teamId: string 
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  // Every read below uses the service role, so this is the only gate.
+  if (!(await getRosterAccess(db, params.teamId, user.id)).canView) notFound();
 
   // Fetch pending AND accepted invitations so we can self-heal broken state
   const { data: healableInvites, error: pendingErr } = await db
