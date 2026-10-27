@@ -45,10 +45,6 @@ export function TradePlayerDialog({ leagueId, player, teams, onClose, onSuccess 
           setCollision((res.meta?.conflictingPlayerName as string) ?? 'another player');
           return;
         }
-        if (res.code === 'IN_PROGRESS_GAME') {
-          setErr(`Cannot trade — ${fullName} is in a live game. Finalize the game first.`);
-          return;
-        }
         setErr(res.message);
         return;
       }
