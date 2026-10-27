@@ -102,6 +102,8 @@ describe('PlayerScreen', () => {
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/more/roster/[playerId]/edit', params: { playerId: PLAYER } });
     fireEvent.press(screen.getByText('Availability'));
     expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/more/roster/[playerId]/availability', params: { playerId: PLAYER } });
+    fireEvent.press(screen.getByText('Documents'));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/more/roster/[playerId]/documents', params: { playerId: PLAYER } });
 
     fireEvent.press(screen.getByText('Deactivate player'));
     pressAlertButton('Deactivate');

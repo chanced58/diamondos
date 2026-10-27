@@ -42,6 +42,14 @@
       "expo-router",
       "expo-secure-store",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "DiamondOS uses your photos to upload player documents, like a signed waiver.",
+          "cameraPermission": "DiamondOS uses the camera to photograph player documents, like a signed waiver.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",

@@ -6,7 +6,7 @@ import {
   type InjuryFlagWriteResponse,
   type PlayerAvailabilityResponse,
 } from '@baseball/shared';
-import { getRosterAccess } from '@/lib/roster-access';
+import { authorizeManagedPlayer } from './authorize-player';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 
 /**
@@ -24,27 +24,8 @@ function failed<T>(action: string, playerId: string, actorUserId: string, error:
   return serviceError('failed', 'Something went wrong. Please try again.');
 }
 
-/** The player, if the actor manages their team's roster and they are on it. */
-async function authorizePlayer(
-  db: SupabaseClient,
-  actorUserId: string,
-  teamId: string,
-  playerId: string,
-): Promise<ServiceResult<{ id: string; first_name: string; last_name: string; jersey_number: number | null }>> {
-  const access = await getRosterAccess(db, teamId, actorUserId);
-  if (!access.canView) return serviceError('not_found', 'Player not found.');
-  if (!access.canManage) return serviceError('forbidden', 'Only coaches can manage player availability.');
-
-  const { data, error } = await db
-    .from('players')
-    .select('id, first_name, last_name, jersey_number')
-    .eq('id', playerId)
-    .eq('team_id', teamId)
-    .maybeSingle();
-  if (error) return failed('authorizePlayer', playerId, actorUserId, error);
-  if (!data) return serviceError('not_found', 'Player not found.');
-  return serviceOk(data as { id: string; first_name: string; last_name: string; jersey_number: number | null });
-}
+const authorizePlayer = (db: SupabaseClient, actorUserId: string, teamId: string, playerId: string) =>
+  authorizeManagedPlayer(db, actorUserId, teamId, playerId, 'Only coaches can manage player availability.');
 
 /** The injuries a team can flag: the system list and the team's own. `teamId` is a validated uuid. */
 function catalogQuery(db: SupabaseClient, teamId: string, columns: string) {

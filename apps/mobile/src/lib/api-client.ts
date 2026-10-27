@@ -130,6 +130,8 @@ export function createApiClient(config: ApiClientConfig) {
     options.signal?.addEventListener('abort', onCallerAbort);
 
     const method = options.method ?? 'GET';
+    // A form (a file upload) goes as is, so fetch sets its multipart boundary.
+    const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
     const cleanUp = () => {
       clearTimeout(timer);
       options.signal?.removeEventListener('abort', onCallerAbort);
@@ -152,9 +154,9 @@ export function createApiClient(config: ApiClientConfig) {
         headers: {
           Accept: 'application/json',
           Authorization: `Bearer ${token}`,
-          ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+          ...(options.body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : {}),
         },
-        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+        body: options.body === undefined ? undefined : isForm ? (options.body as FormData) : JSON.stringify(options.body),
         signal: controller.signal,
       });
       body = await response.json().catch((err: unknown) => {
@@ -194,6 +196,9 @@ export function createApiClient(config: ApiClientConfig) {
       request<T>(path, { schema, signal }),
     post: <T>(path: string, body: unknown, schema?: Schema<T>) =>
       request<T>(path, { method: 'POST', body, schema }),
+    /** Posts multipart form data, e.g. a file with its fields. */
+    postForm: <T>(path: string, form: FormData, schema?: Schema<T>, timeoutMs?: number) =>
+      request<T>(path, { method: 'POST', body: form, schema, timeoutMs }),
     patch: <T>(path: string, body: unknown, schema?: Schema<T>) =>
       request<T>(path, { method: 'PATCH', body, schema }),
     put: <T>(path: string, body: unknown, schema?: Schema<T>) =>
