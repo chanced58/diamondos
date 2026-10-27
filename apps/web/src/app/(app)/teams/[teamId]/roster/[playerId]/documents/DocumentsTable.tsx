@@ -49,7 +49,7 @@ export function DocumentsTable({
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function handleDownload(docId: string) {
-    const url = await getDocumentDownloadUrl(docId, teamId);
+    const url = await getDocumentDownloadUrl(docId, teamId, playerId);
     if (url) window.open(url, '_blank');
   }
 
