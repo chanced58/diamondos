@@ -29,10 +29,6 @@ export function ReleasePlayerDialog({ leagueId, player, onClose, onSuccess }: Pr
         reason: reason || undefined,
       });
       if (!res.ok) {
-        if (res.code === 'IN_PROGRESS_GAME') {
-          setErr(`Cannot release — ${fullName} is in a live game. Finalize the game first.`);
-          return;
-        }
         setErr(res.message);
         return;
       }

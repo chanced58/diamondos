@@ -5,11 +5,16 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getLeagueAccess } from '@/lib/league-access';
 import {
-  createLeaguePlayerSchema, transferPlayerSchema,
-  releasePlayerSchema, updateLeaguePlayerSchema,
+  updateLeaguePlayerSchema,
   type CreateLeaguePlayerInput, type TransferPlayerInput,
   type ReleasePlayerInput, type UpdateLeaguePlayerInput,
 } from '@baseball/shared';
+import {
+  createLeaguePlayer as createLeaguePlayerService,
+  releaseLeaguePlayer,
+  transferLeaguePlayer,
+} from '@/lib/services/league-admin/league-players';
+import type { ServiceResult } from '@/lib/services/result';
 
 type Result<T> =
   | { ok: true; data: T }
@@ -33,110 +38,60 @@ async function requireLeagueAdmin(
   return { user };
 }
 
-function parsePgError(message: string): { code: string; meta?: Record<string, unknown> } {
-  if (message.startsWith('IN_PROGRESS_GAME:')) {
-    return { code: 'IN_PROGRESS_GAME', meta: { gameId: message.split(':')[1]?.trim() } };
-  }
-  if (message.startsWith('JERSEY_CONFLICT:')) {
-    return {
-      code: 'JERSEY_CONFLICT',
-      meta: { conflictingPlayerName: message.replace(/^JERSEY_CONFLICT:\s*/, '') },
-    };
-  }
-  if (message === 'FORBIDDEN') return { code: 'FORBIDDEN' };
-  if (message === 'NOT_IN_LEAGUE') return { code: 'NOT_IN_LEAGUE' };
-  if (message === 'TEAM_NOT_IN_LEAGUE') return { code: 'TEAM_NOT_IN_LEAGUE' };
-  if (message === 'TO_TEAM_REQUIRED') return { code: 'TO_TEAM_REQUIRED' };
-  if (message === 'NOT_ON_TEAM') return { code: 'NOT_ON_TEAM' };
-  return { code: 'UNKNOWN' };
+async function actorId(): Promise<string | null> {
+  const auth = createServerClient();
+  const { data: { user } } = await auth.auth.getUser();
+  return user?.id ?? null;
 }
+
+/** The dialogs' result shape over a service result. */
+function toResult<T>(result: ServiceResult<T>): Result<T> {
+  return result.ok ? result : { ok: false, code: result.code, message: result.error };
+}
+
+const NOT_AUTHENTICATED = { ok: false, code: 'NOT_AUTHENTICATED', message: 'Not authenticated.' } as const;
+
+// Create, transfer and release are thin wrappers over
+// lib/services/league-admin/league-players, shared with the mobile
+// /api/m/v1/league-admin/:leagueId/players routes.
 
 export async function createLeaguePlayer(
   input: CreateLeaguePlayerInput,
 ): Promise<Result<{ playerId: string }>> {
-  const parsed = createLeaguePlayerSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, code: 'VALIDATION', message: parsed.error.message };
-
-  const auth = await requireLeagueAdmin(parsed.data.leagueId);
-  if ('error' in auth) return { ok: false, code: auth.error, message: auth.error };
-
-  const db = service();
-  const { data, error } = await db.rpc('fn_create_league_player', {
-    p_league_id: parsed.data.leagueId,
-    p_first_name: parsed.data.firstName,
-    p_last_name: parsed.data.lastName,
-    p_date_of_birth: parsed.data.dateOfBirth ?? null,
-    p_jersey_number: parsed.data.jerseyNumber ?? null,
-    p_primary_position: parsed.data.primaryPosition ?? null,
-    p_bats: parsed.data.bats ?? null,
-    p_throws: parsed.data.throws ?? null,
-    p_graduation_year: parsed.data.graduationYear ?? null,
-    p_notes: parsed.data.notes ?? null,
-    p_team_id: parsed.data.teamId ?? null,
-    p_actor: auth.user.id,
-  });
-  if (error) {
-    const e = parsePgError(error.message);
-    return { ok: false, code: e.code, message: error.message, meta: e.meta };
-  }
-
-  revalidatePath('/league/admin/players');
-  return { ok: true, data: { playerId: (data as { id: string }).id } };
+  const userId = await actorId();
+  if (!userId) return NOT_AUTHENTICATED;
+  const result = await createLeaguePlayerService(service(), userId, input);
+  if (result.ok) revalidatePath('/league/admin/players');
+  return toResult(result);
 }
 
 export async function transferPlayer(
   input: TransferPlayerInput,
 ): Promise<Result<{ transferId: string }>> {
-  const parsed = transferPlayerSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, code: 'VALIDATION', message: parsed.error.message };
-
-  const auth = await requireLeagueAdmin(parsed.data.leagueId);
-  if ('error' in auth) return { ok: false, code: auth.error, message: auth.error };
-
-  const db = service();
-  const { data, error } = await db.rpc('fn_transfer_player', {
-    p_league_id: parsed.data.leagueId,
-    p_player_id: parsed.data.playerId,
-    p_to_team_id: parsed.data.toTeamId,
-    p_effective_at: parsed.data.effectiveAt ?? null,
-    p_reason: parsed.data.reason ?? null,
-    p_season_id: parsed.data.seasonId ?? null,
-    p_accept_jersey_clear: parsed.data.acceptJerseyClear,
-    p_actor: auth.user.id,
-  });
-  if (error) {
-    const e = parsePgError(error.message);
-    return { ok: false, code: e.code, message: error.message, meta: e.meta };
+  const userId = await actorId();
+  if (!userId) return NOT_AUTHENTICATED;
+  const result = await transferLeaguePlayer(service(), userId, input);
+  if (!result.ok) return toResult(result);
+  if (result.data.status === 'jersey_conflict') {
+    return {
+      ok: false,
+      code: 'JERSEY_CONFLICT',
+      message: `Jersey is taken by ${result.data.conflictingPlayerName}.`,
+      meta: { conflictingPlayerName: result.data.conflictingPlayerName },
+    };
   }
-
   revalidatePath('/league/admin/players');
-  return { ok: true, data: { transferId: (data as { id: string }).id } };
+  return { ok: true, data: { transferId: result.data.transferId } };
 }
 
 export async function releasePlayer(
   input: ReleasePlayerInput,
 ): Promise<Result<{ transferId: string }>> {
-  const parsed = releasePlayerSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, code: 'VALIDATION', message: parsed.error.message };
-
-  const auth = await requireLeagueAdmin(parsed.data.leagueId);
-  if ('error' in auth) return { ok: false, code: auth.error, message: auth.error };
-
-  const db = service();
-  const { data, error } = await db.rpc('fn_release_player', {
-    p_league_id: parsed.data.leagueId,
-    p_player_id: parsed.data.playerId,
-    p_effective_at: parsed.data.effectiveAt ?? null,
-    p_reason: parsed.data.reason ?? null,
-    p_actor: auth.user.id,
-  });
-  if (error) {
-    const e = parsePgError(error.message);
-    return { ok: false, code: e.code, message: error.message, meta: e.meta };
-  }
-
-  revalidatePath('/league/admin/players');
-  return { ok: true, data: { transferId: (data as { id: string }).id } };
+  const userId = await actorId();
+  if (!userId) return NOT_AUTHENTICATED;
+  const result = await releaseLeaguePlayer(service(), userId, input);
+  if (result.ok) revalidatePath('/league/admin/players');
+  return toResult(result);
 }
 
 export async function updateLeaguePlayer(

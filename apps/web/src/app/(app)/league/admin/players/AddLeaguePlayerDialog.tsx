@@ -45,7 +45,7 @@ export function AddLeaguePlayerDialog({ leagueId, teams, onClose, onSuccess }: P
         teamId: teamId || undefined,
       });
       if (!res.ok) {
-        setErr(res.code === 'VALIDATION' ? 'Check the form fields' : res.message);
+        setErr(res.message);
         return;
       }
       onSuccess();
