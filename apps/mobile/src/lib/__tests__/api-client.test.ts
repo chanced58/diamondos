@@ -77,6 +77,19 @@ describe('api-client', () => {
     expect(error).toMatchObject({ kind, status, code: 'some_code', message: 'Nope' });
   });
 
+  it('should send a form as is, leaving fetch to set its multipart type', async () => {
+    const fetchImpl = jest.fn(async () => jsonResponse(201, { documentId: 'd1' }));
+    const form = new FormData();
+    form.append('title', 'Waiver');
+
+    await client(fetchImpl).postForm('/teams/t1/players/p1/documents', form);
+
+    const init = (fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe(form);
+    expect(init.headers).not.toHaveProperty('Content-Type');
+  });
+
   it('should report a thrown fetch as offline', async () => {
     const fetchImpl = jest.fn(async () => {
       throw new TypeError('Network request failed');

@@ -23,8 +23,8 @@ const positionLabel = (position: string | null) => (position ? POSITION_LABELS[p
 /**
  * A player on the active team (the web player page's profile): positions,
  * handedness, graduation year and contact. Roster managers edit them, keep
- * their availability flags, and deactivate or reactivate them; stats, notes
- * and documents stay on the web page.
+ * their availability flags and documents, and deactivate or reactivate them;
+ * stats and notes stay on the web page.
  */
 export default function PlayerScreen() {
   const { playerId = '' } = useLocalSearchParams<{ playerId: string }>();
@@ -150,6 +150,11 @@ export default function PlayerScreen() {
               title="Availability"
               subtitle="Injury and availability flags"
               onPress={() => router.push({ pathname: '/(tabs)/more/roster/[playerId]/availability', params: { playerId } })}
+            />
+            <ListRow
+              title="Documents"
+              subtitle="Waivers, medical releases and other forms"
+              onPress={() => router.push({ pathname: '/(tabs)/more/roster/[playerId]/documents', params: { playerId } })}
             />
           </ListGroup>
           <View className="mt-4">
