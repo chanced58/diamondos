@@ -23,7 +23,7 @@ export function OptionalDate({
       {value ? (
         <View className="flex-row items-center gap-3">
           <DateTimeFields date={value} time="00:00" showTime={false} onChange={({ date }) => onChange(date)} testID={testID} />
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove ${label.toLowerCase()} date`} onPress={() => onChange(null)}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove ${label.toLowerCase()}`} onPress={() => onChange(null)}>
             <Text className="text-sm text-gray-500">Remove</Text>
           </TouchableOpacity>
         </View>

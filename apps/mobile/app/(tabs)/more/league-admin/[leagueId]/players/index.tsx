@@ -12,6 +12,9 @@ import { describeApiError, isApiError } from '../../../../../../src/lib/api-clie
 const ALL = 'all';
 const FREE = 'free';
 
+/** "1 team", "2 teams". */
+const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+
 /** "#7 · SS · Hawks", or "Free agent". */
 function playerSubtitle(player: LeagueAdminPlayer): string {
   const position = player.primaryPosition
@@ -94,7 +97,7 @@ export default function LeaguePlayersScreen() {
     >
       {header}
       <Text className="text-sm text-gray-500 mb-3">
-        {players.length} players · {freeAgents} free agents · {teams.length} teams
+        {count(players.length, 'player')} · {count(freeAgents, 'free agent')} · {count(teams.length, 'team')}
       </Text>
       <TextInput
         accessibilityLabel="Search players"

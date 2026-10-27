@@ -97,7 +97,7 @@ describe('LeagueAdminScreen', () => {
 describe('LeaguePlayersScreen', () => {
   it('should list the players and filter to free agents, a team or a search', () => {
     renderWithQuery(<PlayersScreen />);
-    expect(screen.getByText('2 players · 1 free agents · 2 teams')).toBeTruthy();
+    expect(screen.getByText('2 players · 1 free agent · 2 teams')).toBeTruthy();
     expect(screen.getByText('#7 · P · Hawks')).toBeTruthy();
 
     fireEvent.press(screen.getByText('Free agents (1)'));
