@@ -10,34 +10,64 @@ import { rosterPlayerIdInputSchema } from './roster-admin';
  */
 
 const uuid = z.string().uuid();
-const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Dates must be YYYY-MM-DD.');
+/** A calendar date that exists, so 2027-02-31 is refused rather than rolled over. */
+const isRealDate = (value: string) => {
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+};
+const ymd = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Dates must be YYYY-MM-DD.')
+  .refine(isRealDate, 'Enter a real date.');
 const blankToNull = (value: unknown) => (value === '' || value === undefined ? null : value);
 const trimmedOrNull = (value: unknown) => (typeof value === 'string' ? blankToNull(value.trim()) : blankToNull(value));
 
 /** The largest file a coach can upload. */
 export const PLAYER_DOCUMENT_MAX_BYTES = 20 * 1024 * 1024;
 
-/** PDFs and images (a photo of a signed form) are accepted. */
-export function isAllowedDocumentContentType(contentType: string): boolean {
-  return contentType === 'application/pdf' || contentType.startsWith('image/');
+/** The file types accepted — PDFs and photos of a signed form — and the extension each is stored under. */
+const DOCUMENT_EXTENSIONS = {
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/heic': 'heic',
+  'image/heif': 'heif',
+  'image/webp': 'webp',
+} as const;
+export type PlayerDocumentContentType = keyof typeof DOCUMENT_EXTENSIONS;
+export const PLAYER_DOCUMENT_CONTENT_TYPES = Object.keys(DOCUMENT_EXTENSIONS) as PlayerDocumentContentType[];
+
+/** What a coach is told when a file isn't one of the accepted types. */
+export const PLAYER_DOCUMENT_TYPES_HINT = 'Upload a PDF, JPEG, PNG, HEIC or WebP file.';
+
+export function isAllowedDocumentContentType(contentType: string): contentType is PlayerDocumentContentType {
+  return Object.prototype.hasOwnProperty.call(DOCUMENT_EXTENSIONS, contentType);
 }
 
-/** The file extension a document is stored under. */
-export function documentExtension(contentType: string): string {
-  switch (contentType) {
-    case 'application/pdf':
-      return 'pdf';
-    case 'image/jpeg':
-      return 'jpg';
-    case 'image/png':
-      return 'png';
-    case 'image/heic':
-      return 'heic';
-    case 'image/webp':
-      return 'webp';
-    default:
-      return 'bin';
+/** The file extension a document of an accepted type is stored under. */
+export function documentExtension(contentType: PlayerDocumentContentType): string {
+  return DOCUMENT_EXTENSIONS[contentType];
+}
+
+const HEIC_BRANDS = new Set(['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'hevm', 'hevs']);
+const HEIF_BRANDS = new Set(['mif1', 'msf1']);
+const ascii = (bytes: Uint8Array, start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
+
+/**
+ * The accepted type a file's first bytes (its magic number) show it to be, or
+ * null for anything else, whatever type the uploader declared.
+ */
+export function detectDocumentContentType(bytes: Uint8Array): PlayerDocumentContentType | null {
+  if (bytes.length >= 5 && ascii(bytes, 0, 5) === '%PDF-') return 'application/pdf';
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes.length >= 8 && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((byte, i) => bytes[i] === byte)) return 'image/png';
+  if (bytes.length >= 12 && ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 12) === 'WEBP') return 'image/webp';
+  if (bytes.length >= 12 && ascii(bytes, 4, 8) === 'ftyp') {
+    const brand = ascii(bytes, 8, 12);
+    if (HEIC_BRANDS.has(brand)) return 'image/heic';
+    if (HEIF_BRANDS.has(brand)) return 'image/heif';
   }
+  return null;
 }
 
 export const uploadPlayerDocumentInputSchema = rosterPlayerIdInputSchema

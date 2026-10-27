@@ -1,6 +1,11 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { PLAYER_DOCUMENT_MAX_BYTES, isAllowedDocumentContentType } from '@baseball/shared';
+import {
+  PLAYER_DOCUMENT_CONTENT_TYPES,
+  PLAYER_DOCUMENT_MAX_BYTES,
+  PLAYER_DOCUMENT_TYPES_HINT,
+  isAllowedDocumentContentType,
+} from '@baseball/shared';
 
 /**
  * Picking a player document's file: a photo of a signed form from the camera
@@ -28,6 +33,7 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   jpeg: 'image/jpeg',
   png: 'image/png',
   heic: 'image/heic',
+  heif: 'image/heif',
   webp: 'image/webp',
 };
 
@@ -44,9 +50,9 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Refuses what the server would: anything but a PDF or image, or over 20 MB. */
+/** Refuses what the server would: anything but a PDF or an accepted image type, or over 20 MB. */
 export function checkDocumentFile(file: PickedFile): PickedFile {
-  if (!isAllowedDocumentContentType(file.mimeType)) throw new DocumentFileError('Pick a PDF or an image.');
+  if (!isAllowedDocumentContentType(file.mimeType)) throw new DocumentFileError(PLAYER_DOCUMENT_TYPES_HINT);
   if (file.size !== null && file.size > PLAYER_DOCUMENT_MAX_BYTES) throw new DocumentFileError('That file is too large (20 MB max).');
   return file;
 }
@@ -65,7 +71,7 @@ async function pickPhoto(source: 'camera' | 'library'): Promise<PickedFile | nul
 }
 
 async function pickFromFiles(): Promise<PickedFile | null> {
-  const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true });
+  const result = await DocumentPicker.getDocumentAsync({ type: PLAYER_DOCUMENT_CONTENT_TYPES, copyToCacheDirectory: true });
   if (result.canceled || result.assets.length === 0) return null;
   const asset = result.assets[0];
   return { uri: asset.uri, name: asset.name, mimeType: mimeTypeFor(asset.name, asset.mimeType), size: asset.size ?? null };

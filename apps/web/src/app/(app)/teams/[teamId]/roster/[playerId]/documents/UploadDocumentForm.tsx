@@ -2,6 +2,7 @@
 import { useFormState, useFormStatus } from 'react-dom';
 import { useState } from 'react';
 import type { JSX } from 'react';
+import { PLAYER_DOCUMENT_CONTENT_TYPES } from '@baseball/shared';
 import { uploadPlayerDocumentAction } from './actions';
 
 type DocType = {
@@ -93,12 +94,12 @@ export function UploadDocumentForm({
       </label>
 
       <label className="block">
-        <span className="text-xs font-medium text-gray-700">File (PDF or image, max 20 MB)</span>
+        <span className="text-xs font-medium text-gray-700">File (PDF, JPEG, PNG, HEIC or WebP, max 20 MB)</span>
         <input
           name="file"
           type="file"
           required
-          accept="application/pdf,image/*"
+          accept={PLAYER_DOCUMENT_CONTENT_TYPES.join(',')}
           className="mt-1 block w-full text-sm"
         />
       </label>

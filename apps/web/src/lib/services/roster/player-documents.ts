@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   PLAYER_DOCUMENT_MAX_BYTES,
+  PLAYER_DOCUMENT_TYPES_HINT,
+  detectDocumentContentType,
   documentExtension,
-  isAllowedDocumentContentType,
   playerDocumentIdInputSchema,
   rosterPlayerIdInputSchema,
   uploadPlayerDocumentInputSchema,
@@ -27,10 +28,14 @@ const BUCKET = 'player-documents';
 /** How long a link to a file works. */
 const SIGNED_URL_SECONDS = 60;
 
-/** The uploaded file: its size and type are checked before its bytes are read. */
+const TOO_LARGE = 'That file is too large (20 MB max).';
+
+/**
+ * The uploaded file: its declared size is checked before its bytes are read,
+ * and its type comes from the bytes, so a declared type is never trusted.
+ */
 export interface PlayerDocumentFile {
   size: number;
-  contentType: string;
   read: () => Promise<Uint8Array>;
 }
 
@@ -123,7 +128,7 @@ export async function authorizePlayerDocumentUpload(
   return player.ok ? serviceOk({ playerId: player.data.id }) : player;
 }
 
-/** Uploads a PDF or image (20 MB at most) and records it as the player's current document of its type. */
+/** Uploads a PDF or photo (20 MB at most, its type read from its bytes) and records it as the player's current document of its type. */
 export async function uploadPlayerDocument(
   db: SupabaseClient,
   actorUserId: string,
@@ -134,8 +139,7 @@ export async function uploadPlayerDocument(
   if (!parsed.success) return invalidInput(parsed.error);
   const { teamId, playerId, documentType, title, signedOn, expiresOn, notes } = parsed.data;
   if (!file || file.size === 0) return serviceError('invalid', 'Pick a file to upload.');
-  if (file.size > PLAYER_DOCUMENT_MAX_BYTES) return serviceError('invalid', 'That file is too large (20 MB max).');
-  if (!isAllowedDocumentContentType(file.contentType)) return serviceError('invalid', 'Upload a PDF or an image.');
+  if (file.size > PLAYER_DOCUMENT_MAX_BYTES) return serviceError('invalid', TOO_LARGE);
 
   const player = await authorizePlayer(db, actorUserId, teamId, playerId);
   if (!player.ok) return player;
@@ -145,11 +149,18 @@ export async function uploadPlayerDocument(
   if (typeError) return failed('uploadPlayerDocument', playerId, actorUserId, typeError);
   if (!type) return serviceError('invalid', 'Pick a document type from the list.');
 
+  // The bytes decide the size and the type, never what the uploader declared.
+  const bytes = await file.read();
+  if (bytes.byteLength === 0) return serviceError('invalid', 'Pick a file to upload.');
+  if (bytes.byteLength > PLAYER_DOCUMENT_MAX_BYTES) return serviceError('invalid', TOO_LARGE);
+  const contentType = detectDocumentContentType(bytes);
+  if (!contentType) return serviceError('invalid', PLAYER_DOCUMENT_TYPES_HINT);
+
   const documentId = randomUUID();
-  const storagePath = `${teamId}/${playerId}/${documentId}.${documentExtension(file.contentType)}`;
+  const storagePath = `${teamId}/${playerId}/${documentId}.${documentExtension(contentType)}`;
   const { error: uploadError } = await db.storage
     .from(BUCKET)
-    .upload(storagePath, await file.read(), { contentType: file.contentType, upsert: false });
+    .upload(storagePath, bytes, { contentType, upsert: false });
   if (uploadError) return failed('uploadPlayerDocument', playerId, actorUserId, uploadError);
 
   const { error: insertError } = await db.from('player_documents').insert({

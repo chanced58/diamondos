@@ -18,7 +18,11 @@ const DOC = '33333333-3333-4333-8333-333333333333';
 const player = { data: { id: PLAYER, first_name: 'Sam', last_name: 'Lee', jersey_number: 7 } };
 const ids = { teamId: TEAM, playerId: PLAYER };
 const fields = (extra = {}) => ({ ...ids, documentType: 'liability_waiver', title: '2027 Waiver', signedOn: '2027-03-01', expiresOn: '', ...extra });
-const pdf = (size = 4) => ({ size, contentType: 'application/pdf', read: jest.fn(async () => new Uint8Array(size)) });
+const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]); // "%PDF-1"
+const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]);
+/** A file declaring `size` whose read gives `bytes`. */
+const upload = (bytes: Uint8Array, size = bytes.byteLength) => ({ size, read: jest.fn(async () => bytes) });
+const pdf = (size?: number) => upload(PDF_BYTES, size);
 
 /** fakeDb plus a storage bucket fake that records its calls. */
 function withStorage(results: Parameters<typeof fakeDb>[0], storage: { upload?: FakeResult; remove?: FakeResult; sign?: FakeResult } = {}) {
@@ -104,7 +108,7 @@ describe('uploadPlayerDocument', () => {
     expect(result.ok).toBe(true);
     const documentId = result.ok ? result.data.documentId : '';
     expect(bucketCalls).toEqual([
-      { bucket: 'player-documents', op: 'upload', args: [`${TEAM}/${PLAYER}/${documentId}.pdf`, new Uint8Array(4), { contentType: 'application/pdf', upsert: false }] },
+      { bucket: 'player-documents', op: 'upload', args: [`${TEAM}/${PLAYER}/${documentId}.pdf`, PDF_BYTES, { contentType: 'application/pdf', upsert: false }] },
     ]);
     expect(calls.find((c) => c.table === 'player_documents')?.payload).toEqual({
       id: documentId,
@@ -121,15 +125,33 @@ describe('uploadPlayerDocument', () => {
     });
   });
 
-  it('should refuse a missing, oversized or unsupported file before reading it', async () => {
+  it('should refuse a missing or declared-oversized file before reading it', async () => {
     const { db, calls } = withStorage({});
     const big = pdf(20 * 1024 * 1024 + 1);
-    const zip = { ...pdf(), contentType: 'application/zip' };
     expect(await uploadPlayerDocument(db, 'u1', fields(), null)).toMatchObject({ code: 'invalid', error: 'Pick a file to upload.' });
     expect(await uploadPlayerDocument(db, 'u1', fields(), big)).toMatchObject({ code: 'invalid', error: 'That file is too large (20 MB max).' });
-    expect(await uploadPlayerDocument(db, 'u1', fields(), zip)).toMatchObject({ code: 'invalid', error: 'Upload a PDF or an image.' });
     expect(big.read).not.toHaveBeenCalled();
     expect(calls).toHaveLength(0);
+  });
+
+  it('should judge the file by its bytes: their type, and their real size', async () => {
+    const results = { 'players.select': player, 'player_document_type.select': { data: { slug: 'liability_waiver' } } };
+    const svg = upload(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>'));
+    const rejected = withStorage(results);
+    expect(await uploadPlayerDocument(rejected.db, 'u1', fields(), svg)).toMatchObject({
+      code: 'invalid',
+      error: 'Upload a PDF, JPEG, PNG, HEIC or WebP file.',
+    });
+    // Declared small, read large.
+    const understated = upload(new Uint8Array(20 * 1024 * 1024 + 1), 10);
+    expect(await uploadPlayerDocument(rejected.db, 'u1', fields(), understated)).toMatchObject({ error: 'That file is too large (20 MB max).' });
+    expect(rejected.bucketCalls).toHaveLength(0);
+
+    // Stored as the type its bytes show.
+    const png = withStorage(results);
+    await uploadPlayerDocument(png.db, 'u1', fields(), upload(PNG_BYTES));
+    expect(png.bucketCalls[0].args[0]).toMatch(/\.png$/);
+    expect(png.bucketCalls[0].args[2]).toEqual({ contentType: 'image/png', upsert: false });
   });
 
   it('should refuse a type that isn’t the system’s or the team’s', async () => {

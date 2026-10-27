@@ -77,7 +77,8 @@ describe('player document routes', () => {
       expiresOn: undefined,
       notes: undefined,
     });
-    expect(file).toMatchObject({ size: 3, contentType: 'application/pdf' });
+    expect(file).toMatchObject({ size: 3 });
+    expect(file).not.toHaveProperty('contentType');
     expect(Array.from(await file.read())).toEqual([1, 2, 3]);
   });
 
@@ -96,6 +97,14 @@ describe('player document routes', () => {
     const huge = await uploadRoute(upload(uploadForm(), { 'content-length': String(22 * 1024 * 1024) }), player);
     expect(huge.status).toBe(400);
     expect(await huge.json()).toEqual({ error: 'That file is too large (20 MB max).', code: 'invalid' });
+    expect(mockServices.uploadPlayerDocument).not.toHaveBeenCalled();
+  });
+
+  it('should stop reading a body that runs past the limit, whatever length it declared', async () => {
+    const oversized = new Uint8Array(22 * 1024 * 1024);
+    const response = await uploadRoute(upload(oversized, { 'content-type': 'multipart/form-data; boundary=x' }), player);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'That file is too large (20 MB max).', code: 'invalid' });
     expect(mockServices.uploadPlayerDocument).not.toHaveBeenCalled();
   });
 

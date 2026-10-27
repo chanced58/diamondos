@@ -24,6 +24,37 @@ type Params = { params: { teamId: string; playerId: string } };
 
 /** Room for the form's other fields and multipart boundaries on top of the file. */
 const MAX_BODY_BYTES = PLAYER_DOCUMENT_MAX_BYTES + 1024 * 1024;
+const TOO_LARGE = 'That file is too large (20 MB max).';
+
+class BodyTooLargeError extends Error {}
+
+/**
+ * Parses the multipart body, counting the bytes actually read, so a body
+ * longer than it declared is cut off at the limit instead of buffered whole.
+ */
+async function readBoundedForm(req: Request, maxBytes: number): Promise<FormData> {
+  if (!req.body) throw new TypeError('Missing body');
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new BodyTooLargeError();
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new Response(body, { headers: { 'content-type': req.headers.get('content-type') ?? '' } }).formData();
+}
 
 export async function GET(req: Request, { params }: Params) {
   const auth = await requireApiUser(req);
@@ -43,13 +74,12 @@ export async function POST(req: Request, { params }: Params) {
   if (!Number.isFinite(contentLength) || contentLength <= 0) {
     return apiError(400, 'Send the document as multipart form data.', 'invalid');
   }
-  if (contentLength > MAX_BODY_BYTES) {
-    return apiError(400, 'That file is too large (20 MB max).', 'invalid');
-  }
+  if (contentLength > MAX_BODY_BYTES) return apiError(400, TOO_LARGE, 'invalid');
   let form: FormData;
   try {
-    form = await req.formData();
-  } catch {
+    form = await readBoundedForm(req, MAX_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) return apiError(400, TOO_LARGE, 'invalid');
     return apiError(400, 'Send the document as multipart form data.', 'invalid');
   }
   const text = (name: string) => {
@@ -72,7 +102,7 @@ export async function POST(req: Request, { params }: Params) {
         notes: text('notes'),
       },
       file instanceof Blob
-        ? { size: file.size, contentType: file.type, read: async () => new Uint8Array(await file.arrayBuffer()) }
+        ? { size: file.size, read: async () => new Uint8Array(await file.arrayBuffer()) }
         : null,
     ),
     201,

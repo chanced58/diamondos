@@ -35,7 +35,8 @@ describe('document files', () => {
   it('should refuse what the server would', () => {
     const file = { uri: 'file:///a', name: 'a.pdf', mimeType: 'application/pdf', size: 10 };
     expect(checkDocumentFile(file)).toBe(file);
-    expect(() => checkDocumentFile({ ...file, mimeType: 'text/plain' })).toThrow('Pick a PDF or an image.');
+    expect(() => checkDocumentFile({ ...file, mimeType: 'image/gif' })).toThrow('Upload a PDF, JPEG, PNG, HEIC or WebP file.');
+    expect(() => checkDocumentFile({ ...file, mimeType: 'text/plain' })).toThrow('Upload a PDF, JPEG, PNG, HEIC or WebP file.');
     expect(() => checkDocumentFile({ ...file, size: 21 * 1024 * 1024 })).toThrow('That file is too large (20 MB max).');
   });
 });
@@ -47,7 +48,7 @@ describe('pickDocumentFile', () => {
       assets: [{ uri: 'file:///cache/waiver.pdf', name: 'waiver.pdf', mimeType: 'application/pdf', size: 2048 }],
     });
     expect(await pickDocumentFile('files')).toEqual({ uri: 'file:///cache/waiver.pdf', name: 'waiver.pdf', mimeType: 'application/pdf', size: 2048 });
-    expect(picker.getDocument).toHaveBeenCalledWith({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true });
+    expect(picker.getDocument).toHaveBeenCalledWith({ type: ['application/pdf', 'image/jpeg', 'image/png', 'image/heic', 'image/heif', 'image/webp'], copyToCacheDirectory: true });
   });
 
   it('should take a photo once the camera is allowed, and say so when it isn’t', async () => {

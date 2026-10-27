@@ -40,7 +40,7 @@ export async function uploadPlayerDocumentAction(_prev: string | null | undefine
       notes: formData.get('notes'),
     },
     file instanceof File
-      ? { size: file.size, contentType: file.type, read: async () => new Uint8Array(await file.arrayBuffer()) }
+      ? { size: file.size, read: async () => new Uint8Array(await file.arrayBuffer()) }
       : null,
   );
   if (!result.ok) return result.error;
