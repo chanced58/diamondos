@@ -3,9 +3,10 @@ import { z } from 'zod';
 /**
  * Contracts for league administration on mobile (the web /league/admin
  * pages), served by `/api/m/v1/league-admin/:leagueId/*`. League staff
- * (admins and managers) read; only league admins change anything. The write
- * inputs reuse `createLeaguePlayerSchema`, `transferPlayerSchema` and
- * `releasePlayerSchema` from `league-player.ts`.
+ * (admins and managers) read and add or remove divisions; only league admins
+ * change players and teams. The player write inputs reuse
+ * `createLeaguePlayerSchema`, `transferPlayerSchema` and `releasePlayerSchema`
+ * from `league-player.ts`.
  */
 
 const uuid = z.string().uuid();
@@ -131,4 +132,67 @@ export function filterLeaguePlayers(
     }
     return true;
   });
+}
+
+// ── Teams and divisions ──────────────────────────────────────────────────────
+
+export const leagueMembershipInputSchema = z.object({ leagueId: uuid, membershipId: uuid });
+export const leagueDivisionIdInputSchema = z.object({ leagueId: uuid, divisionId: uuid });
+
+export const addLeagueDivisionInputSchema = z.object({
+  leagueId: uuid,
+  name: z.string({ required_error: 'Name the division.' }).trim().min(1, 'Name the division.').max(80, 'Keep the name to 80 characters.'),
+});
+export type AddLeagueDivisionInput = z.input<typeof addLeagueDivisionInputSchema>;
+
+/** Moves a team into a division of the same league, or out of every division (`null`). */
+export const setLeagueTeamDivisionInputSchema = leagueMembershipInputSchema.extend({ divisionId: uuid.nullable() });
+export type SetLeagueTeamDivisionInput = z.infer<typeof setLeagueTeamDivisionInputSchema>;
+
+export const setLeagueTeamActiveInputSchema = leagueMembershipInputSchema.extend({ isActive: z.boolean() });
+export type SetLeagueTeamActiveInput = z.infer<typeof setLeagueTeamActiveInputSchema>;
+
+/** A team's seat in the league: a platform team or an opponent team the league tracks. */
+export const leagueTeamMembershipSchema = z.object({
+  membershipId: z.string(),
+  name: z.string(),
+  organization: z.string().nullable(),
+  divisionId: z.string().nullable(),
+  isOpponentTeam: z.boolean(),
+  isActive: z.boolean(),
+});
+export type LeagueTeamMembership = z.infer<typeof leagueTeamMembershipSchema>;
+
+/** The league's teams (active and inactive) and divisions, with what the viewer can change. */
+export const leagueTeamsResponseSchema = z.object({
+  league: z.object({ id: z.string(), name: z.string() }),
+  /** League admins move, activate, deactivate and remove teams. */
+  canEditTeams: z.boolean(),
+  /** Any league staff member adds and removes divisions. */
+  canEditDivisions: z.boolean(),
+  teams: z.array(leagueTeamMembershipSchema),
+  divisions: z.array(leagueAdminDivisionSchema),
+});
+export type LeagueTeamsResponse = z.infer<typeof leagueTeamsResponseSchema>;
+
+export const leagueDivisionWriteResponseSchema = z.object({ divisionId: z.string() });
+export type LeagueDivisionWriteResponse = z.infer<typeof leagueDivisionWriteResponseSchema>;
+
+export const leagueTeamWriteResponseSchema = z.object({ membershipId: z.string() });
+export type LeagueTeamWriteResponse = z.infer<typeof leagueTeamWriteResponseSchema>;
+
+/** Teams grouped by division in the divisions' order, then those in none ("No division"). */
+export function groupLeagueTeamsByDivision(
+  teams: LeagueTeamMembership[],
+  divisions: LeagueAdminDivision[],
+): Array<{ divisionId: string | null; name: string; teams: LeagueTeamMembership[] }> {
+  const known = new Set(divisions.map((division) => division.id));
+  const groups: Array<{ divisionId: string | null; name: string; teams: LeagueTeamMembership[] }> = divisions.map((division) => ({
+    divisionId: division.id,
+    name: division.name,
+    teams: teams.filter((team) => team.divisionId === division.id),
+  }));
+  const unassigned = teams.filter((team) => !team.divisionId || !known.has(team.divisionId));
+  if (unassigned.length > 0) groups.push({ divisionId: null, name: 'No division', teams: unassigned });
+  return groups;
 }

@@ -6,6 +6,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { LeagueScoringSettingsForm } from './LeagueScoringSettingsForm';
+import {
+  addLeagueDivisionAction,
+  removeLeagueDivisionAction,
+  removeLeagueTeamAction,
+  setLeagueTeamActiveAction,
+  setLeagueTeamDivisionAction,
+} from './actions';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -101,11 +108,8 @@ export function LeagueAdminClient({
     setSaving(true);
     setErrorMsg(null);
     try {
-      const { error } = await supabase.from('league_divisions').insert({
-        league_id: leagueId,
-        name: newDivisionName.trim(),
-      });
-      if (error) { setErrorMsg(error.message); return; }
+      const error = await addLeagueDivisionAction(leagueId, newDivisionName.trim());
+      if (error) { setErrorMsg(error); return; }
       setNewDivisionName('');
       router.refresh();
     } finally {
@@ -117,8 +121,8 @@ export function LeagueAdminClient({
     setSaving(true);
     setErrorMsg(null);
     try {
-      const { error } = await supabase.from('league_divisions').delete().eq('id', divisionId);
-      if (error) { setErrorMsg(error.message); return; }
+      const error = await removeLeagueDivisionAction(leagueId, divisionId);
+      if (error) { setErrorMsg(error); return; }
       router.refresh();
     } finally {
       setSaving(false);
@@ -229,8 +233,8 @@ export function LeagueAdminClient({
     setSaving(true);
     setErrorMsg(null);
     try {
-      const { error } = await supabase.from('league_members').delete().eq('id', membershipId);
-      if (error) { setErrorMsg(error.message); return; }
+      const error = await removeLeagueTeamAction(leagueId, membershipId);
+      if (error) { setErrorMsg(error); return; }
       router.refresh();
     } finally {
       setSaving(false);
@@ -242,11 +246,8 @@ export function LeagueAdminClient({
     setSaving(true);
     setErrorMsg(null);
     try {
-      const { error } = await supabase
-        .from('league_members')
-        .update({ is_active: !currentlyActive })
-        .eq('id', membershipId);
-      if (error) { setErrorMsg(error.message); return; }
+      const error = await setLeagueTeamActiveAction(leagueId, membershipId, !currentlyActive);
+      if (error) { setErrorMsg(error); return; }
       router.refresh();
     } finally {
       setSaving(false);
@@ -257,11 +258,8 @@ export function LeagueAdminClient({
     setSaving(true);
     setErrorMsg(null);
     try {
-      const { error } = await supabase
-        .from('league_members')
-        .update({ division_id: divisionId })
-        .eq('id', membershipId);
-      if (error) { setErrorMsg(error.message); return; }
+      const error = await setLeagueTeamDivisionAction(leagueId, membershipId, divisionId);
+      if (error) { setErrorMsg(error); return; }
       router.refresh();
     } finally {
       setSaving(false);
