@@ -6,7 +6,7 @@ import { Button, EmptyState, ErrorState, FormField } from '@baseball/ui';
 import { uploadPlayerDocumentInputSchema } from '@baseball/shared';
 import { useRole } from '../../../../../../src/providers/RoleProvider';
 import { ChoiceChips } from '../../../../../../src/features/practices/ChoiceChips';
-import { DateTimeFields } from '../../../../../../src/features/forms/DateTimeFields';
+import { OptionalDate } from '../../../../../../src/features/forms/OptionalDate';
 import {
   playerDocumentsQueryKey,
   uploadPlayerDocument,
@@ -201,40 +201,5 @@ export default function UploadPlayerDocumentScreen() {
         <Button label={upload.isPending ? 'Uploading…' : 'Upload document'} loading={upload.isPending} onPress={submit} />
       </ScrollView>
     </KeyboardAvoidingView>
-  );
-}
-
-/** A date the coach adds only when the document has one. */
-function OptionalDate({
-  label,
-  value,
-  today,
-  onChange,
-  hint,
-  testID,
-}: {
-  label: string;
-  value: string | null;
-  today: string;
-  onChange: (value: string | null) => void;
-  hint?: string;
-  testID: string;
-}) {
-  return (
-    <FormField label={label}>
-      {value ? (
-        <View className="flex-row items-center gap-3">
-          <DateTimeFields date={value} time="00:00" showTime={false} onChange={({ date }) => onChange(date)} testID={testID} />
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove ${label.toLowerCase()} date`} onPress={() => onChange(null)}>
-            <Text className="text-sm text-gray-500">Remove</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <TouchableOpacity accessibilityRole="button" onPress={() => onChange(today)}>
-          <Text className="text-sm font-semibold text-brand-700">Add a date</Text>
-        </TouchableOpacity>
-      )}
-      {hint && <Text className="text-xs text-amber-700 mt-1">{hint}</Text>}
-    </FormField>
   );
 }

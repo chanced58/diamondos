@@ -84,16 +84,16 @@ export default function MoreScreen() {
         )}
       </ListGroup>
 
-      {leagueRoles.length > 0 && hasWeb && (
+      {leagueRoles.length > 0 && (
         <>
-          <SectionHeader title="League" />
+          <SectionHeader title="League admin" />
           <ListGroup>
             {leagueRoles.map((role) => (
               <ListRow
                 key={role.leagueId}
                 title={role.leagueName}
-                subtitle={`${LEAGUE_ROLE_LABELS[role.role]} · opens on the web`}
-                onPress={() => void openOnWeb(role.role === 'league_admin' ? '/league/admin' : '/league')}
+                subtitle={LEAGUE_ROLE_LABELS[role.role]}
+                onPress={() => router.push({ pathname: '/(tabs)/more/league-admin/[leagueId]', params: { leagueId: role.leagueId } })}
               />
             ))}
           </ListGroup>

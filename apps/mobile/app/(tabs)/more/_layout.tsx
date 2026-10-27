@@ -38,6 +38,12 @@ export default function MoreLayout() {
       <Stack.Screen name="league/index" options={{ title: 'League' }} />
       <Stack.Screen name="league/home" options={{ title: 'League home' }} />
       <Stack.Screen name="league/team/[teamId]" options={{ title: 'Team' }} />
+      <Stack.Screen name="league-admin/[leagueId]/index" options={{ title: 'League admin' }} />
+      <Stack.Screen name="league-admin/[leagueId]/players/index" options={{ title: 'League players' }} />
+      <Stack.Screen name="league-admin/[leagueId]/players/new" options={{ title: 'Add player' }} />
+      <Stack.Screen name="league-admin/[leagueId]/players/[playerId]/index" options={{ title: 'Player' }} />
+      <Stack.Screen name="league-admin/[leagueId]/players/[playerId]/move" options={{ title: 'Trade player' }} />
+      <Stack.Screen name="league-admin/[leagueId]/players/[playerId]/release" options={{ title: 'Release player' }} />
       <Stack.Screen name="tournaments/index" options={{ title: 'Tournaments' }} />
       <Stack.Screen name="tournaments/new" options={{ title: 'New tournament' }} />
       <Stack.Screen name="tournaments/[tournamentId]" options={{ title: 'Tournament' }} />

@@ -5,6 +5,10 @@ const PLAYER_POSITION = z.enum([
   'left_field','center_field','right_field','designated_hitter','utility',
 ]);
 
+/** The positions a league player can be registered with. */
+export const LEAGUE_PLAYER_POSITIONS = PLAYER_POSITION.options;
+export type LeaguePlayerPosition = (typeof LEAGUE_PLAYER_POSITIONS)[number];
+
 const BATS_THROWS = z.enum(['right','left','switch']);
 
 const uuid = () => z.string().uuid();
