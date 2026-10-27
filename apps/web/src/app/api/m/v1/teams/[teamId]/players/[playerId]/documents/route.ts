@@ -6,13 +6,19 @@
  * most) with the `UploadPlayerDocumentInput` fields `documentType`, `title`
  * and optional `signedOn`, `expiresOn` and `notes`. Responds 201
  * `{ documentId }`; the player's previous document of the type is superseded.
+ * The actor is authorized, and a `Content-Length` within the limit required,
+ * before the body is read.
  *
  * Roster managers only; same services as the web player documents page.
  */
 import { PLAYER_DOCUMENT_MAX_BYTES } from '@baseball/shared';
 import { apiError, requireApiUser } from '@/lib/api/bearer-auth';
 import { serviceResponse } from '@/lib/api/service-response';
-import { loadPlayerDocuments, uploadPlayerDocument } from '@/lib/services/roster/player-documents';
+import {
+  authorizePlayerDocumentUpload,
+  loadPlayerDocuments,
+  uploadPlayerDocument,
+} from '@/lib/services/roster/player-documents';
 
 type Params = { params: { teamId: string; playerId: string } };
 
@@ -30,7 +36,14 @@ export async function POST(req: Request, { params }: Params) {
   const auth = await requireApiUser(req);
   if (auth.response) return auth.response;
 
-  if (Number(req.headers.get('content-length') ?? 0) > MAX_BODY_BYTES) {
+  // Authorize, and require a declared size within the limit, before the body is buffered.
+  const allowed = await authorizePlayerDocumentUpload(auth.db, auth.user.id, { teamId: params.teamId, playerId: params.playerId });
+  if (!allowed.ok) return serviceResponse(allowed);
+  const contentLength = Number(req.headers.get('content-length'));
+  if (!Number.isFinite(contentLength) || contentLength <= 0) {
+    return apiError(400, 'Send the document as multipart form data.', 'invalid');
+  }
+  if (contentLength > MAX_BODY_BYTES) {
     return apiError(400, 'That file is too large (20 MB max).', 'invalid');
   }
   let form: FormData;

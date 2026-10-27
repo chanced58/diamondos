@@ -1,4 +1,10 @@
-import { deletePlayerDocument, loadPlayerDocuments, playerDocumentUrl, uploadPlayerDocument } from '../player-documents';
+import {
+  authorizePlayerDocumentUpload,
+  deletePlayerDocument,
+  loadPlayerDocuments,
+  playerDocumentUrl,
+  uploadPlayerDocument,
+} from '../player-documents';
 import { fakeDb, type FakeResult } from '../../__tests__/fake-db';
 
 const mockGetRosterAccess = jest.fn();
@@ -76,6 +82,16 @@ describe('loadPlayerDocuments', () => {
     expect(await loadPlayerDocuments(db, 'u1', ids)).toMatchObject({ code: 'forbidden', error: 'Only coaches can manage player documents.' });
     expect(await loadPlayerDocuments(db, 'u1', ids)).toMatchObject({ code: 'not_found' });
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('authorizePlayerDocumentUpload', () => {
+  it('should allow a roster manager for a player on the team, and refuse anyone else', async () => {
+    const { db } = withStorage({ 'players.select': player });
+    expect(await authorizePlayerDocumentUpload(db, 'u1', ids)).toEqual({ ok: true, data: { playerId: PLAYER } });
+    mockGetRosterAccess.mockResolvedValueOnce({ canView: true, canManage: false, role: 'parent' });
+    expect(await authorizePlayerDocumentUpload(db, 'u1', ids)).toMatchObject({ code: 'forbidden' });
+    expect(await authorizePlayerDocumentUpload(db, 'u1', { teamId: 't1', playerId: PLAYER })).toMatchObject({ code: 'invalid' });
   });
 });
 

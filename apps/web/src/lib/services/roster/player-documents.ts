@@ -108,6 +108,21 @@ export async function loadPlayerDocuments(
   });
 }
 
+/**
+ * Whether the actor may upload a document for the player, checked before an
+ * upload's body is read so a refused caller never has it buffered.
+ */
+export async function authorizePlayerDocumentUpload(
+  db: SupabaseClient,
+  actorUserId: string,
+  rawInput: unknown,
+): Promise<ServiceResult<{ playerId: string }>> {
+  const parsed = rosterPlayerIdInputSchema.safeParse(rawInput);
+  if (!parsed.success) return invalidInput(parsed.error);
+  const player = await authorizePlayer(db, actorUserId, parsed.data.teamId, parsed.data.playerId);
+  return player.ok ? serviceOk({ playerId: player.data.id }) : player;
+}
+
 /** Uploads a PDF or image (20 MB at most) and records it as the player's current document of its type. */
 export async function uploadPlayerDocument(
   db: SupabaseClient,

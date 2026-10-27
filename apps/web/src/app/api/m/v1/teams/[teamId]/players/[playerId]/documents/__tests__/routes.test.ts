@@ -5,6 +5,7 @@ import { GET as urlRoute } from '../[documentId]/url/route';
 
 const mockRequireApiUser = jest.fn();
 const mockServices = {
+  authorizePlayerDocumentUpload: jest.fn(),
   loadPlayerDocuments: jest.fn(),
   uploadPlayerDocument: jest.fn(),
   deletePlayerDocument: jest.fn(),
@@ -15,6 +16,7 @@ jest.mock('@/lib/api/bearer-auth', () => ({
   requireApiUser: (req: Request) => mockRequireApiUser(req),
 }));
 jest.mock('@/lib/services/roster/player-documents', () => ({
+  authorizePlayerDocumentUpload: (...args: unknown[]) => mockServices.authorizePlayerDocumentUpload(...args),
   loadPlayerDocuments: (...args: unknown[]) => mockServices.loadPlayerDocuments(...args),
   uploadPlayerDocument: (...args: unknown[]) => mockServices.uploadPlayerDocument(...args),
   deletePlayerDocument: (...args: unknown[]) => mockServices.deletePlayerDocument(...args),
@@ -36,6 +38,8 @@ function uploadForm(withFile = true) {
   if (withFile) form.append('file', new Blob([new Uint8Array([1, 2, 3])], { type: 'application/pdf' }), 'waiver.pdf');
   return form;
 }
+/** An upload as the app sends it, with its declared size. */
+const upload = (body: BodyInit, headers: Record<string, string> = {}) => request('POST', body, { 'content-length': '1000', ...headers });
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -59,8 +63,9 @@ describe('player document routes', () => {
   });
 
   it('should hand the form fields and the file to the upload service, responding 201', async () => {
-    const response = await uploadRoute(request('POST', uploadForm()), player);
+    const response = await uploadRoute(upload(uploadForm()), player);
     expect(response.status).toBe(201);
+    expect(mockServices.authorizePlayerDocumentUpload).toHaveBeenCalledWith(DB, 'u1', { teamId: 't1', playerId: 'p1' });
     const [, actor, input, file] = mockServices.uploadPlayerDocument.mock.calls[0];
     expect(actor).toBe('u1');
     expect(input).toEqual({
@@ -77,17 +82,30 @@ describe('player document routes', () => {
   });
 
   it('should pass no file when the form has none', async () => {
-    await uploadRoute(request('POST', uploadForm(false)), player);
+    await uploadRoute(upload(uploadForm(false)), player);
     expect(mockServices.uploadPlayerDocument.mock.calls[0][3]).toBeNull();
   });
 
-  it('should refuse a body that isn’t a form, or is larger than any allowed file', async () => {
-    const json = await uploadRoute(request('POST', '{}', { 'content-type': 'application/json' }), player);
+  it('should refuse a body that isn’t a form, has no declared size, or is larger than any allowed file', async () => {
+    const json = await uploadRoute(upload('{}', { 'content-type': 'application/json' }), player);
     expect(json.status).toBe(400);
     expect(await json.json()).toEqual({ error: 'Send the document as multipart form data.', code: 'invalid' });
 
-    const huge = await uploadRoute(request('POST', uploadForm(), { 'content-length': String(22 * 1024 * 1024) }), player);
+    expect((await uploadRoute(request('POST', uploadForm()), player)).status).toBe(400);
+    expect((await uploadRoute(upload(uploadForm(), { 'content-length': 'lots' }), player)).status).toBe(400);
+    const huge = await uploadRoute(upload(uploadForm(), { 'content-length': String(22 * 1024 * 1024) }), player);
     expect(huge.status).toBe(400);
+    expect(await huge.json()).toEqual({ error: 'That file is too large (20 MB max).', code: 'invalid' });
+    expect(mockServices.uploadPlayerDocument).not.toHaveBeenCalled();
+  });
+
+  it('should refuse someone who can’t manage the roster before reading the body', async () => {
+    mockServices.authorizePlayerDocumentUpload.mockResolvedValue({ ok: false, code: 'forbidden', error: 'Only coaches can manage player documents.' });
+    const req = upload(uploadForm());
+    const readBody = jest.spyOn(req, 'formData');
+    const response = await uploadRoute(req, player);
+    expect(response.status).toBe(403);
+    expect(readBody).not.toHaveBeenCalled();
     expect(mockServices.uploadPlayerDocument).not.toHaveBeenCalled();
   });
 
