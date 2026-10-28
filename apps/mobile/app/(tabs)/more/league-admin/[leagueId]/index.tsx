@@ -47,6 +47,11 @@ export default function LeagueAdminScreen() {
           subtitle="Divisions, and each team's division and status"
           onPress={() => router.push({ pathname: '/(tabs)/more/league-admin/[leagueId]/teams', params: { leagueId } })}
         />
+        <ListRow
+          title="Scoring settings"
+          subtitle="Lineups, game length, guests, dual scorekeeping and pitch counts"
+          onPress={() => router.push({ pathname: '/(tabs)/more/league-admin/[leagueId]/scoring', params: { leagueId } })}
+        />
       </ListGroup>
 
       {webUrl('/') !== null && (
@@ -54,7 +59,7 @@ export default function LeagueAdminScreen() {
           <SectionHeader title="On the web" />
           <ListGroup>
             <ListRow
-              title="Settings, staff and adding teams"
+              title="League details, staff and adding teams"
               subtitle="The rest of league admin opens on the web"
               onPress={() => void openOnWeb('/league/admin')}
             />

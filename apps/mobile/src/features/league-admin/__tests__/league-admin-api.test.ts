@@ -3,14 +3,17 @@ import {
   createLeaguePlayer,
   fetchLeaguePlayer,
   fetchLeaguePlayers,
+  fetchLeagueScoringSettings,
   fetchLeagueTeams,
   releaseLeaguePlayer,
   removeLeagueDivision,
   removeLeagueTeam,
+  saveLeagueScoringSettings,
   setLeagueTeamActive,
   setLeagueTeamDivision,
   transferLeaguePlayer,
 } from '../league-admin-api';
+import { defaultLeagueScoringSettings } from '@baseball/shared';
 import type { ApiClient } from '../../../lib/api-client';
 
 jest.mock('../../../lib/supabase', () => ({ getSupabaseClient: jest.fn() }));
@@ -43,6 +46,16 @@ describe('league-admin-api teams and divisions', () => {
       ['/league-admin/l1/teams/m1/active', { isActive: false }],
     ]);
     expect(client.delete.mock.calls.map((call) => call[0])).toEqual(['/league-admin/l1/divisions/d1', '/league-admin/l1/teams/m1']);
+  });
+});
+
+describe('league-admin-api scoring settings', () => {
+  it('should read and save the whole settings blob under the league', async () => {
+    const settings = defaultLeagueScoringSettings();
+    await fetchLeagueScoringSettings('l1', client);
+    await saveLeagueScoringSettings('l1', settings, client);
+    expect(client.get.mock.calls[0][0]).toBe('/league-admin/l1/scoring-settings');
+    expect(client.post.mock.calls[0].slice(0, 2)).toEqual(['/league-admin/l1/scoring-settings', { settings }]);
   });
 });
 
