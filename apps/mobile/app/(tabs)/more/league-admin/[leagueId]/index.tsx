@@ -42,6 +42,11 @@ export default function LeagueAdminScreen() {
           subtitle="Register, assign, trade and release players"
           onPress={() => router.push({ pathname: '/(tabs)/more/league-admin/[leagueId]/players', params: { leagueId } })}
         />
+        <ListRow
+          title="Teams and divisions"
+          subtitle="Divisions, and each team's division and status"
+          onPress={() => router.push({ pathname: '/(tabs)/more/league-admin/[leagueId]/teams', params: { leagueId } })}
+        />
       </ListGroup>
 
       {webUrl('/') !== null && (
@@ -49,7 +54,7 @@ export default function LeagueAdminScreen() {
           <SectionHeader title="On the web" />
           <ListGroup>
             <ListRow
-              title="Teams, divisions, settings and staff"
+              title="Settings, staff and adding teams"
               subtitle="The rest of league admin opens on the web"
               onPress={() => void openOnWeb('/league/admin')}
             />

@@ -1,20 +1,49 @@
 import {
+  addLeagueDivision,
   createLeaguePlayer,
   fetchLeaguePlayer,
   fetchLeaguePlayers,
+  fetchLeagueTeams,
   releaseLeaguePlayer,
+  removeLeagueDivision,
+  removeLeagueTeam,
+  setLeagueTeamActive,
+  setLeagueTeamDivision,
   transferLeaguePlayer,
 } from '../league-admin-api';
 import type { ApiClient } from '../../../lib/api-client';
 
 jest.mock('../../../lib/supabase', () => ({ getSupabaseClient: jest.fn() }));
 
-const client = { get: jest.fn(), post: jest.fn() } as unknown as ApiClient & { get: jest.Mock; post: jest.Mock };
+const client = { get: jest.fn(), post: jest.fn(), delete: jest.fn() } as unknown as ApiClient & {
+  get: jest.Mock;
+  post: jest.Mock;
+  delete: jest.Mock;
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
   client.get.mockResolvedValue({});
   client.post.mockResolvedValue({});
+  client.delete.mockResolvedValue({});
+});
+
+describe('league-admin-api teams and divisions', () => {
+  it('should read the teams and change divisions and teams under the league', async () => {
+    await fetchLeagueTeams('l1', client);
+    await addLeagueDivision('l1', 'North', client);
+    await removeLeagueDivision('l1', 'd1', client);
+    await setLeagueTeamDivision('l1', 'm1', null, client);
+    await setLeagueTeamActive('l1', 'm1', false, client);
+    await removeLeagueTeam('l1', 'm1', client);
+    expect(client.get.mock.calls[0][0]).toBe('/league-admin/l1/teams');
+    expect(client.post.mock.calls.map((call) => [call[0], call[1]])).toEqual([
+      ['/league-admin/l1/divisions', { name: 'North' }],
+      ['/league-admin/l1/teams/m1/division', { divisionId: null }],
+      ['/league-admin/l1/teams/m1/active', { isActive: false }],
+    ]);
+    expect(client.delete.mock.calls.map((call) => call[0])).toEqual(['/league-admin/l1/divisions/d1', '/league-admin/l1/teams/m1']);
+  });
 });
 
 describe('league-admin-api', () => {
