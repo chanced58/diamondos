@@ -95,31 +95,33 @@ function GamesList({ games }: GamesListProps) {
             </View>
           )}
           {game.status !== 'cancelled' && (
-            <TouchableOpacity
-              onPress={() =>
-                router.push({
-                  pathname: '/(tabs)/schedule/games/[gameId]/lineup',
-                  params: { gameId: game.remoteId },
-                })
-              }
-              className="mt-3 self-start px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200"
-            >
-              <Text className="text-xs font-semibold text-gray-700">Lineup</Text>
-            </TouchableOpacity>
-          )}
+            <View className="mt-3 flex-row flex-wrap gap-2">
+              <TouchableOpacity
+                onPress={() =>
+                  router.push({
+                    pathname: '/(tabs)/schedule/games/[gameId]/lineup',
+                    params: { gameId: game.remoteId },
+                  })
+                }
+                className="px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200"
+              >
+                <Text className="text-xs font-semibold text-gray-700">Lineup</Text>
+              </TouchableOpacity>
 
-          {game.status === 'scheduled' && activeTeam?.isCoach && (
-            <TouchableOpacity
-              onPress={() =>
-                router.push({
-                  pathname: '/(tabs)/schedule/games/[gameId]/attendance',
-                  params: { gameId: game.remoteId },
-                })
-              }
-              className="mt-2 self-start px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200"
-            >
-              <Text className="text-xs font-semibold text-blue-700">RSVPs →</Text>
-            </TouchableOpacity>
+              {game.status === 'scheduled' && activeTeam?.isCoach && (
+                <TouchableOpacity
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(tabs)/schedule/games/[gameId]/attendance',
+                      params: { gameId: game.remoteId },
+                    })
+                  }
+                  className="px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200"
+                >
+                  <Text className="text-xs font-semibold text-blue-700">RSVPs →</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
 
           {game.status === 'scheduled' && !activeTeam?.isCoach && myPlayers.length > 0 && (

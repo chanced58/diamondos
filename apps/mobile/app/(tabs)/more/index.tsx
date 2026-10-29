@@ -106,7 +106,7 @@ export default function MoreScreen() {
           <ListGroup>
             <ListRow
               title="Open DiamondOS on the web"
-              subtitle="Team and league admin and more, while they come to the app"
+              subtitle="Player profiles, team branding, league setup, staff invites and practice block editing"
               onPress={() => void openOnWeb('/dashboard')}
             />
           </ListGroup>
