@@ -17,11 +17,13 @@ import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../re
  * shared by its remove action and the mobile
  * `/api/m/v1/league-admin/:leagueId/staff` routes. League admins only, as the
  * web shows the card to admins and RLS lets only them delete a seat. An admin
- * never removes their own seat, so a league always keeps the admin acting on
- * it. Inviting staff stays on the web.
+ * never removes their own seat, and the `guard_last_league_admin` trigger
+ * refuses removing a league's last active admin, which two admins removing
+ * each other at once would otherwise do. Inviting staff stays on the web.
  */
 
 const STAFF_ADMIN_ONLY = 'Only league admins can manage the league’s staff.';
+const LAST_ADMIN_HINT = 'last_league_admin';
 
 function failed<T>(action: string, leagueId: string, actorUserId: string, error: unknown): ServiceResult<T> {
   console.error(`[league-staff] ${action} failed league=${leagueId} actor=${actorUserId}:`, error);
@@ -100,7 +102,13 @@ export async function removeLeagueStaff(
   }
 
   const { data, error } = await db.from('league_staff').delete().eq('id', staffId).eq('league_id', leagueId).select('id');
-  if (error) return failed('removeLeagueStaff', leagueId, actorUserId, error);
+  if (error) {
+    // guard_last_league_admin: another admin removed the actor's seat in the meantime.
+    if ((error as { hint?: string }).hint === LAST_ADMIN_HINT) {
+      return serviceError('conflict', 'A league must keep at least one league admin.');
+    }
+    return failed('removeLeagueStaff', leagueId, actorUserId, error);
+  }
   if (!data || (data as unknown[]).length === 0) return serviceError('not_found', 'Staff member not found.');
   return serviceOk({ staffId });
 }

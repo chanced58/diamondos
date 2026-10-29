@@ -89,7 +89,6 @@ export async function inviteLeagueAdminAction(_prevState: string | null | undefi
     await db.from('subscriptions').delete().eq('league_id', leagueId);
     await db.from('league_channel_members').delete().eq('league_channel_id', leagueId);
     await db.from('league_channels').delete().eq('league_id', leagueId);
-    await db.from('league_staff').delete().eq('league_id', leagueId);
     await db.from('leagues').delete().eq('id', leagueId);
   }
 

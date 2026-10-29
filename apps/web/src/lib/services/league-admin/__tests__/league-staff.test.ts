@@ -79,6 +79,17 @@ describe('removeLeagueStaff', () => {
     expect(calls.some((c) => c.op === 'delete')).toBe(false);
   });
 
+  it('should explain when the database keeps the league’s last admin', async () => {
+    const { db } = fakeDb({
+      'league_staff.select': [seatOf('league_admin'), { data: { id: SEAT, user_id: 'u2' } }],
+      'league_staff.delete': { error: { code: 'P0001', hint: 'last_league_admin', message: 'A league must keep at least one league admin.' } },
+    });
+    expect(await removeLeagueStaff(db, ACTOR, { leagueId: LEAGUE, staffId: SEAT })).toMatchObject({
+      code: 'conflict',
+      error: 'A league must keep at least one league admin.',
+    });
+  });
+
   it('should refuse a manager, a seat of another league and a bad id', async () => {
     const manager = fakeDb({ 'league_staff.select': seatOf('league_manager') });
     expect(await removeLeagueStaff(manager.db, ACTOR, { leagueId: LEAGUE, staffId: SEAT })).toMatchObject({ code: 'forbidden' });
