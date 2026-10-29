@@ -4,9 +4,11 @@ import {
   fetchLeaguePlayer,
   fetchLeaguePlayers,
   fetchLeagueScoringSettings,
+  fetchLeagueStaff,
   fetchLeagueTeams,
   releaseLeaguePlayer,
   removeLeagueDivision,
+  removeLeagueStaff,
   removeLeagueTeam,
   saveLeagueScoringSettings,
   setLeagueTeamActive,
@@ -56,6 +58,15 @@ describe('league-admin-api scoring settings', () => {
     await saveLeagueScoringSettings('l1', settings, client);
     expect(client.get.mock.calls[0][0]).toBe('/league-admin/l1/scoring-settings');
     expect(client.post.mock.calls[0].slice(0, 2)).toEqual(['/league-admin/l1/scoring-settings', { settings }]);
+  });
+});
+
+describe('league-admin-api staff', () => {
+  it('should read the staff and remove a seat under the league', async () => {
+    await fetchLeagueStaff('l1', client);
+    await removeLeagueStaff('l1', 's 1', client);
+    expect(client.get.mock.calls[0][0]).toBe('/league-admin/l1/staff');
+    expect(client.delete.mock.calls[0][0]).toBe('/league-admin/l1/staff/s%201');
   });
 });
 

@@ -9,8 +9,8 @@ const ROLE_LABELS = { league_admin: 'League admin', league_manager: 'League mana
 
 /**
  * A league its staff run (the web /league/admin page): the league's players,
- * with the rest of league admin on the web for now. Admins change things;
- * managers read.
+ * teams and divisions, scoring settings and (for admins) staff, with the rest
+ * of league admin on the web. Admins change things; managers read.
  */
 export default function LeagueAdminScreen() {
   const { leagueId = '' } = useLocalSearchParams<{ leagueId: string }>();
@@ -52,6 +52,13 @@ export default function LeagueAdminScreen() {
           subtitle="Lineups, game length, guests, dual scorekeeping and pitch counts"
           onPress={() => router.push({ pathname: '/(tabs)/more/league-admin/[leagueId]/scoring', params: { leagueId } })}
         />
+        {role.role === 'league_admin' && (
+          <ListRow
+            title="Staff"
+            subtitle="The league's admins and managers"
+            onPress={() => router.push({ pathname: '/(tabs)/more/league-admin/[leagueId]/staff', params: { leagueId } })}
+          />
+        )}
       </ListGroup>
 
       {webUrl('/') !== null && (
@@ -59,7 +66,7 @@ export default function LeagueAdminScreen() {
           <SectionHeader title="On the web" />
           <ListGroup>
             <ListRow
-              title="League details, staff and adding teams"
+              title="League details, staff invites and adding teams"
               subtitle="The rest of league admin opens on the web"
               onPress={() => void openOnWeb('/league/admin')}
             />

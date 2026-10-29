@@ -5,6 +5,8 @@ import {
   leaguePlayerCreatedResponseSchema,
   leaguePlayerDetailResponseSchema,
   leaguePlayersResponseSchema,
+  leagueStaffResponseSchema,
+  leagueStaffWriteResponseSchema,
   leagueTeamWriteResponseSchema,
   leagueTeamsResponseSchema,
   releaseLeaguePlayerResponseSchema,
@@ -17,6 +19,8 @@ import {
   type LeaguePlayerCreatedResponse,
   type LeaguePlayerDetailResponse,
   type LeaguePlayersResponse,
+  type LeagueStaffResponse,
+  type LeagueStaffWriteResponse,
   type LeagueTeamWriteResponse,
   type LeagueTeamsResponse,
   type ReleaseLeaguePlayerResponse,
@@ -163,6 +167,26 @@ export function useLeagueScoringSettings(leagueId: string) {
   return useQuery({
     queryKey: leagueScoringSettingsQueryKey(leagueId),
     queryFn: () => fetchLeagueScoringSettings(leagueId),
+    enabled: Boolean(leagueId),
+  });
+}
+
+// ── Staff ────────────────────────────────────────────────────────────────────
+
+export const leagueStaffQueryKey = (leagueId: string) => ['league-admin', leagueId, 'staff'] as const;
+
+export function fetchLeagueStaff(leagueId: string, client: ApiClient = apiClient): Promise<LeagueStaffResponse> {
+  return client.get(`${leaguePath(leagueId)}/staff`, leagueStaffResponseSchema);
+}
+
+export function removeLeagueStaff(leagueId: string, staffId: string, client: ApiClient = apiClient): Promise<LeagueStaffWriteResponse> {
+  return client.delete(`${leaguePath(leagueId)}/staff/${encodeURIComponent(staffId)}`, leagueStaffWriteResponseSchema);
+}
+
+export function useLeagueStaff(leagueId: string) {
+  return useQuery({
+    queryKey: leagueStaffQueryKey(leagueId),
+    queryFn: () => fetchLeagueStaff(leagueId),
     enabled: Boolean(leagueId),
   });
 }
