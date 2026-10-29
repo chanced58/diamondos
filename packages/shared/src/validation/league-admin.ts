@@ -5,7 +5,7 @@ import { leagueScoringSettingsSchema } from './league-scoring-settings';
  * Contracts for league administration on mobile (the web /league/admin
  * pages), served by `/api/m/v1/league-admin/:leagueId/*`. League staff
  * (admins and managers) read and add or remove divisions; only league admins
- * change players, teams and scoring settings. The player write inputs reuse
+ * change players, teams and scoring settings, and see and remove staff. The player write inputs reuse
  * `createLeaguePlayerSchema`, `transferPlayerSchema` and `releasePlayerSchema`
  * from `league-player.ts`; the settings are `leagueScoringSettingsSchema`.
  */
@@ -224,3 +224,37 @@ export type SaveLeagueScoringSettingsResponse = z.infer<typeof saveLeagueScoring
 export function pitchRuleOptionLabel(rule: { rule_name: string; age_min: number | null; age_max: number | null }): string {
   return rule.age_min != null && rule.age_max != null ? `${rule.rule_name} (ages ${rule.age_min}–${rule.age_max})` : rule.rule_name;
 }
+
+// ── League staff ─────────────────────────────────────────────────────────────
+
+export const LEAGUE_STAFF_ROLES = ['league_admin', 'league_manager'] as const;
+export type LeagueStaffRole = (typeof LEAGUE_STAFF_ROLES)[number];
+
+export const LEAGUE_STAFF_ROLE_LABELS: Record<LeagueStaffRole, string> = {
+  league_admin: 'Admin',
+  league_manager: 'Manager',
+};
+
+export const leagueStaffIdInputSchema = z.object({ leagueId: uuid, staffId: uuid });
+export type LeagueStaffIdInput = z.infer<typeof leagueStaffIdInputSchema>;
+
+export const leagueStaffMemberSchema = z.object({
+  staffId: z.string(),
+  userId: z.string(),
+  role: z.enum(LEAGUE_STAFF_ROLES),
+  name: z.string(),
+  email: z.string().nullable(),
+  /** The viewer's own seat, which they can't remove. */
+  isYou: z.boolean(),
+});
+export type LeagueStaffMember = z.infer<typeof leagueStaffMemberSchema>;
+
+/** GET …/staff: the league's active staff, admins first. League admins only, as on the web. */
+export const leagueStaffResponseSchema = z.object({
+  league: z.object({ id: z.string(), name: z.string() }),
+  staff: z.array(leagueStaffMemberSchema),
+});
+export type LeagueStaffResponse = z.infer<typeof leagueStaffResponseSchema>;
+
+export const leagueStaffWriteResponseSchema = z.object({ staffId: z.string() });
+export type LeagueStaffWriteResponse = z.infer<typeof leagueStaffWriteResponseSchema>;
