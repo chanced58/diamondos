@@ -1,21 +1,26 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   leagueDivisionWriteResponseSchema,
+  leagueScoringSettingsResponseSchema,
   leaguePlayerCreatedResponseSchema,
   leaguePlayerDetailResponseSchema,
   leaguePlayersResponseSchema,
   leagueTeamWriteResponseSchema,
   leagueTeamsResponseSchema,
   releaseLeaguePlayerResponseSchema,
+  saveLeagueScoringSettingsResponseSchema,
   transferLeaguePlayerResponseSchema,
   type CreateLeaguePlayerInput,
   type LeagueDivisionWriteResponse,
+  type LeagueScoringSettings,
+  type LeagueScoringSettingsResponse,
   type LeaguePlayerCreatedResponse,
   type LeaguePlayerDetailResponse,
   type LeaguePlayersResponse,
   type LeagueTeamWriteResponse,
   type LeagueTeamsResponse,
   type ReleaseLeaguePlayerResponse,
+  type SaveLeagueScoringSettingsResponse,
   type TransferLeaguePlayerResponse,
 } from '@baseball/shared';
 import { apiClient, type ApiClient } from '../../lib/api-client';
@@ -133,6 +138,31 @@ export function useLeagueTeams(leagueId: string) {
   return useQuery({
     queryKey: leagueTeamsQueryKey(leagueId),
     queryFn: () => fetchLeagueTeams(leagueId),
+    enabled: Boolean(leagueId),
+  });
+}
+
+// ── Scoring settings ─────────────────────────────────────────────────────────
+
+export const leagueScoringSettingsQueryKey = (leagueId: string) => ['league-admin', leagueId, 'scoring-settings'] as const;
+
+export function fetchLeagueScoringSettings(leagueId: string, client: ApiClient = apiClient): Promise<LeagueScoringSettingsResponse> {
+  return client.get(`${leaguePath(leagueId)}/scoring-settings`, leagueScoringSettingsResponseSchema);
+}
+
+/** Saves the whole settings blob, as the web form does. */
+export function saveLeagueScoringSettings(
+  leagueId: string,
+  settings: LeagueScoringSettings,
+  client: ApiClient = apiClient,
+): Promise<SaveLeagueScoringSettingsResponse> {
+  return client.post(`${leaguePath(leagueId)}/scoring-settings`, { settings }, saveLeagueScoringSettingsResponseSchema);
+}
+
+export function useLeagueScoringSettings(leagueId: string) {
+  return useQuery({
+    queryKey: leagueScoringSettingsQueryKey(leagueId),
+    queryFn: () => fetchLeagueScoringSettings(leagueId),
     enabled: Boolean(leagueId),
   });
 }

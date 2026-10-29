@@ -1,12 +1,13 @@
 import { z } from 'zod';
+import { leagueScoringSettingsSchema } from './league-scoring-settings';
 
 /**
  * Contracts for league administration on mobile (the web /league/admin
  * pages), served by `/api/m/v1/league-admin/:leagueId/*`. League staff
  * (admins and managers) read and add or remove divisions; only league admins
- * change players and teams. The player write inputs reuse
+ * change players, teams and scoring settings. The player write inputs reuse
  * `createLeaguePlayerSchema`, `transferPlayerSchema` and `releasePlayerSchema`
- * from `league-player.ts`.
+ * from `league-player.ts`; the settings are `leagueScoringSettingsSchema`.
  */
 
 const uuid = z.string().uuid();
@@ -195,4 +196,31 @@ export function groupLeagueTeamsByDivision(
   const unassigned = teams.filter((team) => !team.divisionId || !known.has(team.divisionId));
   if (unassigned.length > 0) groups.push({ divisionId: null, name: 'No division', teams: unassigned });
   return groups;
+}
+
+// ── Scoring settings ─────────────────────────────────────────────────────────
+
+/** Save the league's scoring settings: the whole blob, as the web form saves it. */
+export const saveLeagueScoringSettingsInputSchema = leagueAdminInputSchema.extend({ settings: leagueScoringSettingsSchema });
+export type SaveLeagueScoringSettingsInput = z.infer<typeof saveLeagueScoringSettingsInputSchema>;
+
+/** A system pitch-count ruleset a league can make its default. */
+export const pitchRuleOptionSchema = z.object({ id: z.string(), label: z.string() });
+export type PitchRuleOption = z.infer<typeof pitchRuleOptionSchema>;
+
+/** GET …/scoring-settings: the settings merged with the defaults, and whether the viewer may save them. */
+export const leagueScoringSettingsResponseSchema = z.object({
+  league: z.object({ id: z.string(), name: z.string() }),
+  canEdit: z.boolean(),
+  settings: leagueScoringSettingsSchema,
+  pitchRuleOptions: z.array(pitchRuleOptionSchema),
+});
+export type LeagueScoringSettingsResponse = z.infer<typeof leagueScoringSettingsResponseSchema>;
+
+export const saveLeagueScoringSettingsResponseSchema = z.object({ settings: leagueScoringSettingsSchema });
+export type SaveLeagueScoringSettingsResponse = z.infer<typeof saveLeagueScoringSettingsResponseSchema>;
+
+/** "NFHS (ages 13–18)", or the rule's name alone when it has no age range. */
+export function pitchRuleOptionLabel(rule: { rule_name: string; age_min: number | null; age_max: number | null }): string {
+  return rule.age_min != null && rule.age_max != null ? `${rule.rule_name} (ages ${rule.age_min}–${rule.age_max})` : rule.rule_name;
 }

@@ -7,6 +7,7 @@ import { getActiveTeam } from '@/lib/active-team';
 import { getActiveLeague } from '@/lib/active-league';
 import { getLeagueAccess } from '@/lib/league-access';
 import { getLeagueTeamsAll, getLeagueDivisions, getLeagueStaff, getLeagueForStaff } from '@baseball/database';
+import { pitchRuleOptionLabel } from '@baseball/shared';
 import { LeagueAdminClient } from './LeagueAdminClient';
 import { HomePageSettingsForm } from './HomePageSettingsForm';
 
@@ -94,12 +95,7 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
       `[league-admin] failed to load pitch_compliance_rules for league=${league.id}: ${pitchRulesErr.message}`,
     );
   }
-  const pitchRuleOptions = (systemPitchRules ?? []).map((r) => ({
-    id: r.id,
-    label: r.age_min != null && r.age_max != null
-      ? `${r.rule_name} (ages ${r.age_min}–${r.age_max})`
-      : r.rule_name,
-  }));
+  const pitchRuleOptions = (systemPitchRules ?? []).map((r) => ({ id: r.id, label: pitchRuleOptionLabel(r) }));
 
   return (
     <div className="p-8 max-w-4xl">
