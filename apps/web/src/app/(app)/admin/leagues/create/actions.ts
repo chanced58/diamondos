@@ -62,7 +62,6 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
   async function rollbackLeague() {
     await db.from('league_channel_members').delete().eq('league_channel_id', league.id);
     await db.from('league_channels').delete().eq('league_id', league.id);
-    await db.from('league_staff').delete().eq('league_id', league.id);
     await db.from('leagues').delete().eq('id', league.id);
   }
 

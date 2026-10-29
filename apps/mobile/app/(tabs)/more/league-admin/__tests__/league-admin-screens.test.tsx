@@ -92,6 +92,17 @@ describe('LeagueAdminScreen', () => {
     renderWithQuery(<LeagueAdminScreen />);
     expect(screen.getByText('League staff only')).toBeTruthy();
   });
+
+  it('should offer the staff list to league admins only', () => {
+    const { unmount } = renderWithQuery(<LeagueAdminScreen />);
+    fireEvent.press(screen.getByText('Staff'));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/more/league-admin/[leagueId]/staff', params: { leagueId: LEAGUE } });
+    unmount();
+
+    mockRole.mockReturnValue({ leagueRoles: [{ leagueId: LEAGUE, leagueName: 'Valley League', leagueSlug: null, role: 'league_manager' }] });
+    renderWithQuery(<LeagueAdminScreen />);
+    expect(screen.queryByText('Staff')).toBeNull();
+  });
 });
 
 describe('LeaguePlayersScreen', () => {

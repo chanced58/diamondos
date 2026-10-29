@@ -9,6 +9,7 @@ import { LeagueScoringSettingsForm } from './LeagueScoringSettingsForm';
 import {
   addLeagueDivisionAction,
   removeLeagueDivisionAction,
+  removeLeagueStaffAction,
   removeLeagueTeamAction,
   setLeagueTeamActiveAction,
   setLeagueTeamDivisionAction,
@@ -270,8 +271,8 @@ export function LeagueAdminClient({
     setSaving(true);
     setErrorMsg(null);
     try {
-      const { error } = await supabase.from('league_staff').delete().eq('id', staffId);
-      if (error) { setErrorMsg(error.message); return; }
+      const error = await removeLeagueStaffAction(leagueId, staffId);
+      if (error) { setErrorMsg(error); return; }
       router.refresh();
     } finally {
       setSaving(false);

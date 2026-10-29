@@ -10,11 +10,12 @@ import {
   setLeagueTeamActive,
   setLeagueTeamDivision,
 } from '@/lib/services/league-admin/league-teams';
+import { removeLeagueStaff } from '@/lib/services/league-admin/league-staff';
 import type { ServiceResult } from '@/lib/services/result';
 
-// Thin wrappers over lib/services/league-admin/league-teams, shared with the
-// mobile /api/m/v1/league-admin/:leagueId/teams|divisions routes; each returns
-// an error message or null.
+// Thin wrappers over lib/services/league-admin/league-teams and league-staff,
+// shared with the mobile /api/m/v1/league-admin/:leagueId/teams|divisions|staff
+// routes; each returns an error message or null.
 
 async function run<T>(action: (db: SupabaseClient, userId: string) => Promise<ServiceResult<T>>): Promise<string | null> {
   const auth = createServerClient();
@@ -51,4 +52,8 @@ export async function setLeagueTeamActiveAction(leagueId: string, membershipId: 
 
 export async function removeLeagueTeamAction(leagueId: string, membershipId: string): Promise<string | null> {
   return run((db, userId) => removeLeagueTeam(db, userId, { leagueId, membershipId }));
+}
+
+export async function removeLeagueStaffAction(leagueId: string, staffId: string): Promise<string | null> {
+  return run((db, userId) => removeLeagueStaff(db, userId, { leagueId, staffId }));
 }
