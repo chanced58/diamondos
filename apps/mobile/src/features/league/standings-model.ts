@@ -37,7 +37,7 @@ export const STANDINGS_COLUMNS: StatColumn<StandingsTeamRow>[] = [
   { key: 'ra', label: 'RA', value: (r) => r.ra },
   { key: 'diff', label: 'DIFF', value: (r) => formatDiff(r.diff), emphasize: (r) => r.diff < 0 },
   { key: 'streak', label: 'STRK', value: (r) => formatStreak(r.streak) },
-  { key: 'last5', label: 'L5', value: (r) => formatLast5(r.last5) },
+  { key: 'last5', label: 'L5', value: (r) => formatLast5(r.last5), width: 64 },
 ];
 
 /** Columns where fewer is better, so their first tap sorts low to high, as on the web. */

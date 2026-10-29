@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { fitStatTableColumns } from './stat-table-layout';
 
 export interface StatColumn<Row> {
   key: string;
@@ -6,6 +8,8 @@ export interface StatColumn<Row> {
   value: (row: Row) => string | number;
   /** Highlight a cell (e.g. a non-zero error count). */
   emphasize?: (row: Row) => boolean;
+  /** The column's narrowest width, for values longer than a number (default 48). */
+  width?: number;
 }
 
 /** The pinned name column's key in `sort` and `onSort`. */
@@ -40,7 +44,8 @@ const CELL_WIDTH = 48;
 
 /**
  * A stats table that fits a phone: names stay pinned on the left while the
- * stat columns scroll sideways, so a long line never squeezes the names.
+ * stat columns scroll sideways, so a long line never squeezes the names. On a
+ * wider screen the columns stretch to fill it (`fitStatTableColumns`).
  */
 export function StatTable<Row>({
   rows,
@@ -57,7 +62,15 @@ export function StatTable<Row>({
   isRowPressable,
   highlightRow,
 }: StatTableProps<Row>) {
+  const [tableWidth, setTableWidth] = useState(0);
   if (rows.length === 0) return <Text className="text-sm text-gray-400 px-4 py-4">{emptyText}</Text>;
+
+  const layout = fitStatTableColumns(
+    tableWidth,
+    labelWidth,
+    columns.map((column) => column.width ?? CELL_WIDTH),
+  );
+  const cellWidth = (index: number) => ({ width: layout.columnWidths[index] });
 
   const rowClass = 'h-10 justify-center border-b border-gray-100';
   const arrow = (key: string) => (sort?.key === key ? (sort.ascending ? ' ↑' : ' ↓') : '');
@@ -66,8 +79,8 @@ export function StatTable<Row>({
   const headerText = (key: string) => (sort?.key === key ? 'text-blue-700' : 'text-gray-600');
 
   return (
-    <View className="flex-row bg-white">
-      <View style={{ width: labelWidth }}>
+    <View className="flex-row bg-white" onLayout={(event) => setTableWidth(event.nativeEvent.layout.width)}>
+      <View style={{ width: layout.labelWidth }}>
         <TouchableOpacity
           disabled={!onSort}
           accessibilityRole={onSort ? 'button' : undefined}
@@ -105,14 +118,14 @@ export function StatTable<Row>({
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View>
           <View className={`${rowClass} flex-row items-center bg-gray-50`}>
-            {columns.map((column) => (
+            {columns.map((column, index) => (
               <TouchableOpacity
                 key={column.key}
                 disabled={!onSort}
                 accessibilityRole={onSort ? 'button' : undefined}
                 accessibilityLabel={onSort ? `Sort by ${column.label}` : undefined}
                 onPress={() => onSort?.(column.key)}
-                style={{ width: CELL_WIDTH }}
+                style={cellWidth(index)}
                 className="h-10 justify-center"
               >
                 <Text numberOfLines={1} className={`text-center text-xs font-semibold ${headerText(column.key)}`}>
@@ -124,10 +137,10 @@ export function StatTable<Row>({
           </View>
           {rows.map((row) => (
             <View key={rowKey(row)} className={`${rowClass} flex-row items-center ${tint(row)}`}>
-              {columns.map((column) => (
+              {columns.map((column, index) => (
                 <Text
                   key={column.key}
-                  style={{ width: CELL_WIDTH }}
+                  style={cellWidth(index)}
                   className={`text-center text-sm ${column.emphasize?.(row) ? 'font-semibold text-red-600' : 'text-gray-800'}`}
                 >
                   {column.value(row)}
@@ -137,8 +150,8 @@ export function StatTable<Row>({
           ))}
           {totals && (
             <View className={`${rowClass} flex-row items-center bg-gray-50`}>
-              {columns.map((column) => (
-                <Text key={column.key} style={{ width: CELL_WIDTH }} className="text-center text-sm font-semibold text-gray-700">
+              {columns.map((column, index) => (
+                <Text key={column.key} style={cellWidth(index)} className="text-center text-sm font-semibold text-gray-700">
                   {totals[column.key] ?? ''}
                 </Text>
               ))}
