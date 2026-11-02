@@ -63,3 +63,53 @@ describe('globals.css theme blocks', () => {
     expect(css).toContain('--app-sidebar-active: var(--team-sidebar-active');
   });
 });
+
+describe('globals.css dark-mode contrast rules', () => {
+  const DARK_FORM_RULE =
+    ':where([data-theme="dark"], [data-theme="dugout"]) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea)';
+  const LIGHT_FORM_RULE =
+    ':where([data-theme="light"]) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea)';
+
+  it('lifts bare form-control borders to line-gray-300 in Dark and Dugout', () => {
+    expect(ruleBody(DARK_FORM_RULE)).toMatch(/border-color:\s*rgb\(var\(--dos-line-gray-300\)\)/);
+  });
+
+  it('resets Light islands to the Preflight border color after the dark rule', () => {
+    expect(ruleBody(LIGHT_FORM_RULE)).toMatch(/border-color:\s*rgb\(var\(--dos-line-gray-200\)\)/);
+    expect(css.indexOf(LIGHT_FORM_RULE)).toBeGreaterThan(css.indexOf(DARK_FORM_RULE));
+  });
+
+  it('has no unscoped (Light) rule for the form-control border', () => {
+    const bare = css
+      .split('\n')
+      .filter((line) => /^\s*(?:input|select|textarea)\b[^{]*\{[^}]*border-color/.test(line));
+    expect(bare).toEqual([]);
+  });
+
+  it('uses brand-600 for the slate button and line-gray-300 for the slate choice in Dark and Dugout', () => {
+    expect(css).toMatch(
+      /\[data-theme="dugout"\] \.slate-btn\s*\{\s*background:\s*rgb\(var\(--dos-bg-brand-600\)\)/,
+    );
+    expect(css).toMatch(
+      /\[data-theme="dugout"\] \.slate-choice\s*\{\s*border-color:\s*rgb\(var\(--dos-line-gray-300\)\)/,
+    );
+    expect(css).not.toMatch(/\.slate-btn\s*\{\s*background:\s*var\(--app-brand\)/);
+  });
+
+  it.each([
+    'pill-sky',
+    'pill-violet',
+    'pill-indigo',
+    'slate-fg-muted',
+    'slate-fg-subtle',
+    'slate-divider',
+    'slate-choice',
+    'slate-choice-on',
+    'slate-btn',
+  ])('re-declares .%s for Light islands after the Dark rule', (cls) => {
+    const dark = css.indexOf(`[data-theme="dark"] .${cls}`);
+    const light = css.indexOf(`[data-theme="light"] .${cls}`);
+    expect(dark).toBeGreaterThan(-1);
+    expect(light).toBeGreaterThan(dark);
+  });
+});
