@@ -46,11 +46,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    loadThemePreference().then((stored) => {
-      if (!active) return;
-      if (!chosenBeforeLoad.current) setPreference(stored);
-      setReady(true);
-    });
+    loadThemePreference()
+      .then((stored) => {
+        if (active && !chosenBeforeLoad.current) setPreference(stored);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setReady(true);
+      });
     return () => {
       active = false;
     };

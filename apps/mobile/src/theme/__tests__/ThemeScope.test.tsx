@@ -1,5 +1,6 @@
 import { render } from '@testing-library/react-native';
 import { Text } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { SEMANTIC_TOKENS } from '@baseball/shared';
 import { ThemeScope, useScopeTheme, useThemeColors } from '../ThemeScope';
 
@@ -49,5 +50,31 @@ describe('ThemeScope', () => {
     );
 
     expect(JSON.stringify(toJSON())).toContain('"padding":3');
+  });
+
+  it.each([
+    ['light', 'dark'],
+    ['dark', 'light'],
+    ['dugout', 'light'],
+  ] as const)('should render a StatusBar by default for %s with style %s', (theme, style) => {
+    const { UNSAFE_getAllByType } = render(
+      <ThemeScope theme={theme}>
+        <Text>x</Text>
+      </ThemeScope>,
+    );
+
+    const bars = UNSAFE_getAllByType(StatusBar);
+    expect(bars).toHaveLength(1);
+    expect(bars[0].props.style).toBe(style);
+  });
+
+  it('should render no StatusBar when statusBar is false', () => {
+    const { UNSAFE_queryAllByType } = render(
+      <ThemeScope theme="light" statusBar={false}>
+        <Text>x</Text>
+      </ThemeScope>,
+    );
+
+    expect(UNSAFE_queryAllByType(StatusBar)).toHaveLength(0);
   });
 });

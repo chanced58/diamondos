@@ -29,11 +29,13 @@ function RootLayoutNav() {
     }
   }, [appReady]);
 
+  // Runs in the same commit that mounts the Stack: a cold-start notification
+  // tap can't navigate before the root layout exists.
   useEffect(() => {
-    if (!loading) {
+    if (appReady) {
       setupNotificationDeepLinks();
     }
-  }, [loading]);
+  }, [appReady]);
 
   // Per signed-in user: sign-out removes the device's push token, so a
   // sign-in during the same session has to register it again.
