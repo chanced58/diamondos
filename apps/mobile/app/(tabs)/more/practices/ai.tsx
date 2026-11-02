@@ -139,12 +139,12 @@ export default function AiPracticeScreen() {
         <View className="flex-row gap-3">
           <View className="flex-1">
             <FormField label="Minutes">
-              <TextInput accessibilityLabel="Minutes" className={inputClass} keyboardType="number-pad" value={values.duration} onChangeText={(duration) => set({ duration })} />
+              <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Minutes" className={inputClass} keyboardType="number-pad" value={values.duration} onChangeText={(duration) => set({ duration })} />
             </FormField>
           </View>
           <View className="flex-1">
             <FormField label="Players">
-              <TextInput accessibilityLabel="Players" className={inputClass} keyboardType="number-pad" value={values.players} onChangeText={(players) => set({ players })} />
+              <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Players" className={inputClass} keyboardType="number-pad" value={values.players} onChangeText={(players) => set({ players })} />
             </FormField>
           </View>
         </View>

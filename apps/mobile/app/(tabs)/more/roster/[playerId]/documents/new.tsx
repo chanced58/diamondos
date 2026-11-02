@@ -187,6 +187,7 @@ export default function UploadPlayerDocumentScreen() {
 
         <FormField label="Notes">
           <TextInput
+            keyboardAppearance={keyboardAppearance}
             accessibilityLabel="Notes"
             className={`${inputClass} min-h-[72px]`}
             multiline

@@ -129,6 +129,7 @@ export default function PracticeNotesScreen() {
                   {PRACTICE_NOTE_CATEGORIES.map(({ key, label }) => (
                     <FormField key={key} label={label}>
                       <TextInput
+                        keyboardAppearance={keyboardAppearance}
                         accessibilityLabel={`${label} notes for ${player.firstName} ${player.lastName}`}
                         className={inputClass}
                         multiline

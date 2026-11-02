@@ -97,7 +97,7 @@ export default function NewTournamentScreen() {
       {header}
       <ScrollView className="flex-1 bg-gray-50" contentContainerStyle={{ padding: 16, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
         <FormField label="Tournament name" required>
-          <TextInput accessibilityLabel="Tournament name" className={inputClass} value={values.name} onChangeText={(name) => set({ name })} maxLength={100} />
+          <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Tournament name" className={inputClass} value={values.name} onChangeText={(name) => set({ name })} maxLength={100} />
         </FormField>
         <View className="flex-row gap-3">
           <View className="flex-1">
@@ -138,12 +138,12 @@ export default function NewTournamentScreen() {
         ) : (
           <>
             <FormField label="Team name" required>
-              <TextInput accessibilityLabel="Team name" className={inputClass} value={values.teamName} onChangeText={(teamName) => set({ teamName })} maxLength={100} />
+              <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Team name" className={inputClass} value={values.teamName} onChangeText={(teamName) => set({ teamName })} maxLength={100} />
             </FormField>
             <View className="flex-row gap-3">
               <View className="flex-1">
                 <FormField label="Organization">
-                  <TextInput accessibilityLabel="Organization" className={inputClass} value={values.organization} onChangeText={(organization) => set({ organization })} maxLength={100} />
+                  <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Organization" className={inputClass} value={values.organization} onChangeText={(organization) => set({ organization })} maxLength={100} />
                 </FormField>
               </View>
               <View className="w-24">
