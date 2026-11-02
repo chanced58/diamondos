@@ -121,6 +121,27 @@
     --app-brand-2:        rgb(var(--dos-app-brand-2));
     --app-turf:           rgb(var(--dos-app-turf));
 
+    /* Chart / illustration tokens. Light values equal the colors these
+       components used before theming; Dark and Dugout override them below.
+       Declared here too so a Light island inside a dark app re-resolves. */
+    --field-dirt-1:     #c97c4a;
+    --field-dirt-2:     #8a4a1f;
+    --field-turf-edge:  var(--turf-900);
+    --pz-ball:          var(--count-balls);
+    --pz-strike:        var(--count-strikes);
+    --pz-swing:         #f59e0b;
+    --pz-foul:          var(--clay-500);
+    --pz-inplay:        var(--brand-500);
+    --pz-label:         white;
+    --pz-zone-stroke:   var(--app-border-strong);
+    --count-dot-empty:  var(--app-border-strong);
+
+    /* Neutral translucent tint (e.g. unfinished step bubble) and the
+       sky-blue inline link color used by GameHistoryTree. */
+    --tint-neutral:     rgba(0,0,0,.06);
+    --link-sky:         #0284c7;
+    --link-sky-hover:   #075985;
+
     /* Density (overridden by [data-density=*]) */
     --gap-xs:  6px;
     --gap-sm:  10px;
@@ -143,6 +164,29 @@
      each theme. Only the UA color scheme is set here. */
   [data-theme="dark"]   { color-scheme: dark; }
   [data-theme="dugout"] { color-scheme: dark; }
+
+  /* Chart / illustration overrides for Dark and Dugout. Marker fills are
+     mid-tone so the near-black label reaches 4.5:1 on each; strokes use
+     --app-fg-subtle (>= 3:1 on the card surfaces); field fills stay >= 3:1
+     against the page surface. */
+  [data-theme="dark"],
+  [data-theme="dugout"] {
+    --field-dirt-1:     #c97c4a;
+    --field-dirt-2:     #a8602d;
+    --field-turf-edge:  var(--turf-700);
+    --pz-ball:          #22c55e;
+    --pz-strike:        #eab308;
+    --pz-swing:         #f59e0b;
+    --pz-foul:          #d58b4a;
+    --pz-inplay:        #60a5fa;
+    --pz-label:         #0f1115;
+    --pz-zone-stroke:   var(--app-fg-subtle);
+    --count-dot-empty:  var(--app-fg-subtle);
+    --tint-neutral:     rgba(255,255,255,.10);
+    --link-sky:         #60a5fa;
+    --link-sky-hover:   #93c5fd;
+  }
+  [data-theme="dugout"] { --pz-label: #08120a; }
 
   /* ── Per-league color schemes ──────────────────────────────────
      Selectable by league admins; scoped to a `.league-scheme-<key>`
@@ -459,11 +503,14 @@
     font-size: 11px; font-weight: 600;
     letter-spacing: 0.01em;
   }
-  .badge-safe    { background: var(--turf-100); color: var(--turf-800); }
-  .badge-warning { background: #fef3c7; color: #92400e; }
-  .badge-danger  { background: #fee2e2; color: #991b1b; }
-  .badge-info    { background: var(--brand-100); color: var(--brand-700); }
-  .badge-clay    { background: var(--clay-50); color: var(--clay-700); }
+  /* Light values are exactly the previous colors (turf-100/800, amber-100/800,
+     red-100/800, brand-100/700, clay-50/700); Dark and Dugout come from the
+     themed scales. */
+  .badge-safe    { background: rgb(var(--dos-bg-turf-100));  color: rgb(var(--dos-fg-turf-800)); }
+  .badge-warning { background: rgb(var(--dos-bg-amber-100)); color: rgb(var(--dos-fg-amber-800)); }
+  .badge-danger  { background: rgb(var(--dos-bg-red-100));   color: rgb(var(--dos-fg-red-800)); }
+  .badge-info    { background: rgb(var(--dos-bg-brand-100)); color: rgb(var(--dos-fg-brand-700)); }
+  .badge-clay    { background: rgb(var(--dos-bg-clay-50));   color: rgb(var(--dos-fg-clay-700)); }
   .badge-dot::before {
     content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
   }
@@ -563,13 +610,16 @@
   .count-dots .lbl { font-size: 11px; font-weight: 700; color: var(--app-fg-muted); margin-right: 4px; letter-spacing: 0.06em; }
   .count-dots .d {
     width: 12px; height: 12px; border-radius: 50%;
-    border: 1.5px solid var(--app-border-strong); background: var(--app-surface);
+    border: 1.5px solid var(--count-dot-empty); background: var(--app-surface);
     transition: background var(--mo) var(--ease), border-color var(--mo) var(--ease), transform var(--mo) var(--ease);
   }
   .count-dots .d.on-b { background: var(--count-balls);   border-color: var(--count-balls); }
   .count-dots .d.on-s { background: var(--count-strikes); border-color: var(--count-strikes); }
   .count-dots .d.on-o { background: var(--count-outs);    border-color: var(--count-outs); }
   .count-dots .d.ping { animation: ping 450ms var(--ease); }
+  /* Sky-blue inline link (GameHistoryTree add-runner button). */
+  .link-sky { color: var(--link-sky); }
+  .link-sky:hover { color: var(--link-sky-hover); }
 
   .strike-zone {
     display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);

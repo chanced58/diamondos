@@ -224,7 +224,7 @@ export function Sidebar({
                 ) : (
                   <span
                     className="badge-count"
-                    style={{ background: '#dc2626', color: 'white' }}
+                    style={{ background: 'rgb(var(--dos-bg-red-600))', color: 'white' }}
                   >
                     {item.badge}
                   </span>

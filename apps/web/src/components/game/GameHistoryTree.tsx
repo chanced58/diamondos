@@ -1967,7 +1967,7 @@ function AddRunnerEventButton({
     <button
       type="button"
       onClick={() => setAdding(true)}
-      className="mt-1 mb-1 flex items-center gap-1.5 text-xs text-sky-600 hover:text-sky-800 font-medium transition-colors"
+      className="mt-1 mb-1 flex items-center gap-1.5 text-xs link-sky font-medium transition-colors"
     >
       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
