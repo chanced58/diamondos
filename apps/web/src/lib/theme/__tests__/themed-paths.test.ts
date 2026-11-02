@@ -75,6 +75,22 @@ describe('isThemedPath', () => {
       expect(themed).toEqual([]);
     });
 
+    it('keeps every top-level non-group folder of src/app light', () => {
+      // Review Focus 2: a new public route must not be themed silently. Route
+      // groups ((app), (auth)), private folders (_x) and `api` are skipped; a
+      // top-level folder that belongs to the signed-in app lives in (app).
+      const themed = subfolders(APP_DIR)
+        .filter((seg) => seg !== 'api')
+        .filter((seg) => isThemedPath(`/${seg}`) || isThemedPath(`/${seg}/x`));
+      expect(themed).toEqual([]);
+    });
+
+    it('finds the public folders it is meant to cover', () => {
+      const segs = subfolders(APP_DIR);
+      expect(segs).toEqual(expect.arrayContaining(['auth', 'demo', 'l']));
+      expect(segs).not.toContain('(app)');
+    });
+
     it.each(['/l', '/p', '/leagues', '/about', '/demo', '/offline', '/auth'])(
       'keeps public route %s light',
       (p) => {
