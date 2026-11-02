@@ -79,6 +79,29 @@ describe('globals.css dark-mode contrast rules', () => {
     expect(css.indexOf(LIGHT_FORM_RULE)).toBeGreaterThan(css.indexOf(DARK_FORM_RULE));
   });
 
+  describe('explicit border-gray-200 form controls', () => {
+    const DARK_EXPLICIT =
+      ':where([data-theme="dark"], [data-theme="dugout"]) :is(input, select, textarea).border-gray-200';
+    const LIGHT_EXPLICIT =
+      ':where([data-theme="light"]) :is(input, select, textarea).border-gray-200';
+
+    it('lifts input/select/textarea.border-gray-200 to line-gray-300 in Dark and Dugout', () => {
+      expect(ruleBody(DARK_EXPLICIT)).toMatch(/border-color:\s*rgb\(var\(--dos-line-gray-300\)\)/);
+    });
+
+    it('resets Light islands to line-gray-200 after the dark rule', () => {
+      expect(ruleBody(LIGHT_EXPLICIT)).toMatch(/border-color:\s*rgb\(var\(--dos-line-gray-200\)\)/);
+      expect(css.indexOf(LIGHT_EXPLICIT)).toBeGreaterThan(css.indexOf(DARK_EXPLICIT));
+    });
+
+    it('is in the base layer so focus/hover border utilities still win', () => {
+      const baseEnd = css.indexOf('@layer components');
+      expect(css.indexOf(DARK_EXPLICIT)).toBeGreaterThan(-1);
+      expect(css.indexOf(DARK_EXPLICIT)).toBeLessThan(baseEnd);
+      expect(css.indexOf(LIGHT_EXPLICIT)).toBeLessThan(baseEnd);
+    });
+  });
+
   it('has no unscoped (Light) rule for the form-control border', () => {
     const bare = css
       .split('\n')
@@ -94,6 +117,17 @@ describe('globals.css dark-mode contrast rules', () => {
       /\[data-theme="dugout"\] \.slate-choice\s*\{\s*border-color:\s*rgb\(var\(--dos-line-gray-300\)\)/,
     );
     expect(css).not.toMatch(/\.slate-btn\s*\{\s*background:\s*var\(--app-brand\)/);
+  });
+
+  it('keeps .trend-dn at #dc2626 in Light and lifts it to fg-red-700 in Dark and Dugout', () => {
+    expect(ruleBody('.trend-dn')).toMatch(/color:\s*#dc2626/);
+    expect(css).toMatch(
+      /\[data-theme="dark"\] \.trend-dn,\s*\[data-theme="dugout"\] \.trend-dn\s*\{\s*color:\s*rgb\(var\(--dos-fg-red-700\)\)/,
+    );
+    expect(css.indexOf('[data-theme="light"] .trend-dn')).toBeGreaterThan(
+      css.indexOf('[data-theme="dark"] .trend-dn'),
+    );
+    expect(ruleBody('[data-theme="light"] .trend-dn')).toMatch(/color:\s*#dc2626/);
   });
 
   it.each([

@@ -257,6 +257,18 @@
   :where([data-theme="light"]) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
     border-color: rgb(var(--dos-line-gray-200));
   }
+
+  /* Form controls with an explicit `border-gray-200` (profile form, team branding
+     color pickers, notes textareas) are ~1.3:1 in Dark and Dugout. Specificity
+     (0,1,1) beats the bare utility but loses to `focus:` / `hover:` border
+     utilities (0,2,0), which come later in the file. The Light reset follows, so a
+     Light island inside a dark root, and Light pages, keep the utility's value. */
+  :where([data-theme="dark"], [data-theme="dugout"]) :is(input, select, textarea).border-gray-200 {
+    border-color: rgb(var(--dos-line-gray-300));
+  }
+  :where([data-theme="light"]) :is(input, select, textarea).border-gray-200 {
+    border-color: rgb(var(--dos-line-gray-200));
+  }
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -607,6 +619,10 @@
   .stat-tile .trend { font-weight: 600; font-size: 11px; }
   .trend-up { color: var(--turf-700); }
   .trend-dn { color: #dc2626; }
+  /* #dc2626 is ~3.6:1 as text on charcoal; fg-red-700 is red-400 in Dark and Dugout. */
+  [data-theme="dark"] .trend-dn,
+  [data-theme="dugout"] .trend-dn { color: rgb(var(--dos-fg-red-700)); }
+  [data-theme="light"] .trend-dn { color: #dc2626; }
 
   /* Tweaks panel */
   .tweaks {
