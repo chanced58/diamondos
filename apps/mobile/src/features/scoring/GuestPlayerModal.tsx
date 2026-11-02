@@ -16,6 +16,7 @@ import {
   createLocalGuest,
 } from '../lineup/local-guest';
 import { useSyncContext } from '../../providers/SyncProvider';
+import { useKeyboardAppearance } from '../../theme/ThemeScope';
 
 interface GuestPlayerModalProps {
   visible: boolean;
@@ -54,6 +55,8 @@ export function GuestPlayerModal({
   onClose,
 }: GuestPlayerModalProps) {
   const { triggerSync } = useSyncContext();
+  // Follows the nearest scope: Light under the scorer, themed under the lineup screen.
+  const keyboardAppearance = useKeyboardAppearance();
   const [tab, setTab] = useState<'new' | 'pool'>('new');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -266,7 +269,7 @@ export function GuestPlayerModal({
                   <View className="flex-1">
                     <Text className="text-score-xs font-medium text-gray-500 mb-1">First name</Text>
                     <TextInput
-                      keyboardAppearance="light"
+                      keyboardAppearance={keyboardAppearance}
                       value={firstName}
                       onChangeText={setFirstName}
                       placeholder="First"
@@ -277,7 +280,7 @@ export function GuestPlayerModal({
                   <View className="flex-1">
                     <Text className="text-score-xs font-medium text-gray-500 mb-1">Last name</Text>
                     <TextInput
-                      keyboardAppearance="light"
+                      keyboardAppearance={keyboardAppearance}
                       value={lastName}
                       onChangeText={setLastName}
                       placeholder="Last"
@@ -290,7 +293,7 @@ export function GuestPlayerModal({
                 <View className="mb-4 w-32">
                   <Text className="text-score-xs font-medium text-gray-500 mb-1">Jersey # (optional)</Text>
                   <TextInput
-                    keyboardAppearance="light"
+                    keyboardAppearance={keyboardAppearance}
                     value={jerseyNumber}
                     onChangeText={setJerseyNumber}
                     keyboardType="number-pad"
@@ -303,7 +306,7 @@ export function GuestPlayerModal({
             ) : (
               <>
                 <TextInput
-                  keyboardAppearance="light"
+                  keyboardAppearance={keyboardAppearance}
                   value={poolSearch}
                   onChangeText={setPoolSearch}
                   placeholder="Search league players…"
