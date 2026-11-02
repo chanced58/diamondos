@@ -127,10 +127,11 @@ export function Sidebar({
     router.refresh();
   }
 
-  // Tenant branding override: when a team sets a custom primaryColor, apply it
-  // as the sidebar background (overrides theme sidebar-bg var for this sidebar only).
+  // Tenant branding override: when a team sets a custom primaryColor, expose it
+  // as --team-sidebar-*. globals.css only consumes these under
+  // [data-theme="light"] .sidebar, so Dark and Dugout keep their own palette.
   const brandingStyle = !isAdminPanel && primaryColor
-    ? { '--app-sidebar-bg': primaryColor, '--app-sidebar-active': secondaryColor ?? primaryColor } as React.CSSProperties
+    ? { '--team-sidebar-bg': primaryColor, '--team-sidebar-active': secondaryColor ?? primaryColor } as React.CSSProperties
     : undefined;
 
   return (
