@@ -6,6 +6,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -27,6 +28,10 @@ export type Tone = 'utilitarian' | 'editorial' | 'energetic';
 const DENSITIES = ['compact', 'comfortable', 'spacious'] as const;
 const MOTIONS   = ['on', 'off'] as const;
 const TONES     = ['utilitarian', 'editorial', 'energetic'] as const;
+
+// Layout effect so attributes change before paint (client navigation commits as a
+// transition, and passive effects can run after the browser paints). SSR-safe.
+const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
@@ -142,7 +147,7 @@ export function ThemeProvider({
     ? resolveTheme(prefs.themePreference, systemDark)
     : 'light';
 
-  useEffect(() => {
+  useIsoLayoutEffect(() => {
     if (!hydrated) return;
     applyAttrs(appliedTheme, prefs);
   }, [hydrated, appliedTheme, prefs]);

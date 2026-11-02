@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 import { act, render } from '@testing-library/react';
-import type { ReactElement } from 'react';
+import { useLayoutEffect, type ReactElement, type ReactNode } from 'react';
 import { ThemeProvider, useAppearance } from '../ThemeProvider';
 
 let mockPathname = '/dashboard';
@@ -70,6 +70,35 @@ beforeEach(() => {
 });
 
 describe('ThemeProvider', () => {
+  it('updates <html data-theme> in the layout phase, before passive effects (pre-paint)', () => {
+    localStorage.setItem('dos_theme', 'dark');
+    const seen: Array<string | null> = [];
+    // Parent of ThemeProvider: its layout effect runs after the provider's layout
+    // effects but before any passive effect, so it observes the pre-paint state.
+    function Outer({ children }: { children: ReactNode }): ReactElement {
+      useLayoutEffect(() => {
+        seen.push(htmlTheme());
+      });
+      return <ThemeProvider>{children}</ThemeProvider>;
+    }
+    const view = render(
+      <Outer>
+        <Probe />
+      </Outer>,
+    );
+    expect(htmlTheme()).toBe('dark');
+    seen.length = 0;
+
+    // Outer re-renders with the new pathname; its layout effect must already see light.
+    mockPathname = '/l/x';
+    view.rerender(
+      <Outer>
+        <Probe />
+      </Outer>,
+    );
+    expect(seen).toEqual(['light']);
+  });
+
   it('re-applies on pathname change: dark app page to light public page', () => {
     localStorage.setItem('dos_theme', 'dark');
     const view = mount();
