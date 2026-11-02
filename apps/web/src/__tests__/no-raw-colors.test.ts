@@ -15,8 +15,13 @@ const SRC = path.resolve(__dirname, '..');
  * Directories (relative to `src`) that are scanned. B6 scans only the shared
  * components; B7 widens this to include `app/(app)` by editing this one array.
  */
-const SCAN_ROOTS = ['components'];
-// B7: const SCAN_ROOTS = ['components', 'app/(app)'];
+const SCAN_ROOTS = [
+  'components',
+  'app/(app)/games',
+  'app/(app)/live',
+  'app/(app)/schedule',
+  'app/(app)/dashboard',
+];
 
 /** Directory prefixes (relative to `src`) that are never scanned. */
 const EXCLUDED_DIRS = [
@@ -33,7 +38,10 @@ export const RAW_COLOR_ALLOWLIST: Record<string, string> = {
     'Google "G" logo: third-party brand colors that must not change with the theme.',
 };
 
-const HEX_RE = /#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?\b/;
+// 3-, 4-, 6- and 8-digit hex (4 and 8 carry an alpha channel).
+const HEX_BODY = '#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\\b';
+const HEX_RE = new RegExp(HEX_BODY);
+const HEX_IN_STRING_RE = new RegExp(`['"\`][^'"\`]*${HEX_BODY}`);
 const UNTHEMED_HUE_RE =
   /\b(?:bg|text|border|ring|fill|stroke|from|to|via|divide|placeholder)-(?:slate|zinc|neutral|stone|lime|teal|cyan|sky|indigo|violet|fuchsia|pink|rose)-\d/;
 
@@ -55,13 +63,13 @@ function walk(dir: string, out: string[]): void {
 }
 
 /** Does this line hold a hex literal inside a string or template literal? */
-function hasHexInString(line: string): boolean {
+export function hasHexInString(line: string): boolean {
   const match = HEX_RE.exec(line);
   if (!match) return false;
   // Ignore line comments and anything that is not quoted on the line.
   const code = line.replace(/\/\/.*$/, '');
   if (!HEX_RE.test(code)) return false;
-  return /['"`][^'"`]*#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?\b/.test(code);
+  return HEX_IN_STRING_RE.test(code);
 }
 
 function findOffenders(): string[] {
@@ -83,6 +91,21 @@ function findOffenders(): string[] {
   }
   return offenders;
 }
+
+describe('hex detection', () => {
+  it('flags 3-, 4-, 6- and 8-digit hex inside a string', () => {
+    expect(hasHexInString(`const a = '#fff';`)).toBe(true);
+    expect(hasHexInString(`const a = '#fff8';`)).toBe(true);
+    expect(hasHexInString(`const a = "#1a2b3c";`)).toBe(true);
+    expect(hasHexInString('const a = `#1a2b3c4d`;')).toBe(true);
+  });
+
+  it('does not flag anchors, comments or unquoted text', () => {
+    expect(hasHexInString(`<a href="#section">Jump</a>`)).toBe(false);
+    expect(hasHexInString(`<a href="#features">Jump</a>`)).toBe(false);
+    expect(hasHexInString(`const a = 1; // #fff`)).toBe(false);
+  });
+});
 
 describe('no raw colors in themed UI', () => {
   it('has a reason for every allowlist entry', () => {

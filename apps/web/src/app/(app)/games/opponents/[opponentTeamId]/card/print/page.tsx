@@ -72,7 +72,8 @@ export default async function ScoutingCardPrintPage({
   );
 
   return (
-    <div className="print-page bg-white text-gray-900 p-6 text-xs leading-tight font-sans">
+    // Printed sheet: always Light so ink stays dark on white paper.
+    <div data-theme="light" className="print-page bg-white text-gray-900 p-6 text-xs leading-tight font-sans">
       <style>{`
         @media print {
           body { background: white; }

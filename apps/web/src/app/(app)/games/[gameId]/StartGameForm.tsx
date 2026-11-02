@@ -35,7 +35,9 @@ function Toggle({
         }`}
       >
         <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+          // bg-current + text-white: the knob stays white in every theme
+          // (bg-white would follow the theme surface and go dark).
+          className={`inline-block h-4 w-4 transform rounded-full bg-current text-white shadow-sm transition-transform ${
             checked ? 'translate-x-6' : 'translate-x-1'
           }`}
         />
