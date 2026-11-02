@@ -1,12 +1,14 @@
 import { Stack } from 'expo-router';
-import { BRAND_STACK_OPTIONS } from '../../../src/navigation/stack-options';
+import { brandStackOptions } from '../../../src/navigation/stack-options';
+import { useScopeTheme } from '../../../src/theme/ThemeScope';
 
 export const unstable_settings = { initialRouteName: 'index' };
 
 /** The More tab's stack: Roster, Practices, Facilities and Opponents push within the tab. */
 export default function MoreLayout() {
+  const theme = useScopeTheme();
   return (
-    <Stack screenOptions={BRAND_STACK_OPTIONS}>
+    <Stack screenOptions={brandStackOptions(theme)}>
       <Stack.Screen name="index" options={{ title: 'More' }} />
       <Stack.Screen name="roster/index" options={{ title: 'Roster' }} />
       <Stack.Screen name="roster/new" options={{ title: 'Add player' }} />

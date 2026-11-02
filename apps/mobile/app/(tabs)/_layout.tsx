@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react';
 import { Redirect, Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/providers/AuthProvider';
+import { useScopeTheme, useThemeColors } from '../../src/theme/ThemeScope';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -19,6 +20,8 @@ function tabIcon(focused: IconName, unfocused: IconName) {
  */
 export default function TabLayout() {
   const { user } = useAuth();
+  const theme = useScopeTheme();
+  const colors = useThemeColors();
 
   if (!user) {
     return <Redirect href="/(auth)/sign-in" />;
@@ -28,8 +31,13 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#1e3a8a',
-        tabBarStyle: { borderTopColor: '#e5e7eb' },
+        ...(theme === 'light'
+          ? { tabBarActiveTintColor: '#1e3a8a', tabBarStyle: { borderTopColor: '#e5e7eb' } }
+          : {
+              tabBarActiveTintColor: colors['brand-2'],
+              tabBarInactiveTintColor: colors['fg-subtle'],
+              tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
+            }),
       }}
     >
       <Tabs.Screen

@@ -50,7 +50,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       .then((stored) => {
         if (active && !chosenBeforeLoad.current) setPreference(stored);
       })
-      .catch(() => undefined)
+      .catch((error) => console.warn('[theme] unexpected load failure', error))
       .finally(() => {
         if (active) setReady(true);
       });

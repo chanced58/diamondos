@@ -37,6 +37,7 @@ import { useLeagueContext } from '../../../../../src/lib/league-settings';
 import { useGameScoringSettings } from '../../../../../src/lib/game-scoring-settings';
 import { initialBattingOrderSlots, lineupExtensionError, getLineupExtensionHistory } from '@baseball/shared';
 import { database } from '../../../../../src/db';
+import { ThemeScope } from '../../../../../src/theme/ThemeScope';
 import type { GameEvent as WdbGameEvent } from '../../../../../src/db/models/GameEvent';
 import type { Player } from '../../../../../src/db/models/Player';
 import type { BattedOutType, RosterPlayer, RunnerOutcome } from '../../../../../src/features/scoring/PitchInput';
@@ -64,8 +65,20 @@ import type { GameLineup } from '../../../../../src/db/models/GameLineup';
  * Live game scoring screen — the core feature of the mobile app.
  * Works completely offline. All events written to WatermelonDB first,
  * then synced to Supabase in the background.
+ *
+ * Scorekeeping content always renders Light. The native header (set by
+ * `Stack.Screen` below) follows the app theme, so this scope leaves the
+ * status bar to the root scope.
  */
 export default function ScoringScreen() {
+  return (
+    <ThemeScope theme="light" statusBar={false}>
+      <ScoringScreenContent />
+    </ThemeScope>
+  );
+}
+
+function ScoringScreenContent() {
   const { gameId } = useLocalSearchParams<{ gameId: string }>();
 
   const router = useRouter();
