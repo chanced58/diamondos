@@ -44,7 +44,7 @@ export function DrillCard({ drill, tags, deficitById }: Props): JSX.Element {
         {drill.skillCategories.map((sc) => (
           <span
             key={sc}
-            className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700"
+            className="text-[11px] font-medium px-2 py-0.5 rounded-full pill-indigo"
           >
             {SKILL_CATEGORY_LABELS[sc] ?? sc}
           </span>

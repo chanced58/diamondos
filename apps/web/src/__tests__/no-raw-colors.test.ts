@@ -21,6 +21,13 @@ const SCAN_ROOTS = [
   'app/(app)/live',
   'app/(app)/schedule',
   'app/(app)/dashboard',
+  'app/(app)/teams',
+  'app/(app)/practices',
+  'app/(app)/players',
+  'app/(app)/messages',
+  'app/(app)/training',
+  'app/(app)/bullpen',
+  'app/(app)/analytics',
 ];
 
 /** Directory prefixes (relative to `src`) that are never scanned. */
@@ -36,6 +43,8 @@ const EXCLUDED_DIRS = [
 export const RAW_COLOR_ALLOWLIST: Record<string, string> = {
   'components/auth/LoginForm.tsx':
     'Google "G" logo: third-party brand colors that must not change with the theme.',
+  'app/(app)/teams/[teamId]/admin/TeamBrandingForm.tsx':
+    'Default values for the team color picker (<input type="color"> needs a hex); they are the team\'s own chosen colors, not UI styling.',
 };
 
 // 3-, 4-, 6- and 8-digit hex (4 and 8 carry an alpha channel).

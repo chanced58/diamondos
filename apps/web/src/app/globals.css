@@ -511,6 +511,25 @@
   .badge-danger  { background: rgb(var(--dos-bg-red-100));   color: rgb(var(--dos-fg-red-800)); }
   .badge-info    { background: rgb(var(--dos-bg-brand-100)); color: rgb(var(--dos-fg-brand-700)); }
   .badge-clay    { background: rgb(var(--dos-bg-clay-50));   color: rgb(var(--dos-fg-clay-700)); }
+
+  /* Hues that are not in the themed palette (sky, violet, indigo). Light values
+     are exactly the previous Tailwind colors (sky-50/800/200, violet-50/800/200,
+     indigo-50/700); Dark and Dugout use translucent tints with light text. */
+  .pill-sky    { background: #f0f9ff; color: #075985; border-color: #bae6fd; }
+  .pill-violet { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+  .pill-indigo { background: #eef2ff; color: #4338ca; }
+  [data-theme="dark"] .pill-sky,
+  [data-theme="dugout"] .pill-sky {
+    background: rgba(14,165,233,.16); color: #7dd3fc; border-color: rgba(14,165,233,.40);
+  }
+  [data-theme="dark"] .pill-violet,
+  [data-theme="dugout"] .pill-violet {
+    background: rgba(139,92,246,.18); color: #c4b5fd; border-color: rgba(139,92,246,.42);
+  }
+  [data-theme="dark"] .pill-indigo,
+  [data-theme="dugout"] .pill-indigo {
+    background: rgba(99,102,241,.20); color: #a5b4fc;
+  }
   .badge-dot::before {
     content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
   }
