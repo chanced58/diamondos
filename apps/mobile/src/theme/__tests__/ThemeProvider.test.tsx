@@ -1,5 +1,5 @@
 import { act, render, waitFor } from '@testing-library/react-native';
-import { Appearance, Text } from 'react-native';
+import { Appearance, AppState, Text } from 'react-native';
 import { ThemeProvider, useThemePreference } from '../ThemeProvider';
 import * as storage from '../theme-storage';
 
@@ -12,11 +12,39 @@ const loadThemePreference = storage.loadThemePreference as jest.Mock;
 const saveThemePreference = storage.saveThemePreference as jest.Mock;
 
 type Api = ReturnType<typeof useThemePreference>;
+type Scheme = 'light' | 'dark' | null;
 
-function setup(scheme: 'light' | 'dark' | null) {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const rn = require('react-native');
-  const spy = jest.spyOn(rn, 'useColorScheme').mockReturnValue(scheme);
+/**
+ * Fakes the native appearance layer. Like the real one, `getColorScheme` returns
+ * the app's override while one is set, and the OS scheme otherwise.
+ */
+function setup(initialOs: Scheme) {
+  const env = { os: initialOs, override: null as Scheme, appState: 'active' };
+  let changeListener: (prefs: { colorScheme: Scheme }) => void = () => undefined;
+  let appStateListener: (state: string) => void = () => undefined;
+  const removeAppearance = jest.fn();
+  const removeAppState = jest.fn();
+
+  jest.spyOn(Appearance, 'getColorScheme').mockImplementation(() => env.override ?? env.os);
+  jest.spyOn(Appearance, 'setColorScheme').mockImplementation((scheme) => {
+    env.override = scheme ?? null;
+    // Native reports a new override at once; the event for clearing one arrives
+    // later (a trait change), so it is not delivered here.
+    if (scheme) changeListener({ colorScheme: scheme });
+  });
+  jest.spyOn(Appearance, 'addChangeListener').mockImplementation((listener) => {
+    changeListener = listener as typeof changeListener;
+    return { remove: removeAppearance };
+  });
+  jest.spyOn(AppState, 'addEventListener').mockImplementation(((
+    _type: string,
+    listener: (state: string) => void,
+  ) => {
+    appStateListener = listener;
+    return { remove: removeAppState };
+  }) as never);
+  Object.defineProperty(AppState, 'currentState', { configurable: true, get: () => env.appState });
+
   const api: { current: Api } = { current: undefined as unknown as Api };
 
   function Reader() {
@@ -24,19 +52,29 @@ function setup(scheme: 'light' | 'dark' | null) {
     return <Text>reader</Text>;
   }
 
-  // A fresh element each time, so rerender is not bailed out by React.
-  const tree = () => (
+  const utils = render(
     <ThemeProvider>
       <Reader />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
-  const utils = render(tree());
   return {
     api,
-    spy,
-    rerenderWith(next: 'light' | 'dark' | null) {
-      spy.mockReturnValue(next);
-      utils.rerender(tree());
+    removeAppearance,
+    removeAppState,
+    unmount: utils.unmount,
+    /** The OS flips its scheme and RN emits the change event. */
+    osFlipsTo(next: 'light' | 'dark') {
+      env.os = next;
+      act(() => changeListener({ colorScheme: env.override ?? next }));
+    },
+    /** A change event as RN would deliver it, whatever the OS really is. */
+    emitChange(next: 'light' | 'dark') {
+      act(() => changeListener({ colorScheme: next }));
+    },
+    /** The app moves between active, inactive and background. */
+    appStateBecomes(next: 'active' | 'inactive' | 'background') {
+      env.appState = next;
+      act(() => appStateListener(next));
     },
   };
 }
@@ -44,6 +82,7 @@ function setup(scheme: 'light' | 'dark' | null) {
 describe('ThemeProvider', () => {
   afterEach(() => {
     jest.restoreAllMocks();
+    Object.defineProperty(AppState, 'currentState', { configurable: true, value: undefined });
   });
 
   beforeEach(() => {
@@ -67,14 +106,94 @@ describe('ThemeProvider', () => {
 
   it('should follow the system scheme live when the preference is system', async () => {
     loadThemePreference.mockResolvedValue('system');
-    const { api, rerenderWith } = setup('dark');
+    const { api, osFlipsTo } = setup('dark');
     await waitFor(() => expect(api.current.ready).toBe(true));
 
     expect(api.current.themePreference).toBe('system');
     expect(api.current.resolvedTheme).toBe('dark');
 
-    rerenderWith('light');
+    osFlipsTo('light');
     expect(api.current.resolvedTheme).toBe('light');
+    osFlipsTo('dark');
+    expect(api.current.resolvedTheme).toBe('dark');
+  });
+
+  it('should ignore scheme changes delivered while the app is backgrounded', async () => {
+    loadThemePreference.mockResolvedValue('system');
+    const { api, osFlipsTo, appStateBecomes } = setup('dark');
+    await waitFor(() => expect(api.current.ready).toBe(true));
+
+    // iOS takes a light and a dark snapshot for the app switcher.
+    appStateBecomes('inactive');
+    osFlipsTo('light');
+    expect(api.current.resolvedTheme).toBe('dark');
+    appStateBecomes('background');
+    osFlipsTo('dark');
+    osFlipsTo('light');
+    osFlipsTo('dark');
+    expect(api.current.resolvedTheme).toBe('dark');
+  });
+
+  it('should re-read and apply the scheme when the app becomes active', async () => {
+    loadThemePreference.mockResolvedValue('system');
+    const { api, osFlipsTo, appStateBecomes } = setup('dark');
+    await waitFor(() => expect(api.current.ready).toBe(true));
+
+    appStateBecomes('background');
+    // The user switches the OS to light while the app is away.
+    osFlipsTo('light');
+    expect(api.current.resolvedTheme).toBe('dark');
+
+    appStateBecomes('active');
+    expect(api.current.resolvedTheme).toBe('light');
+  });
+
+  it('should keep the settled scheme when the app comes back after a snapshot round trip', async () => {
+    loadThemePreference.mockResolvedValue('system');
+    const { api, osFlipsTo, appStateBecomes } = setup('dark');
+    await waitFor(() => expect(api.current.ready).toBe(true));
+
+    appStateBecomes('background');
+    osFlipsTo('light');
+    osFlipsTo('dark');
+    appStateBecomes('active');
+
+    expect(api.current.resolvedTheme).toBe('dark');
+  });
+
+  it('should follow the OS again after returning to the foreground', async () => {
+    loadThemePreference.mockResolvedValue('system');
+    const { api, osFlipsTo, appStateBecomes } = setup('dark');
+    await waitFor(() => expect(api.current.ready).toBe(true));
+
+    appStateBecomes('background');
+    appStateBecomes('active');
+    osFlipsTo('light');
+
+    expect(api.current.resolvedTheme).toBe('light');
+  });
+
+  it('should pick up the real OS scheme when switching from an explicit choice to system', async () => {
+    loadThemePreference.mockResolvedValue('dark');
+    const { api } = setup('light');
+    await waitFor(() => expect(api.current.ready).toBe(true));
+    // While the override is set the native layer reports the override, not the OS.
+    expect(api.current.resolvedTheme).toBe('dark');
+
+    act(() => api.current.setThemePreference('system'));
+
+    expect(api.current.resolvedTheme).toBe('light');
+  });
+
+  it('should stop listening when unmounted', async () => {
+    loadThemePreference.mockResolvedValue('system');
+    const { api, unmount, removeAppearance, removeAppState } = setup('light');
+    await waitFor(() => expect(api.current.ready).toBe(true));
+
+    unmount();
+
+    expect(removeAppearance).toHaveBeenCalled();
+    expect(removeAppState).toHaveBeenCalled();
   });
 
   it('should treat a null system scheme as light', async () => {
@@ -87,13 +206,18 @@ describe('ThemeProvider', () => {
 
   it('should keep an explicit light preference when the system is dark', async () => {
     loadThemePreference.mockResolvedValue('light');
-    const { api, rerenderWith } = setup('dark');
+    const { api, emitChange, appStateBecomes } = setup('dark');
     await waitFor(() => expect(api.current.ready).toBe(true));
 
     expect(api.current.resolvedTheme).toBe('light');
 
-    rerenderWith('light');
-    rerenderWith('dark');
+    emitChange('light');
+    emitChange('dark');
+    expect(api.current.resolvedTheme).toBe('light');
+
+    appStateBecomes('background');
+    appStateBecomes('active');
+    emitChange('dark');
     expect(api.current.resolvedTheme).toBe('light');
   });
 

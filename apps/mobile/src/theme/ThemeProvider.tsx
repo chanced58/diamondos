@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Appearance, useColorScheme } from 'react-native';
+import { Appearance, AppState } from 'react-native';
 import {
   DEFAULT_THEME_PREFERENCE,
   resolveTheme,
@@ -37,12 +37,32 @@ export function useThemePreference(): ThemePreferenceValue {
   return useContext(ThemePreferenceContext);
 }
 
+const isDarkScheme = () => Appearance.getColorScheme() === 'dark';
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const systemScheme = useColorScheme();
+  // The OS scheme, tracked by hand rather than with `useColorScheme()`: while the
+  // app is backgrounded, iOS takes a light and a dark snapshot for the app
+  // switcher and RN reports both flips, which would re-theme the whole tree twice
+  // behind the user's back. Changes are applied only while the app is active, and
+  // the scheme is re-read when it becomes active again.
+  const [systemDark, setSystemDark] = useState(isDarkScheme);
   const [themePreference, setPreference] = useState<ThemePreference>(DEFAULT_THEME_PREFERENCE);
   const [ready, setReady] = useState(false);
   // A choice made before the stored value arrives must win over the late load.
   const chosenBeforeLoad = useRef(false);
+
+  useEffect(() => {
+    const appearanceSub = Appearance.addChangeListener(({ colorScheme }) => {
+      if (AppState.currentState === 'active') setSystemDark(colorScheme === 'dark');
+    });
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setSystemDark(isDarkScheme());
+    });
+    return () => {
+      appearanceSub.remove();
+      appStateSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -65,9 +85,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Only after the stored value is read, so a default never overrides it.
   useEffect(() => {
     if (!ready) return;
-    Appearance.setColorScheme(
-      themePreference === 'system' ? null : themePreference === 'light' ? 'light' : 'dark',
-    );
+    if (themePreference === 'system') {
+      Appearance.setColorScheme(null);
+      // While an override is set `getColorScheme()` returns the override, so the
+      // tracked value is stale on the first System render after an explicit choice.
+      // Re-read it now that the override is gone instead of waiting for a change
+      // event; that render can show the old scheme for one frame, which we accept.
+      setSystemDark(isDarkScheme());
+    } else {
+      Appearance.setColorScheme(themePreference === 'light' ? 'light' : 'dark');
+    }
   }, [ready, themePreference]);
 
   const setThemePreference = useCallback((preference: ThemePreference) => {
@@ -77,7 +104,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     void saveThemePreference(preference);
   }, []);
 
-  const resolvedTheme = resolveTheme(themePreference, systemScheme === 'dark');
+  const resolvedTheme = resolveTheme(themePreference, systemDark);
 
   const value = useMemo(
     () => ({ themePreference, resolvedTheme, setThemePreference, ready }),
