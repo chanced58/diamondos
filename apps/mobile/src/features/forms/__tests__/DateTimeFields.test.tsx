@@ -15,11 +15,11 @@ describe('DateTimeFields theming', () => {
       </ThemeScope>,
     );
 
-  it('should leave the iOS picker variant unspecified in Light', () => {
+  it('should pin a light iOS picker in Light', () => {
     const { UNSAFE_getAllByType } = renderIn('light');
 
     for (const picker of UNSAFE_getAllByType(DateTimePicker)) {
-      expect(picker.props.themeVariant).toBeUndefined();
+      expect(picker.props.themeVariant).toBe('light');
     }
   });
 

@@ -170,6 +170,7 @@ export default function SignInScreen() {
           <View className="w-full mb-4">
             <Text className="text-blue-200 text-sm font-medium mb-1">Verification code</Text>
             <TextInput
+              keyboardAppearance="light"
               className="bg-white/10 border border-white/20 rounded-xl px-4 py-3.5 text-white text-base text-center tracking-widest"
               placeholder="Enter code"
               placeholderTextColor="rgba(147,197,253,0.5)"
@@ -247,6 +248,7 @@ export default function SignInScreen() {
         <View className="w-full mb-4">
           <Text className="text-blue-200 text-sm font-medium mb-1">Email address</Text>
           <TextInput
+            keyboardAppearance="light"
             className="bg-white/10 border border-white/20 rounded-xl px-4 py-3.5 text-white text-base"
             placeholder="coach@school.edu"
             placeholderTextColor="rgba(147,197,253,0.5)"

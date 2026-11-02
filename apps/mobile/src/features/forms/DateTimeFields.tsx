@@ -21,9 +21,9 @@ interface DateTimeFieldsProps {
  */
 export function DateTimeFields({ date, time, onChange, testID, showDate = true, showTime = true }: DateTimeFieldsProps) {
   const [androidPicker, setAndroidPicker] = useState<'date' | 'time' | null>(null);
-  // iOS draws the compact picker from the OS appearance, not the app theme.
-  // Light keeps today's behaviour (unspecified); Dark and Dugout force dark.
-  const themeVariant = useScopeTheme() === 'light' ? undefined : 'dark';
+  // iOS draws the compact picker from the interface style; pin it to the scope
+  // so a Light scope (e.g. under a dark app) stays light.
+  const themeVariant = useScopeTheme() === 'light' ? 'light' : 'dark';
   const value = localDateFromParts(date, time);
   const modes = !showDate ? (['time'] as const) : showTime ? (['date', 'time'] as const) : (['date'] as const);
 

@@ -266,6 +266,7 @@ export function GuestPlayerModal({
                   <View className="flex-1">
                     <Text className="text-score-xs font-medium text-gray-500 mb-1">First name</Text>
                     <TextInput
+                      keyboardAppearance="light"
                       value={firstName}
                       onChangeText={setFirstName}
                       placeholder="First"
@@ -276,6 +277,7 @@ export function GuestPlayerModal({
                   <View className="flex-1">
                     <Text className="text-score-xs font-medium text-gray-500 mb-1">Last name</Text>
                     <TextInput
+                      keyboardAppearance="light"
                       value={lastName}
                       onChangeText={setLastName}
                       placeholder="Last"
@@ -288,6 +290,7 @@ export function GuestPlayerModal({
                 <View className="mb-4 w-32">
                   <Text className="text-score-xs font-medium text-gray-500 mb-1">Jersey # (optional)</Text>
                   <TextInput
+                    keyboardAppearance="light"
                     value={jerseyNumber}
                     onChangeText={setJerseyNumber}
                     keyboardType="number-pad"
@@ -300,6 +303,7 @@ export function GuestPlayerModal({
             ) : (
               <>
                 <TextInput
+                  keyboardAppearance="light"
                   value={poolSearch}
                   onChangeText={setPoolSearch}
                   placeholder="Search league players…"

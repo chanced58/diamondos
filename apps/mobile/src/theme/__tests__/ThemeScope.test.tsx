@@ -84,9 +84,9 @@ describe('useKeyboardAppearance', () => {
     return <Text testID="k">{useKeyboardAppearance()}</Text>;
   }
 
-  it('should be default in Light and dark in Dark and Dugout', () => {
+  it('should be light in Light and dark in Dark and Dugout', () => {
     const light = render(<KeyboardProbe />);
-    expect(light.getByTestId('k').props.children).toBe('default');
+    expect(light.getByTestId('k').props.children).toBe('light');
 
     const dark = render(
       <ThemeScope theme="dark">

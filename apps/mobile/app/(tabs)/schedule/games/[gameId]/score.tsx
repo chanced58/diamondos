@@ -3551,6 +3551,7 @@ function AddBatterModal({
             >
               <View className="flex-row gap-2">
                 <TextInput
+                  keyboardAppearance="light"
                   value={jersey}
                   onChangeText={setJersey}
                   placeholder="##"
@@ -3559,6 +3560,7 @@ function AddBatterModal({
                   className="w-16 rounded-xl border border-gray-300 px-3 py-3 text-score-base text-gray-900"
                 />
                 <TextInput
+                  keyboardAppearance="light"
                   value={firstName}
                   onChangeText={setFirstName}
                   placeholder="First"
@@ -3567,6 +3569,7 @@ function AddBatterModal({
                   className="flex-1 rounded-xl border border-gray-300 px-3 py-3 text-score-base text-gray-900"
                 />
                 <TextInput
+                  keyboardAppearance="light"
                   value={lastName}
                   onChangeText={setLastName}
                   placeholder="Last"

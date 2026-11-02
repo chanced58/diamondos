@@ -26,9 +26,13 @@ export function useThemeColors(): Record<SemanticToken, string> {
   return SEMANTIC_TOKENS[useScopeTheme()];
 }
 
-/** `TextInput.keyboardAppearance` for the nearest scope: dark keyboard in Dark and Dugout. */
-export function useKeyboardAppearance(): 'default' | 'dark' {
-  return useScopeTheme() === 'light' ? 'default' : 'dark';
+/**
+ * `TextInput.keyboardAppearance` for the nearest scope: dark keyboard in Dark and
+ * Dugout, an explicit light one in Light (so a Light scope under a dark app, such
+ * as the scorer, never gets a dark keyboard). Android ignores the prop.
+ */
+export function useKeyboardAppearance(): 'light' | 'dark' {
+  return useScopeTheme() === 'light' ? 'light' : 'dark';
 }
 
 interface ThemeScopeProps {

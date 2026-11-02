@@ -1,5 +1,5 @@
 import { act, render, waitFor } from '@testing-library/react-native';
-import { Text } from 'react-native';
+import { Appearance, Text } from 'react-native';
 import { ThemeProvider, useThemePreference } from '../ThemeProvider';
 import * as storage from '../theme-storage';
 
@@ -125,5 +125,67 @@ describe('ThemeProvider', () => {
 
     expect(api.current.themePreference).toBe('dugout');
     expect(api.current.ready).toBe(true);
+  });
+
+  describe('native appearance override', () => {
+    let setColorScheme: jest.SpyInstance;
+
+    beforeEach(() => {
+      setColorScheme = jest.spyOn(Appearance, 'setColorScheme').mockImplementation(() => undefined);
+    });
+
+    it.each([
+      ['light', 'light'],
+      ['dark', 'dark'],
+      ['dugout', 'dark'],
+      ['system', null],
+    ] as const)('should set the native scheme for a stored %s preference to %s', async (stored, expected) => {
+      loadThemePreference.mockResolvedValue(stored);
+      const { api } = setup('light');
+      await waitFor(() => expect(api.current.ready).toBe(true));
+
+      expect(setColorScheme).toHaveBeenLastCalledWith(expected);
+    });
+
+    it('should not touch the native scheme before the stored preference is read', async () => {
+      let resolveLoad: (p: 'dark') => void = () => undefined;
+      loadThemePreference.mockReturnValue(new Promise((r) => (resolveLoad = r)));
+      const { api } = setup('light');
+
+      expect(setColorScheme).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveLoad('dark');
+      });
+
+      expect(api.current.ready).toBe(true);
+      expect(setColorScheme).toHaveBeenCalledTimes(1);
+      expect(setColorScheme).toHaveBeenCalledWith('dark');
+    });
+
+    it('should hand control back to the OS when switching from dark to system', async () => {
+      loadThemePreference.mockResolvedValue('dark');
+      const { api } = setup('light');
+      await waitFor(() => expect(api.current.ready).toBe(true));
+      expect(setColorScheme).toHaveBeenLastCalledWith('dark');
+
+      act(() => {
+        api.current.setThemePreference('system');
+      });
+
+      expect(setColorScheme).toHaveBeenLastCalledWith(null);
+    });
+
+    it('should follow each explicit choice made after load', async () => {
+      loadThemePreference.mockResolvedValue('system');
+      const { api } = setup('dark');
+      await waitFor(() => expect(api.current.ready).toBe(true));
+
+      act(() => api.current.setThemePreference('light'));
+      expect(setColorScheme).toHaveBeenLastCalledWith('light');
+
+      act(() => api.current.setThemePreference('dugout'));
+      expect(setColorScheme).toHaveBeenLastCalledWith('dark');
+    });
   });
 });

@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useColorScheme } from 'react-native';
+import { Appearance, useColorScheme } from 'react-native';
 import {
   DEFAULT_THEME_PREFERENCE,
   resolveTheme,
@@ -58,6 +58,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       active = false;
     };
   }, []);
+
+  // Native chrome (keyboards, Alerts, pickers, Switches, scroll indicators) draws
+  // from the OS interface style, which `userInterfaceStyle: automatic` leaves to
+  // the device. Pin it to the app's choice; null hands control back to the OS.
+  // Only after the stored value is read, so a default never overrides it.
+  useEffect(() => {
+    if (!ready) return;
+    Appearance.setColorScheme(
+      themePreference === 'system' ? null : themePreference === 'light' ? 'light' : 'dark',
+    );
+  }, [ready, themePreference]);
 
   const setThemePreference = useCallback((preference: ThemePreference) => {
     chosenBeforeLoad.current = true;
