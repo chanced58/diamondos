@@ -34,6 +34,11 @@ const themed = Object.fromEntries(
 const DEFAULT_LINE = 'rgb(var(--dos-line-gray-200) / <alpha-value>)';
 
 const config: Config = {
+  // Any future `dark:` variant follows `<html data-theme>`, never the OS
+  // preference (there are no `dark:` classes today). Dugout is also a dark theme
+  // but has its own `data-theme`, so a `dark:` variant would NOT apply there;
+  // anything that must cover both needs a `[data-theme="dugout"]` rule of its own.
+  darkMode: ['selector', '[data-theme="dark"]'],
   content: [
     './src/**/*.{js,ts,jsx,tsx,mdx}',
     '../../packages/ui/src/**/*.{js,ts,jsx,tsx}',
