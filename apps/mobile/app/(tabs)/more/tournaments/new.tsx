@@ -19,6 +19,7 @@ import {
   type TournamentFormValues,
   type TournamentTeamType,
 } from '../../../../src/features/tournaments/tournament-form-model';
+import { useKeyboardAppearance, useThemeColors } from '../../../../src/theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 const MAX_BATTER_OPTIONS = Array.from({ length: 21 }, (_, index) => String(index + 10));
@@ -30,6 +31,8 @@ const MAX_BATTER_LABELS = Object.fromEntries(MAX_BATTER_OPTIONS.map((n) => [n, n
  * from it — and the lineup rules. Created by the permission-checked RPC.
  */
 export default function NewTournamentScreen() {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const { user } = useAuth();
   const { triggerSync } = useSyncContext();
   const queryClient = useQueryClient();
@@ -153,7 +156,8 @@ export default function NewTournamentScreen() {
                     autoCapitalize="characters"
                     maxLength={2}
                     placeholder="ID"
-                    placeholderTextColor="#9ca3af"
+                    placeholderTextColor={colors['fg-subtle']}
+                    keyboardAppearance={keyboardAppearance}
                   />
                 </FormField>
               </View>

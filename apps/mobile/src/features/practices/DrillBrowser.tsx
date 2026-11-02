@@ -4,6 +4,7 @@ import { Badge, EmptyState, ListRow, SegmentedControl } from '@baseball/ui';
 import { PracticeSkillCategory, SKILL_CATEGORY_LABELS, type PracticeDrill } from '@baseball/shared';
 import { ChoiceChips } from './ChoiceChips';
 import { browseDrills, drillSubtitle, isTeamDrill, type DrillSource } from './drill-format';
+import { useKeyboardAppearance, useThemeColors } from '../../theme/ThemeScope';
 
 const SOURCES: ReadonlyArray<{ value: DrillSource; label: string }> = [
   { value: 'all', label: 'All' },
@@ -26,6 +27,8 @@ interface DrillBrowserProps {
  * screen and the plan-from-drills picker.
  */
 export function DrillBrowser({ drills, onPressDrill, pickedIds, refreshControl }: DrillBrowserProps) {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const [search, setSearch] = useState('');
   const [source, setSource] = useState<DrillSource>('all');
   const [skillCategories, setSkillCategories] = useState<PracticeSkillCategory[]>([]);
@@ -46,7 +49,8 @@ export function DrillBrowser({ drills, onPressDrill, pickedIds, refreshControl }
             value={search}
             onChangeText={setSearch}
             placeholder="Search drills"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
             autoCorrect={false}
             clearButtonMode="while-editing"
           />

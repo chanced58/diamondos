@@ -7,6 +7,7 @@ import { PRACTICE_NOTE_CATEGORIES } from '@baseball/shared';
 import { practiceQueryKey, savePracticeNotes, usePractice } from '../../../../../src/features/practices/practices-api';
 import { filledCount, notesDraftFrom, notesInput, type NotesDraft } from '../../../../../src/features/practices/notes-draft';
 import { describeApiError } from '../../../../../src/lib/api-client';
+import { useKeyboardAppearance, useThemeColors } from '../../../../../src/theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base min-h-[72px]';
 
@@ -16,6 +17,8 @@ const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 
  * player and their parents see. Coaches only.
  */
 export default function PracticeNotesScreen() {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const { practiceId = '' } = useLocalSearchParams<{ practiceId: string }>();
   const queryClient = useQueryClient();
   const query = usePractice(practiceId);
@@ -85,7 +88,8 @@ export default function PracticeNotesScreen() {
             value={draft.overallNotes}
             onChangeText={(overallNotes) => setDraft({ ...draft, overallNotes })}
             placeholder="Players and parents see these."
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
           />
         </FormField>
         <FormField label="Coach notes">
@@ -97,7 +101,8 @@ export default function PracticeNotesScreen() {
             value={draft.coachNotes}
             onChangeText={(coachNotes) => setDraft({ ...draft, coachNotes })}
             placeholder="Only coaches see these."
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
           />
         </FormField>
 

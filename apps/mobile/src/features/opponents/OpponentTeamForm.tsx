@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput } from 'react-native';
 import { Button, FormField } from '@baseball/ui';
 import type { OpponentTeamFields } from './opponent-teams-api';
+import { useKeyboardAppearance, useThemeColors } from '../../theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 
@@ -15,6 +16,8 @@ interface OpponentTeamFormProps {
 
 /** An opponent team's name and details (the web New Opponent and roster-page forms). */
 export function OpponentTeamForm({ initial, submitLabel, saving, error, onSubmit }: OpponentTeamFormProps) {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const [name, setName] = useState(initial?.name ?? '');
   const [abbreviation, setAbbreviation] = useState(initial?.abbreviation ?? '');
   const [city, setCity] = useState(initial?.city ?? '');
@@ -45,7 +48,8 @@ export function OpponentTeamForm({ initial, submitLabel, saving, error, onSubmit
             value={name}
             onChangeText={setName}
             placeholder="e.g. Eagles"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
             autoCapitalize="words"
             maxLength={100}
           />
@@ -57,7 +61,8 @@ export function OpponentTeamForm({ initial, submitLabel, saving, error, onSubmit
             value={abbreviation}
             onChangeText={setAbbreviation}
             placeholder="EAG"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
             autoCapitalize="characters"
             maxLength={10}
           />
@@ -69,7 +74,8 @@ export function OpponentTeamForm({ initial, submitLabel, saving, error, onSubmit
             value={city}
             onChangeText={setCity}
             placeholder="City"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
             autoCapitalize="words"
             maxLength={80}
           />
@@ -81,7 +87,8 @@ export function OpponentTeamForm({ initial, submitLabel, saving, error, onSubmit
             value={stateCode}
             onChangeText={setStateCode}
             placeholder="ID"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
             autoCapitalize="characters"
             maxLength={2}
           />

@@ -5,6 +5,7 @@ import { Button } from '@baseball/ui';
 import { PRACTICE_NOTE_CATEGORIES, type PracticeDetailResponse } from '@baseball/shared';
 import { savePracticeSelfNotes } from './practices-api';
 import { describeApiError } from '../../lib/api-client';
+import { useKeyboardAppearance, useThemeColors } from '../../theme/ThemeScope';
 
 type MyPlayer = PracticeDetailResponse['myPlayers'][number];
 
@@ -14,6 +15,8 @@ type MyPlayer = PracticeDetailResponse['myPlayers'][number];
  * parent only reads.
  */
 export function PlayerNotesCard({ practiceId, player, showName, onSaved }: { practiceId: string; player: MyPlayer; showName: boolean; onSaved: () => void }) {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const saved = player.notes?.playerNotes ?? '';
   const [draft, setDraft] = useState(saved);
   const save = useMutation({
@@ -50,7 +53,8 @@ export function PlayerNotesCard({ practiceId, player, showName, onSaved }: { pra
             value={draft}
             onChangeText={setDraft}
             placeholder="How did practice go?"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
           />
           <Text className="text-xs text-gray-400 mb-2">You, your coaches and your parents can see this.</Text>
           {save.isError && (

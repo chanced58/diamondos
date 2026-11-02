@@ -26,6 +26,11 @@ export function useThemeColors(): Record<SemanticToken, string> {
   return SEMANTIC_TOKENS[useScopeTheme()];
 }
 
+/** `TextInput.keyboardAppearance` for the nearest scope: dark keyboard in Dark and Dugout. */
+export function useKeyboardAppearance(): 'default' | 'dark' {
+  return useScopeTheme() === 'light' ? 'default' : 'dark';
+}
+
 interface ThemeScopeProps {
   theme: ResolvedTheme;
   children: ReactNode;

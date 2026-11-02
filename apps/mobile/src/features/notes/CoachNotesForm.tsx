@@ -15,6 +15,7 @@ import {
   type CoachNotesDraft,
 } from './game-notes-model';
 import { NoteBody, NoteHeading, NoteInput } from './NoteText';
+import { useThemeColors } from '../../theme/ThemeScope';
 
 /** Wide enough (iPad) to set the six assessment boxes two to a row. */
 const TWO_COLUMN_MIN_WIDTH = 700;
@@ -25,6 +26,7 @@ const TWO_COLUMN_MIN_WIDTH = 700;
  * Saves only what changed.
  */
 export function CoachNotesForm({ notes }: { notes: GameNotesResponse }) {
+  const colors = useThemeColors();
   const queryClient = useQueryClient();
   const { width } = useWindowDimensions();
   const [original, setOriginal] = useState(() => coachNotesDraftFrom(notes));
@@ -116,7 +118,7 @@ export function CoachNotesForm({ notes }: { notes: GameNotesResponse }) {
                   </Text>
                   {edited && <Text className="text-xs text-amber-700 mr-2">Edited</Text>}
                   {player.selfNotes && <Text className="text-xs text-blue-700 mr-2">Player notes</Text>}
-                  <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color="#9ca3af" />
+                  <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors['fg-subtle']} />
                 </TouchableOpacity>
 
                 {open && (

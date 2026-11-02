@@ -22,6 +22,7 @@ import {
 } from '../../../../../../src/features/roster/document-file';
 import { localToday } from '../../../../../../src/features/stats/season-stats-api';
 import { describeApiError } from '../../../../../../src/lib/api-client';
+import { useKeyboardAppearance, useThemeColors } from '../../../../../../src/theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 const SOURCES: Array<{ source: DocumentSource; label: string }> = [
@@ -36,6 +37,8 @@ const SOURCES: Array<{ source: DocumentSource; label: string }> = [
  * upload of a type supersedes the player's previous one. Roster managers only.
  */
 export default function UploadPlayerDocumentScreen() {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const { playerId = '' } = useLocalSearchParams<{ playerId: string }>();
   const { activeTeam } = useRole();
   const teamId = activeTeam?.teamId ?? null;
@@ -164,7 +167,8 @@ export default function UploadPlayerDocumentScreen() {
             accessibilityLabel="Title"
             className={inputClass}
             placeholder="e.g. 2027 Spring Liability Waiver"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
             value={title}
             onChangeText={setTitle}
             maxLength={120}

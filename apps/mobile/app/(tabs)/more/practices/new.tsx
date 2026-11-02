@@ -16,11 +16,14 @@ import {
 } from '../../../../src/features/practices/practice-form-model';
 import { deviceTimeZone } from '../../../../src/features/games/game-form-model';
 import { describeApiError } from '../../../../src/lib/api-client';
+import { useKeyboardAppearance, useThemeColors } from '../../../../src/theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 
 /** Log a practice (the web's /practices/new). Coaches only; the plan and blocks come after. */
 export default function NewPracticeScreen() {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const { activeTeam } = useRole();
   const teamId = activeTeam?.teamId ?? '';
   const queryClient = useQueryClient();
@@ -69,7 +72,8 @@ export default function NewPracticeScreen() {
           value={values.duration}
           onChangeText={(duration) => set({ duration })}
           placeholder="120"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={colors['fg-subtle']}
+          keyboardAppearance={keyboardAppearance}
         />
       </FormField>
 

@@ -8,6 +8,7 @@ import { useCan, useRole } from '../../../src/providers/RoleProvider';
 import { useSyncContext } from '../../../src/providers/SyncProvider';
 import { createChannel, type NewChannelFields } from '../../../src/features/messaging/messaging-api';
 import { describeApiError } from '../../../src/lib/api-client';
+import { useKeyboardAppearance, useThemeColors } from '../../../src/theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 
@@ -17,6 +18,8 @@ const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 
  * plan with topic channels. Every active member joins.
  */
 export default function NewChannelScreen() {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const { activeTeam } = useRole();
   const isCoach = useCan('team.coach');
   const canTopics = useCan(Feature.TOPIC_CHANNELS);
@@ -82,7 +85,8 @@ export default function NewChannelScreen() {
             value={name}
             onChangeText={setName}
             placeholder="e.g. Pitchers"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
             maxLength={80}
           />
         </FormField>
@@ -93,7 +97,8 @@ export default function NewChannelScreen() {
             value={description}
             onChangeText={setDescription}
             placeholder="What's it for?"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
             maxLength={300}
           />
         </FormField>

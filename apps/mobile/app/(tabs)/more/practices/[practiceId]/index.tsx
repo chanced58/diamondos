@@ -20,6 +20,7 @@ import { SummaryCard } from '../../../../../src/features/practices/SummaryCard';
 import { deviceTimeZone } from '../../../../../src/features/games/game-form-model';
 import { describeApiError } from '../../../../../src/lib/api-client';
 import { openOnWeb, webUrl } from '../../../../../src/lib/web-links';
+import { useKeyboardAppearance, useThemeColors } from '../../../../../src/theme/ThemeScope';
 
 /**
  * One practice, shown by role as on the web practice page. Coaches run it,
@@ -205,6 +206,8 @@ function notesSummary(detail: PracticeDetailResponse): string {
 
 /** The coach's plan text, with a Save button that appears once it is edited. */
 function PlanEditor({ practiceId, plan, onSaved }: { practiceId: string; plan: string; onSaved: () => void }) {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const [draft, setDraft] = useState(plan);
   const save = useMutation({ mutationFn: () => savePracticePlan(practiceId, draft), onSuccess: onSaved });
 
@@ -219,7 +222,8 @@ function PlanEditor({ practiceId, plan, onSaved }: { practiceId: string; plan: s
         value={draft}
         onChangeText={setDraft}
         placeholder="What's the plan? Players and parents see this."
-        placeholderTextColor="#9ca3af"
+        placeholderTextColor={colors['fg-subtle']}
+        keyboardAppearance={keyboardAppearance}
       />
       {save.isError && <Text accessibilityRole="alert" className="text-xs text-red-700 mb-2">{describeApiError(save.error)}</Text>}
       {draft !== plan && <Button label="Save plan" loading={save.isPending} onPress={() => save.mutate()} />}
