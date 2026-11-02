@@ -14,7 +14,10 @@ import {
 const inter = Inter({ subsets: ['latin'] });
 
 export const viewport: Viewport = {
-  themeColor: '#1e3a8a',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#1e3a8a' },
+    { media: '(prefers-color-scheme: dark)', color: '#0f1115' },
+  ],
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
