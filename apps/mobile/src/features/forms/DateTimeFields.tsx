@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Platform, Text, TouchableOpacity, View } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { localDateFromParts, partsFromLocalDate } from './date-parts';
+import { useScopeTheme } from '../../theme/ThemeScope';
 
 interface DateTimeFieldsProps {
   date: string;
@@ -20,6 +21,9 @@ interface DateTimeFieldsProps {
  */
 export function DateTimeFields({ date, time, onChange, testID, showDate = true, showTime = true }: DateTimeFieldsProps) {
   const [androidPicker, setAndroidPicker] = useState<'date' | 'time' | null>(null);
+  // iOS draws the compact picker from the OS appearance, not the app theme.
+  // Light keeps today's behaviour (unspecified); Dark and Dugout force dark.
+  const themeVariant = useScopeTheme() === 'light' ? undefined : 'dark';
   const value = localDateFromParts(date, time);
   const modes = !showDate ? (['time'] as const) : showTime ? (['date', 'time'] as const) : (['date'] as const);
 
@@ -34,7 +38,7 @@ export function DateTimeFields({ date, time, onChange, testID, showDate = true, 
     return (
       <View testID={testID} className="flex-row items-center gap-2">
         {modes.map((mode) => (
-          <DateTimePicker key={mode} value={value} mode={mode} display="compact" onChange={handle(mode)} />
+          <DateTimePicker key={mode} value={value} mode={mode} display="compact" themeVariant={themeVariant} onChange={handle(mode)} />
         ))}
       </View>
     );

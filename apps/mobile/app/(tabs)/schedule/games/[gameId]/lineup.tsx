@@ -23,6 +23,7 @@ import { useLeagueContext } from '../../../../../src/lib/league-settings';
 import { useGameScoringSettings } from '../../../../../src/lib/game-scoring-settings';
 import { useGameState } from '../../../../../src/features/scoring/use-game-state';
 import { useSyncContext } from '../../../../../src/providers/SyncProvider';
+import { useScopeTheme, useThemeColors } from '../../../../../src/theme/ThemeScope';
 
 interface Assignment {
   /** 1-based batting slot, or null for Bench. */
@@ -36,6 +37,9 @@ const EDITABLE_STATUSES = new Set(['scheduled', 'in_progress']);
 export default function LineupScreen() {
   const { gameId } = useLocalSearchParams<{ gameId: string }>();
   const { triggerSync, isSyncing, lastSyncError } = useSyncContext();
+  const colors = useThemeColors();
+  // undefined keeps LoadingSpinner's Light navy; the navy is invisible on a dark surface.
+  const spinnerColor = useScopeTheme() === 'light' ? undefined : colors['brand-2'];
 
   // Resolve the game from the local DB — the route only carries the game id.
   const [game, setGame] = useState<Game | null>(null);
@@ -288,7 +292,7 @@ export default function LineupScreen() {
   }
 
   if (!gameLoaded) {
-    return <LoadingSpinner fullScreen />;
+    return <LoadingSpinner fullScreen color={spinnerColor} />;
   }
 
   if (!game) {

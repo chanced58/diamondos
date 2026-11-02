@@ -131,6 +131,7 @@ export function GameForm({
         <TextInput
           accessibilityLabel="Notes"
           className={`${inputClass} min-h-[80px]`}
+          keyboardAppearance={keyboardAppearance}
           multiline
           textAlignVertical="top"
           value={values.notes}

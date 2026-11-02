@@ -12,6 +12,7 @@ import {
   useLeagueChannel,
   useLeagueChannelRealtime,
 } from '../../../../src/features/messaging/league-messaging-api';
+import { useKeyboardAppearance, useScopeTheme, useThemeColors } from '../../../../src/theme/ThemeScope';
 
 /**
  * A league channel (the web League Channel page): online-only, refetched
@@ -22,6 +23,10 @@ export default function LeagueChannelScreen() {
   const { channelId = '' } = useLocalSearchParams<{ channelId: string }>();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
+  // The system placeholder gray is Light's look; Dark and Dugout need a themed one.
+  const placeholderColor = useScopeTheme() === 'light' ? undefined : colors['fg-subtle'];
   const query = useLeagueChannel(channelId);
   useLeagueChannelRealtime(channelId);
   const [draft, setDraft] = useState('');
@@ -111,6 +116,8 @@ export default function LeagueChannelScreen() {
             <TextInput
               className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5 text-gray-900 max-h-24"
               placeholder="Write a message..."
+              placeholderTextColor={placeholderColor}
+              keyboardAppearance={keyboardAppearance}
               value={draft}
               onChangeText={setDraft}
               multiline

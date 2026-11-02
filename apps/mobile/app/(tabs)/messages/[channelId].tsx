@@ -18,6 +18,7 @@ import { useChannelRealtime } from '../../../src/features/messaging/use-channel-
 import { removeChannelLocally } from '../../../src/features/messaging/local-channel';
 import { roleBadge } from '../../../src/features/messaging/role-badges';
 import { formatTime } from '@baseball/shared';
+import { useKeyboardAppearance, useScopeTheme, useThemeColors } from '../../../src/theme/ThemeScope';
 
 interface MessageThreadProps {
   channelRemoteId: string;
@@ -27,6 +28,10 @@ interface MessageThreadProps {
 
 function MessageThread({ channelRemoteId, messages, channel }: MessageThreadProps) {
   const { user } = useAuth();
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
+  // The system placeholder gray is Light's look; Dark and Dugout need a themed one.
+  const placeholderColor = useScopeTheme() === 'light' ? undefined : colors['fg-subtle'];
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
@@ -167,6 +172,8 @@ function MessageThread({ channelRemoteId, messages, channel }: MessageThreadProp
           <TextInput
             className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5 text-gray-900 max-h-24"
             placeholder="Type a message..."
+            placeholderTextColor={placeholderColor}
+            keyboardAppearance={keyboardAppearance}
             value={text}
             onChangeText={setText}
             multiline

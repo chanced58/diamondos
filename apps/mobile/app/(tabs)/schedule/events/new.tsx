@@ -110,6 +110,7 @@ export default function NewTeamEventScreen() {
         <TextInput
           accessibilityLabel="Description"
           className={`${inputClass} min-h-[80px]`}
+          keyboardAppearance={keyboardAppearance}
           multiline
           textAlignVertical="top"
           value={values.description}

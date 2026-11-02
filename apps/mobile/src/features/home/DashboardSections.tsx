@@ -2,6 +2,7 @@ import { Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { Badge, Button } from '@baseball/ui';
 import { formatDate, type DashboardAnnouncement, type DashboardLiveGame, type DashboardNextGame, type DashboardRecentGame, type DashboardUpcomingItem } from '@baseball/shared';
+import { useScopeTheme } from '../../theme/ThemeScope';
 import { dayParts, liveSituation, matchup, nextGameWhen, result, upcomingDetail } from './dashboard-format';
 
 /**
@@ -60,21 +61,26 @@ export function LiveGameRow({ game, activeTeamId }: { game: DashboardLiveGame; a
 
 /** The "Next up" card: the soonest scheduled game, opened for the team's own, with Set lineup for coaches. */
 export function NextUpCard({ game, activeTeamId, isCoach }: { game: DashboardNextGame | null; activeTeamId: string; isCoach: boolean }) {
+  // Translucent white on the Light navy card is 6:1+; on the brighter Dark and
+  // Dugout brand blue it drops to ~3:1, so the secondary lines go opaque there.
+  const light = useScopeTheme() === 'light';
+  const eyebrow = light ? 'text-white/70' : 'text-white';
+  const detail = light ? 'text-white/75' : 'text-white';
   if (!game) {
     return (
       <View className="bg-brand-700 rounded-xl p-5 mb-3">
-        <Text className="text-xs font-bold text-white/70 tracking-wide">NEXT UP</Text>
+        <Text className={`text-xs font-bold ${eyebrow} tracking-wide`}>NEXT UP</Text>
         <Text className="text-2xl font-bold text-white mt-1">Nothing scheduled</Text>
-        <Text className="text-sm text-white/75 mt-1">Games in the next four weeks show up here.</Text>
+        <Text className={`text-sm ${detail} mt-1`}>Games in the next four weeks show up here.</Text>
       </View>
     );
   }
   const own = game.teamId === activeTeamId;
   return (
     <View className="bg-brand-700 rounded-xl p-5 mb-3">
-      <Text className="text-xs font-bold text-white/70 tracking-wide">NEXT UP</Text>
+      <Text className={`text-xs font-bold ${eyebrow} tracking-wide`}>NEXT UP</Text>
       <Text className="text-2xl font-bold text-white mt-1">{matchup(game.isHome, game.opponentName)}</Text>
-      <Text className="text-sm text-white/75 mt-1">
+      <Text className={`text-sm ${detail} mt-1`}>
         {nextGameWhen(game.scheduledAt, game.timeZone)}
         {game.venueName ? ` · ${game.venueName}` : ''}
       </Text>
