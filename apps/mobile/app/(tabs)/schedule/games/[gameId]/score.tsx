@@ -2656,7 +2656,7 @@ function BookPane({ isWide, children }: { isWide: boolean; children: ReactNode }
   if (!isWide) return <>{children}</>;
   return (
     <View className="border-r border-gray-200 bg-white" style={{ flex: 5 }}>
-      <ScrollView style={{ flex: 1 }}>{children}</ScrollView>
+      <ScrollView indicatorStyle="black" style={{ flex: 1 }}>{children}</ScrollView>
     </View>
   );
 }
@@ -2786,7 +2786,7 @@ function BatterPickerModal({
             Pick who is at the plate. The rotation resumes from this batter
             after the plate appearance completes.
           </Text>
-          <ScrollView className="max-h-96">
+          <ScrollView indicatorStyle="black" className="max-h-96">
             <View className="gap-2">
               {sorted.map((slot) => {
                 const isSelected = slot.playerId === selectedId;
@@ -3006,7 +3006,7 @@ function CaughtStealingModal({
             )}
           </View>
 
-          <ScrollView style={{ maxHeight: 400 }}>
+          <ScrollView indicatorStyle="black" style={{ maxHeight: 400 }}>
             <Text className="text-score-11px font-semibold text-gray-500 mb-2">COMMON</Text>
             <View className="flex-row gap-2 mb-5">
               {presets.map((preset) => (
@@ -3282,7 +3282,7 @@ function OpponentBatterPickerModal({
             Pick who is batting. The rotation resumes from this batter after
             the plate appearance completes.
           </Text>
-          <ScrollView className="max-h-96">
+          <ScrollView indicatorStyle="black" className="max-h-96">
             <View className="gap-2">
               {slots.map((slot) => {
                 const isSelected = slot.playerId === selectedId;
@@ -3372,7 +3372,7 @@ function RemoveBatterModal({
               </TouchableOpacity>
             ))}
           </View>
-          <ScrollView className="max-h-96">
+          <ScrollView indicatorStyle="black" className="max-h-96">
             <View className="gap-2">
               {rows.map(({ slot, name, reason }) => (
                 <TouchableOpacity
@@ -3526,6 +3526,7 @@ function AddBatterModal({
           )}
 
           <ScrollView
+            indicatorStyle="black"
             ref={scrollRef}
             className="max-h-96"
             keyboardShouldPersistTaps="handled"
@@ -3765,7 +3766,7 @@ function LineupSetupModal({
               React Native defaults flexShrink to 0, so without it this grows
               past the sheet's maxHeight and pushes the footer off-screen. */}
           {onTrackingStep ? (
-            <ScrollView className="px-5" style={{ flexShrink: 1 }}>
+            <ScrollView indicatorStyle="black" className="px-5" style={{ flexShrink: 1 }}>
               <Text className="text-score-sm text-gray-500 mb-4">
                 Anything you turn off is hidden while scoring, so the buttons
                 stay out of your way. You can still record the game without it.
@@ -3796,7 +3797,7 @@ function LineupSetupModal({
               No players loaded. Sync the roster first.
             </Text>
           ) : (
-            <ScrollView className="px-5" style={{ flexShrink: 1 }}>
+            <ScrollView indicatorStyle="black" className="px-5" style={{ flexShrink: 1 }}>
               <View className="gap-2 pb-2">
                 {roster.map((p) => {
                   if (onPitcherStep) {

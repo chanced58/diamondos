@@ -35,6 +35,16 @@ export function useKeyboardAppearance(): 'light' | 'dark' {
   return useScopeTheme() === 'light' ? 'light' : 'dark';
 }
 
+/**
+ * `indicatorStyle` for scrollables in the nearest scope. A Light scope gets an
+ * explicit black indicator, so a Light scope under the pinned-dark window (the
+ * scorer under Dark or Dugout) doesn't get the window's white one; Dark and
+ * Dugout take the platform default, which follows the dark window. iOS only.
+ */
+export function useScrollIndicatorStyle(): 'black' | 'default' {
+  return useScopeTheme() === 'light' ? 'black' : 'default';
+}
+
 interface ThemeScopeProps {
   theme: ResolvedTheme;
   children: ReactNode;

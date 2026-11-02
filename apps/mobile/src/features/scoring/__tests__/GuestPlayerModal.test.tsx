@@ -1,5 +1,5 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { TextInput } from 'react-native';
+import { ScrollView, TextInput } from 'react-native';
 import { ThemeScope } from '../../../theme/ThemeScope';
 import { GuestPlayerModal } from '../GuestPlayerModal';
 
@@ -69,5 +69,19 @@ describe('GuestPlayerModal keyboard appearance', () => {
     const inputs = UNSAFE_getAllByType(TextInput);
     expect(inputs).toHaveLength(1);
     expect(inputs[0].props.keyboardAppearance).toBe('dark');
+  });
+
+  it.each([
+    ['light', 'black'],
+    ['dark', 'default'],
+    ['dugout', 'default'],
+  ] as const)('should give a %s scope the %s scroll indicator', (theme, expected) => {
+    const { UNSAFE_getAllByType } = render(<ThemeScope theme={theme}>{modal}</ThemeScope>);
+
+    const scrollViews = UNSAFE_getAllByType(ScrollView);
+    expect(scrollViews.length).toBeGreaterThan(0);
+    for (const scrollView of scrollViews) {
+      expect(scrollView.props.indicatorStyle).toBe(expected);
+    }
   });
 });

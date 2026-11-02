@@ -2,7 +2,13 @@ import { render } from '@testing-library/react-native';
 import { Text } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SEMANTIC_TOKENS } from '@baseball/shared';
-import { ThemeScope, useKeyboardAppearance, useScopeTheme, useThemeColors } from '../ThemeScope';
+import {
+  ThemeScope,
+  useKeyboardAppearance,
+  useScopeTheme,
+  useScrollIndicatorStyle,
+  useThemeColors,
+} from '../ThemeScope';
 
 function Probe({ testID }: { testID: string }) {
   const colors = useThemeColors();
@@ -101,5 +107,39 @@ describe('useKeyboardAppearance', () => {
       </ThemeScope>,
     );
     expect(dugout.getByTestId('k').props.children).toBe('dark');
+  });
+});
+
+describe('useScrollIndicatorStyle', () => {
+  function IndicatorProbe() {
+    return <Text testID="i">{useScrollIndicatorStyle()}</Text>;
+  }
+
+  it.each([
+    ['light', 'black'],
+    ['dark', 'default'],
+    ['dugout', 'default'],
+  ] as const)('should give a %s scope the %s indicator', (theme, expected) => {
+    const { getByTestId } = render(
+      <ThemeScope theme={theme}>
+        <IndicatorProbe />
+      </ThemeScope>,
+    );
+
+    expect(getByTestId('i').props.children).toBe(expected);
+  });
+
+  it('should give black outside any scope and inside a Light scope nested in Dark', () => {
+    const outside = render(<IndicatorProbe />);
+    expect(outside.getByTestId('i').props.children).toBe('black');
+
+    const nested = render(
+      <ThemeScope theme="dark">
+        <ThemeScope theme="light">
+          <IndicatorProbe />
+        </ThemeScope>
+      </ThemeScope>,
+    );
+    expect(nested.getByTestId('i').props.children).toBe('black');
   });
 });

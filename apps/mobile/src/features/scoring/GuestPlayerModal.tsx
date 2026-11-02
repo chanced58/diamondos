@@ -16,7 +16,7 @@ import {
   createLocalGuest,
 } from '../lineup/local-guest';
 import { useSyncContext } from '../../providers/SyncProvider';
-import { useKeyboardAppearance } from '../../theme/ThemeScope';
+import { useKeyboardAppearance, useScrollIndicatorStyle } from '../../theme/ThemeScope';
 
 interface GuestPlayerModalProps {
   visible: boolean;
@@ -57,6 +57,7 @@ export function GuestPlayerModal({
   const { triggerSync } = useSyncContext();
   // Follows the nearest scope: Light under the scorer, themed under the lineup screen.
   const keyboardAppearance = useKeyboardAppearance();
+  const indicatorStyle = useScrollIndicatorStyle();
   const [tab, setTab] = useState<'new' | 'pool'>('new');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -256,7 +257,7 @@ export function GuestPlayerModal({
             </View>
           )}
 
-          <ScrollView keyboardShouldPersistTaps="handled">
+          <ScrollView keyboardShouldPersistTaps="handled" indicatorStyle={indicatorStyle}>
             {error && (
               <View className="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                 <Text className="text-score-sm text-red-700">{error}</Text>
@@ -323,7 +324,7 @@ export function GuestPlayerModal({
                   </Text>
                 ) : (
                   <View className="mb-4" style={{ maxHeight: 240 }}>
-                    <ScrollView nestedScrollEnabled>
+                    <ScrollView nestedScrollEnabled indicatorStyle={indicatorStyle}>
                       {filteredPool.map((candidate) => (
                         <TouchableOpacity
                           key={candidate.playerRemoteId}

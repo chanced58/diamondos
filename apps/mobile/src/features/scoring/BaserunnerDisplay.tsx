@@ -317,7 +317,7 @@ export function BaserunnerDisplay({
               Select the new runner for {pinchRunnerPicker ? baseLabel(pinchRunnerPicker.base) : ''}.
             </Text>
             {roster && roster.length > 0 ? (
-              <ScrollView className="max-h-96">
+              <ScrollView className="max-h-96" indicatorStyle="black">
                 <View className="gap-2">
                   {roster.map((p) => (
                     <TouchableOpacity
