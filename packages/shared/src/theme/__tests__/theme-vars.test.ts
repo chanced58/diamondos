@@ -56,6 +56,20 @@ describe('themedColor', () => {
     expect(themedColor('dark', 'fg', 'red', '500')).toBe(BASE_COLORS.red['500']);
   });
 
+  it('lifts brand line 500-900 and fg 500 to brand-400 in dark and dugout only', () => {
+    for (const theme of DARK_THEMES) {
+      for (const shade of ['500', '600', '700', '800', '900'] as const) {
+        expect(themedColor(theme, 'line', 'brand', shade)).toBe(BASE_COLORS.brand['400']);
+      }
+      expect(themedColor(theme, 'fg', 'brand', '500')).toBe(BASE_COLORS.brand['400']);
+      // other hues keep their Light line/fg 500
+      expect(themedColor(theme, 'line', 'red', '500')).toBe(BASE_COLORS.red['500']);
+      expect(themedColor(theme, 'fg', 'red', '500')).toBe(BASE_COLORS.red['500']);
+    }
+    expect(themedColor('light', 'line', 'brand', '500')).toBe('#1d4ed8');
+    expect(themedColor('light', 'fg', 'brand', '500')).toBe('#1d4ed8');
+  });
+
   it('tints hue backgrounds into the surface', () => {
     for (const theme of DARK_THEMES) {
       for (const shade of ['50', '100', '200', '300'] as const) {
@@ -97,6 +111,23 @@ describe.each(DARK_THEMES)('contrast in %s', (theme) => {
     expect(
       contrastRatio(themedColor(theme, 'line', 'gray', '300'), themedColor(theme, 'bg', 'white')),
     ).toBeGreaterThanOrEqual(3);
+  });
+
+  it.each(['500', '600', '700'] as const)(
+    'line brand %s >= 3 on surfaces (focus rings, brand borders)',
+    (shade) => {
+      const line = themedColor(theme, 'line', 'brand', shade);
+      for (const s of surfaces()) {
+        expect(contrastRatio(line, s)).toBeGreaterThanOrEqual(3);
+      }
+    },
+  );
+
+  it('fg brand 500 >= 4.5 on surfaces (text-brand-500)', () => {
+    const fg = themedColor(theme, 'fg', 'brand', '500');
+    for (const s of surfaces()) {
+      expect(contrastRatio(fg, s)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   it.each([...THEMED_HUES])('hue %s fg 700/600 are legible', (hue) => {

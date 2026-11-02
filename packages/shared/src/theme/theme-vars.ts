@@ -21,6 +21,7 @@ const BRAND_BG: Partial<Record<Shade, string>> = {
   '800': '#1d4ed8',
   '900': '#1e40af',
 };
+const BRAND_LINE_LIFT: ReadonlySet<Shade> = new Set<Shade>(['500', '600', '700', '800', '900']);
 
 /**
  * Hex for a role/color/shade under a theme. `shade` is ignored for
@@ -57,9 +58,14 @@ export function themedColor(
   }
   if (role === 'fg') {
     if (shade === '600' || shade === '700') return hue['400'];
+    // Brand 500 (#1d4ed8) is only ~2:1 on charcoal; `text-brand-500` is common.
+    if (color === 'brand' && shade === '500') return hue['400'];
     if (shade === '800' || shade === '900' || shade === '950') return hue['300'];
     return light;
   }
+  // Brand lines (focus rings, brand borders) at 500-900 are 1.7-2.6:1 on
+  // charcoal; lift them to brand-400 (>= 3:1 on every dark surface).
+  if (color === 'brand' && BRAND_LINE_LIFT.has(shade)) return hue['400'];
   const weight = LINE_TINT[shade];
   return weight === undefined ? light : mixHex(hue['500'], surface, weight);
 }
