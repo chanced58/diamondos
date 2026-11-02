@@ -2,10 +2,11 @@
 
 import { getLineupExtensionHistory } from '@baseball/shared';
 
-import type { JSX } from 'react';
+import type { ComponentProps, JSX } from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
+import { ScorerLightScope } from './ScorerLightScope';
 import { createBrowserClient } from '@/lib/supabase/client';
 import {
   applyPitchReverted,
@@ -559,8 +560,7 @@ function runnerChoicesFor(
   return runners.map((r) => ({ fromBase: r.fromBase, choice: choices[r.runnerId] ?? { kind: 'auto' as const } }));
 }
 
-/** The web live-scoring board: pitch/play entry, lineups, and game state. */
-export function ScoringBoard({
+function ScoringBoardContent({
   game,
   lineup,
   opponentLineup,
@@ -3922,5 +3922,18 @@ export function ScoringBoard({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The web live-scoring board: pitch/play entry, lineups, and game state.
+ * Always Light: the board is wrapped in a Light island here so no consumer
+ * can render it half-dark. Import this, never `ScoringBoardContent`.
+ */
+export function ScoringBoard(props: ComponentProps<typeof ScoringBoardContent>): JSX.Element {
+  return (
+    <ScorerLightScope>
+      <ScoringBoardContent {...props} />
+    </ScorerLightScope>
   );
 }

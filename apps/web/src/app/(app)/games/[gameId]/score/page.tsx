@@ -270,27 +270,25 @@ export default async function ScorePage({ params }: { params: { gameId: string }
   });
 
   return (
-    <div data-theme="light" className="min-h-full bg-app-bg text-app-fg">
-      <ScoringBoard
-        game={{
-          id: game.id,
-          opponentName: game.opponent_name,
-          locationType: game.location_type,
-          neutralHomeTeam: game.neutral_home_team,
-          teamId: game.team_id,
-        }}
-        lineup={lineup}
-        opponentLineup={opponentLineup}
-        teamRoster={teamRoster}
-        opponentRoster={opponentRoster}
-        initialEvents={allEvents}
-        minNextSequenceNumber={allEventsMaxSeq + 1}
-        currentUserId={user.id}
-        isCoach={isCoach}
-        seasonSprayPoints={seasonSprayPoints}
-        scoringConfig={scoringConfig}
-        leagueSettings={leagueSettings}
-      />
-    </div>
+    <ScoringBoard
+      game={{
+        id: game.id,
+        opponentName: game.opponent_name,
+        locationType: game.location_type,
+        neutralHomeTeam: game.neutral_home_team,
+        teamId: game.team_id,
+      }}
+      lineup={lineup}
+      opponentLineup={opponentLineup}
+      teamRoster={teamRoster}
+      opponentRoster={opponentRoster}
+      initialEvents={allEvents}
+      minNextSequenceNumber={allEventsMaxSeq + 1}
+      currentUserId={user.id}
+      isCoach={isCoach}
+      seasonSprayPoints={seasonSprayPoints}
+      scoringConfig={scoringConfig}
+      leagueSettings={leagueSettings}
+    />
   );
 }
