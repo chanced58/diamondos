@@ -113,13 +113,14 @@ export function AppearanceSettingsClient(): JSX.Element {
     <>
       <Section<ThemePreference>
         title="Theme"
-        description="Light is the default daily. Dark cuts glare in the dugout. Dugout-night is tuned for field lights."
+        description="Choose how DiamondOS looks when you're signed in. System follows your device's light or dark setting."
         value={themePreference}
         set={setThemePreference}
         options={[
-          { value: 'light',  label: 'Light',        hint: 'Default' },
-          { value: 'dark',   label: 'Dark',         hint: 'Low glare' },
-          { value: 'dugout', label: 'Dugout night', hint: 'Turf accent' },
+          { value: 'system', label: 'System', hint: 'Match device' },
+          { value: 'light',  label: 'Light' },
+          { value: 'dark',   label: 'Dark',   hint: 'Charcoal' },
+          { value: 'dugout', label: 'Dugout', hint: 'Turf green' },
         ]}
       />
 

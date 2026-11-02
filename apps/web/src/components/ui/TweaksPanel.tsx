@@ -46,6 +46,7 @@ export function TweaksPanel({ onClose }: { onClose?: () => void } = {}): JSX.Ele
           value={themePreference}
           set={setThemePreference}
           options={[
+            { v: 'system', l: 'System' },
             { v: 'light',  l: 'Light' },
             { v: 'dark',   l: 'Dark' },
             { v: 'dugout', l: 'Dugout' },
