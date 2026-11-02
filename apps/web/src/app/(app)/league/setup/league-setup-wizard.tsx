@@ -356,7 +356,7 @@ export function LeagueSetupWizard({ leagueId, initialName, initialStateCode }: P
                   }}
                   className="sr-only peer"
                 />
-                <div className="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:bg-brand-600 after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full" />
+                <div className="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:bg-brand-600 after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-current after:text-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full" />
               </label>
               <span className="text-sm font-medium text-gray-700">Use divisions</span>
             </div>

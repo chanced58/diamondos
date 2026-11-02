@@ -12,23 +12,10 @@ import path from 'path';
 const SRC = path.resolve(__dirname, '..');
 
 /**
- * Directories (relative to `src`) that are scanned. B6 scans only the shared
- * components; B7 widens this to include `app/(app)` by editing this one array.
+ * Directories (relative to `src`) that are scanned: the shared components and
+ * the whole signed-in app (minus EXCLUDED_DIRS).
  */
-const SCAN_ROOTS = [
-  'components',
-  'app/(app)/games',
-  'app/(app)/live',
-  'app/(app)/schedule',
-  'app/(app)/dashboard',
-  'app/(app)/teams',
-  'app/(app)/practices',
-  'app/(app)/players',
-  'app/(app)/messages',
-  'app/(app)/training',
-  'app/(app)/bullpen',
-  'app/(app)/analytics',
-];
+const SCAN_ROOTS = ['components', 'app/(app)'];
 
 /** Directory prefixes (relative to `src`) that are never scanned. */
 const EXCLUDED_DIRS = [
@@ -43,6 +30,8 @@ const EXCLUDED_DIRS = [
 export const RAW_COLOR_ALLOWLIST: Record<string, string> = {
   'components/auth/LoginForm.tsx':
     'Google "G" logo: third-party brand colors that must not change with the theme.',
+  'app/(app)/admin/branding/BrandingEditor.tsx':
+    'Default colors for the public home page branding editor; they describe the always-Light public landing page and are editable user data, not UI styling.',
   'app/(app)/teams/[teamId]/admin/TeamBrandingForm.tsx':
     'Default values for the team color picker (<input type="color"> needs a hex); they are the team\'s own chosen colors, not UI styling.',
 };

@@ -530,6 +530,28 @@
   [data-theme="dugout"] .pill-indigo {
     background: rgba(99,102,241,.20); color: #a5b4fc;
   }
+
+  /* League admin forms were written with Tailwind slate, which is not in the
+     themed palette. Light values are exactly slate-500/400/200/300/900; Dark and
+     Dugout use the app tokens. */
+  .slate-fg-muted   { color: #64748b; }
+  .slate-fg-subtle  { color: #94a3b8; }
+  .slate-divider    { border-color: #e2e8f0; }
+  .slate-choice     { border-color: #cbd5e1; }
+  .slate-choice-on  { border-color: #0f172a; box-shadow: 0 0 0 1px #0f172a; }
+  .slate-btn        { background: #0f172a; }
+  [data-theme="dark"] .slate-fg-muted,
+  [data-theme="dugout"] .slate-fg-muted  { color: var(--app-fg-muted); }
+  [data-theme="dark"] .slate-fg-subtle,
+  [data-theme="dugout"] .slate-fg-subtle { color: var(--app-fg-subtle); }
+  [data-theme="dark"] .slate-divider,
+  [data-theme="dugout"] .slate-divider   { border-color: var(--app-border); }
+  [data-theme="dark"] .slate-choice,
+  [data-theme="dugout"] .slate-choice    { border-color: var(--app-border-strong); }
+  [data-theme="dark"] .slate-choice-on,
+  [data-theme="dugout"] .slate-choice-on { border-color: var(--app-fg); box-shadow: 0 0 0 1px var(--app-fg); }
+  [data-theme="dark"] .slate-btn,
+  [data-theme="dugout"] .slate-btn       { background: var(--app-brand); }
   .badge-dot::before {
     content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
   }

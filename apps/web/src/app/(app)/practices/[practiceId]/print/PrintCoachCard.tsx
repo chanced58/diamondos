@@ -45,7 +45,8 @@ export function PrintCoachCard({
           }
         }
       `}</style>
-      <div className="max-w-[8.5in] mx-auto p-6 bg-white text-black">
+      {/* Printed sheet: always Light so ink stays dark on white paper. */}
+      <div data-theme="light" className="max-w-[8.5in] mx-auto p-6 bg-white text-black">
         <div className="no-print mb-4 flex items-center justify-between">
           <p className="text-sm text-gray-500">Use your browser&apos;s print dialog (or save as PDF).</p>
           <button

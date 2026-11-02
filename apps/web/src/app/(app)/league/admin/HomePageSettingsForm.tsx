@@ -86,14 +86,14 @@ export function HomePageSettingsForm({
       <label className="block">
         Public URL slug
         <span className="flex items-center gap-1">
-          <span className="text-slate-400">/l/</span>
+          <span className="slate-fg-subtle">/l/</span>
           <input className="rounded border px-2 py-1" value={slug} onChange={(e) => setSlug(e.target.value)} disabled={!canEdit} />
         </span>
       </label>
 
       <fieldset className="space-y-2">
         <legend className="font-semibold">Color scheme</legend>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm slate-fg-muted">
           Applies to your public league page and the coach dashboard. Light/dark follows each visitor&apos;s own setting.
         </p>
         <div className="flex flex-wrap gap-2">
@@ -103,7 +103,7 @@ export function HomePageSettingsForm({
               <label
                 key={s.key}
                 className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
-                  selected ? 'border-slate-900 ring-1 ring-slate-900' : 'border-slate-300'
+                  selected ? 'slate-choice-on' : 'slate-choice'
                 } ${canEdit ? '' : 'cursor-not-allowed opacity-50'}`}
               >
                 <input
@@ -172,7 +172,7 @@ export function HomePageSettingsForm({
       <button
         type="submit"
         disabled={!canEdit || saving}
-        className="rounded bg-slate-900 px-4 py-2 text-white disabled:opacity-40"
+        className="rounded slate-btn px-4 py-2 text-white disabled:opacity-40"
       >
         {saving ? 'Saving…' : 'Save home page settings'}
       </button>
