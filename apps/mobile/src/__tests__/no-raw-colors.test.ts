@@ -31,6 +31,15 @@ const EXCLUDED = [
 ];
 
 /**
+ * Files under an excluded prefix that are scanned anyway: shared with themed
+ * screens, so they render in Dark and Dugout, not only in the Light scorer.
+ */
+const SCANNED_DESPITE_EXCLUSION = [
+  'src/features/scoring/GuestPlayerModal.tsx', // also on the themed lineup screen
+  'src/features/scoring/BaserunnerDisplay.tsx', // also on the themed live viewer
+];
+
+/**
  * Files allowed to contain raw colors (path relative to `apps/mobile`, forward
  * slashes; `packages/ui/src/...` for the shared UI package). Every entry needs
  * a concrete reason.
@@ -40,6 +49,8 @@ export const RAW_COLOR_ALLOWLIST: Record<string, string> = {
     "Light branch of the shared stack header: the navy brand bar is Light's exact current look and must not change. Dark and Dugout read SEMANTIC_TOKENS.",
   'app/(tabs)/_layout.tsx':
     "Light branch of the tab bar styling: Light's exact current tint and border colors. Dark and Dugout read useThemeColors().",
+  'src/features/scoring/BaserunnerDisplay.tsx':
+    "The field illustration's fixed grass, dirt and chalk palette is a picture of a ballfield and must look the same in every theme (also on the themed live viewer). The pinch/courtesy runner sheet's bg-sky-700 buttons only open from the Light scorer, which passes the action handlers; the live viewer passes none. Light is unchanged.",
   'packages/ui/src/theme/colors.ts':
     "The shared Light brand palette constants (the definition of the hex values, not a use of them in UI).",
 };
@@ -84,7 +95,12 @@ function scannedFiles(): Array<{ file: string; rel: string }> {
     walk(dir, files);
     for (const file of files) {
       const rel = `${prefix}/${toPosix(path.relative(dir, file))}`;
-      if (EXCLUDED.some((ex) => rel.startsWith(ex))) continue;
+      if (
+        EXCLUDED.some((ex) => rel.startsWith(ex)) &&
+        !SCANNED_DESPITE_EXCLUSION.includes(rel)
+      ) {
+        continue;
+      }
       result.push({ file, rel });
     }
   }
@@ -128,7 +144,11 @@ describe('no raw colors in themed UI', () => {
     expect(rels.some((r) => r.startsWith('app/(tabs)/'))).toBe(true);
     expect(rels.some((r) => r.startsWith('src/features/'))).toBe(true);
     expect(rels.some((r) => r.startsWith('packages/ui/src/'))).toBe(true);
-    expect(rels.some((r) => r.startsWith('src/features/scoring/'))).toBe(false);
+    // The scorer's own files are excluded, but the two shared with themed screens are scanned.
+    expect(rels.filter((r) => r.startsWith('src/features/scoring/')).sort()).toEqual(
+      SCANNED_DESPITE_EXCLUSION.slice().sort(),
+    );
+    expect(rels).not.toContain('app/(tabs)/schedule/games/[gameId]/score.tsx');
     expect(rels.some((r) => r.startsWith('app/(auth)/'))).toBe(false);
   });
 
