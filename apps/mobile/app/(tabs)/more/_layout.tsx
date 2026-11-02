@@ -10,6 +10,7 @@ export default function MoreLayout() {
   return (
     <Stack screenOptions={brandStackOptions(theme)}>
       <Stack.Screen name="index" options={{ title: 'More' }} />
+      <Stack.Screen name="appearance" options={{ title: 'Appearance' }} />
       <Stack.Screen name="roster/index" options={{ title: 'Roster' }} />
       <Stack.Screen name="roster/new" options={{ title: 'Add player' }} />
       <Stack.Screen name="roster/[playerId]/index" options={{ title: 'Player' }} />
