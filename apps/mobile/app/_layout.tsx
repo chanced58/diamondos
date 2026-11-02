@@ -8,6 +8,7 @@ import { QueryProvider } from '../src/providers/QueryProvider';
 import { RoleProvider } from '../src/providers/RoleProvider';
 import { SyncProvider } from '../src/providers/SyncProvider';
 import { database } from '../src/db';
+import { NavigationThemeProvider } from '../src/navigation/NavigationThemeProvider';
 import { ThemeProvider, useThemePreference } from '../src/theme/ThemeProvider';
 import {
   registerForPushNotifications,
@@ -48,11 +49,13 @@ function RootLayoutNav() {
   if (!appReady) return null;
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="auth-callback" />
-    </Stack>
+    <NavigationThemeProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="auth-callback" />
+      </Stack>
+    </NavigationThemeProvider>
   );
 }
 

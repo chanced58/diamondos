@@ -2,7 +2,7 @@ import { render } from '@testing-library/react-native';
 import { Text } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SEMANTIC_TOKENS } from '@baseball/shared';
-import { ThemeScope, useScopeTheme, useThemeColors } from '../ThemeScope';
+import { ThemeScope, useKeyboardAppearance, useScopeTheme, useThemeColors } from '../ThemeScope';
 
 function Probe({ testID }: { testID: string }) {
   const colors = useThemeColors();
@@ -76,5 +76,30 @@ describe('ThemeScope', () => {
     );
 
     expect(UNSAFE_queryAllByType(StatusBar)).toHaveLength(0);
+  });
+});
+
+describe('useKeyboardAppearance', () => {
+  function KeyboardProbe() {
+    return <Text testID="k">{useKeyboardAppearance()}</Text>;
+  }
+
+  it('should be default in Light and dark in Dark and Dugout', () => {
+    const light = render(<KeyboardProbe />);
+    expect(light.getByTestId('k').props.children).toBe('default');
+
+    const dark = render(
+      <ThemeScope theme="dark">
+        <KeyboardProbe />
+      </ThemeScope>,
+    );
+    expect(dark.getByTestId('k').props.children).toBe('dark');
+
+    const dugout = render(
+      <ThemeScope theme="dugout">
+        <KeyboardProbe />
+      </ThemeScope>,
+    );
+    expect(dugout.getByTestId('k').props.children).toBe('dark');
   });
 });

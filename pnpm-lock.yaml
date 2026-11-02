@@ -62,6 +62,9 @@ importers:
       '@react-native/assets-registry':
         specifier: 0.74.87
         version: 0.74.87
+      '@react-navigation/native':
+        specifier: ~6.1.6
+        version: 6.1.18(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.0(@babel/core@7.29.0))(@types/react@18.2.79)(react@18.2.0))(react@18.2.0)
       '@supabase/supabase-js':
         specifier: ^2.43.0
         version: 2.97.0
