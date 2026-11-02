@@ -9,10 +9,18 @@ interface Env {
   getItemThrows?: boolean;
   noMatchMedia?: boolean;
   matchMediaThrows?: boolean;
+  /** Simulate the server-rendered theme-color metas. Defaults to one meta. */
+  metas?: number;
+  noQuerySelectorAll?: boolean;
 }
 
-function run(env: Env): Record<string, string> {
+type Result = Record<string, string>;
+const lastMetas: Array<{ content: string }> = [];
+
+function run(env: Env): Result {
   const attrs: Record<string, string> = {};
+  lastMetas.length = 0;
+  for (let i = 0; i < (env.metas ?? 1); i += 1) lastMetas.push({ content: '#1e3a8a' });
   const sandbox: Record<string, unknown> = {
     document: {
       documentElement: {
@@ -20,6 +28,18 @@ function run(env: Env): Record<string, string> {
           attrs[k] = v;
         },
       },
+      ...(env.noQuerySelectorAll
+        ? {}
+        : {
+            querySelectorAll: (sel: string) =>
+              sel === 'meta[name="theme-color"]'
+                ? lastMetas.map((m) => ({
+                    setAttribute: (k: string, v: string) => {
+                      if (k === 'content') m.content = v;
+                    },
+                  }))
+                : [],
+          }),
     },
     localStorage: {
       getItem: (k: string) => {
@@ -92,6 +112,37 @@ describe('buildAppearanceBootstrapScript', () => {
     expect(
       run({ stored: { dos_theme: 'dugout' }, pathname: '/dashboard', systemDark: true })['data-theme'],
     ).toBe('dugout');
+  });
+
+  describe('theme-color meta', () => {
+    it.each([
+      ['dark', '#0f1115'],
+      ['dugout', '#08120a'],
+      ['light', '#1e3a8a'],
+    ])('sets the %s toolbar color', (pref, color) => {
+      run({ stored: { dos_theme: pref }, pathname: '/dashboard', systemDark: true });
+      expect(lastMetas.map((m) => m.content)).toEqual([color]);
+    });
+
+    it('follows the applied theme, not the OS: dark OS on a public path stays navy', () => {
+      run({ stored: { dos_theme: 'dark' }, pathname: '/l/x', systemDark: true });
+      expect(lastMetas[0].content).toBe('#1e3a8a');
+    });
+
+    it('resolves System from the OS', () => {
+      run({ pathname: '/dashboard', systemDark: true });
+      expect(lastMetas[0].content).toBe('#0f1115');
+    });
+
+    it('updates every theme-color meta', () => {
+      run({ stored: { dos_theme: 'dugout' }, pathname: '/dashboard', metas: 2 });
+      expect(lastMetas.map((m) => m.content)).toEqual(['#08120a', '#08120a']);
+    });
+
+    it('still sets data-theme when the DOM has no querySelectorAll', () => {
+      const a = run({ stored: { dos_theme: 'dark' }, pathname: '/dashboard', noQuerySelectorAll: true });
+      expect(a['data-theme']).toBe('dark');
+    });
   });
 
   describe('density / motion / tone (unchanged behavior)', () => {

@@ -188,6 +188,31 @@
   }
   [data-theme="dugout"] { --pz-label: #08120a; }
 
+  /* Paper is white. ThemeProvider switches <html> to Light on beforeprint; this
+     is the fallback for print paths that bypass the event (window.print() from
+     code, Safari quirks). themeVarsPlugin emits the matching @media print block
+     that resolves every --dos-* variable (and so every --app-* token) to Light. */
+  @media print {
+    [data-theme="dark"],
+    [data-theme="dugout"] {
+      color-scheme: light;
+      --field-dirt-1:     #c97c4a;
+      --field-dirt-2:     #8a4a1f;
+      --field-turf-edge:  var(--turf-900);
+      --pz-ball:          var(--count-balls);
+      --pz-strike:        var(--count-strikes);
+      --pz-swing:         #f59e0b;
+      --pz-foul:          var(--clay-500);
+      --pz-inplay:        var(--brand-500);
+      --pz-label:         white;
+      --pz-zone-stroke:   var(--app-border-strong);
+      --count-dot-empty:  var(--app-border-strong);
+      --tint-neutral:     rgba(0,0,0,.06);
+      --link-sky:         #0284c7;
+      --link-sky-hover:   #075985;
+    }
+  }
+
   /* ── Per-league color schemes ──────────────────────────────────
      Selectable by league admins; scoped to a `.league-scheme-<key>`
      wrapper on the public page + coach dashboard. Only the accent/brand

@@ -62,10 +62,14 @@ function mount(): ReturnType<typeof render> {
 
 const htmlTheme = (): string | null => document.documentElement.getAttribute('data-theme');
 
+const themeColor = (): string | null =>
+  document.querySelector('meta[name="theme-color"]')?.getAttribute('content') ?? null;
+
 beforeEach(() => {
   mockPathname = '/dashboard';
   localStorage.clear();
   document.documentElement.setAttribute('data-theme', 'light');
+  document.head.innerHTML = '<meta name="theme-color" content="#1e3a8a">';
   installMatchMedia(false);
 });
 
@@ -183,5 +187,106 @@ describe('ThemeProvider', () => {
     act(() => ctx.setTone('energetic'));
     expect(localStorage.getItem('dos_tone')).toBe('energetic');
     expect(document.documentElement.getAttribute('data-tone')).toBe('energetic');
+  });
+});
+
+describe('ThemeProvider printing', () => {
+  const fire = (type: 'beforeprint' | 'afterprint'): void => {
+    act(() => {
+      window.dispatchEvent(new Event(type));
+    });
+  };
+
+  it('forces Light on beforeprint and restores the applied theme on afterprint', () => {
+    localStorage.setItem('dos_theme', 'dark');
+    mount();
+    expect(htmlTheme()).toBe('dark');
+    fire('beforeprint');
+    expect(htmlTheme()).toBe('light');
+    fire('afterprint');
+    expect(htmlTheme()).toBe('dark');
+  });
+
+  it('restores dugout, and Light stays Light, around a print', () => {
+    localStorage.setItem('dos_theme', 'dugout');
+    mount();
+    fire('beforeprint');
+    expect(htmlTheme()).toBe('light');
+    fire('afterprint');
+    expect(htmlTheme()).toBe('dugout');
+
+    act(() => ctx.setThemePreference('light'));
+    fire('beforeprint');
+    expect(htmlTheme()).toBe('light');
+    fire('afterprint');
+    expect(htmlTheme()).toBe('light');
+  });
+
+  it('restores the theme resolved at afterprint when the preference changed during the print', () => {
+    localStorage.setItem('dos_theme', 'dark');
+    mount();
+    fire('beforeprint');
+    act(() => ctx.setThemePreference('dugout'));
+    expect(htmlTheme()).toBe('light');
+    fire('afterprint');
+    expect(htmlTheme()).toBe('dugout');
+  });
+
+  it('does not touch the theme-color meta while printing', () => {
+    localStorage.setItem('dos_theme', 'dark');
+    mount();
+    expect(themeColor()).toBe('#0f1115');
+    fire('beforeprint');
+    expect(themeColor()).toBe('#0f1115');
+    fire('afterprint');
+    expect(themeColor()).toBe('#0f1115');
+  });
+
+  it('removes its print listeners on unmount', () => {
+    localStorage.setItem('dos_theme', 'dark');
+    const view = mount();
+    view.unmount();
+    document.documentElement.setAttribute('data-theme', 'dark');
+    window.dispatchEvent(new Event('beforeprint'));
+    expect(htmlTheme()).toBe('dark');
+  });
+});
+
+describe('ThemeProvider theme-color meta', () => {
+  it.each([
+    ['dark', '#0f1115'],
+    ['dugout', '#08120a'],
+    ['light', '#1e3a8a'],
+  ])('sets the toolbar color for %s', (pref, color) => {
+    localStorage.setItem('dos_theme', pref);
+    mount();
+    expect(themeColor()).toBe(color);
+  });
+
+  it('follows the applied theme across navigation: dark OS, public page stays navy', () => {
+    installMatchMedia(true);
+    const view = mount();
+    expect(themeColor()).toBe('#0f1115');
+    mockPathname = '/l/x';
+    view.rerender(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+    expect(themeColor()).toBe('#1e3a8a');
+  });
+
+  it('follows OS changes live under System', () => {
+    mount();
+    expect(themeColor()).toBe('#1e3a8a');
+    fireSystemChange(true);
+    expect(themeColor()).toBe('#0f1115');
+  });
+
+  it('does nothing when the page has no theme-color meta', () => {
+    document.head.innerHTML = '';
+    localStorage.setItem('dos_theme', 'dark');
+    expect(() => mount()).not.toThrow();
+    expect(htmlTheme()).toBe('dark');
   });
 });

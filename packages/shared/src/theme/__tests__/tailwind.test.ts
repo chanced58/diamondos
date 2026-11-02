@@ -2,7 +2,7 @@ import { buildThemeVars } from '../theme-vars';
 import { SEMANTIC_TOKENS, SHADES, THEMED_HUES } from '../palette';
 import { semanticTailwindColors, themeVarsPlugin, themedTailwindColors } from '../tailwind';
 
-type CssBlocks = Record<string, Record<string, string>>;
+type CssBlocks = Record<string, Record<string, unknown>>;
 
 function runPlugin(themeSelectors: boolean): CssBlocks {
   const calls: CssBlocks[] = [];
@@ -70,16 +70,26 @@ describe('semanticTailwindColors', () => {
 });
 
 describe('themeVarsPlugin', () => {
-  it('emits light, dark and dugout blocks when themeSelectors is true', () => {
+  it('emits light, dark, dugout and print blocks when themeSelectors is true', () => {
     const css = runPlugin(true);
     expect(Object.keys(css)).toEqual([
       ':root, [data-theme="light"]',
       '[data-theme="dark"]',
       '[data-theme="dugout"]',
+      '@media print',
     ]);
     expect(css['[data-theme="dark"]']).toEqual(buildThemeVars('dark'));
     expect(css['[data-theme="dugout"]']).toEqual(buildThemeVars('dugout'));
     expect(css[':root, [data-theme="light"]']).toEqual(buildThemeVars('light'));
+  });
+
+  it('resolves every theme variable to Light under @media print, after the dark and dugout blocks', () => {
+    const css = runPlugin(true);
+    const keys = Object.keys(css);
+    expect(keys.indexOf('@media print')).toBeGreaterThan(keys.indexOf('[data-theme="dugout"]'));
+    const print = css['@media print'] as Record<string, Record<string, string>>;
+    expect(Object.keys(print)).toEqual(['[data-theme="dark"], [data-theme="dugout"]']);
+    expect(print['[data-theme="dark"], [data-theme="dugout"]']).toEqual(buildThemeVars('light'));
   });
 
   it('emits only :root when themeSelectors is false', () => {
@@ -90,7 +100,7 @@ describe('themeVarsPlugin', () => {
 
   it('does not mutate the memoized var maps', () => {
     const before = { ...buildThemeVars('light') };
-    runPlugin(true)[':root, [data-theme="light"]']['--x'] = '1';
+    (runPlugin(true)[':root, [data-theme="light"]'] as Record<string, string>)['--x'] = '1';
     expect(buildThemeVars('light')).toEqual(before);
   });
 });

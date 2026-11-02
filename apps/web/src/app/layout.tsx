@@ -6,6 +6,7 @@ import {
   AppearanceBootstrap,
   ThemeProvider,
 } from '@/components/providers/ThemeProvider';
+import { DEFAULT_THEME_COLOR } from '@/lib/theme/theme-color';
 import {
   SidebarBootstrap,
   SidebarProvider,
@@ -14,10 +15,6 @@ import {
 const inter = Inter({ subsets: ['latin'] });
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#1e3a8a' },
-    { media: '(prefers-color-scheme: dark)', color: '#0f1115' },
-  ],
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
@@ -54,6 +51,9 @@ export default function RootLayout({ children }: { children: ReactNode }): JSX.E
     >
       <head>
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        {/* Follows the applied theme (set by AppearanceBootstrap and ThemeProvider),
+            not the OS, so Light and public pages keep the navy toolbar. */}
+        <meta name="theme-color" content={DEFAULT_THEME_COLOR} />
         <AppearanceBootstrap />
         <SidebarBootstrap />
       </head>

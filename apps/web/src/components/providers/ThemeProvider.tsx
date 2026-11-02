@@ -8,6 +8,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -19,6 +20,7 @@ import {
   type ThemePreference,
 } from '@baseball/shared';
 import { buildAppearanceBootstrapScript } from '@/lib/theme/bootstrap-script';
+import { applyThemeColor } from '@/lib/theme/theme-color';
 import { isThemedPath } from '@/lib/theme/themed-paths';
 
 export type Density = 'compact' | 'comfortable' | 'spacious';
@@ -147,10 +149,39 @@ export function ThemeProvider({
     ? resolveTheme(prefs.themePreference, systemDark)
     : 'light';
 
+  // Paper is white: while the browser prints, <html> is forced to Light. The
+  // refs let the effects below see the live print state and applied theme.
+  const printingRef = useRef(false);
+  const appliedThemeRef = useRef<ResolvedTheme>(appliedTheme);
+
   useIsoLayoutEffect(() => {
     if (!hydrated) return;
-    applyAttrs(appliedTheme, prefs);
+    appliedThemeRef.current = appliedTheme;
+    applyAttrs(printingRef.current ? 'light' : appliedTheme, prefs);
+    applyThemeColor(appliedTheme);
   }, [hydrated, appliedTheme, prefs]);
+
+  // beforeprint/afterprint. `window.print()` from code and some Safari versions can
+  // skip the events; the @media print rules in globals.css and the theme plugin are
+  // the fallback.
+  useEffect(() => {
+    if (!hydrated) return undefined;
+    const onBeforePrint = (): void => {
+      printingRef.current = true;
+      document.documentElement.setAttribute('data-theme', 'light');
+    };
+    const onAfterPrint = (): void => {
+      printingRef.current = false;
+      document.documentElement.setAttribute('data-theme', appliedThemeRef.current);
+    };
+    window.addEventListener('beforeprint', onBeforePrint);
+    window.addEventListener('afterprint', onAfterPrint);
+    return () => {
+      window.removeEventListener('beforeprint', onBeforePrint);
+      window.removeEventListener('afterprint', onAfterPrint);
+      if (printingRef.current) onAfterPrint();
+    };
+  }, [hydrated]);
 
   // Follow OS changes live, only while System is selected.
   useEffect(() => {

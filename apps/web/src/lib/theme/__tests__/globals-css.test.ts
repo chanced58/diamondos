@@ -64,6 +64,33 @@ describe('globals.css theme blocks', () => {
   });
 });
 
+describe('globals.css print fallback', () => {
+  const printBlock = (): string => {
+    const start = css.indexOf('@media print {');
+    if (start === -1) throw new Error('@media print block not found');
+    return css.slice(start, css.indexOf('\n  }\n', start));
+  };
+
+  it('resets Dark and Dugout chart tokens and color-scheme to Light under @media print', () => {
+    const block = printBlock();
+    expect(block).toContain('[data-theme="dark"],');
+    expect(block).toContain('[data-theme="dugout"]');
+    expect(block).toContain('color-scheme: light');
+    // light values equal the :root declarations
+    const light = ruleBody(':root, [data-theme="light"]');
+    for (const token of ['--field-dirt-2', '--pz-label', '--tint-neutral', '--link-sky', '--pz-swing']) {
+      const re = new RegExp(`${token}:\\s*([^;]+);`);
+      const lightValue = re.exec(light)?.[1].trim();
+      expect(lightValue).toBeDefined();
+      expect(re.exec(block)?.[1].trim()).toBe(lightValue);
+    }
+  });
+
+  it('comes after the Dark and Dugout chart overrides so it wins at equal specificity', () => {
+    expect(css.indexOf('@media print {')).toBeGreaterThan(css.indexOf('--link-sky:         #60a5fa'));
+  });
+});
+
 describe('globals.css dark-mode contrast rules', () => {
   const DARK_FORM_RULE =
     ':where([data-theme="dark"], [data-theme="dugout"]) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea)';

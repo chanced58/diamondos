@@ -76,14 +76,18 @@ export function semanticTailwindColors(): { app: Record<SemanticToken, string> }
   return { app };
 }
 
+type VarBlock = Record<string, string>;
+
 export interface ThemeVarsPluginApi {
-  addBase(css: Record<string, Record<string, string>>): void;
+  addBase(css: Record<string, VarBlock | Record<string, VarBlock>>): void;
 }
 
 /**
  * Plain-function Tailwind plugin (accepted in `plugins` as-is) that emits the
  * theme CSS variables. Light is the `:root` default; with `themeSelectors`
- * the dark and dugout maps are emitted under `[data-theme]` selectors.
+ * the dark and dugout maps are emitted under `[data-theme]` selectors, followed
+ * by an `@media print` block that resolves dark and dugout back to the Light map
+ * (paper is white; this backs up the runtime beforeprint switch).
  */
 export function themeVarsPlugin(options: {
   themeSelectors: boolean;
@@ -98,6 +102,9 @@ export function themeVarsPlugin(options: {
       ':root, [data-theme="light"]': { ...buildThemeVars('light') },
       '[data-theme="dark"]': { ...buildThemeVars('dark') },
       '[data-theme="dugout"]': { ...buildThemeVars('dugout') },
+      '@media print': {
+        '[data-theme="dark"], [data-theme="dugout"]': { ...buildThemeVars('light') },
+      },
     });
   };
 }

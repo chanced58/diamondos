@@ -1,5 +1,6 @@
 import { THEME_PREFERENCES } from '@baseball/shared';
 import { THEMED_PATH_PREFIXES } from './themed-paths';
+import { THEME_COLORS } from './theme-color';
 
 /**
  * Pre-paint inline script (an IIFE string). Sets `data-theme` on `<html>` to the
@@ -7,13 +8,17 @@ import { THEMED_PATH_PREFIXES } from './themed-paths';
  * density/motion/tone from localStorage. Every storage / matchMedia access is
  * guarded, so a failure falls back to System (theme) or the defaults.
  *
- * Mirrors ThemeProvider, `isThemedPath` and `parseThemePreference`; keep in sync.
+ * Also points `<meta name="theme-color">` at the applied theme.
+ *
+ * Mirrors ThemeProvider, `isThemedPath`, `parseThemePreference` and
+ * `applyThemeColor`; keep in sync.
  */
 export function buildAppearanceBootstrapScript(): string {
   return `(function(){
   var d=document.documentElement;
   var prefixes=${JSON.stringify(THEMED_PATH_PREFIXES)};
   var prefs=${JSON.stringify(THEME_PREFERENCES)};
+  var colors=${JSON.stringify(THEME_COLORS)};
   var densities=['compact','comfortable','spacious'];
   var motions=['on','off'];
   var tones=['utilitarian','editorial','energetic'];
@@ -43,6 +48,10 @@ export function buildAppearanceBootstrapScript(): string {
     d.setAttribute('data-density',den);
     d.setAttribute('data-motion',m);
     d.setAttribute('data-tone',to);
+  }catch(e){}
+  try{
+    var ms=document.querySelectorAll('meta[name="theme-color"]');
+    for(var j=0;j<ms.length;j++)ms[j].setAttribute('content',colors[theme]);
   }catch(e){}
 })();`;
 }
