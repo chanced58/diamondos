@@ -126,7 +126,7 @@ export function ModuleQuiz({ slug, quiz, submitAction }: ModuleQuizProps): JSX.E
                   borderRadius: 6,
                   background:
                     result === 'right' ? 'rgba(16,185,129,.10)' : 'rgba(220,38,38,.10)',
-                  color: result === 'right' ? '#047857' : '#b91c1c',
+                  color: result === 'right' ? 'rgb(var(--dos-fg-emerald-700))' : 'rgb(var(--dos-fg-red-700))',
                   fontSize: 14,
                 }}
               >
@@ -158,15 +158,15 @@ export function ModuleQuiz({ slug, quiz, submitAction }: ModuleQuizProps): JSX.E
           {pending ? 'Saving…' : 'Submit & complete module'}
         </button>
         {checked && !allCorrect && (
-          <span style={{ color: '#b91c1c', fontSize: 14 }}>
+          <span style={{ color: 'rgb(var(--dos-fg-red-700))', fontSize: 14 }}>
             Fix the wrong answers above, then submit.
           </span>
         )}
         {submitMsg && (
-          <span style={{ color: '#047857', fontSize: 14 }}>{submitMsg}</span>
+          <span style={{ color: 'rgb(var(--dos-fg-emerald-700))', fontSize: 14 }}>{submitMsg}</span>
         )}
         {serverError && (
-          <span style={{ color: '#b91c1c', fontSize: 14 }}>{serverError}</span>
+          <span style={{ color: 'rgb(var(--dos-fg-red-700))', fontSize: 14 }}>{serverError}</span>
         )}
       </div>
     </div>

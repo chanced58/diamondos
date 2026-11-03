@@ -33,7 +33,7 @@ export function ModuleContent({ sections }: { sections: readonly TrainingSection
             style={{
               padding: '12px 14px',
               borderRadius: 10,
-              borderLeft: `4px solid ${tone === 'warning' ? '#d97706' : '#2563eb'}`,
+              borderLeft: `4px solid ${tone === 'warning' ? 'rgb(var(--dos-line-amber-600))' : 'rgb(var(--dos-line-blue-600))'}`,
               background: tone === 'warning' ? 'rgba(217,119,6,.08)' : 'rgba(37,99,235,.08)',
             }}
           >

@@ -15,6 +15,7 @@ import {
 } from '../../../../../../src/features/league-admin/league-admin-api';
 import { POSITION_LABELS } from '../../../../../../src/features/roster/player-form-model';
 import { describeApiError } from '../../../../../../src/lib/api-client';
+import { useKeyboardAppearance } from '../../../../../../src/theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 const FREE_AGENT = 'free';
@@ -28,6 +29,7 @@ const positionLabels = Object.fromEntries(
  * admins only.
  */
 export default function NewLeaguePlayerScreen() {
+  const keyboardAppearance = useKeyboardAppearance();
   const { leagueId = '' } = useLocalSearchParams<{ leagueId: string }>();
   const query = useLeaguePlayers(leagueId);
   const queryClient = useQueryClient();
@@ -106,14 +108,15 @@ export default function NewLeaguePlayerScreen() {
       <ScrollView className="flex-1 bg-gray-50" contentContainerStyle={{ padding: 16, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
         {header}
         <FormField label="First name" required>
-          <TextInput accessibilityLabel="First name" className={inputClass} value={firstName} onChangeText={setFirstName} maxLength={80} />
+          <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="First name" className={inputClass} value={firstName} onChangeText={setFirstName} maxLength={80} />
         </FormField>
         <FormField label="Last name" required>
-          <TextInput accessibilityLabel="Last name" className={inputClass} value={lastName} onChangeText={setLastName} maxLength={80} />
+          <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Last name" className={inputClass} value={lastName} onChangeText={setLastName} maxLength={80} />
         </FormField>
         <OptionalDate label="Date of birth" value={dateOfBirth} today={dobStart} onChange={setDateOfBirth} testID="league-player-dob" />
         <FormField label="Jersey number">
           <TextInput
+            keyboardAppearance={keyboardAppearance}
             accessibilityLabel="Jersey number"
             className={`${inputClass} w-24`}
             keyboardType="number-pad"

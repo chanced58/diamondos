@@ -28,7 +28,7 @@ export function CustomCategoriesEditor({
 
   return (
     <div className="space-y-3">
-      <p className="text-sm text-slate-500">Add up to 5 custom leader boards ({custom.length}/5).</p>
+      <p className="text-sm slate-fg-muted">Add up to 5 custom leader boards ({custom.length}/5).</p>
       {custom.map((c, i) => (
         <div key={i} className="flex flex-wrap items-center gap-2">
           <select
@@ -75,7 +75,7 @@ export function CustomCategoriesEditor({
       <button
         type="button"
         disabled={disabled || custom.length >= 5}
-        className="rounded bg-slate-900 px-3 py-1 text-white disabled:opacity-40"
+        className="rounded slate-btn px-3 py-1 text-white disabled:opacity-40"
         onClick={add}
       >
         Add category

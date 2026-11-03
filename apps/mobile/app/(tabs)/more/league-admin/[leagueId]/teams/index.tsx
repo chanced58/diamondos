@@ -12,6 +12,7 @@ import {
   useLeagueTeams,
 } from '../../../../../../src/features/league-admin/league-admin-api';
 import { describeApiError, isApiError } from '../../../../../../src/lib/api-client';
+import { useKeyboardAppearance, useThemeColors } from '../../../../../../src/theme/ThemeScope';
 
 /** "Valley HS · Opponent". */
 function teamSubtitle(team: LeagueTeamMembership): string | undefined {
@@ -25,6 +26,8 @@ function teamSubtitle(team: LeagueTeamMembership): string | undefined {
  * teams stays on the web.
  */
 export default function LeagueTeamsScreen() {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const { leagueId = '' } = useLocalSearchParams<{ leagueId: string }>();
   const query = useLeagueTeams(leagueId);
   const queryClient = useQueryClient();
@@ -115,7 +118,8 @@ export default function LeagueTeamsScreen() {
                 accessibilityLabel="Division name"
                 className="flex-1 border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base"
                 placeholder="Division name (e.g. North)"
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor={colors['fg-subtle']}
+                keyboardAppearance={keyboardAppearance}
                 value={divisionName}
                 onChangeText={(text) => {
                   setDivisionName(text);

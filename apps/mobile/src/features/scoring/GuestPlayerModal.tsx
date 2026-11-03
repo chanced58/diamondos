@@ -16,6 +16,7 @@ import {
   createLocalGuest,
 } from '../lineup/local-guest';
 import { useSyncContext } from '../../providers/SyncProvider';
+import { useKeyboardAppearance, useScrollIndicatorStyle } from '../../theme/ThemeScope';
 
 interface GuestPlayerModalProps {
   visible: boolean;
@@ -54,6 +55,9 @@ export function GuestPlayerModal({
   onClose,
 }: GuestPlayerModalProps) {
   const { triggerSync } = useSyncContext();
+  // Follows the nearest scope: Light under the scorer, themed under the lineup screen.
+  const keyboardAppearance = useKeyboardAppearance();
+  const indicatorStyle = useScrollIndicatorStyle();
   const [tab, setTab] = useState<'new' | 'pool'>('new');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -253,7 +257,7 @@ export function GuestPlayerModal({
             </View>
           )}
 
-          <ScrollView keyboardShouldPersistTaps="handled">
+          <ScrollView keyboardShouldPersistTaps="handled" indicatorStyle={indicatorStyle}>
             {error && (
               <View className="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                 <Text className="text-score-sm text-red-700">{error}</Text>
@@ -266,6 +270,7 @@ export function GuestPlayerModal({
                   <View className="flex-1">
                     <Text className="text-score-xs font-medium text-gray-500 mb-1">First name</Text>
                     <TextInput
+                      keyboardAppearance={keyboardAppearance}
                       value={firstName}
                       onChangeText={setFirstName}
                       placeholder="First"
@@ -276,6 +281,7 @@ export function GuestPlayerModal({
                   <View className="flex-1">
                     <Text className="text-score-xs font-medium text-gray-500 mb-1">Last name</Text>
                     <TextInput
+                      keyboardAppearance={keyboardAppearance}
                       value={lastName}
                       onChangeText={setLastName}
                       placeholder="Last"
@@ -288,6 +294,7 @@ export function GuestPlayerModal({
                 <View className="mb-4 w-32">
                   <Text className="text-score-xs font-medium text-gray-500 mb-1">Jersey # (optional)</Text>
                   <TextInput
+                    keyboardAppearance={keyboardAppearance}
                     value={jerseyNumber}
                     onChangeText={setJerseyNumber}
                     keyboardType="number-pad"
@@ -300,6 +307,7 @@ export function GuestPlayerModal({
             ) : (
               <>
                 <TextInput
+                  keyboardAppearance={keyboardAppearance}
                   value={poolSearch}
                   onChangeText={setPoolSearch}
                   placeholder="Search league players…"
@@ -316,7 +324,7 @@ export function GuestPlayerModal({
                   </Text>
                 ) : (
                   <View className="mb-4" style={{ maxHeight: 240 }}>
-                    <ScrollView nestedScrollEnabled>
+                    <ScrollView nestedScrollEnabled indicatorStyle={indicatorStyle}>
                       {filteredPool.map((candidate) => (
                         <TouchableOpacity
                           key={candidate.playerRemoteId}

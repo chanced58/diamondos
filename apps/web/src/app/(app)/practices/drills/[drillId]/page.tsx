@@ -276,7 +276,7 @@ function TagSection({ title, children }: { title: string; children: React.ReactN
 
 function Tag({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+    <span className="text-xs font-medium px-2 py-0.5 rounded-full pill-indigo">
       {children}
     </span>
   );

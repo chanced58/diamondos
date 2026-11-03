@@ -1,12 +1,57 @@
 import type { Config } from 'tailwindcss';
+// Relative path on purpose: tailwind.ts is not re-exported from the package
+// index, and Tailwind loads this config through jiti, which handles TS.
+import {
+  themedTailwindColors,
+  themeVarsPlugin,
+} from '../../packages/shared/src/theme/tailwind';
+
+// brand/turf/clay historically defined only some shades. The shared palette
+// carries the full ramp, which would turn previously dead classes such as
+// `border-brand-200` or `text-brand-400` into live ones and change Light.
+// Prune the role maps back to the shades that existed, so Light is unchanged.
+const LEGACY_SHADES = {
+  brand: ['50', '100', '500', '600', '700', '800', '900'],
+  turf: ['50', '100', '200', '400', '500', '600', '700', '800', '900'],
+  clay: ['50', '200', '400', '500', '600', '700'],
+} as const;
+
+function pruneLegacyScales<T extends Record<string, unknown>>(map: T): T {
+  const out: Record<string, unknown> = { ...map };
+  for (const [hue, shades] of Object.entries(LEGACY_SHADES)) {
+    const full = map[hue] as Record<string, string>;
+    out[hue] = Object.fromEntries(shades.map((shade) => [shade, full[shade]]));
+  }
+  return out as T;
+}
+
+const rawThemed = themedTailwindColors();
+const themed = Object.fromEntries(
+  Object.entries(rawThemed).map(([utility, map]) => [utility, pruneLegacyScales(map)]),
+) as typeof rawThemed;
+// Tailwind's default border/divide color is gray-200; theme the bare DEFAULT
+// key too so Preflight's `border-color` and bare `border` follow the theme.
+const DEFAULT_LINE = 'rgb(var(--dos-line-gray-200) / <alpha-value>)';
 
 const config: Config = {
+  // Any future `dark:` variant follows `<html data-theme>`, never the OS
+  // preference (there are no `dark:` classes today). Dugout is also a dark theme
+  // but has its own `data-theme`, so a `dark:` variant would NOT apply there;
+  // anything that must cover both needs a `[data-theme="dugout"]` rule of its own.
+  darkMode: ['selector', '[data-theme="dark"]'],
   content: [
     './src/**/*.{js,ts,jsx,tsx,mdx}',
     '../../packages/ui/src/**/*.{js,ts,jsx,tsx}',
   ],
   theme: {
     extend: {
+      // Role-specific colors resolve through `--dos-*` variables. They override
+      // the literal `colors` scales below for the utilities they cover (deep
+      // merge of `extend`); the literals keep uncovered utilities working
+      // (ring-offset, shadow, accent, caret, decoration).
+      ...themed,
+      borderColor: { ...themed.borderColor, DEFAULT: DEFAULT_LINE },
+      divideColor: { ...themed.divideColor, DEFAULT: DEFAULT_LINE },
       fontFamily: {
         sans: ['var(--font-sans)'],
         display: ['var(--font-display)'],
@@ -97,7 +142,7 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [themeVarsPlugin({ themeSelectors: true })],
 };
 
 export default config;

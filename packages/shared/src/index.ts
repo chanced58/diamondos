@@ -6,3 +6,4 @@ export * from './validation';
 export * from './integrations';
 export * from './ai';
 export * from './training';
+export * from './theme';

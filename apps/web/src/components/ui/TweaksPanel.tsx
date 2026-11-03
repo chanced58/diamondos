@@ -1,7 +1,8 @@
 'use client';
 
 import type { JSX } from 'react';
-import { useAppearance, type Theme, type Density, type Motion, type Tone } from '@/components/providers/ThemeProvider';
+import type { ThemePreference } from '@baseball/shared';
+import { useAppearance, type Density, type Motion, type Tone } from '@/components/providers/ThemeProvider';
 
 interface SegProps<T extends string> {
   value: T;
@@ -22,7 +23,7 @@ function Seg<T extends string>({ value, set, options }: SegProps<T>): JSX.Elemen
 }
 
 export function TweaksPanel({ onClose }: { onClose?: () => void } = {}): JSX.Element {
-  const { theme, density, motion, tone, setTheme, setDensity, setMotion, setTone } = useAppearance();
+  const { themePreference, density, motion, tone, setThemePreference, setDensity, setMotion, setTone } = useAppearance();
 
   return (
     <div className="tweaks">
@@ -41,10 +42,11 @@ export function TweaksPanel({ onClose }: { onClose?: () => void } = {}): JSX.Ele
       </h4>
       <div className="tweaks-row">
         <label>Theme</label>
-        <Seg<Theme>
-          value={theme}
-          set={setTheme}
+        <Seg<ThemePreference>
+          value={themePreference}
+          set={setThemePreference}
           options={[
+            { v: 'system', l: 'System' },
             { v: 'light',  l: 'Light' },
             { v: 'dark',   l: 'Dark' },
             { v: 'dugout', l: 'Dugout' },

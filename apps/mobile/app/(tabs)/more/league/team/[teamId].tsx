@@ -14,6 +14,7 @@ import {
   sortPlayerRows,
 } from '../../../../../src/features/league/league-home-model';
 import { describeApiError, isApiError } from '../../../../../src/lib/api-client';
+import { useScopeTheme } from '../../../../../src/theme/ThemeScope';
 
 /**
  * A team's stat page in its league (the web /l/:slug/team/:teamId page): its
@@ -92,6 +93,11 @@ export default function LeagueTeamScreen() {
 /** Record, place in the league, division and runs. */
 function TeamHero({ page }: { page: LeagueTeamResponse }) {
   const { record, rank } = page;
+  // Translucent white is 5-7:1 on the Light navy hero but 3-3.9:1 on the brighter
+  // Dark and Dugout brand blue, so the secondary lines go opaque there.
+  const light = useScopeTheme() === 'light';
+  const muted = light ? 'text-white/70' : 'text-white';
+  const detail = light ? 'text-white/80' : 'text-white';
   const facts = [
     rank.rank ? `#${rank.rank} of ${rank.total}` : null,
     page.divisionName,
@@ -99,15 +105,15 @@ function TeamHero({ page }: { page: LeagueTeamResponse }) {
   ].filter(Boolean);
   return (
     <View className="bg-brand-700 px-4 pt-5 pb-4">
-      <Text className="text-xs font-semibold text-white/70 uppercase tracking-wide">
+      <Text className={`text-xs font-semibold ${muted} uppercase tracking-wide`}>
         {page.league.name}
         {page.season ? ` · ${page.season}` : ''}
       </Text>
       <Text className="text-2xl font-bold text-white mt-1">{page.team.name}</Text>
       <Text className="text-lg font-semibold text-white mt-1">
-        {formatRecord(record)} <Text className="text-white/70">({formatWinPct(record)})</Text>
+        {formatRecord(record)} <Text className={muted}>({formatWinPct(record)})</Text>
       </Text>
-      <Text className="text-sm text-white/80 mt-1">{facts.join(' · ')}</Text>
+      <Text className={`text-sm ${detail} mt-1`}>{facts.join(' · ')}</Text>
     </View>
   );
 }

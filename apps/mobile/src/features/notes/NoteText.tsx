@@ -1,16 +1,20 @@
 import { Text, TextInput, View, type TextInputProps } from 'react-native';
+import { useKeyboardAppearance, useThemeColors } from '../../theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 
 /** A multi-line notes box. */
 export function NoteInput(props: TextInputProps) {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   return (
     <TextInput
       multiline
       textAlignVertical="top"
       className={inputClass}
       style={{ minHeight: 96 }}
-      placeholderTextColor="#9ca3af"
+      placeholderTextColor={colors['fg-subtle']}
+      keyboardAppearance={keyboardAppearance}
       {...props}
     />
   );

@@ -39,11 +39,11 @@ export function DiamondField({
         <radialGradient id={turfId} cx="50%" cy="60%" r="70%">
           <stop offset="0%" stopColor="var(--turf-500)" stopOpacity="0.9" />
           <stop offset="60%" stopColor="var(--turf-700)" stopOpacity="0.95" />
-          <stop offset="100%" stopColor="var(--turf-900)" />
+          <stop offset="100%" stopColor="var(--field-turf-edge)" />
         </radialGradient>
         <linearGradient id={dirtId} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#c97c4a" />
-          <stop offset="100%" stopColor="#8a4a1f" />
+          <stop offset="0%" stopColor="var(--field-dirt-1)" />
+          <stop offset="100%" stopColor="var(--field-dirt-2)" />
         </linearGradient>
         <filter id={glowId} x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur stdDeviation="3" />

@@ -16,6 +16,7 @@ import {
 } from '../../../../../src/features/roster/roster-api';
 import { localToday } from '../../../../../src/features/stats/season-stats-api';
 import { describeApiError } from '../../../../../src/lib/api-client';
+import { useKeyboardAppearance } from '../../../../../src/theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 
@@ -197,6 +198,7 @@ function AddFlagForm({
   savedCount: number;
   onSubmit: (flag: NewInjuryFlag) => void;
 }) {
+  const keyboardAppearance = useKeyboardAppearance();
   const [slug, setSlug] = useState<string | null>(null);
   const [from, setFrom] = useState(today);
   const [hasEnd, setHasEnd] = useState(false);
@@ -255,6 +257,7 @@ function AddFlagForm({
       </FormField>
       <FormField label="Notes">
         <TextInput
+          keyboardAppearance={keyboardAppearance}
           accessibilityLabel="Notes"
           className={`${inputClass} min-h-[72px]`}
           multiline

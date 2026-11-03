@@ -13,11 +13,14 @@ import {
 } from '../../../../src/features/facilities/facilities-api';
 import { startOfWeek, weekWindow } from '../../../../src/features/facilities/facility-schedule-model';
 import { describeApiError } from '../../../../src/lib/api-client';
+import { useKeyboardAppearance, useThemeColors } from '../../../../src/theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 
 /** Add and remove the team's facilities (the web's FacilityManager). Coaches only. */
 export default function ManageFacilitiesScreen() {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const { activeTeam } = useRole();
   const teamId = activeTeam?.teamId ?? '';
   const queryClient = useQueryClient();
@@ -132,7 +135,7 @@ export default function ManageFacilitiesScreen() {
       <SectionHeader title="Add a facility" />
       <View className="bg-white border border-gray-200 rounded-xl p-4">
         <FormField label="Name" required>
-          <TextInput accessibilityLabel="Facility name" className={inputClass} value={name} onChangeText={setName} placeholder="e.g. Cage 1" placeholderTextColor="#9ca3af" />
+          <TextInput accessibilityLabel="Facility name" className={inputClass} value={name} onChangeText={setName} placeholder="e.g. Cage 1" placeholderTextColor={colors['fg-subtle']} keyboardAppearance={keyboardAppearance} />
         </FormField>
         <FormField label="Kind" required>
           <View className="flex-row flex-wrap gap-2">
@@ -153,10 +156,10 @@ export default function ManageFacilitiesScreen() {
           </View>
         </FormField>
         <FormField label="Capacity">
-          <TextInput accessibilityLabel="Capacity" className={inputClass} value={capacity} onChangeText={setCapacity} placeholder="Optional" placeholderTextColor="#9ca3af" keyboardType="number-pad" />
+          <TextInput accessibilityLabel="Capacity" className={inputClass} value={capacity} onChangeText={setCapacity} placeholder="Optional" placeholderTextColor={colors['fg-subtle']} keyboardAppearance={keyboardAppearance} keyboardType="number-pad" />
         </FormField>
         <FormField label="Notes">
-          <TextInput accessibilityLabel="Notes" className={inputClass} value={notes} onChangeText={setNotes} placeholder="Optional" placeholderTextColor="#9ca3af" />
+          <TextInput accessibilityLabel="Notes" className={inputClass} value={notes} onChangeText={setNotes} placeholder="Optional" placeholderTextColor={colors['fg-subtle']} keyboardAppearance={keyboardAppearance} />
         </FormField>
         {(problem ?? (add.isError ? describeApiError(add.error) : null)) && (
           <Text accessibilityRole="alert" className="text-sm text-red-700 mb-3">{problem ?? describeApiError(add.error)}</Text>

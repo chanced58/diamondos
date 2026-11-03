@@ -4,6 +4,7 @@ import { randomUUID } from 'expo-crypto';
 import type { PlacePrediction } from '@baseball/shared';
 import { isApiError } from '../../lib/api-client';
 import { getPlace, searchPlaces } from './places-api';
+import { useKeyboardAppearance, useThemeColors } from '../../theme/ThemeScope';
 
 export interface Venue {
   name: string;
@@ -37,6 +38,8 @@ function searchUnavailable(error: unknown): boolean {
  * the typed name still saves; it simply has no coordinates.
  */
 export function VenueSearchField({ value, onChange, placeholder = 'e.g. Riverside Baseball Complex' }: VenueSearchFieldProps) {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const [query, setQuery] = useState(value?.name ?? '');
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [searching, setSearching] = useState(false);
@@ -110,7 +113,8 @@ export function VenueSearchField({ value, onChange, placeholder = 'e.g. Riversid
           accessibilityLabel="Venue"
           className="flex-1 py-2.5 text-base text-gray-900"
           placeholder={placeholder}
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={colors['fg-subtle']}
+          keyboardAppearance={keyboardAppearance}
           value={query}
           onChangeText={type}
           autoCorrect={false}

@@ -135,10 +135,10 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
         }))}
       />
 
-      <section className="mt-10 border-t border-slate-200 pt-8">
+      <section className="mt-10 border-t slate-divider pt-8">
         <h2 className="text-xl font-bold text-gray-900">Home Page</h2>
         {scoringRow?.slug ? (
-          <p className="mb-4 text-sm text-slate-500">
+          <p className="mb-4 text-sm slate-fg-muted">
             Public address:{' '}
             <a className="underline" href={`/l/${scoringRow.slug}`}>
               /l/{scoringRow.slug}

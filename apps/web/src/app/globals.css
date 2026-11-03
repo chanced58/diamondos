@@ -9,7 +9,9 @@
    DiamondOS Base Tokens — mirrors prototype/styles/tokens.css
    ────────────────────────────────────────────────────────────── */
 @layer base {
-  :root {
+  :root, [data-theme="light"] {
+    color-scheme: light;
+
     /* Brand (tenant-customizable surface; Admin → Branding rewrites --primary/--secondary/--accent) */
     --primary:   #1e3a8a;
     --secondary: #1d4ed8;
@@ -47,22 +49,22 @@
     --gray-900: #111827;
 
     /* Legacy semantic (kept for existing pages) */
-    --bg:            var(--gray-50);
-    --bg-surface:    #ffffff;
-    --fg:            var(--gray-900);
-    --fg-muted:      var(--gray-500);
-    --fg-subtle:     var(--gray-400);
+    --bg:            var(--app-bg);
+    --bg-surface:    var(--app-surface);
+    --fg:            var(--app-fg);
+    --fg-muted:      var(--app-fg-muted);
+    --fg-subtle:     var(--app-fg-subtle);
     --fg-inverse:    #ffffff;
-    --border:        var(--gray-200);
-    --border-strong: var(--gray-300);
+    --border:        var(--app-border);
+    --border-strong: var(--app-border-strong);
 
     /* Tinted helper backgrounds */
-    --green-50:#f0fdf4;  --green-100:#dcfce7;  --green-200:#bbf7d0;  --green-700:#15803d;
-    --yellow-50:#fefce8; --yellow-100:#fef9c3; --yellow-200:#fef08a; --yellow-700:#a16207;
-    --orange-50:#fff7ed; --orange-100:#ffedd5; --orange-200:#fed7aa; --orange-700:#c2410c;
-    --red-50:#fef2f2;    --red-100:#fee2e2;    --red-200:#fecaca;    --red-700:#b91c1c;
-    --blue-50:#eff6ff;   --blue-100:#dbeafe;   --blue-200:#bfdbfe;   --blue-700:#1d4ed8;
-    --purple-50:#faf5ff; --purple-200:#e9d5ff; --purple-700:#7e22ce;
+    --green-50: rgb(var(--dos-bg-green-50)); --green-100: rgb(var(--dos-bg-green-100)); --green-200: rgb(var(--dos-bg-green-200)); --green-700: rgb(var(--dos-fg-green-700));
+    --yellow-50: rgb(var(--dos-bg-yellow-50)); --yellow-100: rgb(var(--dos-bg-yellow-100)); --yellow-200: rgb(var(--dos-bg-yellow-200)); --yellow-700: rgb(var(--dos-fg-yellow-700));
+    --orange-50: rgb(var(--dos-bg-orange-50)); --orange-100: rgb(var(--dos-bg-orange-100)); --orange-200: rgb(var(--dos-bg-orange-200)); --orange-700: rgb(var(--dos-fg-orange-700));
+    --red-50: rgb(var(--dos-bg-red-50)); --red-100: rgb(var(--dos-bg-red-100)); --red-200: rgb(var(--dos-bg-red-200)); --red-700: rgb(var(--dos-fg-red-700));
+    --blue-50: rgb(var(--dos-bg-blue-50)); --blue-100: rgb(var(--dos-bg-blue-100)); --blue-200: rgb(var(--dos-bg-blue-200)); --blue-700: rgb(var(--dos-fg-blue-700));
+    --purple-50: rgb(var(--dos-bg-purple-50)); --purple-200: rgb(var(--dos-bg-purple-200)); --purple-700: rgb(var(--dos-fg-purple-700));
 
     /* Radii */
     --r-sm:  6px;
@@ -100,22 +102,45 @@
     --font-sans:    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     --font-mono:    'Roboto Mono', ui-monospace, Menlo, monospace;
 
-    /* Theme-neutral surface tokens (overridden per theme) */
-    --app-bg:             var(--gray-50);
-    --app-surface:        #ffffff;
-    --app-surface-2:      var(--gray-50);
-    --app-surface-raised: #ffffff;
-    --app-border:         var(--gray-200);
-    --app-border-strong:  var(--gray-300);
-    --app-fg:             var(--gray-900);
-    --app-fg-muted:       var(--gray-500);
-    --app-fg-subtle:      var(--gray-400);
-    --app-sidebar-bg:     #1e2d6b;
-    --app-sidebar-fg:     #ffffff;
-    --app-sidebar-active: #1e3a8a;
-    --app-brand:          var(--brand-700);
-    --app-brand-2:        var(--brand-500);
-    --app-turf:           var(--turf-600);
+    /* Theme-neutral surface tokens. Values come from the --dos-app-* channel
+       variables that themeVarsPlugin emits per theme. Declared on
+       [data-theme="light"] too so a Light island inside a dark app re-resolves. */
+    --app-bg:             rgb(var(--dos-app-bg));
+    --app-surface:        rgb(var(--dos-app-surface));
+    --app-surface-2:      rgb(var(--dos-app-surface-2));
+    --app-surface-raised: rgb(var(--dos-app-surface-raised));
+    --app-border:         rgb(var(--dos-app-border));
+    --app-border-strong:  rgb(var(--dos-app-border-strong));
+    --app-fg:             rgb(var(--dos-app-fg));
+    --app-fg-muted:       rgb(var(--dos-app-fg-muted));
+    --app-fg-subtle:      rgb(var(--dos-app-fg-subtle));
+    --app-sidebar-bg:     rgb(var(--dos-app-sidebar-bg));
+    --app-sidebar-fg:     rgb(var(--dos-app-sidebar-fg));
+    --app-sidebar-active: rgb(var(--dos-app-sidebar-active));
+    --app-brand:          rgb(var(--dos-app-brand));
+    --app-brand-2:        rgb(var(--dos-app-brand-2));
+    --app-turf:           rgb(var(--dos-app-turf));
+
+    /* Chart / illustration tokens. Light values equal the colors these
+       components used before theming; Dark and Dugout override them below.
+       Declared here too so a Light island inside a dark app re-resolves. */
+    --field-dirt-1:     #c97c4a;
+    --field-dirt-2:     #8a4a1f;
+    --field-turf-edge:  var(--turf-900);
+    --pz-ball:          var(--count-balls);
+    --pz-strike:        var(--count-strikes);
+    --pz-swing:         #f59e0b;
+    --pz-foul:          var(--clay-500);
+    --pz-inplay:        var(--brand-500);
+    --pz-label:         white;
+    --pz-zone-stroke:   var(--app-border-strong);
+    --count-dot-empty:  var(--app-border-strong);
+
+    /* Neutral translucent tint (e.g. unfinished step bubble) and the
+       sky-blue inline link color used by GameHistoryTree. */
+    --tint-neutral:     rgba(0,0,0,.06);
+    --link-sky:         #0284c7;
+    --link-sky-hover:   #075985;
 
     /* Density (overridden by [data-density=*]) */
     --gap-xs:  6px;
@@ -134,46 +159,66 @@
     --ease-standard: cubic-bezier(.4,0,.2,1);
   }
 
-  [data-theme="dark"] {
-    --app-bg:             #0b1220;
-    --app-surface:        #111a2e;
-    --app-surface-2:      #0f172a;
-    --app-surface-raised: #152142;
-    --app-border:         #1f2c4a;
-    --app-border-strong:  #2b3a62;
-    --app-fg:             #e5edff;
-    --app-fg-muted:       #9aa8c7;
-    --app-fg-subtle:      #6b7a9c;
-    --app-sidebar-bg:     #0a1024;
-    --app-sidebar-fg:     #e5edff;
-    --app-sidebar-active: #1b2a58;
-    color-scheme: dark;
-  }
+  /* Dark (charcoal) and Dugout palettes: the --app-* tokens above resolve
+     from --dos-app-* channel variables, which themeVarsPlugin re-declares for
+     each theme. Only the UA color scheme is set here. */
+  [data-theme="dark"]   { color-scheme: dark; }
+  [data-theme="dugout"] { color-scheme: dark; }
 
+  /* Chart / illustration overrides for Dark and Dugout. Marker fills are
+     mid-tone so the near-black label reaches 4.5:1 on each; strokes use
+     --app-fg-subtle (>= 3:1 on the card surfaces); field fills stay >= 3:1
+     against the page surface. */
+  [data-theme="dark"],
   [data-theme="dugout"] {
-    --app-bg:             #08120a;
-    --app-surface:        #0d1a10;
-    --app-surface-2:      #0a160c;
-    --app-surface-raised: #122418;
-    --app-border:         #1a3320;
-    --app-border-strong:  #25482d;
-    --app-fg:             #f2f7ee;
-    --app-fg-muted:       #9fb298;
-    --app-fg-subtle:      #6b7f65;
-    --app-sidebar-bg:     #071008;
-    --app-sidebar-fg:     #f2f7ee;
-    --app-sidebar-active: #143c1e;
-    --app-brand:          #22c55e;
-    --app-brand-2:        #4ade80;
-    color-scheme: dark;
+    --field-dirt-1:     #c97c4a;
+    --field-dirt-2:     #a8602d;
+    --field-turf-edge:  var(--turf-700);
+    --pz-ball:          #22c55e;
+    --pz-strike:        #eab308;
+    --pz-swing:         #f59e0b;
+    --pz-foul:          #d58b4a;
+    --pz-inplay:        #60a5fa;
+    --pz-label:         #0f1115;
+    --pz-zone-stroke:   var(--app-fg-subtle);
+    --count-dot-empty:  var(--app-fg-subtle);
+    --tint-neutral:     rgba(255,255,255,.10);
+    --link-sky:         #60a5fa;
+    --link-sky-hover:   #93c5fd;
+  }
+  [data-theme="dugout"] { --pz-label: #08120a; }
+
+  /* Paper is white. ThemeProvider switches <html> to Light on beforeprint; this
+     is the fallback for print paths that bypass the event (window.print() from
+     code, Safari quirks). themeVarsPlugin emits the matching @media print block
+     that resolves every --dos-* variable (and so every --app-* token) to Light. */
+  @media print {
+    [data-theme="dark"],
+    [data-theme="dugout"] {
+      color-scheme: light;
+      --field-dirt-1:     #c97c4a;
+      --field-dirt-2:     #8a4a1f;
+      --field-turf-edge:  var(--turf-900);
+      --pz-ball:          var(--count-balls);
+      --pz-strike:        var(--count-strikes);
+      --pz-swing:         #f59e0b;
+      --pz-foul:          var(--clay-500);
+      --pz-inplay:        var(--brand-500);
+      --pz-label:         white;
+      --pz-zone-stroke:   var(--app-border-strong);
+      --count-dot-empty:  var(--app-border-strong);
+      --tint-neutral:     rgba(0,0,0,.06);
+      --link-sky:         #0284c7;
+      --link-sky-hover:   #075985;
+    }
   }
 
   /* ── Per-league color schemes ──────────────────────────────────
      Selectable by league admins; scoped to a `.league-scheme-<key>`
      wrapper on the public page + coach dashboard. Only the accent/brand
-     tokens are overridden so the visitor's own light/dark base still drives
-     all surfaces. Each scheme has a light value and a brighter dark variant
-     (under [data-theme="dark"]) so the accent stays legible on both.
+     tokens are overridden so the visitor's own theme still drives all
+     surfaces. Each scheme has a light value and a brighter variant shared by
+     Dark and Dugout so the accent stays legible on both.
      Keep keys in sync with LEAGUE_COLOR_SCHEME_KEYS in @baseball/shared. */
   .league-scheme-sandlot       { --app-brand: var(--turf-700);  --app-brand-2: var(--clay-600); }
   .league-scheme-royal-blue    { --app-brand: var(--brand-700); --app-brand-2: var(--brand-500); }
@@ -182,12 +227,25 @@
   .league-scheme-sunset-orange { --app-brand: #c2410c;          --app-brand-2: #f97316; }
   .league-scheme-teal          { --app-brand: #0e7490;          --app-brand-2: #06b6d4; }
 
-  [data-theme="dark"] .league-scheme-sandlot       { --app-brand: var(--turf-500);  --app-brand-2: var(--clay-400); }
-  [data-theme="dark"] .league-scheme-royal-blue    { --app-brand: #3b82f6;          --app-brand-2: #60a5fa; }
-  [data-theme="dark"] .league-scheme-crimson       { --app-brand: #ef4444;          --app-brand-2: #f87171; }
-  [data-theme="dark"] .league-scheme-royal-purple  { --app-brand: #8b5cf6;          --app-brand-2: #a78bfa; }
-  [data-theme="dark"] .league-scheme-sunset-orange { --app-brand: #fb923c;          --app-brand-2: #fdba74; }
-  [data-theme="dark"] .league-scheme-teal          { --app-brand: #22d3ee;          --app-brand-2: #67e8f9; }
+  [data-theme="dark"] .league-scheme-sandlot,
+  [data-theme="dugout"] .league-scheme-sandlot { --app-brand: var(--turf-500); --app-brand-2: var(--clay-400); }
+  [data-theme="dark"] .league-scheme-royal-blue,
+  [data-theme="dugout"] .league-scheme-royal-blue { --app-brand: #3b82f6; --app-brand-2: #60a5fa; }
+  [data-theme="dark"] .league-scheme-crimson,
+  [data-theme="dugout"] .league-scheme-crimson { --app-brand: #ef4444; --app-brand-2: #f87171; }
+  [data-theme="dark"] .league-scheme-royal-purple,
+  [data-theme="dugout"] .league-scheme-royal-purple { --app-brand: #8b5cf6; --app-brand-2: #a78bfa; }
+  [data-theme="dark"] .league-scheme-sunset-orange,
+  [data-theme="dugout"] .league-scheme-sunset-orange { --app-brand: #fb923c; --app-brand-2: #fdba74; }
+  [data-theme="dark"] .league-scheme-teal,
+  [data-theme="dugout"] .league-scheme-teal { --app-brand: #22d3ee; --app-brand-2: #67e8f9; }
+
+  /* Team branding (Sidebar.tsx sets --team-sidebar-*) applies in Light only;
+     Dark and Dugout keep their own sidebar palette. */
+  [data-theme="light"] .sidebar {
+    --app-sidebar-bg: var(--team-sidebar-bg, rgb(var(--dos-app-sidebar-bg)));
+    --app-sidebar-active: var(--team-sidebar-active, rgb(var(--dos-app-sidebar-active)));
+  }
 
   /* Soft accent fill derived from the active brand (used by standings win bars). */
   .accent-soft-bg { background-color: color-mix(in srgb, var(--app-brand) 16%, transparent); }
@@ -212,6 +270,30 @@
   body { margin: 0; }
   button { font-family: inherit; }
   input, textarea, select { font-family: inherit; }
+
+  /* Form controls that use bare `border` fall back to Preflight's line-gray-200,
+     which is ~1.3:1 in Dark and Dugout (3:1 required). Zero specificity: beats
+     Preflight (later), loses to any border-color utility or class. A Light island
+     inside a dark root resets to Preflight's value (the variable re-resolves to the
+     island's Light value). Light pages are untouched. */
+  :where([data-theme="dark"], [data-theme="dugout"]) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+    border-color: rgb(var(--dos-line-gray-300));
+  }
+  :where([data-theme="light"]) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+    border-color: rgb(var(--dos-line-gray-200));
+  }
+
+  /* Form controls with an explicit `border-gray-200` (profile form, team branding
+     color pickers, notes textareas) are ~1.3:1 in Dark and Dugout. Specificity
+     (0,1,1) beats the bare utility but loses to `focus:` / `hover:` border
+     utilities (0,2,0), which come later in the file. The Light reset follows, so a
+     Light island inside a dark root, and Light pages, keep the utility's value. */
+  :where([data-theme="dark"], [data-theme="dugout"]) :is(input, select, textarea).border-gray-200 {
+    border-color: rgb(var(--dos-line-gray-300));
+  }
+  :where([data-theme="light"]) :is(input, select, textarea).border-gray-200 {
+    border-color: rgb(var(--dos-line-gray-200));
+  }
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -470,11 +552,71 @@
     font-size: 11px; font-weight: 600;
     letter-spacing: 0.01em;
   }
-  .badge-safe    { background: var(--turf-100); color: var(--turf-800); }
-  .badge-warning { background: #fef3c7; color: #92400e; }
-  .badge-danger  { background: #fee2e2; color: #991b1b; }
-  .badge-info    { background: var(--brand-100); color: var(--brand-700); }
-  .badge-clay    { background: var(--clay-50); color: var(--clay-700); }
+  /* Light values are exactly the previous colors (turf-100/800, amber-100/800,
+     red-100/800, brand-100/700, clay-50/700); Dark and Dugout come from the
+     themed scales. */
+  .badge-safe    { background: rgb(var(--dos-bg-turf-100));  color: rgb(var(--dos-fg-turf-800)); }
+  .badge-warning { background: rgb(var(--dos-bg-amber-100)); color: rgb(var(--dos-fg-amber-800)); }
+  .badge-danger  { background: rgb(var(--dos-bg-red-100));   color: rgb(var(--dos-fg-red-800)); }
+  .badge-info    { background: rgb(var(--dos-bg-brand-100)); color: rgb(var(--dos-fg-brand-700)); }
+  .badge-clay    { background: rgb(var(--dos-bg-clay-50));   color: rgb(var(--dos-fg-clay-700)); }
+
+  /* Hues that are not in the themed palette (sky, violet, indigo). Light values
+     are exactly the previous Tailwind colors (sky-50/800/200, violet-50/800/200,
+     indigo-50/700); Dark and Dugout use translucent tints with light text. */
+  .pill-sky    { background: #f0f9ff; color: #075985; border-color: #bae6fd; }
+  .pill-violet { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+  .pill-indigo { background: #eef2ff; color: #4338ca; }
+  [data-theme="dark"] .pill-sky,
+  [data-theme="dugout"] .pill-sky {
+    background: rgba(14,165,233,.16); color: #7dd3fc; border-color: rgba(14,165,233,.40);
+  }
+  [data-theme="dark"] .pill-violet,
+  [data-theme="dugout"] .pill-violet {
+    background: rgba(139,92,246,.18); color: #c4b5fd; border-color: rgba(139,92,246,.42);
+  }
+  [data-theme="dark"] .pill-indigo,
+  [data-theme="dugout"] .pill-indigo {
+    background: rgba(99,102,241,.20); color: #a5b4fc;
+  }
+
+  /* League admin forms were written with Tailwind slate, which is not in the
+     themed palette. Light values are exactly slate-500/400/200/300/900; Dark and
+     Dugout use the app tokens. */
+  .slate-fg-muted   { color: #64748b; }
+  .slate-fg-subtle  { color: #94a3b8; }
+  .slate-divider    { border-color: #e2e8f0; }
+  .slate-choice     { border-color: #cbd5e1; }
+  .slate-choice-on  { border-color: #0f172a; box-shadow: 0 0 0 1px #0f172a; }
+  .slate-btn        { background: #0f172a; }
+  [data-theme="dark"] .slate-fg-muted,
+  [data-theme="dugout"] .slate-fg-muted  { color: var(--app-fg-muted); }
+  [data-theme="dark"] .slate-fg-subtle,
+  [data-theme="dugout"] .slate-fg-subtle { color: var(--app-fg-subtle); }
+  [data-theme="dark"] .slate-divider,
+  [data-theme="dugout"] .slate-divider   { border-color: var(--app-border); }
+  /* Form-control border (3:1): line-gray-300 is 3.2:1 on Dark surface and 3.3:1
+     on Dugout surface. The radio is sr-only, so this border is the affordance. */
+  [data-theme="dark"] .slate-choice,
+  [data-theme="dugout"] .slate-choice    { border-color: rgb(var(--dos-line-gray-300)); }
+  [data-theme="dark"] .slate-choice-on,
+  [data-theme="dugout"] .slate-choice-on { border-color: var(--app-fg); box-shadow: 0 0 0 1px var(--app-fg); }
+  /* brand-600 (#2563eb in both themes) gives white text 5.17:1 and matches the
+     neighbouring bg-brand-600 buttons. */
+  [data-theme="dark"] .slate-btn,
+  [data-theme="dugout"] .slate-btn       { background: rgb(var(--dos-bg-brand-600)); }
+
+  /* Light islands (data-theme="light") inside a dark root: re-declare the Light
+     values after the Dark/Dugout rules (same specificity, later wins). */
+  [data-theme="light"] .pill-sky    { background: #f0f9ff; color: #075985; border-color: #bae6fd; }
+  [data-theme="light"] .pill-violet { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+  [data-theme="light"] .pill-indigo { background: #eef2ff; color: #4338ca; }
+  [data-theme="light"] .slate-fg-muted  { color: #64748b; }
+  [data-theme="light"] .slate-fg-subtle { color: #94a3b8; }
+  [data-theme="light"] .slate-divider   { border-color: #e2e8f0; }
+  [data-theme="light"] .slate-choice    { border-color: #cbd5e1; }
+  [data-theme="light"] .slate-choice-on { border-color: #0f172a; box-shadow: 0 0 0 1px #0f172a; }
+  [data-theme="light"] .slate-btn       { background: #0f172a; }
   .badge-dot::before {
     content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
   }
@@ -502,6 +644,10 @@
   .stat-tile .trend { font-weight: 600; font-size: 11px; }
   .trend-up { color: var(--turf-700); }
   .trend-dn { color: #dc2626; }
+  /* #dc2626 is ~3.6:1 as text on charcoal; fg-red-700 is red-400 in Dark and Dugout. */
+  [data-theme="dark"] .trend-dn,
+  [data-theme="dugout"] .trend-dn { color: rgb(var(--dos-fg-red-700)); }
+  [data-theme="light"] .trend-dn { color: #dc2626; }
 
   /* Tweaks panel */
   .tweaks {
@@ -574,13 +720,16 @@
   .count-dots .lbl { font-size: 11px; font-weight: 700; color: var(--app-fg-muted); margin-right: 4px; letter-spacing: 0.06em; }
   .count-dots .d {
     width: 12px; height: 12px; border-radius: 50%;
-    border: 1.5px solid var(--app-border-strong); background: var(--app-surface);
+    border: 1.5px solid var(--count-dot-empty); background: var(--app-surface);
     transition: background var(--mo) var(--ease), border-color var(--mo) var(--ease), transform var(--mo) var(--ease);
   }
   .count-dots .d.on-b { background: var(--count-balls);   border-color: var(--count-balls); }
   .count-dots .d.on-s { background: var(--count-strikes); border-color: var(--count-strikes); }
   .count-dots .d.on-o { background: var(--count-outs);    border-color: var(--count-outs); }
   .count-dots .d.ping { animation: ping 450ms var(--ease); }
+  /* Sky-blue inline link (GameHistoryTree add-runner button). */
+  .link-sky { color: var(--link-sky); }
+  .link-sky:hover { color: var(--link-sky-hover); }
 
   .strike-zone {
     display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);

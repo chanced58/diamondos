@@ -41,7 +41,7 @@ export function ProgressList({
                   width: 22,
                   height: 22,
                   borderRadius: '50%',
-                  background: isDone ? '#10b981' : 'rgba(0,0,0,.06)',
+                  background: isDone ? 'rgb(var(--dos-bg-emerald-500))' : 'var(--tint-neutral)',
                   color: isDone ? 'white' : 'inherit',
                   display: 'inline-flex',
                   alignItems: 'center',

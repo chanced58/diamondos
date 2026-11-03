@@ -10,12 +10,12 @@ export interface PitchPoint {
 }
 
 const CALL_COLOR: Record<PitchCall, string> = {
-  ball:    'var(--count-balls)',
-  strike:  'var(--count-strikes)',
-  calledK: 'var(--count-strikes)',
-  swingK:  '#f59e0b',
-  foul:    'var(--clay-500)',
-  inPlay:  'var(--brand-500)',
+  ball:    'var(--pz-ball)',
+  strike:  'var(--pz-strike)',
+  calledK: 'var(--pz-strike)',
+  swingK:  'var(--pz-swing)',
+  foul:    'var(--pz-foul)',
+  inPlay:  'var(--pz-inplay)',
 };
 
 interface StrikeZoneHeatmapProps {
@@ -51,7 +51,7 @@ export function StrikeZoneHeatmap({
         width={zoneW}
         height={zoneH}
         fill="var(--app-surface-2)"
-        stroke="var(--app-border-strong)"
+        stroke="var(--pz-zone-stroke)"
         strokeWidth="2"
         rx="2"
       />
@@ -91,7 +91,7 @@ export function StrikeZoneHeatmap({
               textAnchor="middle"
               fontSize="10"
               fontWeight="700"
-              fill="white"
+              fill="var(--pz-label)"
               fontFamily="var(--font-mono)"
             >
               {p.num}

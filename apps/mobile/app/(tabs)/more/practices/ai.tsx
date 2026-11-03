@@ -18,6 +18,7 @@ import { practicesQueryKey } from '../../../../src/features/practices/practices-
 import { PlanBlocksList, plannedMinutes } from '../../../../src/features/practices/PlanBlocksList';
 import { aiPreviewRequest, defaultAiStart, type AiFormValues } from '../../../../src/features/practices/planning-model';
 import { describeApiError } from '../../../../src/lib/api-client';
+import { useKeyboardAppearance, useThemeColors } from '../../../../src/theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 
@@ -27,6 +28,8 @@ const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 
  * picks a time and saves it. Coaches only.
  */
 export default function AiPracticeScreen() {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const { activeTeam } = useRole();
   const teamId = activeTeam?.teamId ?? '';
   const queryClient = useQueryClient();
@@ -129,18 +132,19 @@ export default function AiPracticeScreen() {
             value={values.prompt}
             onChangeText={(prompt) => set({ prompt })}
             placeholder="e.g. Defense after two sloppy games — bunt coverage and relays, plus some live BP."
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
           />
         </FormField>
         <View className="flex-row gap-3">
           <View className="flex-1">
             <FormField label="Minutes">
-              <TextInput accessibilityLabel="Minutes" className={inputClass} keyboardType="number-pad" value={values.duration} onChangeText={(duration) => set({ duration })} />
+              <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Minutes" className={inputClass} keyboardType="number-pad" value={values.duration} onChangeText={(duration) => set({ duration })} />
             </FormField>
           </View>
           <View className="flex-1">
             <FormField label="Players">
-              <TextInput accessibilityLabel="Players" className={inputClass} keyboardType="number-pad" value={values.players} onChangeText={(players) => set({ players })} />
+              <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Players" className={inputClass} keyboardType="number-pad" value={values.players} onChangeText={(players) => set({ players })} />
             </FormField>
           </View>
         </View>

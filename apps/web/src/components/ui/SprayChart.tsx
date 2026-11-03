@@ -49,11 +49,11 @@ export function SprayChart({
         <radialGradient id={turfId} cx="50%" cy="100%" r="100%">
           <stop offset="0%" stopColor="var(--turf-500)" stopOpacity="0.6" />
           <stop offset="70%" stopColor="var(--turf-700)" stopOpacity="0.85" />
-          <stop offset="100%" stopColor="var(--turf-900)" />
+          <stop offset="100%" stopColor="var(--field-turf-edge)" />
         </radialGradient>
         <linearGradient id={dirtId} x1="0" x2="0" y1="1" y2="0">
-          <stop offset="0%" stopColor="#c97c4a" />
-          <stop offset="100%" stopColor="#8a4a1f" />
+          <stop offset="0%" stopColor="var(--field-dirt-1)" />
+          <stop offset="100%" stopColor="var(--field-dirt-2)" />
         </linearGradient>
       </defs>
 

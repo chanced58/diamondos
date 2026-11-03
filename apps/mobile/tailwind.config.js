@@ -13,6 +13,43 @@ const scoringSize = (sizeRem, lineHeightRem) => [
 ];
 const scoringPx = (px) => [`${(px / 14) * SCORING_TEXT_SCALE}rem`, {}];
 
+// Relative path on purpose: theme/tailwind.ts is not re-exported from the
+// package index. Tailwind (and NativeWind's Metro transformer, which loads this
+// config through Tailwind) resolves the TS module with jiti; jest-expo's babel
+// transform handles it in tests.
+/* eslint-disable @typescript-eslint/no-var-requires */
+const {
+  themedTailwindColors,
+  semanticTailwindColors,
+  themeVarsPlugin,
+} = require('../../packages/shared/src/theme/tailwind');
+/* eslint-enable @typescript-eslint/no-var-requires */
+
+// Before theming, mobile defined only these `brand` shades and no `turf` or
+// `clay` at all. The shared palette carries the full ramps, which would turn
+// previously dead classes (`bg-brand-200`, `text-turf-600`, ...) into live ones
+// and change Light. Prune every themed role map back to the legacy sets so
+// Light is pixel-identical; the dead classes stay dead.
+const LEGACY_BRAND_SHADES = ['50', '100', '500', '600', '700', '900'];
+
+function pruneLegacyScales(map) {
+  const rest = { ...map };
+  delete rest.turf;
+  delete rest.clay;
+  return {
+    ...rest,
+    brand: Object.fromEntries(LEGACY_BRAND_SHADES.map((shade) => [shade, map.brand[shade]])),
+  };
+}
+
+const rawThemed = themedTailwindColors();
+const themed = Object.fromEntries(
+  Object.entries(rawThemed).map(([utility, map]) => [utility, pruneLegacyScales(map)]),
+);
+// Tailwind's default border/divide color is gray-200; theme the bare DEFAULT
+// key too so a bare `border` / `divide-x` follows the theme.
+const DEFAULT_LINE = 'rgb(var(--dos-line-gray-200) / <alpha-value>)';
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
@@ -23,6 +60,11 @@ module.exports = {
   presets: [require('nativewind/preset')],
   theme: {
     extend: {
+      // Role-specific colors resolve through `--dos-*` variables. They override
+      // the literal `colors` scale below for the utilities they cover.
+      ...themed,
+      borderColor: { ...themed.borderColor, DEFAULT: DEFAULT_LINE },
+      divideColor: { ...themed.divideColor, DEFAULT: DEFAULT_LINE },
       // Tailwind's default size/line-height pairs, scaled. See SCORING_TEXT_SCALE.
       fontSize: {
         'score-xs': scoringSize(0.75, 1),
@@ -38,6 +80,7 @@ module.exports = {
         'score-15px': scoringPx(15),
       },
       colors: {
+        ...semanticTailwindColors(),
         brand: {
           50: '#eff6ff',
           100: '#dbeafe',
@@ -49,5 +92,6 @@ module.exports = {
       },
     },
   },
-  plugins: [],
+  // Light is the `:root` default; Dark/Dugout come from NativeWind `vars()` at runtime.
+  plugins: [themeVarsPlugin({ themeSelectors: false })],
 };

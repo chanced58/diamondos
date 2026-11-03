@@ -36,11 +36,11 @@ const ELIGIBILITY_STYLES: Record<PitcherEligibilitySource, { pill: string; label
     label: 'Primary',
   },
   [PitcherEligibilitySource.SECONDARY]: {
-    pill: 'bg-sky-50 text-sky-800 border-sky-200',
+    pill: 'pill-sky',
     label: 'Secondary',
   },
   [PitcherEligibilitySource.GAME_HISTORY]: {
-    pill: 'bg-violet-50 text-violet-800 border-violet-200',
+    pill: 'pill-violet',
     label: 'Game history',
   },
 };
