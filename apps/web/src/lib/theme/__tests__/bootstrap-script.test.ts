@@ -9,7 +9,7 @@ interface Env {
   getItemThrows?: boolean;
   noMatchMedia?: boolean;
   matchMediaThrows?: boolean;
-  /** Simulate the server-rendered theme-color metas. Defaults to one meta. */
+  /** theme-color metas already in the page. The server renders none (the default). */
   metas?: number;
   noQuerySelectorAll?: boolean;
 }
@@ -20,7 +20,12 @@ const lastMetas: Array<{ content: string }> = [];
 function run(env: Env): Result {
   const attrs: Record<string, string> = {};
   lastMetas.length = 0;
-  for (let i = 0; i < (env.metas ?? 1); i += 1) lastMetas.push({ content: '#1e3a8a' });
+  for (let i = 0; i < (env.metas ?? 0); i += 1) lastMetas.push({ content: '#1e3a8a' });
+  const metaElement = (m: { content: string }) => ({
+    setAttribute: (k: string, v: string) => {
+      if (k === 'content') m.content = v;
+    },
+  });
   const sandbox: Record<string, unknown> = {
     document: {
       documentElement: {
@@ -32,13 +37,24 @@ function run(env: Env): Result {
         ? {}
         : {
             querySelectorAll: (sel: string) =>
-              sel === 'meta[name="theme-color"]'
-                ? lastMetas.map((m) => ({
-                    setAttribute: (k: string, v: string) => {
-                      if (k === 'content') m.content = v;
-                    },
-                  }))
-                : [],
+              sel === 'meta[name="theme-color"]' ? lastMetas.map(metaElement) : [],
+            createElement: (tag: string) => {
+              const created = { tag, name: '', content: '' };
+              return {
+                created,
+                setAttribute: (k: string, v: string) => {
+                  if (k === 'name') created.name = v;
+                  if (k === 'content') created.content = v;
+                },
+              };
+            },
+            head: {
+              appendChild: (el: { created: { tag: string; name: string; content: string } }) => {
+                if (el.created.tag !== 'meta' || el.created.name !== 'theme-color') return;
+                // Live view of the created element, so later setAttribute calls land.
+                lastMetas.push(el.created);
+              },
+            },
           }),
     },
     localStorage: {
@@ -132,6 +148,16 @@ describe('buildAppearanceBootstrapScript', () => {
     it('resolves System from the OS', () => {
       run({ pathname: '/dashboard', systemDark: true });
       expect(lastMetas[0].content).toBe('#0f1115');
+    });
+
+    it('creates exactly one meta when the page has none', () => {
+      run({ stored: { dos_theme: 'dark' }, pathname: '/dashboard' });
+      expect(lastMetas.map((m) => m.content)).toEqual(['#0f1115']);
+    });
+
+    it('re-colors an existing meta rather than adding another', () => {
+      run({ stored: { dos_theme: 'dark' }, pathname: '/dashboard', metas: 1 });
+      expect(lastMetas.map((m) => m.content)).toEqual(['#0f1115']);
     });
 
     it('updates every theme-color meta', () => {

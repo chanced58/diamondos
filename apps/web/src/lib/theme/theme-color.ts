@@ -11,16 +11,22 @@ export const THEME_COLORS: Record<ResolvedTheme, string> = {
   dugout: '#08120a',
 };
 
-/** Server-rendered default: Light, as before the dark-mode work. */
-export const DEFAULT_THEME_COLOR = THEME_COLORS.light;
-
-/** Point every `theme-color` meta at the applied theme. No-op without one. */
+/**
+ * Point the `theme-color` meta at the applied theme, creating it if it is missing
+ * (the bootstrap script normally has; a client re-render of `<head>` drops it).
+ * The meta is never rendered by React: see `buildAppearanceBootstrapScript`.
+ */
 export function applyThemeColor(theme: ResolvedTheme): void {
   try {
-    document
-      .querySelectorAll('meta[name="theme-color"]')
-      .forEach((meta) => meta.setAttribute('content', THEME_COLORS[theme]));
+    let metas: ArrayLike<Element> = document.querySelectorAll('meta[name="theme-color"]');
+    if (metas.length === 0) {
+      const meta = document.createElement('meta');
+      meta.setAttribute('name', 'theme-color');
+      document.head.appendChild(meta);
+      metas = [meta];
+    }
+    Array.from(metas).forEach((meta) => meta.setAttribute('content', THEME_COLORS[theme]));
   } catch {
-    // no DOM / locked down: the server default stands
+    // no DOM / locked down: the browser default stands
   }
 }

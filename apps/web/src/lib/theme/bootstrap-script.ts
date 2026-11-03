@@ -8,7 +8,10 @@ import { THEME_COLORS } from './theme-color';
  * density/motion/tone from localStorage. Every storage / matchMedia access is
  * guarded, so a failure falls back to System (theme) or the defaults.
  *
- * Also points `<meta name="theme-color">` at the applied theme.
+ * Also creates `<meta name="theme-color">` for the applied theme. React must not
+ * render that meta: the App Router's React adopts a server `<meta>` only when its
+ * `content` still matches, so after this script re-colored it React would append a
+ * second, Light one at hydration.
  *
  * Mirrors ThemeProvider, `isThemedPath`, `parseThemePreference` and
  * `applyThemeColor`; keep in sync.
@@ -51,6 +54,7 @@ export function buildAppearanceBootstrapScript(): string {
   }catch(e){}
   try{
     var ms=document.querySelectorAll('meta[name="theme-color"]');
+    if(!ms.length){var nm=document.createElement('meta');nm.setAttribute('name','theme-color');document.head.appendChild(nm);ms=[nm];}
     for(var j=0;j<ms.length;j++)ms[j].setAttribute('content',colors[theme]);
   }catch(e){}
 })();`;
