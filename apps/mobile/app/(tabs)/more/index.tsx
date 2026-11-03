@@ -6,6 +6,8 @@ import { useAuth } from '../../../src/providers/AuthProvider';
 import { useCan, useRole } from '../../../src/providers/RoleProvider';
 import { ListGroup } from '../../../src/features/navigation/ListGroup';
 import { openOnWeb, webUrl } from '../../../src/lib/web-links';
+import { appearanceLabel } from '../../../src/theme/appearance-options';
+import { useThemePreference } from '../../../src/theme/ThemeProvider';
 
 const LEAGUE_ROLE_LABELS = { league_admin: 'League admin', league_manager: 'League manager' } as const;
 
@@ -22,6 +24,7 @@ export default function MoreScreen() {
   // As on the web, the league page is on plans with league management.
   const hasLeague = useCan(Feature.LEAGUE_MANAGEMENT);
   const hasWeb = webUrl('/') !== null;
+  const { themePreference } = useThemePreference();
 
   return (
     <ScrollView className="flex-1 bg-gray-50" contentContainerStyle={{ padding: 16, paddingTop: 0 }}>
@@ -112,6 +115,15 @@ export default function MoreScreen() {
           </ListGroup>
         </>
       )}
+
+      <SectionHeader title="App" />
+      <ListGroup>
+        <ListRow
+          title="Appearance"
+          subtitle={appearanceLabel(themePreference)}
+          onPress={() => router.push('/(tabs)/more/appearance')}
+        />
+      </ListGroup>
 
       <SectionHeader title="Account" />
       <ListGroup>

@@ -16,6 +16,7 @@ import {
 import { HAND_LABELS, POSITION_LABELS, POSITION_SHORT_LABELS } from '../../../../../src/features/roster/player-form-model';
 import { describeApiError } from '../../../../../src/lib/api-client';
 import { openOnWeb, webUrl } from '../../../../../src/lib/web-links';
+import { useKeyboardAppearance, useThemeColors } from '../../../../../src/theme/ThemeScope';
 
 const handLabel = (hand: string | null) => (hand ? HAND_LABELS[hand as keyof typeof HAND_LABELS] ?? hand : null);
 const positionLabel = (position: string | null) => (position ? POSITION_LABELS[position as keyof typeof POSITION_LABELS] ?? position : null);
@@ -27,6 +28,8 @@ const positionLabel = (position: string | null) => (position ? POSITION_LABELS[p
  * stats and notes stay on the web page.
  */
 export default function PlayerScreen() {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const { playerId = '' } = useLocalSearchParams<{ playerId: string }>();
   const { activeTeam } = useRole();
   const teamId = activeTeam?.teamId ?? null;
@@ -114,7 +117,8 @@ export default function PlayerScreen() {
                 className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-gray-900 bg-white text-base"
                 keyboardType="number-pad"
                 placeholder="Jersey #"
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor={colors['fg-subtle']}
+                keyboardAppearance={keyboardAppearance}
                 value={jersey}
                 onChangeText={setJersey}
                 maxLength={2}

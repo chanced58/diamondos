@@ -37,6 +37,7 @@ import {
 import { OpponentPlayerSheet } from '../../../../../src/features/opponents/OpponentPlayerSheet';
 import { OptionSheet, type SheetOption } from '../../../../../src/features/opponents/OptionSheet';
 import { describeApiError } from '../../../../../src/lib/api-client';
+import { useKeyboardAppearance, useThemeColors } from '../../../../../src/theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 
@@ -49,6 +50,8 @@ type PlayerSheet = { player: OpponentRosterPlayer | null } | null;
  * then a sync brings them into the offline scorer.
  */
 export default function OpponentLineupScreen() {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const { gameId = '' } = useLocalSearchParams<{ gameId: string }>();
   const queryClient = useQueryClient();
   const { triggerSync } = useSyncContext();
@@ -207,7 +210,8 @@ export default function OpponentLineupScreen() {
                 value={teamName ?? data.opponentName ?? ''}
                 onChangeText={setTeamName}
                 placeholder="e.g. Lincoln Eagles"
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor={colors['fg-subtle']}
+                keyboardAppearance={keyboardAppearance}
               />
               <View className="flex-row justify-end gap-2 mt-3">
                 {hasTeam && <Button label="Cancel" variant="secondary" onPress={() => setTeamName(null)} />}

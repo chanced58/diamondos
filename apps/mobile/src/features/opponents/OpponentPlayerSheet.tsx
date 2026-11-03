@@ -4,6 +4,7 @@ import { Button, FormField } from '@baseball/ui';
 import { BATS, LINEUP_POSITIONS, POSITION_TO_DB, THROWS, type OpponentRosterPlayer } from '@baseball/shared';
 import type { OpponentPlayerFields } from './opponent-lineup-api';
 import { positionLabel } from './opponent-lineup-model';
+import { useKeyboardAppearance, useThemeColors } from '../../theme/ThemeScope';
 
 /** What the team-scoped roster also records. */
 export interface Handedness {
@@ -31,6 +32,8 @@ const BATS_LABELS: Record<(typeof BATS)[number], string> = { right: 'R', left: '
 
 /** Add or edit an opponent roster player: jersey, name, usual position and, when asked, handedness. */
 export function OpponentPlayerSheet({ visible, player, saving, error, withHandedness = false, onSave, onClose }: OpponentPlayerSheetProps) {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const [jersey, setJersey] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -86,7 +89,8 @@ export function OpponentPlayerSheet({ visible, player, saving, error, withHanded
               value={jersey}
               onChangeText={setJersey}
               placeholder="00"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors['fg-subtle']}
+              keyboardAppearance={keyboardAppearance}
               maxLength={4}
               keyboardType="number-pad"
             />
@@ -98,7 +102,8 @@ export function OpponentPlayerSheet({ visible, player, saving, error, withHanded
               value={firstName}
               onChangeText={setFirstName}
               placeholder="First"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors['fg-subtle']}
+              keyboardAppearance={keyboardAppearance}
               autoCapitalize="words"
             />
           </FormField>
@@ -109,7 +114,8 @@ export function OpponentPlayerSheet({ visible, player, saving, error, withHanded
               value={lastName}
               onChangeText={setLastName}
               placeholder="Last"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors['fg-subtle']}
+              keyboardAppearance={keyboardAppearance}
               autoCapitalize="words"
             />
           </FormField>

@@ -21,6 +21,7 @@ import {
 } from '../../../../src/features/practices/practice-form-model';
 import { deviceTimeZone } from '../../../../src/features/games/game-form-model';
 import { describeApiError, isApiError } from '../../../../src/lib/api-client';
+import { useKeyboardAppearance, useThemeColors } from '../../../../src/theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 
@@ -30,6 +31,8 @@ const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 
  * library, which become the practice's blocks in the order shown. Coaches only.
  */
 export default function PlanPracticeScreen() {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const { activeTeam } = useRole();
   const teamId = activeTeam?.teamId ?? '';
   const isCoach = activeTeam?.isCoach ?? false;
@@ -111,7 +114,8 @@ export default function PlanPracticeScreen() {
             value={values.duration}
             onChangeText={(duration) => set({ duration })}
             placeholder="120"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
           />
         </FormField>
         <FormField label="Location">
@@ -126,7 +130,8 @@ export default function PlanPracticeScreen() {
             value={plan}
             onChangeText={setPlan}
             placeholder="Goals, groups, anything the staff should know"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
           />
         </FormField>
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TextInput, type TextInputProps } from 'react-native';
+import { colors } from '../theme/colors';
 
 interface InputProps extends TextInputProps {
   label?: string;
@@ -16,7 +17,7 @@ export function Input({ label, error, ...props }: InputProps) {
         className={`border rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base ${
           error ? 'border-red-500' : 'border-gray-300'
         }`}
-        placeholderTextColor="#9ca3af"
+        placeholderTextColor={colors.gray[400]}
         {...props}
       />
       {error && (

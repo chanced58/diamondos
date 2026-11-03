@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
-import { BRAND_STACK_OPTIONS } from '../../../src/navigation/stack-options';
+import { brandStackOptions } from '../../../src/navigation/stack-options';
+import { useScopeTheme } from '../../../src/theme/ThemeScope';
 
 /**
  * The Schedule tab is a stack, not a pile of sibling tab routes.
@@ -16,8 +17,9 @@ import { BRAND_STACK_OPTIONS } from '../../../src/navigation/stack-options';
 export const unstable_settings = { initialRouteName: 'index' };
 
 export default function ScheduleLayout() {
+  const theme = useScopeTheme();
   return (
-    <Stack screenOptions={BRAND_STACK_OPTIONS}>
+    <Stack screenOptions={brandStackOptions(theme)}>
       <Stack.Screen name="index" options={{ title: 'Schedule' }} />
     </Stack>
   );

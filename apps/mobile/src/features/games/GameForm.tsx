@@ -5,6 +5,7 @@ import type { GameFormOptions } from '@baseball/shared';
 import { DateTimeFields } from '../forms/DateTimeFields';
 import { VenueSearchField } from '../places/VenueSearchField';
 import { validateGameForm, type GameFormValues, type OpponentMode } from './game-form-model';
+import { useKeyboardAppearance, useThemeColors } from '../../theme/ThemeScope';
 
 interface GameFormProps {
   initialValues: GameFormValues;
@@ -42,6 +43,8 @@ export function GameForm({
   submitError,
   onSubmit,
 }: GameFormProps) {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const [values, setValues] = useState(initialValues);
   const [validationError, setValidationError] = useState<string | null>(null);
   const set = (patch: Partial<GameFormValues>) => setValues((current) => ({ ...current, ...patch }));
@@ -95,7 +98,8 @@ export function GameForm({
               accessibilityLabel="Opponent name"
               className={inputClass}
               placeholder="e.g. Riverside Eagles"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors['fg-subtle']}
+              keyboardAppearance={keyboardAppearance}
               value={values.opponentName}
               onChangeText={(opponentName) => set({ opponentName })}
             />
@@ -127,6 +131,7 @@ export function GameForm({
         <TextInput
           accessibilityLabel="Notes"
           className={`${inputClass} min-h-[80px]`}
+          keyboardAppearance={keyboardAppearance}
           multiline
           textAlignVertical="top"
           value={values.notes}

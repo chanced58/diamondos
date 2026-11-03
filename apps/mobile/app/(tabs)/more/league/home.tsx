@@ -8,6 +8,7 @@ import { StatTable } from '../../../../src/features/stats/StatTable';
 import { useLeagueHome } from '../../../../src/features/league/league-home-api';
 import { HOME_STANDINGS_COLUMNS, updatedLabel } from '../../../../src/features/league/league-home-model';
 import { describeApiError, isApiError } from '../../../../src/lib/api-client';
+import { useScopeTheme } from '../../../../src/theme/ThemeScope';
 
 const TAB_OPTIONS: ReadonlyArray<{ value: LeaderTab; label: string }> = [
   { value: 'batting', label: 'Batting' },
@@ -94,13 +95,18 @@ export default function LeagueHomeScreen() {
 /** The league's name, its counters, when stats were last updated, and the season switch (showing the one picked while it loads). */
 function Hero({ home, selectedSeason, onSeason }: { home: LeagueHomeResponse; selectedSeason: string; onSeason: (season: string) => void }) {
   const updated = updatedLabel(home.updatedAt);
+  // Translucent white is 5-7:1 on the Light navy hero but 2.9-3.9:1 on the brighter
+  // Dark and Dugout brand blue, so the secondary lines go opaque there.
+  const light = useScopeTheme() === 'light';
+  const muted = light ? 'text-white/80' : 'text-white';
+  const faint = light ? 'text-white/60' : 'text-white';
   return (
     <View className="bg-brand-700 px-4 pt-5 pb-4">
       <Text className="text-2xl font-bold text-white">{home.league.name}</Text>
-      <Text className="text-sm text-white/80 mt-1">
+      <Text className={`text-sm ${muted} mt-1`}>
         {home.counters.teams} teams · {home.counters.games} games{home.season ? ` · ${home.season}` : ''}
       </Text>
-      {updated && <Text className="text-xs text-white/60 mt-1">{updated}</Text>}
+      {updated && <Text className={`text-xs ${faint} mt-1`}>{updated}</Text>}
       {home.seasons.length > 1 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-3" contentContainerStyle={{ gap: 8 }}>
           {home.seasons.map((s) => {

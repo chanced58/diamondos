@@ -4,6 +4,7 @@ import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { getSupabaseClient } from '../src/lib/supabase';
 import { useAuth } from '../src/providers/AuthProvider';
+import { ThemeScope } from '../src/theme/ThemeScope';
 import {
   describeAuthCallbackError,
   describeExchangeError,
@@ -23,6 +24,14 @@ import {
  * session exists.
  */
 export default function AuthCallbackScreen() {
+  return (
+    <ThemeScope theme="light">
+      <AuthCallbackContent />
+    </ThemeScope>
+  );
+}
+
+function AuthCallbackContent() {
   const { user } = useAuth();
   const url = Linking.useURL();
   const params = useLocalSearchParams<{ code?: string; error?: string; error_code?: string; error_description?: string }>();

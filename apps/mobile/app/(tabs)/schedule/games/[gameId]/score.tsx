@@ -37,6 +37,7 @@ import { useLeagueContext } from '../../../../../src/lib/league-settings';
 import { useGameScoringSettings } from '../../../../../src/lib/game-scoring-settings';
 import { initialBattingOrderSlots, lineupExtensionError, getLineupExtensionHistory } from '@baseball/shared';
 import { database } from '../../../../../src/db';
+import { ThemeScope } from '../../../../../src/theme/ThemeScope';
 import type { GameEvent as WdbGameEvent } from '../../../../../src/db/models/GameEvent';
 import type { Player } from '../../../../../src/db/models/Player';
 import type { BattedOutType, RosterPlayer, RunnerOutcome } from '../../../../../src/features/scoring/PitchInput';
@@ -64,8 +65,20 @@ import type { GameLineup } from '../../../../../src/db/models/GameLineup';
  * Live game scoring screen — the core feature of the mobile app.
  * Works completely offline. All events written to WatermelonDB first,
  * then synced to Supabase in the background.
+ *
+ * Scorekeeping content always renders Light. The native header (set by
+ * `Stack.Screen` below) follows the app theme, so this scope leaves the
+ * status bar to the root scope.
  */
 export default function ScoringScreen() {
+  return (
+    <ThemeScope theme="light" statusBar={false}>
+      <ScoringScreenContent />
+    </ThemeScope>
+  );
+}
+
+function ScoringScreenContent() {
   const { gameId } = useLocalSearchParams<{ gameId: string }>();
 
   const router = useRouter();
@@ -2643,7 +2656,7 @@ function BookPane({ isWide, children }: { isWide: boolean; children: ReactNode }
   if (!isWide) return <>{children}</>;
   return (
     <View className="border-r border-gray-200 bg-white" style={{ flex: 5 }}>
-      <ScrollView style={{ flex: 1 }}>{children}</ScrollView>
+      <ScrollView indicatorStyle="black" style={{ flex: 1 }}>{children}</ScrollView>
     </View>
   );
 }
@@ -2773,7 +2786,7 @@ function BatterPickerModal({
             Pick who is at the plate. The rotation resumes from this batter
             after the plate appearance completes.
           </Text>
-          <ScrollView className="max-h-96">
+          <ScrollView indicatorStyle="black" className="max-h-96">
             <View className="gap-2">
               {sorted.map((slot) => {
                 const isSelected = slot.playerId === selectedId;
@@ -2993,7 +3006,7 @@ function CaughtStealingModal({
             )}
           </View>
 
-          <ScrollView style={{ maxHeight: 400 }}>
+          <ScrollView indicatorStyle="black" style={{ maxHeight: 400 }}>
             <Text className="text-score-11px font-semibold text-gray-500 mb-2">COMMON</Text>
             <View className="flex-row gap-2 mb-5">
               {presets.map((preset) => (
@@ -3269,7 +3282,7 @@ function OpponentBatterPickerModal({
             Pick who is batting. The rotation resumes from this batter after
             the plate appearance completes.
           </Text>
-          <ScrollView className="max-h-96">
+          <ScrollView indicatorStyle="black" className="max-h-96">
             <View className="gap-2">
               {slots.map((slot) => {
                 const isSelected = slot.playerId === selectedId;
@@ -3359,7 +3372,7 @@ function RemoveBatterModal({
               </TouchableOpacity>
             ))}
           </View>
-          <ScrollView className="max-h-96">
+          <ScrollView indicatorStyle="black" className="max-h-96">
             <View className="gap-2">
               {rows.map(({ slot, name, reason }) => (
                 <TouchableOpacity
@@ -3513,6 +3526,7 @@ function AddBatterModal({
           )}
 
           <ScrollView
+            indicatorStyle="black"
             ref={scrollRef}
             className="max-h-96"
             keyboardShouldPersistTaps="handled"
@@ -3538,6 +3552,7 @@ function AddBatterModal({
             >
               <View className="flex-row gap-2">
                 <TextInput
+                  keyboardAppearance="light"
                   value={jersey}
                   onChangeText={setJersey}
                   placeholder="##"
@@ -3546,6 +3561,7 @@ function AddBatterModal({
                   className="w-16 rounded-xl border border-gray-300 px-3 py-3 text-score-base text-gray-900"
                 />
                 <TextInput
+                  keyboardAppearance="light"
                   value={firstName}
                   onChangeText={setFirstName}
                   placeholder="First"
@@ -3554,6 +3570,7 @@ function AddBatterModal({
                   className="flex-1 rounded-xl border border-gray-300 px-3 py-3 text-score-base text-gray-900"
                 />
                 <TextInput
+                  keyboardAppearance="light"
                   value={lastName}
                   onChangeText={setLastName}
                   placeholder="Last"
@@ -3749,7 +3766,7 @@ function LineupSetupModal({
               React Native defaults flexShrink to 0, so without it this grows
               past the sheet's maxHeight and pushes the footer off-screen. */}
           {onTrackingStep ? (
-            <ScrollView className="px-5" style={{ flexShrink: 1 }}>
+            <ScrollView indicatorStyle="black" className="px-5" style={{ flexShrink: 1 }}>
               <Text className="text-score-sm text-gray-500 mb-4">
                 Anything you turn off is hidden while scoring, so the buttons
                 stay out of your way. You can still record the game without it.
@@ -3780,7 +3797,7 @@ function LineupSetupModal({
               No players loaded. Sync the roster first.
             </Text>
           ) : (
-            <ScrollView className="px-5" style={{ flexShrink: 1 }}>
+            <ScrollView indicatorStyle="black" className="px-5" style={{ flexShrink: 1 }}>
               <View className="gap-2 pb-2">
                 {roster.map((p) => {
                   if (onPitcherStep) {

@@ -14,6 +14,7 @@ import {
   type ParentInviteValues,
 } from '../../../../src/features/members/invite-form-model';
 import { describeApiError } from '../../../../src/lib/api-client';
+import { useKeyboardAppearance } from '../../../../src/theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 
@@ -23,6 +24,7 @@ const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 
  * links the parent to exactly them.
  */
 export default function InviteParentScreen() {
+  const keyboardAppearance = useKeyboardAppearance();
   const { activeTeam } = useRole();
   const teamId = activeTeam?.teamId ?? null;
   const members = useTeamMembers(teamId);
@@ -100,6 +102,7 @@ export default function InviteParentScreen() {
         </FormField>
         <FormField label="Email" hint="Leave it blank to record them by name only.">
           <TextInput
+            keyboardAppearance={keyboardAppearance}
             accessibilityLabel="Email"
             className={inputClass}
             value={values.email}
@@ -113,17 +116,17 @@ export default function InviteParentScreen() {
         <View className="flex-row gap-3">
           <View className="flex-1">
             <FormField label="First name">
-              <TextInput accessibilityLabel="First name" className={inputClass} value={values.firstName} onChangeText={(firstName) => set({ firstName })} maxLength={50} />
+              <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="First name" className={inputClass} value={values.firstName} onChangeText={(firstName) => set({ firstName })} maxLength={50} />
             </FormField>
           </View>
           <View className="flex-1">
             <FormField label="Last name">
-              <TextInput accessibilityLabel="Last name" className={inputClass} value={values.lastName} onChangeText={(lastName) => set({ lastName })} maxLength={50} />
+              <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Last name" className={inputClass} value={values.lastName} onChangeText={(lastName) => set({ lastName })} maxLength={50} />
             </FormField>
           </View>
         </View>
         <FormField label="Phone">
-          <TextInput accessibilityLabel="Phone" className={inputClass} value={values.phone} onChangeText={(phone) => set({ phone })} keyboardType="phone-pad" maxLength={30} />
+          <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Phone" className={inputClass} value={values.phone} onChangeText={(phone) => set({ phone })} keyboardType="phone-pad" maxLength={30} />
         </FormField>
         {error && (
           <Text accessibilityRole="alert" className="text-sm text-red-700 mb-3">

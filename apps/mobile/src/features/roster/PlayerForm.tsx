@@ -13,6 +13,7 @@ import {
   toPlayerFields,
   type PlayerFormValues,
 } from './player-form-model';
+import { useKeyboardAppearance } from '../../theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 
@@ -37,6 +38,7 @@ interface PlayerFormProps {
 
 /** The add and edit player form — the web roster form's fields. */
 export function PlayerForm({ initialValues, submitLabel, saving, saveError, emailHint, onSubmit, saved }: PlayerFormProps) {
+  const keyboardAppearance = useKeyboardAppearance();
   const [values, setValues] = useState(initialValues);
   const [validationError, setValidationError] = useState<string | null>(null);
   // The values last sent: the server's refusal only shows until the coach changes them.
@@ -67,12 +69,12 @@ export function PlayerForm({ initialValues, submitLabel, saving, saveError, emai
         <View className="flex-row gap-3">
           <View className="flex-1">
             <FormField label="First name" required>
-              <TextInput accessibilityLabel="First name" className={inputClass} value={values.firstName} onChangeText={(firstName) => set({ firstName })} maxLength={50} autoComplete="off" />
+              <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="First name" className={inputClass} value={values.firstName} onChangeText={(firstName) => set({ firstName })} maxLength={50} autoComplete="off" />
             </FormField>
           </View>
           <View className="flex-1">
             <FormField label="Last name" required>
-              <TextInput accessibilityLabel="Last name" className={inputClass} value={values.lastName} onChangeText={(lastName) => set({ lastName })} maxLength={50} autoComplete="off" />
+              <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Last name" className={inputClass} value={values.lastName} onChangeText={(lastName) => set({ lastName })} maxLength={50} autoComplete="off" />
             </FormField>
           </View>
         </View>
@@ -80,12 +82,12 @@ export function PlayerForm({ initialValues, submitLabel, saving, saveError, emai
         <View className="flex-row gap-3">
           <View className="flex-1">
             <FormField label="Jersey #">
-              <TextInput accessibilityLabel="Jersey number" className={inputClass} keyboardType="number-pad" value={values.jerseyNumber} onChangeText={(jerseyNumber) => set({ jerseyNumber })} maxLength={2} />
+              <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Jersey number" className={inputClass} keyboardType="number-pad" value={values.jerseyNumber} onChangeText={(jerseyNumber) => set({ jerseyNumber })} maxLength={2} />
             </FormField>
           </View>
           <View className="flex-1">
             <FormField label="Graduation year">
-              <TextInput accessibilityLabel="Graduation year" className={inputClass} keyboardType="number-pad" value={values.graduationYear} onChangeText={(graduationYear) => set({ graduationYear })} maxLength={4} />
+              <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Graduation year" className={inputClass} keyboardType="number-pad" value={values.graduationYear} onChangeText={(graduationYear) => set({ graduationYear })} maxLength={4} />
             </FormField>
           </View>
         </View>
@@ -118,6 +120,7 @@ export function PlayerForm({ initialValues, submitLabel, saving, saveError, emai
 
         <FormField label="Email" hint={emailHint}>
           <TextInput
+            keyboardAppearance={keyboardAppearance}
             accessibilityLabel="Email"
             className={inputClass}
             value={values.email}
@@ -129,7 +132,7 @@ export function PlayerForm({ initialValues, submitLabel, saving, saveError, emai
           />
         </FormField>
         <FormField label="Phone">
-          <TextInput accessibilityLabel="Phone" className={inputClass} value={values.phone} onChangeText={(phone) => set({ phone })} keyboardType="phone-pad" maxLength={30} autoComplete="off" />
+          <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Phone" className={inputClass} value={values.phone} onChangeText={(phone) => set({ phone })} keyboardType="phone-pad" maxLength={30} autoComplete="off" />
         </FormField>
 
         {error && (

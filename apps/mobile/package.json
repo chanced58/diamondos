@@ -25,6 +25,7 @@
     "@react-native-community/datetimepicker": "8.0.1",
     "@react-native-community/netinfo": "^11.3.0",
     "@react-native/assets-registry": "0.74.87",
+    "@react-navigation/native": "~6.1.6",
     "@supabase/supabase-js": "^2.43.0",
     "@tanstack/react-query": "^5.40.0",
     "expo": "~51.0.0",

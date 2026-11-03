@@ -8,6 +8,7 @@ import { ChoiceChips } from '../../../../../../src/features/practices/ChoiceChip
 import { useLeaguePlayers } from '../../../../../../src/features/league-admin/league-admin-api';
 import { POSITION_SHORT_LABELS } from '../../../../../../src/features/roster/player-form-model';
 import { describeApiError, isApiError } from '../../../../../../src/lib/api-client';
+import { useKeyboardAppearance, useThemeColors } from '../../../../../../src/theme/ThemeScope';
 
 const ALL = 'all';
 const FREE = 'free';
@@ -29,6 +30,8 @@ function playerSubtitle(player: LeagueAdminPlayer): string {
  * from the header; a row opens the player.
  */
 export default function LeaguePlayersScreen() {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const { leagueId = '' } = useLocalSearchParams<{ leagueId: string }>();
   const query = useLeaguePlayers(leagueId);
   const [search, setSearch] = useState('');
@@ -103,7 +106,8 @@ export default function LeaguePlayersScreen() {
         accessibilityLabel="Search players"
         className="border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base mb-3"
         placeholder="Search name or jersey…"
-        placeholderTextColor="#9ca3af"
+        placeholderTextColor={colors['fg-subtle']}
+        keyboardAppearance={keyboardAppearance}
         value={search}
         onChangeText={setSearch}
         autoCorrect={false}

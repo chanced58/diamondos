@@ -1,11 +1,13 @@
 import { Stack } from 'expo-router';
-import { BRAND_STACK_OPTIONS } from '../../../src/navigation/stack-options';
+import { brandStackOptions } from '../../../src/navigation/stack-options';
+import { useScopeTheme } from '../../../src/theme/ThemeScope';
 
 export const unstable_settings = { initialRouteName: 'index' };
 
 export default function StatsLayout() {
+  const theme = useScopeTheme();
   return (
-    <Stack screenOptions={BRAND_STACK_OPTIONS}>
+    <Stack screenOptions={brandStackOptions(theme)}>
       <Stack.Screen name="index" options={{ title: 'Stats' }} />
       <Stack.Screen name="league" options={{ title: 'League stats' }} />
       <Stack.Screen name="league-teams" options={{ title: 'Team comparison' }} />

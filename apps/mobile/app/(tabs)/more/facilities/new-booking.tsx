@@ -21,11 +21,14 @@ import {
   type BookingFormValues,
 } from '../../../../src/features/facilities/facility-schedule-model';
 import { describeApiError } from '../../../../src/lib/api-client';
+import { useKeyboardAppearance, useThemeColors } from '../../../../src/theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 
 /** Book one of the team's facilities (the web's NewBookingForm). Coaches only. */
 export default function NewBookingScreen() {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const { day } = useLocalSearchParams<{ day?: string }>();
   const { activeTeam } = useRole();
   const teamId = activeTeam?.teamId ?? '';
@@ -124,7 +127,8 @@ export default function NewBookingScreen() {
           value={values.title}
           onChangeText={(title) => set({ title })}
           placeholder="e.g. Varsity hitting"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={colors['fg-subtle']}
+          keyboardAppearance={keyboardAppearance}
         />
       </FormField>
       <FormField label="Notes">
@@ -134,7 +138,8 @@ export default function NewBookingScreen() {
           value={values.notes}
           onChangeText={(notes) => set({ notes })}
           placeholder="Optional"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={colors['fg-subtle']}
+          keyboardAppearance={keyboardAppearance}
           multiline
         />
       </FormField>

@@ -10,6 +10,7 @@ import type {
   HistoryEventNode,
 } from '@baseball/shared';
 import { isCorrectable } from './history-model';
+import { useThemeColors } from '../../theme/ThemeScope';
 
 const CATEGORY_TEXT: Record<EventCategory, string> = {
   positive: 'text-emerald-700',
@@ -29,12 +30,13 @@ interface HistoryTreeViewProps {
 }
 
 function EventRow({ node, onSelect, prefix }: { node: HistoryEventNode; onSelect?: SelectEvent; prefix?: string }) {
+  const colors = useThemeColors();
   const tappable = Boolean(onSelect) && isCorrectable(node.event);
   const body = (
     <View className="flex-row items-center py-1.5">
       {prefix && <Text className="text-xs text-gray-400 w-14">{prefix}</Text>}
       <Text className={`flex-1 text-sm ${CATEGORY_TEXT[node.category]}`}>{node.label}</Text>
-      {tappable && <Ionicons name="create-outline" size={16} color="#9ca3af" />}
+      {tappable && <Ionicons name="create-outline" size={16} color={colors['fg-subtle']} />}
     </View>
   );
   if (!tappable || !onSelect) return body;
@@ -46,6 +48,7 @@ function EventRow({ node, onSelect, prefix }: { node: HistoryEventNode; onSelect
 }
 
 function AtBatCard({ atBat, onSelect }: { atBat: AtBatNode; onSelect?: SelectEvent }) {
+  const colors = useThemeColors();
   const [open, setOpen] = useState(false);
   const hasDetail = atBat.pitches.length > 0 || atBat.midAtBatEvents.length > 0;
 
@@ -66,7 +69,7 @@ function AtBatCard({ atBat, onSelect }: { atBat: AtBatNode; onSelect?: SelectEve
             vs {atBat.pitcherName} · {atBat.pitches.length} {atBat.pitches.length === 1 ? 'pitch' : 'pitches'}
           </Text>
         </View>
-        {hasDetail && <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color="#9ca3af" />}
+        {hasDetail && <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors['fg-subtle']} />}
       </TouchableOpacity>
 
       {open && (

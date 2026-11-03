@@ -17,6 +17,7 @@ import {
 } from '../../../../src/features/events/event-form-model';
 import { deviceTimeZone } from '../../../../src/features/games/game-form-model';
 import { describeApiError } from '../../../../src/lib/api-client';
+import { useKeyboardAppearance, useThemeColors } from '../../../../src/theme/ThemeScope';
 
 const TYPE_OPTIONS = TEAM_EVENT_TYPES.map((value) => ({
   value,
@@ -27,6 +28,8 @@ const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 
 
 /** Add a team event — meeting, scrimmage, travel… (the web's /games/events/new). Coaches only. */
 export default function NewTeamEventScreen() {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const { activeTeam } = useRole();
   const teamId = activeTeam?.teamId ?? '';
   const [values, setValues] = useState(() => emptyEventFormValues(utcToZonedDateTime(new Date(), deviceTimeZone())));
@@ -64,7 +67,8 @@ export default function NewTeamEventScreen() {
           accessibilityLabel="Title"
           className={inputClass}
           placeholder="e.g. Team dinner"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={colors['fg-subtle']}
+          keyboardAppearance={keyboardAppearance}
           value={values.title}
           onChangeText={(title) => set({ title })}
         />
@@ -106,6 +110,7 @@ export default function NewTeamEventScreen() {
         <TextInput
           accessibilityLabel="Description"
           className={`${inputClass} min-h-[80px]`}
+          keyboardAppearance={keyboardAppearance}
           multiline
           textAlignVertical="top"
           value={values.description}

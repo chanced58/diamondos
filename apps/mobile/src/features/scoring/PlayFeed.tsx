@@ -93,6 +93,7 @@ export function PlayFeed({
   return (
     <FlatList
       testID="play-feed"
+      indicatorStyle="black"
       data={items}
       keyExtractor={(item) => item.key}
       style={{ flex: 1 }}

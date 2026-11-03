@@ -13,6 +13,7 @@ import {
 } from '../../../../src/features/practices/planning-api';
 import { describeApiError } from '../../../../src/lib/api-client';
 import { openOnWeb, webUrl } from '../../../../src/lib/web-links';
+import { useKeyboardAppearance } from '../../../../src/theme/ThemeScope';
 
 /**
  * The team's practice templates (the web Templates page): duplicate one
@@ -75,6 +76,7 @@ export default function PracticeTemplatesScreen() {
 
 /** One template, with its duplicate (renamed inline) and archive actions. */
 function TemplateRow({ teamId, template }: { teamId: string; template: PracticeTemplateSummary }) {
+  const keyboardAppearance = useKeyboardAppearance();
   const queryClient = useQueryClient();
   const [copyName, setCopyName] = useState<string | null>(null);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: practiceTemplatesQueryKey(teamId) });
@@ -119,6 +121,7 @@ function TemplateRow({ teamId, template }: { teamId: string; template: PracticeT
       ) : (
         <View className="mt-3">
           <TextInput
+            keyboardAppearance={keyboardAppearance}
             accessibilityLabel="Name for the copy"
             className="border border-gray-300 rounded-lg px-3 py-2 text-gray-900 bg-white text-base mb-2"
             value={copyName}

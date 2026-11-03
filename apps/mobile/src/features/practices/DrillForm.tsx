@@ -12,6 +12,7 @@ import {
 import { ChoiceChips } from './ChoiceChips';
 import { validateDrillForm, type DrillFormValues } from './drill-form-model';
 import { useDiscardGuard } from '../forms/use-discard-guard';
+import { useKeyboardAppearance, useThemeColors } from '../../theme/ThemeScope';
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 bg-white text-base';
 const multilineClass = `${inputClass} min-h-[96px]`;
@@ -30,6 +31,8 @@ interface DrillFormProps {
 
 /** The new and edit drill form — the web drill form's fields, less the media links. */
 export function DrillForm({ initialValues, submitLabel, saving, saveError, onSubmit, saved }: DrillFormProps) {
+  const colors = useThemeColors();
+  const keyboardAppearance = useKeyboardAppearance();
   const [values, setValues] = useState(initialValues);
   const [validationError, setValidationError] = useState<string | null>(null);
   const set = (patch: Partial<DrillFormValues>) => setValues((current) => ({ ...current, ...patch }));
@@ -46,7 +49,7 @@ export function DrillForm({ initialValues, submitLabel, saving, saveError, onSub
     <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={96}>
       <ScrollView className="flex-1 bg-gray-50" contentContainerStyle={{ padding: 16, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
         <FormField label="Name" required>
-          <TextInput accessibilityLabel="Drill name" className={inputClass} value={values.name} onChangeText={(name) => set({ name })} maxLength={120} />
+          <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Drill name" className={inputClass} value={values.name} onChangeText={(name) => set({ name })} maxLength={120} />
         </FormField>
         <FormField label="Skill categories" required>
           <ChoiceChips
@@ -57,22 +60,22 @@ export function DrillForm({ initialValues, submitLabel, saving, saveError, onSub
           />
         </FormField>
         <FormField label="Description">
-          <TextInput accessibilityLabel="Description" className={multilineClass} multiline textAlignVertical="top" value={values.description} onChangeText={(description) => set({ description })} />
+          <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Description" className={multilineClass} multiline textAlignVertical="top" value={values.description} onChangeText={(description) => set({ description })} />
         </FormField>
         <View className="flex-row gap-3">
           <View className="flex-1">
             <FormField label="Minutes">
-              <TextInput accessibilityLabel="Duration in minutes" className={inputClass} keyboardType="number-pad" value={values.duration} onChangeText={(duration) => set({ duration })} />
+              <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Duration in minutes" className={inputClass} keyboardType="number-pad" value={values.duration} onChangeText={(duration) => set({ duration })} />
             </FormField>
           </View>
           <View className="flex-1">
             <FormField label="Min players">
-              <TextInput accessibilityLabel="Min players" className={inputClass} keyboardType="number-pad" value={values.minPlayers} onChangeText={(minPlayers) => set({ minPlayers })} />
+              <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Min players" className={inputClass} keyboardType="number-pad" value={values.minPlayers} onChangeText={(minPlayers) => set({ minPlayers })} />
             </FormField>
           </View>
           <View className="flex-1">
             <FormField label="Max players">
-              <TextInput accessibilityLabel="Max players" className={inputClass} keyboardType="number-pad" value={values.maxPlayers} onChangeText={(maxPlayers) => set({ maxPlayers })} />
+              <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Max players" className={inputClass} keyboardType="number-pad" value={values.maxPlayers} onChangeText={(maxPlayers) => set({ maxPlayers })} />
             </FormField>
           </View>
         </View>
@@ -83,7 +86,7 @@ export function DrillForm({ initialValues, submitLabel, saving, saveError, onSub
           <ChoiceChips options={Object.values(PracticeEquipment)} labels={EQUIPMENT_LABELS} selected={values.equipment} onChange={(equipment) => set({ equipment })} />
         </FormField>
         <FormField label="Coaching points">
-          <TextInput accessibilityLabel="Coaching points" className={multilineClass} multiline textAlignVertical="top" value={values.coachingPoints} onChangeText={(coachingPoints) => set({ coachingPoints })} />
+          <TextInput keyboardAppearance={keyboardAppearance} accessibilityLabel="Coaching points" className={multilineClass} multiline textAlignVertical="top" value={values.coachingPoints} onChangeText={(coachingPoints) => set({ coachingPoints })} />
         </FormField>
         <FormField label="Tags">
           <TextInput
@@ -92,7 +95,8 @@ export function DrillForm({ initialValues, submitLabel, saving, saveError, onSub
             value={values.tags}
             onChangeText={(tags) => set({ tags })}
             placeholder="Comma-separated, e.g. timing, two-strike"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors['fg-subtle']}
+            keyboardAppearance={keyboardAppearance}
             autoCapitalize="none"
           />
         </FormField>
