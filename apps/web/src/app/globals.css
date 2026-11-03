@@ -219,6 +219,10 @@
      tokens are overridden so the visitor's own theme still drives all
      surfaces. Each scheme has a light value and a brighter variant shared by
      Dark and Dugout so the accent stays legible on both.
+     The brighter variants are for brand text and accents on dark surfaces:
+     white text on them fails 4.5:1, and no one color passes both. Nothing puts
+     white text on --app-brand inside a scheme today; anything that does needs
+     its own darker fill in Dark and Dugout (pinned in globals-css.test.ts).
      Keep keys in sync with LEAGUE_COLOR_SCHEME_KEYS in @baseball/shared. */
   .league-scheme-sandlot       { --app-brand: var(--turf-700);  --app-brand-2: var(--clay-600); }
   .league-scheme-royal-blue    { --app-brand: var(--brand-700); --app-brand-2: var(--brand-500); }
