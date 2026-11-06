@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { LEAGUE_COLOR_SCHEME_KEYS } from '@baseball/shared';
+import { LEAGUE_COLOR_SCHEME_KEYS, contrastRatio } from '@baseball/shared';
 
 const css = readFileSync(join(__dirname, '../../../app/globals.css'), 'utf8');
 
@@ -172,5 +172,29 @@ describe('globals.css dark-mode contrast rules', () => {
     const light = css.indexOf(`[data-theme="light"] .${cls}`);
     expect(dark).toBeGreaterThan(-1);
     expect(light).toBeGreaterThan(dark);
+  });
+});
+
+describe('league color schemes in Dark and Dugout', () => {
+  /** `--app-brand` of the shared Dark/Dugout rule for `key`, with `var(--x)` resolved. */
+  function darkSchemeBrand(key: string): string {
+    const rule = new RegExp(`\\[data-theme="dugout"\\] \\.league-scheme-${key}\\s*\\{([^}]*)\\}`).exec(css);
+    if (!rule) throw new Error(`dark rule not found: ${key}`);
+    const value = /--app-brand:\s*([^;]+);/.exec(rule[1])?.[1].trim() ?? '';
+    const ref = /^var\((--[\w-]+)\)$/.exec(value)?.[1];
+    if (!ref) return value;
+    const declared = new RegExp(`${ref}:\\s*(#[0-9a-fA-F]{6})`).exec(css)?.[1];
+    if (!declared) throw new Error(`${ref} not declared`);
+    return declared;
+  }
+
+  // Known gap, pinned: the brighter variants are for brand text on dark surfaces,
+  // and white text on them fails 4.5:1. Nothing renders white-on-brand inside a
+  // league scheme today. If this list changes, re-check before relying on it.
+  it('white text on the scheme brand fails 4.5:1 for every scheme', () => {
+    const failing = LEAGUE_COLOR_SCHEME_KEYS.filter(
+      (key) => contrastRatio('#ffffff', darkSchemeBrand(key)) < 4.5,
+    );
+    expect(failing).toEqual([...LEAGUE_COLOR_SCHEME_KEYS]);
   });
 });

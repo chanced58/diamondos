@@ -284,7 +284,7 @@ Web and mobile, from one palette in `packages/shared/src/theme/`. On the web, `<
 - **Light must stay pixel-identical.** Every change is scoped to Dark and Dugout; the `palette-light-parity` test pins the Light palette to the pre-theming values. Check a Light diff of the built CSS before merging theming changes.
 - Printing forces Light (`beforeprint` in `ThemeProvider`, with an `@media print` fallback); `<meta name="theme-color">` follows the applied theme.
 
-**Mobile** (`apps/mobile`, iOS only today):
+**Mobile** (`apps/mobile`; only iOS ships today — `eas.json` configures only the iOS build image and App Store submit, though `app.json` has an `android` block):
 
 - **`ThemeProvider` and `ThemeScope`** live in `apps/mobile/src/theme/`. `ThemeProvider` owns the preference (SecureStore key `dos_theme`, via `theme-storage.ts`), the OS scheme (tracked with `Appearance`, applied only while the app is active so iOS background snapshot flips don't re-theme the tree) and the root `ThemeScope`. `ThemeScope` applies the theme's `vars()` to a subtree and provides the scope to `useThemeColors`, `useScopeTheme`, `useKeyboardAppearance` and `useScrollIndicatorStyle`.
 - **`<ThemeScope theme="light">` creates a Light island**, as `data-theme="light"` does on the web (the scorer, `score.tsx`). Pass `statusBar={false}` when the scope differs from the surrounding chrome, so it doesn't push the wrong status bar style; the scorer does, because its header is themed and its content is Light. Components shared between the scorer and themed screens (`GuestPlayerModal`, `BaserunnerDisplay`) must follow their scope, not assume Light.
@@ -292,7 +292,7 @@ Web and mobile, from one palette in `packages/shared/src/theme/`. On the web, `<
 - **Only `ThemeProvider` may call `Appearance.setColorScheme`.** It pins the native interface style to the app's choice (keyboards, Alerts, pickers, Switches and scroll indicators follow it) and hands control back to the OS for System. Nothing else may call it, or the pin and the preference drift apart.
 - **The navigator theme comes from `NavigationThemeProvider`** (`src/navigation/`), which gives navigators the `navigationThemeFor` theme (`navigation-theme.ts`) of the nearest `ThemeScope`. Light is React Navigation's `DefaultTheme`, unchanged; Dark and Dugout derive from the semantic tokens. Place it just inside a scope: the root, and inside `(auth)`'s Light scope so its stack stays Light under a Dark root.
 - **`userInterfaceStyle: "automatic"` in `app.json` needs a native rebuild** (a new dev client or EAS build) to take effect; an OTA update or Metro reload won't change it.
-- **Android System mode would need `expo-system-ui`**, which isn't installed because only iOS ships today. Add it, and rebuild, before shipping Android; until then don't promise System-mode behavior there.
+- **Android System mode would need `expo-system-ui`**, deliberately not installed because no Android build ships (`app.json`'s `android` block and the `build:android` script exist, but `eas.json` sets up only iOS). Add it, and rebuild, before shipping Android; until then don't promise System-mode behavior there.
 - **Light must stay identical** to the app before theming, which forced Light. Every mobile change is scoped to Dark and Dugout.
 
 ---

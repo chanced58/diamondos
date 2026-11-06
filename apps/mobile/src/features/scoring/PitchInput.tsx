@@ -1134,7 +1134,7 @@ export function PitchInput({
                 : ''}
             </Text>
 
-            <ScrollView style={{ maxHeight: 540 }}>
+            <ScrollView indicatorStyle="black" style={{ maxHeight: 540 }}>
               {(subModal === 'defensive' || subModal === 'position_change') && defensiveLineup && (
                 <View className="mb-4">
                   <DefensiveDiamond lineup={defensiveLineup} />
@@ -1486,7 +1486,7 @@ export function PitchInput({
               standard advance.
             </Text>
 
-            <ScrollView className="max-h-96">
+            <ScrollView indicatorStyle="black" className="max-h-96">
               {runnersOnBase.map(({ base, runnerId }) => {
                 const choice = runnerOutcomeChoices[base];
                 const kind = choice?.kind ?? 'auto';
@@ -1708,7 +1708,7 @@ function ActionSheet({
           </View>
           {/* flexShrink is required — RN defaults it to 0, which would push
               the Close button outside the sheet's maxHeight. */}
-          <ScrollView className="px-5" style={{ flexShrink: 1 }}>
+          <ScrollView indicatorStyle="black" className="px-5" style={{ flexShrink: 1 }}>
             {children}
           </ScrollView>
           <TouchableOpacity

@@ -283,10 +283,18 @@ describe('ThemeProvider theme-color meta', () => {
     expect(themeColor()).toBe('#0f1115');
   });
 
-  it('does nothing when the page has no theme-color meta', () => {
+  it('creates the meta when the page has none (a client re-render of <head> drops it)', () => {
     document.head.innerHTML = '';
     localStorage.setItem('dos_theme', 'dark');
     expect(() => mount()).not.toThrow();
     expect(htmlTheme()).toBe('dark');
+    expect(document.querySelectorAll('meta[name="theme-color"]')).toHaveLength(1);
+    expect(themeColor()).toBe('#0f1115');
+  });
+
+  it('keeps a single meta when it already exists', () => {
+    localStorage.setItem('dos_theme', 'dugout');
+    mount();
+    expect(document.querySelectorAll('meta[name="theme-color"]')).toHaveLength(1);
   });
 });

@@ -6,7 +6,6 @@ import {
   AppearanceBootstrap,
   ThemeProvider,
 } from '@/components/providers/ThemeProvider';
-import { DEFAULT_THEME_COLOR } from '@/lib/theme/theme-color';
 import {
   SidebarBootstrap,
   SidebarProvider,
@@ -51,9 +50,9 @@ export default function RootLayout({ children }: { children: ReactNode }): JSX.E
     >
       <head>
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-        {/* Follows the applied theme (set by AppearanceBootstrap and ThemeProvider),
-            not the OS, so Light and public pages keep the navy toolbar. */}
-        <meta name="theme-color" content={DEFAULT_THEME_COLOR} />
+        {/* Also creates the theme-color meta for the applied theme (kept current by
+            ThemeProvider). Don't render that meta here or in `viewport`: hydration
+            would add a second one in Dark and Dugout. */}
         <AppearanceBootstrap />
         <SidebarBootstrap />
       </head>

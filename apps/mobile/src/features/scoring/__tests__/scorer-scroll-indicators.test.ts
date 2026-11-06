@@ -14,11 +14,13 @@ const MOBILE_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const SCORER_FILES = [
   'app/(tabs)/schedule/games/[gameId]/score.tsx',
   'src/features/scoring/BaserunnerDisplay.tsx',
+  'src/features/scoring/PitchInput.tsx',
   'src/features/scoring/PlayFeed.tsx',
 ];
 
+/** Opening tags, read past arrow functions in props (`onLayout={(e) => …}`). */
 function openingTags(source: string): string[] {
-  return source.match(/(?<!useRef)<(?:ScrollView|FlatList)\b[^>]*>/g) ?? [];
+  return source.match(/(?<!useRef)<(?:ScrollView|FlatList)\b(?:=>|[^>])*>/g) ?? [];
 }
 
 describe('scorer scroll indicators', () => {

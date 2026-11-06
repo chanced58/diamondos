@@ -1,7 +1,17 @@
 import { SEMANTIC_TOKENS } from '@baseball/shared';
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
-import { DEFAULT_THEME_COLOR, THEME_COLORS } from '../theme-color';
+import { THEME_COLORS } from '../theme-color';
+
+const APP_DIR = join(__dirname, '../../../app');
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) return sourceFiles(path);
+    return /\.tsx?$/.test(name) ? [path] : [];
+  });
+}
 
 describe('theme-color', () => {
   it('is navy for light, and the page bg for dark and dugout', () => {
@@ -10,22 +20,20 @@ describe('theme-color', () => {
     expect(THEME_COLORS.dugout).toBe(SEMANTIC_TOKENS.dugout.bg);
   });
 
-  it('defaults to the Light navy', () => {
-    expect(DEFAULT_THEME_COLOR).toBe('#1e3a8a');
+  // The bootstrap script owns the meta. A React-rendered one (JSX or Next's
+  // `viewport.themeColor`) is duplicated at hydration in Dark and Dugout; see
+  // theme-color-hydration.test.ts.
+  it('is never rendered by a route: no theme-color meta or viewport themeColor under src/app', () => {
+    const offenders = sourceFiles(APP_DIR).filter((file) => {
+      const source = readFileSync(file, 'utf8');
+      return /name=["']theme-color["']/.test(source) || /themeColor\s*:/.test(source);
+    });
+    expect(offenders).toEqual([]);
   });
 
-  describe('root layout', () => {
-    const layout = readFileSync(join(__dirname, '../../../app/layout.tsx'), 'utf8');
-
-    it('renders a single theme-color meta with the Light default, not a prefers-color-scheme pair', () => {
-      expect(layout).not.toContain('prefers-color-scheme');
-      expect(layout).not.toMatch(/themeColor\s*:/);
-      expect(layout.match(/name="theme-color"/g)).toHaveLength(1);
-      expect(layout).toContain('content={DEFAULT_THEME_COLOR}');
-    });
-
-    it('renders the meta before the bootstrap script so the script can update it pre-paint', () => {
-      expect(layout.indexOf('name="theme-color"')).toBeLessThan(layout.indexOf('<AppearanceBootstrap />'));
-    });
+  it('the root layout renders the bootstrap script in <head>', () => {
+    const layout = readFileSync(join(APP_DIR, 'layout.tsx'), 'utf8');
+    const head = layout.slice(layout.indexOf('<head>'), layout.indexOf('</head>'));
+    expect(head).toContain('<AppearanceBootstrap />');
   });
 });
