@@ -69,6 +69,17 @@ as $$
   );
 $$;
 
+-- The helpers answer for any user id they are given, so only signed-in users
+-- (whose policies pass auth.uid()) and the service role may call them.
+revoke execute on function public.is_league_game_row(uuid) from public, anon;
+revoke execute on function public.league_game_staff(uuid, uuid) from public, anon;
+revoke execute on function public.league_home_game_staff(uuid, uuid) from public, anon;
+revoke execute on function public.can_manage_league_placeholder(uuid, uuid, uuid) from public, anon;
+grant execute on function public.is_league_game_row(uuid) to authenticated, service_role;
+grant execute on function public.league_game_staff(uuid, uuid) to authenticated, service_role;
+grant execute on function public.league_home_game_staff(uuid, uuid) to authenticated, service_role;
+grant execute on function public.can_manage_league_placeholder(uuid, uuid, uuid) to authenticated, service_role;
+
 -- 2) games -----------------------------------------------------------------
 create policy "league_staff_view_league_games"
   on public.games for select
@@ -142,13 +153,41 @@ create policy "league_members_view_league_roster_records"
   );
 
 -- 6) Unknown-player placeholders ------------------------------------------
-create policy "league_game_scorers_manage_placeholders"
-  on public.opponent_players for all
+-- Scorers of either team create and edit (rename, deactivate) the unmatched
+-- placeholders of their league game, offline through the phone's upsert. They
+-- never match, mark as fill-in or delete one: matching sets linked_player_id /
+-- is_fill_in through the service-role resolvePlaceholder, so every policy here
+-- holds the row to "still unmatched" both before and after the write, and there
+-- is no DELETE policy (rows may be referenced by events).
+create policy "league_game_scorers_view_placeholders"
+  on public.opponent_players for select
   using (
     placeholder_game_id is not null
+    and linked_player_id is null
+    and is_fill_in = false
+    and public.can_manage_league_placeholder(placeholder_game_id, opponent_team_id, auth.uid())
+  );
+
+create policy "league_game_scorers_add_placeholders"
+  on public.opponent_players for insert
+  with check (
+    placeholder_game_id is not null
+    and linked_player_id is null
+    and is_fill_in = false
+    and public.can_manage_league_placeholder(placeholder_game_id, opponent_team_id, auth.uid())
+  );
+
+create policy "league_game_scorers_edit_placeholders"
+  on public.opponent_players for update
+  using (
+    placeholder_game_id is not null
+    and linked_player_id is null
+    and is_fill_in = false
     and public.can_manage_league_placeholder(placeholder_game_id, opponent_team_id, auth.uid())
   )
   with check (
     placeholder_game_id is not null
+    and linked_player_id is null
+    and is_fill_in = false
     and public.can_manage_league_placeholder(placeholder_game_id, opponent_team_id, auth.uid())
   );
