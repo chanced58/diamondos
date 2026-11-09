@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveTeam } from '@/lib/active-team';
 import { getLeagueHomeData, getLeagueMeta } from '@/lib/league-home/load';
 import { teamIdByName } from '@/lib/league-home/team-load';
+import { leagueStatsHref } from '@/lib/league-home/stats-href';
 import { Hero } from './_components/Hero';
 import { StandingsTable } from './_components/StandingsTable';
 import { LeadersSection } from './_components/LeadersSection';
@@ -80,6 +81,7 @@ export default async function LeagueHomePage({
   ];
   const showSeasonFallback = !enabled.has('hero');
   const teamIds = teamIdByName(data.standings);
+  const statsHref = leagueStatsHref(params.slug, data.season);
 
   const sectionNode = (id: string): JSX.Element | null => {
     switch (id) {
@@ -125,6 +127,11 @@ export default async function LeagueHomePage({
             ) : (
               <StandingsTable rows={data.standings} slug={params.slug} season={data.season} />
             )}
+            <div className="mt-3 text-right">
+              <a href={statsHref} className="text-sm font-semibold text-app-fg-muted hover:text-app-fg">
+                Full league stats →
+              </a>
+            </div>
           </section>
         );
       }
@@ -142,6 +149,7 @@ export default async function LeagueHomePage({
             }}
             slug={params.slug}
             season={data.season}
+            statsHref={statsHref}
           />
         );
       case 'customLeaders':
@@ -162,6 +170,11 @@ export default async function LeagueHomePage({
   return (
     <main className={`league-scheme-${data.theme.colorScheme} mx-auto max-w-5xl space-y-8 p-4 md:p-8`}>
       {data.theme.sections.filter((s) => s.enabled).map((s) => sectionNode(s.id))}
+      <footer className="text-center">
+        <a href={statsHref} className="text-sm font-semibold text-app-fg-muted hover:text-app-fg">
+          League stats
+        </a>
+      </footer>
     </main>
   );
 }

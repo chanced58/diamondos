@@ -17,10 +17,12 @@ export function LeadersSection({
   boards,
   slug,
   season,
+  statsHref,
 }: {
   boards: Record<Cat, LeaderBoardResult[]>;
   slug: string;
   season: string;
+  statsHref: string;
 }): JSX.Element {
   // Only offer tabs that actually have boards; default to the first available.
   // Memoized so the sync effect below only re-runs when boards actually change.
@@ -41,6 +43,9 @@ export function LeadersSection({
     <section>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 className="display text-xl font-bold">League Leaders</h2>
+        <a href={statsHref} className="text-sm font-semibold text-app-fg-muted hover:text-app-fg">
+          Full league stats →
+        </a>
         {available.length > 1 ? (
           <div
             role="tablist"

@@ -1,4 +1,5 @@
 import NextImage from 'next/image';
+import { leagueStatsHref } from '@/lib/league-home/stats-href';
 import type { TeamRecord } from '@/lib/league-home/team-load';
 
 export function TeamHero({
@@ -22,12 +23,20 @@ export function TeamHero({
   const ordinal = rank.rank ? ordinalSuffix(rank.rank) : null;
   return (
     <section className="rounded-2xl border border-app-border bg-app-surface p-5">
-      <a
-        href={`/l/${slug}?season=${encodeURIComponent(season)}`}
-        className="text-sm font-medium text-app-fg-muted hover:text-app-fg"
-      >
-        ← {leagueName}
-      </a>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <a
+          href={`/l/${slug}?season=${encodeURIComponent(season)}`}
+          className="text-sm font-medium text-app-fg-muted hover:text-app-fg"
+        >
+          ← {leagueName}
+        </a>
+        <a
+          href={leagueStatsHref(slug, season)}
+          className="text-sm font-medium text-app-fg-muted hover:text-app-fg"
+        >
+          League stats
+        </a>
+      </div>
       <div className="mt-3 flex items-center gap-4">
         {team.logoUrl ? (
           <NextImage
