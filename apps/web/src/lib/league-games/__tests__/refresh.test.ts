@@ -253,6 +253,25 @@ describe('refreshLeagueGame', () => {
     expect(recomputeLeagueSnapshot).toHaveBeenCalledWith(db, LEAGUE, SEASON);
   });
 
+  it('should not count a book still being scored on a row that carries the paired result', async () => {
+    // The home book finished first and its result was written onto the away row;
+    // the away phone is still pushing events and hasn't finalized.
+    const { db, calls, invoke, rows } = leagueGameDb({
+      leagueGameStatus: 'completed',
+      home: gameRow('home', { status: 'completed', home_score: 0, away_score: 1 }),
+      away: gameRow('away', { status: 'completed', result_source: 'paired', home_score: 0, away_score: 1 }),
+      events: { [HOME_GAME]: HOME_BOOK, [AWAY_GAME]: AWAY_BOOK.slice(0, 2) },
+    });
+
+    await refreshLeagueGame(db, LEAGUE_GAME, 'home-coach');
+
+    expect(writes(calls, 'game_reconciliations', 'upsert')).toHaveLength(0);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(writes(calls, 'games', 'update')).toHaveLength(0);
+    expect(rows.get(AWAY_GAME)).toMatchObject({ status: 'completed', result_source: 'paired', away_score: 1 });
+    expect(recomputeLeagueSnapshot).toHaveBeenCalledWith(db, LEAGUE, SEASON);
+  });
+
   it('should write the result onto a scheduled row with no events', async () => {
     const { db, calls, invoke } = leagueGameDb({
       home: gameRow('home', { status: 'completed', home_score: 3, away_score: 1 }),

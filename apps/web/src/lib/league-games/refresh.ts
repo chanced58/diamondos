@@ -106,12 +106,22 @@ async function loadReconciliation(
   };
 }
 
+/**
+ * A row's own book is finished only when its team finalized it: completed with
+ * no `result_source`. A row completed by a written league result (`paired` /
+ * `manual`) may still be receiving its team's live events; its book counts
+ * only once `finalizeGame` clears the result source.
+ */
+function isFinishedBook(row: TeamRow | null): boolean {
+  return row !== null && row.status === 'completed' && row.result_source === null;
+}
+
 function bookState(row: TeamRow | null) {
-  return { completed: row?.status === 'completed', eventCount: row?.eventCount ?? 0 };
+  return { completed: isFinishedBook(row), eventCount: row?.eventCount ?? 0 };
 }
 
 function bookCounts(row: TeamRow | null): row is TeamRow {
-  return row !== null && row.status === 'completed' && row.eventCount > 0;
+  return row !== null && isFinishedBook(row) && row.eventCount > 0;
 }
 
 function isStale(reconciliation: ReconciliationRow, home: TeamRow, away: TeamRow): boolean {
