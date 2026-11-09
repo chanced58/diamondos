@@ -134,6 +134,13 @@ export async function finalizeGame(
   const { gameId, userId } = args;
   const now = new Date().toISOString();
 
+  // Read what the follow-up needs before writing anything: once the row is
+  // completed the phone treats it as settled and never calls again, so a
+  // failed read after that would skip the league refresh for good. Failing
+  // here answers an error with the row untouched, and the phone retries.
+  const target = await loadFinalizeTarget(supabase, gameId);
+  if ('error' in target) return target;
+
   const effectiveEvents = await fetchEffectiveEvents(supabase, gameId);
   const hasActiveGameEnd = effectiveEvents.some((e) => e.event_type === 'game_end');
 
@@ -191,17 +198,11 @@ export async function finalizeGame(
     return { error: `Failed to complete game: ${updateErr.message}` };
   }
 
-  // The row is completed, but whether it is a league game decides what runs
-  // next; a failed reload answers an error so the caller retries (finalize is
-  // idempotent) instead of skipping the league refresh for good.
-  const finalized = await loadFinalizedGame(supabase, gameId);
-  if ('error' in finalized) return finalized;
-
   // A league game: the league refresh reconciles both books, notifies the
   // teams, writes the result onto the other team's row and rebuilds the
   // league snapshot (best-effort; it logs and never throws).
-  if (finalized.league_game_id) {
-    await refreshLeagueGame(supabase, finalized.league_game_id, userId);
+  if (target.league_game_id) {
+    await refreshLeagueGame(supabase, target.league_game_id, userId);
     return { ok: true };
   }
 
@@ -210,21 +211,22 @@ export async function finalizeGame(
   // (runReconciliationForGame catches internally).
   await runReconciliationForGame(supabase, gameId, userId);
 
-  await recomputeTeamLeagues(supabase, gameId, finalized);
+  await recomputeTeamLeagues(supabase, gameId, target);
 
   return { ok: true };
 }
 
-interface FinalizedGame {
+/** What the steps after completing the row need to know about the game. */
+interface FinalizeTarget {
   team_id: string | null;
   season_id: string | null;
   league_game_id: string | null;
 }
 
-async function loadFinalizedGame(
+async function loadFinalizeTarget(
   supabase: SupabaseClient,
   gameId: string,
-): Promise<FinalizedGame | { error: string }> {
+): Promise<FinalizeTarget | { error: string }> {
   const { data, error } = await supabase
     .from('games')
     .select('team_id, season_id, league_game_id')
@@ -232,17 +234,17 @@ async function loadFinalizedGame(
     .maybeSingle();
   if (error || !data) {
     const reason = error?.message ?? 'row not found';
-    console.error(`[finalizeGame] finalized game reload failed game=${gameId}: ${reason}`);
-    return { error: 'The game was completed but its follow-up failed. Please try again.' };
+    console.error(`[finalizeGame] game read before finalize failed game=${gameId}: ${reason}`);
+    return { error: 'The game could not be finalized. Please try again.' };
   }
-  return data as FinalizedGame;
+  return data as FinalizeTarget;
 }
 
 /**
  * Refresh league home-page snapshots for the finalized game's league + season.
  * Non-fatal: the scheduled rebuild (cron) self-heals if this is skipped/errors.
  */
-async function recomputeTeamLeagues(supabase: SupabaseClient, gameId: string, game: FinalizedGame): Promise<void> {
+async function recomputeTeamLeagues(supabase: SupabaseClient, gameId: string, game: FinalizeTarget): Promise<void> {
   try {
     if (!game.team_id || !game.season_id) return;
     const { data: s } = await supabase
