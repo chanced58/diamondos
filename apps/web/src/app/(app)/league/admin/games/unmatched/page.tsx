@@ -3,20 +3,24 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { getLeagueForStaff } from '@baseball/database';
+import { resolveAdminLeague } from '@/lib/league-games/resolve-admin-league';
 import { UnmatchedPlayersPanel } from '@/components/league-games/UnmatchedPlayersPanel';
 import { loadRosterOptions } from '@/lib/league-games/placeholder-rosters';
 import { listUnmatchedPlaceholders } from '@/lib/services/league-games/placeholders';
 
 export const metadata: Metadata = { title: 'Unknown Players' };
 
-export default async function UnmatchedPlayersPage(): Promise<JSX.Element | null> {
+export default async function UnmatchedPlayersPage({
+  searchParams,
+}: {
+  searchParams: { leagueId?: string };
+}): Promise<JSX.Element | null> {
   const supabase = createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
-  const league = await getLeagueForStaff(db, user.id);
+  const league = await resolveAdminLeague(supabase, db, user.id, searchParams.leagueId);
   if (!league) redirect('/dashboard');
 
   const result = await listUnmatchedPlaceholders(db, user.id, { leagueId: league.id });

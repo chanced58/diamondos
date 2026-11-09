@@ -141,6 +141,13 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
   // Check if user is a league admin (for sidebar nav)
   const leagueAccess = league ? await getLeagueAccess(league.id, user.id) : null;
 
+  const leagueSchedulesGames =
+    leagueAccess?.isLeagueAdmin && league && db
+      ? (
+          await db.from('leagues').select('schedules_games').eq('id', league.id).maybeSingle()
+        ).data?.schedules_games === true
+      : false;
+
   // Training entry-point gating + Certified badge state
   const [showTraining, trainingProgress] = await Promise.all([
     hasCoachingRole(user.id),
@@ -187,6 +194,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
         subscriptionTier={subscriptionTier ?? undefined}
         hasPlayerProfile={hasPlayerProfile}
         isLeagueAdmin={leagueAccess?.isLeagueAdmin ?? false}
+        leagueSchedulesGames={leagueSchedulesGames}
         userName={userName}
         userInitials={userInitials}
         showTraining={showTraining}

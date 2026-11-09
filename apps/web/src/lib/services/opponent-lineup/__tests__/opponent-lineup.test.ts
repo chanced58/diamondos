@@ -6,6 +6,10 @@ import { autoFillOpponentLineup, saveOpponentLineup } from '../opponent-batting-
 
 const mockGetAuthorizedCoach = jest.fn();
 const mockGetScoringSettings = jest.fn();
+const mockAuthorizeLeagueStaff = jest.fn();
+jest.mock('../../league-admin/authorize', () => ({
+  authorizeLeagueStaff: (...args: unknown[]) => mockAuthorizeLeagueStaff(...args),
+}));
 jest.mock('@/lib/games/finalize', () => ({
   getAuthorizedCoach: (...args: unknown[]) => mockGetAuthorizedCoach(...args),
 }));
@@ -30,6 +34,7 @@ const coachGame = (over: Record<string, unknown> = {}) =>
 beforeEach(() => {
   mockGetAuthorizedCoach.mockReset();
   mockGetScoringSettings.mockReset().mockResolvedValue({});
+  mockAuthorizeLeagueStaff.mockReset();
   jest.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -38,7 +43,22 @@ describe('authorization', () => {
     mockGetAuthorizedCoach.mockResolvedValue({ error: 'Only coaches can perform this action.' });
     const { db, calls } = fakeDb();
     expect(await loadOpponentLineup(db, 'parent', { gameId: GAME_ID })).toMatchObject({ ok: false, code: 'forbidden' });
-    expect(calls).toHaveLength(0);
+    expect(calls.every((c) => c.table === 'league_games' && c.op === 'select')).toBe(true);
+  });
+
+  it('should let league staff edit the home row of a league game', async () => {
+    mockGetAuthorizedCoach.mockResolvedValue({ error: 'Only coaches can perform this action.' });
+    mockAuthorizeLeagueStaff.mockResolvedValue({ ok: true, data: {} });
+    const { db } = fakeDb({
+      'league_games.select': { data: { league_id: 'league-1' } },
+      'games.select': {
+        data: { team_id: 'team-1', opponent_name: 'Eagles', opponent_team_id: OPP_TEAM, status: 'scheduled', tournament_id: null },
+      },
+      'opponent_teams.select': { data: { id: OPP_TEAM, name: 'Eagles' } },
+      'opponent_players.select': { data: [] },
+      'opponent_game_lineups.select': { data: [] },
+    });
+    expect(await loadOpponentLineup(db, 'staff', { gameId: GAME_ID })).toMatchObject({ ok: true });
   });
 
   it('should refuse edits to a started tournament game', async () => {

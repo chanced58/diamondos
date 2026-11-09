@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
 import { getScoringSettingsForGame } from '@/lib/game-scoring-settings';
+import { authorizeLeagueGameScorer } from '@/lib/services/games/authorize';
 import { ScoringBoard } from './ScoringBoard';
 
 export const metadata: Metadata = { title: 'Scoring' };
@@ -37,8 +38,11 @@ export default async function ScorePage({ params }: { params: { gameId: string }
 
   const { isCoach, isPlatformAdmin } = await getUserAccess(game.team_id, user.id);
 
+  // League staff score a league game's home row without a team seat.
+  const isLeagueScorer = !isCoach && (await authorizeLeagueGameScorer(db, user.id, params.gameId));
+
   // Non-admin users must be team members to view
-  if (!isCoach && !isPlatformAdmin) {
+  if (!isCoach && !isPlatformAdmin && !isLeagueScorer) {
     const { data: membership } = await db
       .from('team_members')
       .select('role')
@@ -285,7 +289,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       initialEvents={allEvents}
       minNextSequenceNumber={allEventsMaxSeq + 1}
       currentUserId={user.id}
-      isCoach={isCoach}
+      isCoach={isCoach || isLeagueScorer}
       seasonSprayPoints={seasonSprayPoints}
       scoringConfig={scoringConfig}
       leagueSettings={leagueSettings}

@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { DB_TO_POSITION, getMaxBattingOrder, isCoachRole, weAreHome } from '@baseball/shared';
 import { getScoringSettingsForGame } from '@/lib/game-scoring-settings';
+import { authorizeLeagueGameScorer } from '@/lib/services/games/authorize';
 import { LineupBuilder } from './LineupBuilder';
 
 export const metadata: Metadata = { title: 'Set Lineup' };
@@ -35,7 +36,8 @@ export default async function LineupPage({ params }: { params: { gameId: string 
     .eq('user_id', user.id)
     .single();
 
-  if (!membership || !isCoachRole(membership.role)) {
+  const isTeamCoach = !!membership && isCoachRole(membership.role);
+  if (!isTeamCoach && !(await authorizeLeagueGameScorer(db, user.id, params.gameId))) {
     redirect(`/games/${params.gameId}`);
   }
   if (game.tournament_id && game.status !== 'scheduled') redirect(`/games/${params.gameId}/score`);
