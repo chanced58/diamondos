@@ -52,6 +52,7 @@ import {
   addNewOpponentBatter,
   addOpponentBatterFromRoster,
   opponentDisplayName,
+  rosterNotYetBatting,
 } from '../../../../../src/features/lineup/opponent-lineup';
 import {
   buildGameStartPayload,
@@ -304,6 +305,7 @@ function ScoringScreenContent() {
   const { roster: opponentRoster, slots: opponentSlots, loaded: opponentLineupLoaded } = useOpponentLineup(
     gameId,
     game?.opponentTeamId,
+    game?.leagueGameId,
   );
   // Their completed PAs are the other half's — the mirror of ourTeamPAs.
   const opponentPAs = gameState
@@ -349,6 +351,15 @@ function ScoringScreenContent() {
   const opponentNameById = useMemo(
     () => new Map([...opponentRoster.map((player) => [player.remoteId, opponentDisplayName(player)] as const), ...opponentSlots.map((s) => [s.playerId, s.name] as const)]),
     [opponentSlots, opponentRoster],
+  );
+  // "On their roster" offers only players not yet in the order (a lineup row,
+  // or a slot the active order gained through a substitution or extension).
+  const opponentRosterNotBatting = useMemo(
+    () => rosterNotYetBatting(
+      opponentRoster,
+      [...opponentSlots, ...opponentBattingSlots].map((slot) => slot.playerId),
+    ),
+    [opponentRoster, opponentSlots, opponentBattingSlots],
   );
   const [showOpponentBatterPicker, setShowOpponentBatterPicker] = useState(false);
   const [showAddOpponentBatter, setShowAddOpponentBatter] = useState(false);
@@ -405,6 +416,9 @@ function ScoringScreenContent() {
               lastName: input.lastName,
               jerseyNumber: input.jerseyNumber,
               maxBatters,
+              // On a league game everyone added to their side is an unknown
+              // player of this game, matched to their roster afterwards.
+              placeholderGameId: game.leagueGameId,
               extension,
             })
           : ({ ok: false, message: 'This game has no opponent team on file.' } as const);
@@ -2349,9 +2363,8 @@ function ScoringScreenContent() {
             : null
         }
         rosterLabel="ON THEIR ROSTER"
-        roster={opponentRoster
-          .filter((p) => !opponentNameById.has(p.remoteId))
-          .map((p) => ({ id: p.remoteId, name: opponentDisplayName(p) }))}
+        roster={opponentRosterNotBatting.map((p) => ({ id: p.remoteId, name: opponentDisplayName(p) }))}
+        allowUnknownPlayer={!!game?.leagueGameId}
         onSubmit={handleAddOpponentBatter}
         onCancel={() => setShowAddOpponentBatter(false)}
       />
@@ -3419,6 +3432,7 @@ function AddBatterModal({
   rosterLabel,
   roster,
   topOfOrder = null,
+  allowUnknownPlayer = false,
   onSubmit,
   onCancel,
 }: {
@@ -3426,6 +3440,8 @@ function AddBatterModal({
   title: string;
   rosterLabel: string;
   roster: Array<{ id: string; name: string }>;
+  /** League games: offer adding a batter nobody can name, jersey optional. */
+  allowUnknownPlayer?: boolean;
   /** "Who's up?" after a partial order's last batter: the order turning over
    *  is offered first, ahead of adding someone new. */
   topOfOrder?: { name: string; onPick: () => void } | null;
@@ -3589,6 +3605,21 @@ function AddBatterModal({
               <Text className="text-score-xs text-gray-400 mt-2">
                 A jersey number on its own is enough — you can add the name later.
               </Text>
+              {allowUnknownPlayer && (
+                <>
+                  <TouchableOpacity
+                    disabled={busy}
+                    onPress={() => run({ kind: 'new', firstName: '', lastName: '', jerseyNumber: jersey })}
+                    className="mt-3 rounded-xl py-3 items-center bg-white border border-slate-300"
+                  >
+                    <Text className="text-slate-800 font-semibold">Unknown player</Text>
+                  </TouchableOpacity>
+                  <Text className="text-score-xs text-gray-400 mt-2">
+                    Not sure who it is? Add them as unknown (the jersey number
+                    helps if you have it) and match them to their roster after the game.
+                  </Text>
+                </>
+              )}
             </View>
 
             {roster.length > 0 && (

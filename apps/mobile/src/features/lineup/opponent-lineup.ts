@@ -105,6 +105,12 @@ export async function addOpponentBatterFromRoster(args: {
  * The common case at the field: a name and a jersey read off the back of a
  * shirt. Both rows are written in one transaction so the lineup can never
  * reference a player that failed to save.
+ *
+ * On a league game the opponent's roster is their league roster record, which
+ * this team may only add to as unknown players of that one game:
+ * `placeholderGameId` (the game's league_games id) marks the row so, and RLS
+ * refuses the push without it. Such a player may have no name or jersey at
+ * all; they are matched to a real player after the game.
  */
 export async function addNewOpponentBatter(args: {
   gameRemoteId: string;
@@ -114,11 +120,12 @@ export async function addNewOpponentBatter(args: {
   jerseyNumber?: string | null;
   startingPosition?: string | null;
   maxBatters: number;
+  placeholderGameId?: string;
   extension?: { battingOrder: number; record: (playerId: string, battingOrder: number) => Promise<void> };
 }): Promise<AddOpponentBatterResult> {
   const {
     gameRemoteId, opponentTeamId, firstName, lastName,
-    jerseyNumber, startingPosition, maxBatters,
+    jerseyNumber, startingPosition, maxBatters, placeholderGameId,
   } = args;
 
   const first = firstName.trim();
@@ -127,7 +134,7 @@ export async function addNewOpponentBatter(args: {
   // A jersey number alone is enough — it is the common case at the field, and
   // opponentDisplayName has a branch for exactly that. The guard used to
   // ignore jerseyNumber and reject those entries.
-  if (!first && !last && !jersey) {
+  if (!placeholderGameId && !first && !last && !jersey) {
     return { ok: false, message: 'Enter a name or a jersey number.' };
   }
 
@@ -156,6 +163,8 @@ export async function addNewOpponentBatter(args: {
         r.jerseyNumber = jersey || undefined;
         r.primaryPosition = startingPosition ?? undefined;
         r.isActive = true;
+        r.placeholderGameId = placeholderGameId;
+        r.isFillIn = false;
         r.updatedAt = Date.now();
         r.syncedAt = undefined;
       }),
@@ -181,11 +190,44 @@ export async function addNewOpponentBatter(args: {
   return result;
 }
 
-/** Display name for an opponent batter, jersey-only entries included. */
+/**
+ * Display name for an opponent batter, jersey-only entries included. An
+ * unknown player with neither name nor jersey is shown by their place in the
+ * order when it is known.
+ */
 export function opponentDisplayName(
   player: { firstName: string; lastName: string; jerseyNumber?: string },
+  battingOrder?: number | null,
 ): string {
   const name = `${player.firstName} ${player.lastName}`.trim();
   if (name) return player.jerseyNumber ? `#${player.jerseyNumber} ${name}` : name;
-  return player.jerseyNumber ? `#${player.jerseyNumber}` : 'Unnamed batter';
+  if (player.jerseyNumber) return `#${player.jerseyNumber}`;
+  return battingOrder != null ? `Batter ${battingOrder}` : 'Unnamed batter';
+}
+
+type RosterEntry = { remoteId: string; placeholderGameId?: string; isFillIn: boolean };
+
+/**
+ * The opponent players a scorer can pick for this game: an unknown player
+ * belongs only to the league game it was added in, and a fill-in (settled as
+ * someone off the roster) is never picked again. `leagueGameId` is undefined
+ * for a game that is not a league game, which hides every placeholder.
+ */
+export function visibleOpponentRoster<T extends RosterEntry>(
+  roster: readonly T[],
+  leagueGameId: string | undefined,
+): T[] {
+  return roster.filter((player) => {
+    if (player.isFillIn) return false;
+    return !player.placeholderGameId || player.placeholderGameId === leagueGameId;
+  });
+}
+
+/** Roster players not already in the batting order, offered to add to it. */
+export function rosterNotYetBatting<T extends { remoteId: string }>(
+  roster: readonly T[],
+  battingPlayerIds: Iterable<string>,
+): T[] {
+  const batting = new Set(battingPlayerIds);
+  return roster.filter((player) => !batting.has(player.remoteId));
 }

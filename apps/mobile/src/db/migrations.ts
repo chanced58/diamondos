@@ -111,5 +111,28 @@ export const migrations = schemaMigrations({
         }),
       ],
     },
+    {
+      // v6: league games. Which games are league games and whether a row's
+      // result was written from the other team's book (or by hand), and the
+      // league roster record's links, per-game unknown players and fill-ins.
+      toVersion: 6,
+      steps: [
+        addColumns({
+          table: 'games',
+          columns: [
+            { name: 'league_game_id', type: 'string', isOptional: true },
+            { name: 'result_source', type: 'string', isOptional: true },
+          ],
+        }),
+        addColumns({
+          table: 'opponent_players',
+          columns: [
+            { name: 'linked_player_id', type: 'string', isOptional: true },
+            { name: 'placeholder_game_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'is_fill_in', type: 'boolean' },
+          ],
+        }),
+      ],
+    },
   ],
 });

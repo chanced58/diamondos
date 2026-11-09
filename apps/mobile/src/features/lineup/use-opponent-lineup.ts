@@ -3,7 +3,7 @@ import { Q } from '@nozbe/watermelondb';
 import { database } from '../../db';
 import { OpponentGameLineup } from '../../db/models/OpponentGameLineup';
 import { OpponentPlayer } from '../../db/models/OpponentPlayer';
-import { opponentDisplayName } from './opponent-lineup';
+import { opponentDisplayName, visibleOpponentRoster } from './opponent-lineup';
 
 export interface OpponentBatter {
   /** opponent_players.id — what lands in an event's opponentBatterId. */
@@ -19,19 +19,22 @@ export interface OpponentBatter {
  * The opposing team's roster and batting order for one game, observed from
  * the local mirrors so both survive a dead signal at the field.
  *
- * `roster` is every player on the opponent team; `slots` is only those in
- * this game's order, sorted, and is what the due-batter rotation runs on.
+ * `roster` is every player on the opponent team a scorer may pick for this
+ * game — on a league game (`leagueGameId` set) that hides other games'
+ * unknown players and fill-ins; `slots` is only those in this game's order,
+ * sorted, and is what the due-batter rotation runs on.
  */
 export function useOpponentLineup(
   gameRemoteId: string,
   opponentTeamId: string | undefined,
+  leagueGameId?: string,
 ): {
   roster: OpponentPlayer[];
   slots: OpponentBatter[];
   loaded: boolean;
 } {
   const [lineupRows, setLineupRows] = useState<OpponentGameLineup[]>([]);
-  const [roster, setRoster] = useState<OpponentPlayer[]>([]);
+  const [teamPlayers, setTeamPlayers] = useState<OpponentPlayer[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -55,7 +58,7 @@ export function useOpponentLineup(
 
   useEffect(() => {
     if (!opponentTeamId) {
-      setRoster([]);
+      setTeamPlayers([]);
       return;
     }
     const subscription = database
@@ -63,7 +66,7 @@ export function useOpponentLineup(
       .query(Q.where('opponent_team_id', opponentTeamId), Q.where('is_active', true))
       .observe()
       .subscribe({
-        next: setRoster,
+        next: setTeamPlayers,
         error: (err) => {
           console.warn(`[use-opponent-lineup] roster observe failed team=${opponentTeamId}:`, err);
         },
@@ -71,8 +74,15 @@ export function useOpponentLineup(
     return () => subscription.unsubscribe();
   }, [opponentTeamId]);
 
+  const roster = useMemo(
+    () => visibleOpponentRoster(teamPlayers, leagueGameId),
+    [teamPlayers, leagueGameId],
+  );
+
+  // Names come from every team player, not just the pickable ones, so a slot
+  // never loses its name to the roster filter.
   const slots = useMemo<OpponentBatter[]>(() => {
-    const byId = new Map(roster.map((p) => [p.remoteId, p]));
+    const byId = new Map(teamPlayers.map((p) => [p.remoteId, p]));
     return lineupRows
       .filter((row) => row.battingOrder != null)
       .map((row) => {
@@ -84,14 +94,14 @@ export function useOpponentLineup(
           // and the roster query settle independently — so fall back to the
           // slot rather than rendering a blank name.
           name: player
-            ? opponentDisplayName(player)
+            ? opponentDisplayName(player, row.battingOrder)
             : `Batter ${row.battingOrder}`,
           jerseyNumber: player?.jerseyNumber,
           startingPosition: row.startingPosition ?? player?.primaryPosition,
         };
       })
       .sort((a, b) => a.battingOrder - b.battingOrder);
-  }, [lineupRows, roster]);
+  }, [lineupRows, teamPlayers]);
 
   return { roster, slots, loaded };
 }

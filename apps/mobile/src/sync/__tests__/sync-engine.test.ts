@@ -13,6 +13,11 @@ import {
   getFinalizeFailureCount,
   fetchAllRows,
   shouldReconcileDeletions,
+  reconcileGameLifecycle,
+  keepLocalPlayOverWrittenResult,
+  mapGame,
+  mapOpponentPlayer,
+  toOpponentPlayerWrite,
 } from '../sync-engine';
 
 describe('isFinalizeConfigured', () => {
@@ -147,5 +152,148 @@ describe('shouldReconcileDeletions', () => {
 
   it('is true on the very first call (lastRunAt = 0, now > 0)', () => {
     expect(shouldReconcileDeletions(Date.now(), 0)).toBe(true);
+  });
+});
+
+// ─── League games: written results and placeholders ─────────────────────────
+
+const mockDatabase = jest.requireMock('../../db').database as Record<string, unknown>;
+
+function chain(result: unknown) {
+  // A thenable query builder: every filter returns itself, awaiting it (or
+  // maybeSingle) yields the canned result.
+  const builder: Record<string, unknown> = {};
+  for (const method of ['select', 'in', 'eq']) builder[method] = () => builder;
+  builder.maybeSingle = async () => result;
+  builder.then = (resolve: (value: unknown) => unknown) => resolve(result);
+  return builder;
+}
+
+function lifecycleHarness(serverGame: { id: string; status: string; result_source: string | null }) {
+  mockDatabase.get = () => ({
+    query: () => ({
+      fetch: async () => [{
+        eventType: 'game_end',
+        remoteId: `${serverGame.id}-end`,
+        gameRemoteId: serverGame.id,
+        payload: { homeScore: 4, awayScore: 2 },
+        inning: 7,
+        isTopOfInning: false,
+        deviceId: 'device-1',
+      }],
+    }),
+  });
+  mockDatabase.localStorage = { get: async () => null };
+  const supabase = {
+    from: (table: string) => (table === 'games'
+      ? chain({ data: [serverGame], error: null })
+      : chain({ data: { id: `${serverGame.id}-end` }, error: null })),
+    rpc: jest.fn(async () => ({ error: null })),
+    auth: { getSession: async () => ({ data: { session: { access_token: 'token' } } }) },
+  };
+  const fetchMock = jest.fn(async () => ({ ok: true, text: async () => '' }));
+  global.fetch = fetchMock as unknown as typeof fetch;
+  return { supabase, fetchMock };
+}
+
+describe('reconcileGameLifecycle', () => {
+  const originalFetch = global.fetch;
+  afterEach(() => { global.fetch = originalFetch; });
+
+  it('should still finalize a game whose server row was completed from the paired book', async () => {
+    const { supabase, fetchMock } = lifecycleHarness({ id: 'g-paired', status: 'completed', result_source: 'paired' });
+
+    await reconcileGameLifecycle(supabase as never, 'https://app.test');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith('https://app.test/api/games/g-paired/finalize', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('should still finalize a game whose server row carries a hand-entered result', async () => {
+    const { supabase, fetchMock } = lifecycleHarness({ id: 'g-manual', status: 'completed', result_source: 'manual' });
+
+    await reconcileGameLifecycle(supabase as never, 'https://app.test');
+
+    expect(fetchMock).toHaveBeenCalledWith('https://app.test/api/games/g-manual/finalize', expect.anything());
+  });
+
+  it('should not finalize a game the server already holds as its own finished book', async () => {
+    const { supabase, fetchMock } = lifecycleHarness({ id: 'g-done', status: 'completed', result_source: null });
+
+    await reconcileGameLifecycle(supabase as never, 'https://app.test');
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('keepLocalPlayOverWrittenResult', () => {
+  const pairedResult = {
+    id: 'g-1', status: 'completed', home_score: 9, away_score: 1,
+    current_inning: 7, is_top_of_inning: false, outs: 3, result_source: 'paired',
+  };
+  const localInProgress = {
+    status: 'in_progress', homeScore: 2, awayScore: 3,
+    currentInning: 4, isTopOfInning: true, outs: 1, hasUnsyncedEvents: false,
+  };
+
+  it('should not overwrite a local in-progress game with a paired result', () => {
+    expect(keepLocalPlayOverWrittenResult(pairedResult, localInProgress)).toEqual({
+      ...pairedResult,
+      status: 'in_progress', home_score: 2, away_score: 3,
+      current_inning: 4, is_top_of_inning: true, outs: 1,
+    });
+  });
+
+  it('should not overwrite a local game whose events have not reached the server', () => {
+    const localEnded = { ...localInProgress, status: 'completed', hasUnsyncedEvents: true };
+    expect(keepLocalPlayOverWrittenResult(pairedResult, localEnded)).toMatchObject({
+      status: 'completed', home_score: 2, away_score: 3, current_inning: 4,
+    });
+  });
+
+  it('should apply a paired result to a game this phone never scored', () => {
+    const localScheduled = { ...localInProgress, status: 'scheduled', homeScore: 0, awayScore: 0 };
+    expect(keepLocalPlayOverWrittenResult(pairedResult, localScheduled)).toEqual(pairedResult);
+    expect(keepLocalPlayOverWrittenResult(pairedResult, undefined)).toEqual(pairedResult);
+  });
+
+  it('should apply a game the team scored itself as usual', () => {
+    const ownBook = { ...pairedResult, result_source: null };
+    expect(keepLocalPlayOverWrittenResult(ownBook, localInProgress)).toEqual(ownBook);
+  });
+});
+
+describe('league game columns', () => {
+  it('should pull which games are league games and where their result came from', () => {
+    const row = mapGame({
+      id: 'g-1', season_id: 's', team_id: 't', opponent_name: 'Owls', scheduled_at: '2026-11-09T18:00:00Z',
+      location_type: 'home', status: 'completed', home_score: 1, away_score: 0,
+      current_inning: 7, is_top_of_inning: false, outs: 3,
+      league_game_id: 'lg-1', result_source: 'paired',
+    }, new Map());
+    expect(row).toMatchObject({ league_game_id: 'lg-1', result_source: 'paired' });
+  });
+
+  it('should pull roster links, placeholders and fill-ins for opponent players', () => {
+    expect(mapOpponentPlayer({
+      id: 'op-1', opponent_team_id: 'ot-1', first_name: '', last_name: '',
+      linked_player_id: null, placeholder_game_id: 'lg-1', is_fill_in: true,
+    })).toMatchObject({ linked_player_id: null, placeholder_game_id: 'lg-1', is_fill_in: true });
+  });
+
+  it('should push placeholder_game_id for an unknown player added during a league game', () => {
+    expect(toOpponentPlayerWrite({
+      remote_id: 'op-9', opponent_team_id: 'ot-1', first_name: '', last_name: '',
+      jersey_number: '12', primary_position: null, is_active: true, placeholder_game_id: 'lg-1',
+    })).toEqual({
+      id: 'op-9', opponent_team_id: 'ot-1', first_name: '', last_name: '',
+      jersey_number: '12', primary_position: null, is_active: true, placeholder_game_id: 'lg-1',
+    });
+  });
+
+  it('should push a null placeholder_game_id for an ordinary opponent player', () => {
+    expect(toOpponentPlayerWrite({
+      remote_id: 'op-1', opponent_team_id: 'ot-1', first_name: 'Ann', last_name: 'Lee', is_active: true,
+    })).toMatchObject({ placeholder_game_id: null });
   });
 });
