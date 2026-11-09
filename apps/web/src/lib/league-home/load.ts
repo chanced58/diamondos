@@ -20,6 +20,7 @@ import {
 } from './standings-divisions';
 import { getStatValue } from './stat-value';
 import { resolveSeason, qualifierMinsFor } from './league-context';
+import { compareStandings } from './standings-order';
 
 export { getStatValue } from './stat-value';
 
@@ -287,7 +288,8 @@ export async function getLeagueHomeData(
     throw new Error('Failed to load league data. Please try again.');
   }
 
-  const standingsSorted = (standings ?? []).sort((a, b) => b.win_pct - a.win_pct);
+  // Same order (and tie-break) as the stats page's Teams tab and the team-page rank.
+  const standingsSorted = (standings ?? []).sort(compareStandings);
   // Per-division breakdown for the public page. Empty when the league has no
   // divisions; unassigned rows appear only in the overall table.
   const divisions = groupStandingsByDivision(standingsSorted, leagueDivisions ?? []);

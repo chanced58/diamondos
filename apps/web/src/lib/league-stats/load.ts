@@ -1,6 +1,6 @@
 import 'server-only';
 import type { Database } from '@baseball/database';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
   publicDisplayName,
   memberDisplayName,
@@ -171,6 +171,29 @@ export function assembleLeagueStats(input: AssembleInput): Extract<LeagueStatsDa
   };
 }
 
+/** PostgREST caps each response (max_rows = 1000), so page until a short page. */
+export const PLAYER_SNAPSHOT_PAGE = 1000;
+
+async function fetchAllPlayerSnapshots(
+  db: SupabaseClient<Database>,
+  leagueId: string,
+  season: string,
+): Promise<{ data: PlayerSnapshotRow[]; error: { message: string } | null }> {
+  const rows: PlayerSnapshotRow[] = [];
+  for (let from = 0; ; from += PLAYER_SNAPSHOT_PAGE) {
+    const { data, error } = await db
+      .from('league_player_stat_snapshot')
+      .select('*')
+      .eq('league_id', leagueId)
+      .eq('season', season)
+      .order('player_id') // stable across pages: no row skipped or repeated
+      .range(from, from + PLAYER_SNAPSHOT_PAGE - 1);
+    if (error) return { data: rows, error };
+    rows.push(...(data ?? []));
+    if (!data || data.length < PLAYER_SNAPSHOT_PAGE) return { data: rows, error: null };
+  }
+}
+
 export async function getLeagueStatsData(
   slug: string,
   viewer: { userId: string | null; activeTeam: ActiveTeamRef | null },
@@ -193,10 +216,15 @@ export async function getLeagueStatsData(
     return { blocked: true, league: { name: league.name } };
   }
 
-  const { data: seasonRows } = await db
+  const { data: seasonRows, error: seasonErr } = await db
     .from('league_standings_snapshot')
     .select('season')
     .eq('league_id', league.id);
+  if (seasonErr) {
+    // An empty list here would silently pick the wrong season; fail like the snapshot reads.
+    console.error(`[league-stats] season lookup failed league=${league.id}: ${seasonErr.message}`);
+    throw new Error('Failed to load league data. Please try again.');
+  }
   const { season, seasons } = resolveSeason(seasonRows ?? [], league.current_season, seasonParam);
 
   const [
@@ -205,7 +233,7 @@ export async function getLeagueStatsData(
     { data: teamSnap, error: teamErr },
   ] = await Promise.all([
     db.from('league_standings_snapshot').select('*').eq('league_id', league.id).eq('season', season),
-    db.from('league_player_stat_snapshot').select('*').eq('league_id', league.id).eq('season', season),
+    fetchAllPlayerSnapshots(db, league.id, season),
     db.from('league_team_stat_snapshot').select('*').eq('league_id', league.id).eq('season', season),
   ]);
   const snapErr = standingsErr || playerErr || teamErr;

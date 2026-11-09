@@ -2,7 +2,7 @@ import { getStatDef, type StatKey } from '@baseball/shared';
 import { getStatValue } from '../league-home/stat-value';
 import { formatStat } from '../league-home/format-stat';
 import type { SortColumnSpec } from '../league-home/team-table-sort';
-import { BATTING_COLUMNS, PITCHING_COLUMNS, CARD_KEYS } from './columns';
+import { BATTING_COLUMNS, PITCHING_COLUMNS, CARD_KEYS, DEFAULT_SORT } from './columns';
 import type { RankCell, RankTable, StatsPlayer } from './ranks';
 
 type Tab = 'batting' | 'pitching';
@@ -51,13 +51,19 @@ export function visiblePlayers(
   const col = columnsFor(tab).find((c) => c.key === state.sortKey);
   const rankMap = ranks && col ? ranks[col.key] : undefined;
   const isRanked = (p: StatsPlayer) => rankMap?.[p.playerId]?.league != null;
-  const applyQualified = state.qualifiedOnly && ranks !== null && q === '' && !!col && isQualifiedRate(col);
+  // Sorted by name, the rank columns show the tab's default stat, so "Qualified
+  // only" filters by that stat's qualifier rather than switching off.
+  const qualCol =
+    state.sortKey === 'name' ? columnsFor(tab).find((c) => c.key === DEFAULT_SORT[tab].sortKey) : col;
+  const qualMap = ranks && qualCol ? ranks[qualCol.key] : undefined;
+  const applyQualified = state.qualifiedOnly && ranks !== null && q === '' && !!qualCol && isQualifiedRate(qualCol);
 
   const rows = players.filter((p) => {
     if (tab === 'batting' ? p.pa <= 0 : p.ipOuts <= 0) return false;
     if (state.teamId !== 'all' && p.teamId !== state.teamId) return false;
     if (q && !p.name.toLowerCase().includes(q)) return false;
-    if (applyQualified && !isRanked(p) && !p.mine && p.playerId !== selectedPlayerId) return false;
+    const qualified = qualMap?.[p.playerId]?.league != null;
+    if (applyQualified && !qualified && !p.mine && p.playerId !== selectedPlayerId) return false;
     return true;
   });
 

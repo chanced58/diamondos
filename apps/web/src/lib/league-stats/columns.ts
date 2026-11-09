@@ -34,3 +34,12 @@ export const CARD_KEYS: Record<'batting' | 'pitching', string[]> = {
   batting: ['avg', 'obp', 'homeRuns', 'rbi'],
   pitching: ['era', 'whip', 'strikeoutsP', 'ip'],
 };
+
+/**
+ * Each player tab's default sort. Also the stat whose ranks (and qualifier) apply
+ * while the table is sorted by player name.
+ */
+export const DEFAULT_SORT: Record<'batting' | 'pitching', { sortKey: string; sortDir: 'asc' | 'desc' }> = {
+  batting: { sortKey: 'avg', sortDir: 'desc' },
+  pitching: { sortKey: 'era', sortDir: 'asc' },
+};

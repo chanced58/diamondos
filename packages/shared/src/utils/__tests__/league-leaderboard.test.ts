@@ -139,14 +139,20 @@ describe('rankLeaderRows', () => {
     expect(rankLeaderRows(tied, getStatDef('avg'), 10).map((r) => r.name)).toEqual(expected);
     // Simulate a runtime whose default locale is Swedish (Å sorts after Z): SSR and
     // the browser must still agree, so the order may not follow the default locale.
-    const sv = new Intl.Collator('sv');
-    const spy = jest
-      .spyOn(String.prototype, 'localeCompare')
-      .mockImplementation(function (this: string, that: string) {
-        return sv.compare(this, that);
-      });
+    // The module builds its collator at load time, so reload it under the stub.
+    const RealCollator = Intl.Collator;
+    const spy = jest.spyOn(Intl, 'Collator').mockImplementation(((
+      locales?: string | string[],
+      options?: Intl.CollatorOptions,
+    ) => new RealCollator(locales ?? 'sv', options)) as unknown as typeof Intl.Collator);
     try {
-      expect(rankLeaderRows(tied, getStatDef('avg'), 10).map((r) => r.name)).toEqual(expected);
+      expect(new Intl.Collator().resolvedOptions().locale).toBe('sv');
+      expect(new Intl.Collator().compare('Ångström', 'Zed')).toBeGreaterThan(0);
+      jest.isolateModules(() => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const fresh = require('../league-leaderboard') as typeof import('../league-leaderboard');
+        expect(fresh.rankLeaderRows(tied, getStatDef('avg'), 10).map((r) => r.name)).toEqual(expected);
+      });
     } finally {
       spy.mockRestore();
     }

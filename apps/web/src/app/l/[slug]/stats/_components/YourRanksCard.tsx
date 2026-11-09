@@ -15,6 +15,7 @@ export function YourRanksCard({
   mins,
   selectedId,
   onSelect,
+  onShowInTable,
   teams,
   rankingEnabled,
 }: {
@@ -25,6 +26,8 @@ export function YourRanksCard({
   mins: { paMin: number; ipOutsMin: number };
   selectedId: string | null;
   onSelect: (playerId: string) => void;
+  /** Reveal and scroll to a table row (the parent clears filters that hide it). */
+  onShowInTable: (rowId: string) => void;
   teams: StatsTeam[];
   rankingEnabled: boolean;
 }): JSX.Element | null {
@@ -32,11 +35,10 @@ export function YourRanksCard({
   if (myPlayers.length === 0 || !player) return null;
 
   const team = teams.find((t) => t.teamId === player.teamId);
-  const targetId = tab === 'teams' ? (team ? teamRowId(team.teamId) : null) : playerRowId(player.playerId);
-  const showInTable = (): void => {
-    if (!targetId) return;
-    document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  };
+  // The player tables list only players with a line on that tab (PA > 0 / IP > 0).
+  const hasLine = tab === 'teams' || (tab === 'batting' ? player.pa : player.ipOuts) > 0;
+  const targetId =
+    tab === 'teams' ? (team ? teamRowId(team.teamId) : null) : hasLine ? playerRowId(player.playerId) : null;
 
   return (
     <section
@@ -71,7 +73,7 @@ export function YourRanksCard({
           {targetId ? (
             <button
               type="button"
-              onClick={showInTable}
+              onClick={() => onShowInTable(targetId)}
               className="rounded-lg px-2 py-1 text-xs font-semibold text-app-fg-muted transition-colors hover:bg-app-surface-2 hover:text-app-fg"
             >
               Show in table ↓
@@ -82,8 +84,10 @@ export function YourRanksCard({
 
       {tab === 'teams' ? (
         <TeamLine team={team} teamCount={teams.length} />
-      ) : (tab === 'batting' ? player.pa : player.ipOuts) <= 0 ? (
-        <p className="mt-3 text-sm text-app-fg-subtle">{`No ${tab} stats this season.`}</p>
+      ) : !hasLine ? (
+        <p className="mt-3 text-sm text-app-fg-subtle">
+          {tab === 'batting' ? 'No plate appearances this season.' : 'No innings pitched this season.'}
+        </p>
       ) : (
         <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {cardItems(player, tab, ranks ? ranks[tab] : null, mins).map((item) => (

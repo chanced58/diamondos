@@ -43,6 +43,7 @@ const teams: StatsTeam[] = [
 
 const tableProps = {
   players,
+  caption: 'Batting stats',
   columns: BATTING_COLUMNS,
   sortKey: 'avg',
   sortDir: 'desc' as const,
@@ -147,6 +148,7 @@ const cardProps = {
   mins,
   selectedId: 'a',
   onSelect: () => {},
+  onShowInTable: () => {},
   teams,
 };
 
@@ -193,7 +195,9 @@ describe('YourRanksCard', () => {
     render(
       <YourRanksCard {...cardProps} tab="pitching" myPlayers={[me]} ranks={null} rankingEnabled={false} />,
     );
-    expect(screen.getByText('No pitching stats this season.')).toBeTruthy();
+    expect(screen.getByText('No innings pitched this season.')).toBeTruthy();
+    // No row exists to scroll to on that tab.
+    expect(screen.queryByRole('button', { name: /Show in table/ })).toBeNull();
   });
 
   it('shows the team record and standing on the Teams tab', () => {
@@ -304,9 +308,49 @@ describe('LeagueStatsView', () => {
   it('shows AVG ranks in the rank columns when sorted by player name', () => {
     render(<LeagueStatsView {...viewProps} />);
     fireEvent.click(screen.getByRole('button', { name: /^Player/ }));
-    // Cara is #2 in AVG league-wide; Bob (unqualified) stays unranked.
+    // Cara is #2 in AVG league-wide.
     expect(within(rowFor('Cara Cole')).getAllByRole('cell')[0].textContent).toBe('2');
+    // "Qualified only" still applies, by AVG's qualifier: Bob is hidden until it's off.
+    expect(screen.queryByText('Bob Baker')).toBeNull();
+    fireEvent.click(screen.getByRole('switch', { name: 'Qualified only' }));
     expect(within(rowFor('Bob Baker')).getAllByRole('cell')[0].textContent).toBe('—');
+  });
+
+  it('arrow keys move between tabs; the panel is labelled by the active tab', () => {
+    render(<LeagueStatsView {...viewProps} />);
+    const batting = screen.getByRole('tab', { name: 'Batting' });
+    expect(batting.getAttribute('tabindex')).toBe('0');
+    expect(screen.getByRole('tab', { name: 'Pitching' }).getAttribute('tabindex')).toBe('-1');
+    fireEvent.keyDown(batting, { key: 'ArrowRight' });
+    const pitching = screen.getByRole('tab', { name: 'Pitching' });
+    expect(pitching.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(pitching);
+    fireEvent.keyDown(pitching, { key: 'End' });
+    expect(screen.getByRole('tab', { name: 'Teams' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Teams' }), { key: 'ArrowRight' });
+    expect(batting.getAttribute('aria-selected')).toBe('true');
+    const panel = screen.getByRole('tabpanel', { name: 'Batting' });
+    expect(batting.getAttribute('aria-controls')).toBe(panel.id);
+    expect(within(panel).getByRole('table', { name: 'Batting stats' })).toBeTruthy();
+  });
+
+  it('"Show in table" clears a team filter that hides the player, then scrolls to the row', () => {
+    const scrollIntoView = jest.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    render(<LeagueStatsView {...viewProps} />);
+    fireEvent.change(screen.getByRole('combobox', { name: /team/i }), { target: { value: 't2' } });
+    expect(screen.queryByText('Alice Avery', { selector: 'td span' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Show in table/ }));
+    expect(screen.getByText('Alice Avery', { selector: 'td span' })).toBeTruthy();
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it('labels the unranked group when unqualified players are shown', () => {
+    render(<LeagueStatsView {...viewProps} myPlayers={[]} />);
+    expect(screen.queryByText('Not ranked · listed by name')).toBeNull();
+    fireEvent.click(screen.getByRole('switch', { name: 'Qualified only' }));
+    const divider = screen.getByText('Not ranked · listed by name').closest('tr') as HTMLElement;
+    expect(divider.nextElementSibling).toBe(rowFor('Bob Baker'));
   });
 
   it('hides unqualified players by default and shows them when the switch is off', () => {

@@ -30,6 +30,8 @@ const ids = (ps: StatsPlayer[]) => ps.map((x) => x.playerId);
 describe('visiblePlayers', () => {
   it('filters by tab activity', () => {
     expect(ids(visiblePlayers(players, 'batting', state(), ranks, null))).not.toContain('pit');
+    // Pitching uses IP, not PA: the 0-PA pitcher is listed; batters with 0 IP are not.
+    expect(ids(visiblePlayers(players, 'pitching', state({ sortKey: 'name' }), null, null))).toEqual(['pit']);
   });
 
   it('search shows unqualified matches even with qualifiedOnly on', () => {
@@ -57,6 +59,12 @@ describe('visiblePlayers', () => {
   it('unranked rows sort after ranked rows', () => {
     const r = visiblePlayers(players, 'batting', state({ sortDir: 'asc' }), ranks, null);
     expect(ids(r)).toEqual(['dee', 'ann', 'bob', 'cy']);
+  });
+
+  it('qualifiedOnly filters by the default stat when sorted by name', () => {
+    const r = visiblePlayers(players, 'batting', state({ sortKey: 'name', sortDir: 'asc', qualifiedOnly: true }), ranks, null);
+    // bob (6 PA) is below the AVG qualifier; cy is unqualified too but is the viewer's own row.
+    expect(ids(r)).toEqual(['ann', 'cy', 'dee']);
   });
 
   it('sorting by name ignores ranking', () => {

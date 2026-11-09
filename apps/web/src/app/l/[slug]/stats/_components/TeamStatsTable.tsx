@@ -96,6 +96,7 @@ export function TeamStatsTable({
   return (
     <div className="overflow-x-auto rounded-xl border border-app-border bg-app-surface">
       <table className="w-full text-sm">
+        <caption className="sr-only">Team stats and standings</caption>
         <thead>
           <tr className="border-b border-app-border text-left text-xs font-medium uppercase tracking-wider text-app-fg-muted">
             {showRank ? <th className="px-3 py-2.5 text-center">#</th> : null}
