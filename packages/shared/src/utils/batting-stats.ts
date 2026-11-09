@@ -91,6 +91,42 @@ function makeEmptyStats(playerId: string, playerName: string): BattingStats {
  */
 const QAB_PITCH_THRESHOLD = 8;
 
+/**
+ * Recompute every rate stat on `s` from its counting stats, in place. Shared by
+ * the event reducer and by merges of hand-entered lines. The QAB rate divides by
+ * `qabPlateAppearances` when set (plate appearances that carried QAB data), else
+ * by `plateAppearances`.
+ */
+export function finalizeBattingRates(s: BattingStats): void {
+  const singles = s.hits - s.doubles - s.triples - s.homeRuns;
+  const totalBases = singles + 2 * s.doubles + 3 * s.triples + 4 * s.homeRuns;
+
+  s.avg   = s.atBats > 0 ? s.hits / s.atBats : NaN;
+  s.slg   = s.atBats > 0 ? totalBases / s.atBats : NaN;
+
+  const obpDenom = s.atBats + s.walks + s.hitByPitch + s.sacrificeFlies;
+  s.obp   = obpDenom > 0 ? (s.hits + s.walks + s.hitByPitch) / obpDenom : NaN;
+
+  s.ops   = (isNaN(s.obp) || isNaN(s.slg)) ? NaN : s.obp + s.slg;
+  s.iso   = (isNaN(s.slg) || isNaN(s.avg)) ? NaN : s.slg - s.avg;
+
+  const babipDenom = s.atBats - s.strikeouts - s.homeRuns + s.sacrificeFlies;
+  s.babip = babipDenom > 0 ? (s.hits - s.homeRuns) / babipDenom : NaN;
+
+  s.kPct  = s.plateAppearances > 0 ? s.strikeouts / s.plateAppearances : NaN;
+  s.bbPct = s.plateAppearances > 0 ? s.walks / s.plateAppearances : NaN;
+
+  const wobaDenom = s.atBats + s.walks + s.sacrificeFlies + s.hitByPitch;
+  s.woba  = wobaDenom > 0
+    ? (W_BB * s.walks + W_HBP * s.hitByPitch + W_1B * singles +
+       W_2B * s.doubles + W_3B * s.triples + W_HR * s.homeRuns) / wobaDenom
+    : NaN;
+
+  s.hardHitPct = s.battedBalls > 0 ? s.hardHitBalls / s.battedBalls : NaN;
+  const qabDenominator = s.qabPlateAppearances ?? s.plateAppearances;
+  s.qabPct     = qabDenominator > 0 ? s.qab / qabDenominator : NaN;
+}
+
 /** Format a rate stat (0–1) as ".XXX" or "---" when NaN/Infinity. */
 export function formatBattingRate(value: number): string {
   if (!isFinite(value) || isNaN(value)) return '---';
@@ -830,34 +866,7 @@ export function deriveBattingStats(
   }
 
   // ── Compute derived rates ─────────────────────────────────────────────────
-  for (const s of statsMap.values()) {
-    const singles = s.hits - s.doubles - s.triples - s.homeRuns;
-    const totalBases = singles + 2 * s.doubles + 3 * s.triples + 4 * s.homeRuns;
-
-    s.avg   = s.atBats > 0 ? s.hits / s.atBats : NaN;
-    s.slg   = s.atBats > 0 ? totalBases / s.atBats : NaN;
-
-    const obpDenom = s.atBats + s.walks + s.hitByPitch + s.sacrificeFlies;
-    s.obp   = obpDenom > 0 ? (s.hits + s.walks + s.hitByPitch) / obpDenom : NaN;
-
-    s.ops   = (isNaN(s.obp) || isNaN(s.slg)) ? NaN : s.obp + s.slg;
-    s.iso   = (isNaN(s.slg) || isNaN(s.avg)) ? NaN : s.slg - s.avg;
-
-    const babipDenom = s.atBats - s.strikeouts - s.homeRuns + s.sacrificeFlies;
-    s.babip = babipDenom > 0 ? (s.hits - s.homeRuns) / babipDenom : NaN;
-
-    s.kPct  = s.plateAppearances > 0 ? s.strikeouts / s.plateAppearances : NaN;
-    s.bbPct = s.plateAppearances > 0 ? s.walks / s.plateAppearances : NaN;
-
-    const wobaDenom = s.atBats + s.walks + s.sacrificeFlies + s.hitByPitch;
-    s.woba  = wobaDenom > 0
-      ? (W_BB * s.walks + W_HBP * s.hitByPitch + W_1B * singles +
-         W_2B * s.doubles + W_3B * s.triples + W_HR * s.homeRuns) / wobaDenom
-      : NaN;
-
-    s.hardHitPct = s.battedBalls > 0 ? s.hardHitBalls / s.battedBalls : NaN;
-    s.qabPct     = s.plateAppearances > 0 ? s.qab / s.plateAppearances : NaN;
-  }
+  for (const s of statsMap.values()) finalizeBattingRates(s);
 
   return statsMap;
 }

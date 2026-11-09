@@ -1,4 +1,6 @@
-import { weAreHome } from '@baseball/shared';
+import { weAreHome, type TeamRecord } from '@baseball/shared';
+
+export type { TeamRecord };
 
 export interface GameRow {
   team_id: string;
@@ -8,15 +10,6 @@ export interface GameRow {
   location_type: 'home' | 'away' | 'neutral';
   neutral_home_team: string | null;
   status: string;
-}
-
-export interface TeamRecord {
-  wins: number;
-  losses: number;
-  ties: number;
-  runsFor: number;
-  runsAgainst: number;
-  winPct: number;
 }
 
 function emptyRecord(): TeamRecord {

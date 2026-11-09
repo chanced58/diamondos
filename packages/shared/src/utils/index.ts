@@ -40,3 +40,4 @@ export * from './format-event';
 export * from './season-stat-columns';
 export * from './team-record';
 export * from './league-game-book';
+export * from './league-game-result';
