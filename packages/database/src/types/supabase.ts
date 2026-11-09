@@ -5501,6 +5501,23 @@ export type Database = {
         Args: { p_player_id: string; p_user_id: string }
         Returns: boolean
       }
+      is_league_game_row: { Args: { p_game_id: string }; Returns: boolean }
+      league_game_staff: {
+        Args: { p_game_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      league_home_game_staff: {
+        Args: { p_game_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      can_manage_league_placeholder: {
+        Args: {
+          p_placeholder_game_id: string
+          p_opponent_team_id: string
+          p_user_id: string
+        }
+        Returns: boolean
+      }
       is_league_member: {
         Args: { p_league_id: string; p_user_id: string }
         Returns: boolean
