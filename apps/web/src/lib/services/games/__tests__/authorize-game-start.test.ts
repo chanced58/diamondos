@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { authorizeGameStart } from '../authorize';
+import { authorizeGameScorer, authorizeGameStart } from '../authorize';
 
 const mockGetAuthorizedCoach = jest.fn();
 const mockAuthorizeLeagueStaff = jest.fn();
@@ -62,5 +62,27 @@ describe('authorizeGameStart', () => {
     mockGetAuthorizedCoach.mockResolvedValue({ game: GAME });
     expect(await authorizeGameStart(fakeDb([]), 'coach', 'g')).toEqual({ ok: true, data: GAME });
     expect(mockAuthorizeLeagueStaff).not.toHaveBeenCalled();
+  });
+});
+
+describe('authorizeGameScorer', () => {
+  it('should say league staff got in as staff on the home row, so End Game can send them to League Games', async () => {
+    expect(await authorizeGameScorer(fakeDb(['home-game']), 'staff', 'home-game')).toEqual({
+      ok: true,
+      data: { game: GAME, asLeagueStaff: true },
+    });
+  });
+
+  it('should say a coach got in as a coach', async () => {
+    mockGetAuthorizedCoach.mockResolvedValue({ game: GAME });
+    expect(await authorizeGameScorer(fakeDb(['home-game']), 'coach', 'home-game')).toEqual({
+      ok: true,
+      data: { game: GAME, asLeagueStaff: false },
+    });
+  });
+
+  it('should refuse league staff on the away row and on a non-league game', async () => {
+    expect(await authorizeGameScorer(fakeDb(['home-game']), 'staff', 'away-game')).toMatchObject({ ok: false, code: 'forbidden' });
+    expect(await authorizeGameScorer(fakeDb([]), 'staff', 'plain-game')).toMatchObject({ ok: false, code: 'forbidden' });
   });
 });

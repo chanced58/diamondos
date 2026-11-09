@@ -292,6 +292,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       minNextSequenceNumber={allEventsMaxSeq + 1}
       currentUserId={user.id}
       isCoach={isCoach || isLeagueScorer}
+      backHref={isLeagueScorer ? '/league/admin/games' : undefined}
       seasonSprayPoints={seasonSprayPoints}
       scoringConfig={scoringConfig}
       leagueSettings={leagueSettings}

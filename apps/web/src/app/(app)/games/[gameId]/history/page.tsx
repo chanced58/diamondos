@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
+import { authorizeLeagueGameScorer } from '@/lib/services/games/authorize';
 import { weAreHome, buildGameHistoryTree, applyPitchRevertedTyped } from '@baseball/shared';
 import type { GameEvent, EventType } from '@baseball/shared';
 import { GameHistoryTree, type PlayerEntry } from '@/components/game/GameHistoryTree';
@@ -29,13 +30,20 @@ export default async function GameHistoryPage({
 
   const { data: game } = await db
     .from('games')
-    .select('id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, opponent_team_id')
+    .select('id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, opponent_team_id, result_source')
     .eq('id', params.gameId)
     .single();
 
   if (!game) notFound();
 
-  const { isCoach, isPlatformAdmin } = await getUserAccess(game.team_id, user.id);
+  const access = await getUserAccess(game.team_id, user.id);
+  const { isPlatformAdmin } = access;
+  // League staff correct a league game's home row (the book they score)
+  // without a seat on the team; the game page stays closed to them.
+  const isLeagueScorer = !access.isCoach && (await authorizeLeagueGameScorer(db, user.id, params.gameId));
+  const isCoach = access.isCoach || isLeagueScorer;
+  const backHref = isLeagueScorer ? '/league/admin/games' : `/games/${params.gameId}`;
+  const backLabel = isLeagueScorer ? '← Back to League Games' : '← Back to game';
 
   if (!isCoach && !isPlatformAdmin) {
     const { data: membership } = await db
@@ -52,8 +60,8 @@ export default async function GameHistoryPage({
   if (['scheduled', 'cancelled', 'postponed'].includes(game.status)) {
     return (
       <div className="p-8 max-w-2xl">
-        <Link href={`/games/${params.gameId}`} className="text-sm text-brand-700 hover:underline">
-          ← Back to game
+        <Link href={backHref} className="text-sm text-brand-700 hover:underline">
+          {backLabel}
         </Link>
         <p className="mt-6 text-gray-500">Game history is available once the game has started.</p>
       </div>
@@ -169,8 +177,8 @@ export default async function GameHistoryPage({
       />
       {/* Header */}
       <div className="px-4 pt-4 pb-3 border-b border-gray-200 bg-white">
-        <Link href={`/games/${params.gameId}`} className="text-sm text-brand-700 hover:underline">
-          ← Back to game
+        <Link href={backHref} className="text-sm text-brand-700 hover:underline">
+          {backLabel}
         </Link>
         <div className="flex items-center justify-between mt-2">
           <h1 className="text-lg font-bold text-gray-900">
@@ -194,8 +202,8 @@ export default async function GameHistoryPage({
         <p className="text-sm text-gray-500 mt-1">Play-by-Play History</p>
       </div>
 
-      {/* Recalculate (coaches only) */}
-      {isCoach && (
+      {/* Recalculate (coaches only; never on a row whose result the league wrote) */}
+      {isCoach && !game.result_source && (
         <div className="px-4 pt-3">
           <RecalculateScoresForm gameId={game.id} />
         </div>

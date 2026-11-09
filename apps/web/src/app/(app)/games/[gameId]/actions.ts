@@ -12,11 +12,8 @@ import {
 import { upsertGameRsvp } from '@baseball/database';
 // Game finalization + coach authorization live in @/lib/games/finalize so the
 // mobile finalize API route shares the exact same logic as endGameAction.
-import {
-  getAuthorizedCoach,
-  finalizeGame,
-} from '@/lib/games/finalize';
-import { authorizeGameStart } from '@/lib/services/games/authorize';
+import { finalizeGame } from '@/lib/games/finalize';
+import { authorizeGameScorer, authorizeGameStart } from '@/lib/services/games/authorize';
 import { cancelGame } from '@/lib/services/games/cancel-game';
 import { updateGame } from '@/lib/services/games/update-game';
 import { gameFormFieldsFromFormData } from '@/lib/services/games/game-form-data';
@@ -442,8 +439,10 @@ export async function endGameAction(_prevState: string | null | undefined, formD
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error ?? null;
+  // Coaches of the game, or league staff on a league game's home row (the
+  // book they may start, so they must be able to end it).
+  const result = await authorizeGameScorer(supabase, user.id, gameId);
+  if (!result.ok) return result.error;
 
   const finalized = await finalizeGame(supabase, {
     gameId,
@@ -459,7 +458,8 @@ export async function endGameAction(_prevState: string | null | undefined, formD
   if ('error' in finalized) return finalized.error;
 
   revalidatePath(`/dashboard`);
-  redirect(`/games/${gameId}`);
+  // League staff have no seat on the team, so the game page is closed to them.
+  redirect(result.data.asLeagueStaff ? '/league/admin/games' : `/games/${gameId}`);
 }
 
 export async function recalculateScoresAction(
