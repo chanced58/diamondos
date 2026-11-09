@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
 import { authorizeLeagueGameScorer } from '@/lib/services/games/authorize';
-import { weAreHome, buildGameHistoryTree, applyPitchRevertedTyped } from '@baseball/shared';
+import { weAreHome, buildGameHistoryTree, applyPitchRevertedTyped, leagueGameControlRefusal } from '@baseball/shared';
 import type { GameEvent, EventType } from '@baseball/shared';
 import { GameHistoryTree, type PlayerEntry } from '@/components/game/GameHistoryTree';
 import { RecalculateScoresForm } from '../GameDetailClient';
@@ -202,8 +202,8 @@ export default async function GameHistoryPage({
         <p className="text-sm text-gray-500 mt-1">Play-by-Play History</p>
       </div>
 
-      {/* Recalculate (coaches only; never on a row whose result the league wrote) */}
-      {isCoach && !game.result_source && (
+      {/* Recalculate (the team's coaches only; never on a row whose result the league wrote) */}
+      {access.isCoach && !leagueGameControlRefusal('recalculate', game) && (
         <div className="px-4 pt-3">
           <RecalculateScoresForm gameId={game.id} />
         </div>
