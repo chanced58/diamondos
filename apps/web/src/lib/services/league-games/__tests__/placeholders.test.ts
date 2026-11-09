@@ -75,7 +75,8 @@ describe('resolvePlaceholder', () => {
     const update = calls.find((c) => c.table === 'opponent_players' && c.op === 'update');
     expect(update?.payload).toMatchObject({ linked_player_id: PLAYER, is_fill_in: false });
     expect(update?.filters).toEqual({ id: PLACEHOLDER, 'linked_player_id is': null });
-    expect(mockRefreshLeagueGame).toHaveBeenCalledWith(db, LEAGUE_GAME, ACTOR);
+    // Matching changes no event, so the refresh is told to recompute the reconciliation.
+    expect(mockRefreshLeagueGame).toHaveBeenCalledWith(db, LEAGUE_GAME, ACTOR, { forceReconcile: true });
   });
 
   it('should refuse to link a player from another team', async () => {

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  awayValueConflictKeys,
   conflictKey,
   describeScoreConflict,
   gameIdInputSchema,
@@ -42,6 +43,10 @@ export async function loadGameDetail(
     isCompleted ? loadReconciliationForGame(db, gameId, actorUserId) : Promise.resolve(null),
   ]);
 
+  const awayKeys = reconciliation
+    ? awayValueConflictKeys(reconciliation.conflicts, reconciliation.overrides)
+    : new Set<string>();
+
   return serviceOk({
     game: {
       id: game.id,
@@ -76,14 +81,16 @@ export async function loadGameDetail(
           homeTeamLabel: reconciliation.homeTeamLabel,
           awayTeamLabel: reconciliation.awayTeamLabel,
           canOverride: reconciliation.canSettle,
+          // A player's conflicts are settled together: the away value of
+          // one is the away value of all (awayValueConflictKeys).
           conflicts: reconciliation.conflicts.map((conflict) => {
             const key = conflictKey(conflict);
             return {
               key,
-              label: describeScoreConflict(conflict),
+              label: describeScoreConflict(conflict, reconciliation.playerNames),
               homeLog: conflict.homeLog,
               awayLog: conflict.awayLog,
-              overridden: reconciliation.overrides.some((o) => o.key === key && o.useAwayValue),
+              overridden: awayKeys.has(key),
             };
           }),
         }

@@ -45,6 +45,8 @@ beforeEach(() => {
   jest.spyOn(console, 'error').mockImplementation(() => undefined);
 });
 
+const FINAL_CONFLICT = { kind: 'final_score', side: 'away', homeLog: 1, awayLog: 2 };
+
 describe('createLeagueGame', () => {
   it('should create two paired team games pointing at each other\'s roster records', async () => {
     const { db, calls } = createFixture();
@@ -231,8 +233,8 @@ describe('listLeagueGames', () => {
       'games.select': { data: [{ id: HOME_GAME, home_score: 5, away_score: 1 }] },
       'game_reconciliations.select': {
         data: [
-          { home_game_id: HOME_GAME, conflicts: [{ key: 'x' }], resolved_at: null },
-          { home_game_id: 'hg2', conflicts: [], resolved_at: null },
+          { home_game_id: HOME_GAME, conflicts: [FINAL_CONFLICT], resolved_overrides: [], resolved_at: null },
+          { home_game_id: 'hg2', conflicts: [], resolved_overrides: [], resolved_at: null },
         ],
       },
       'league_game_manual_results.select': { data: [{ league_game_id: 'g2' }] },
@@ -250,6 +252,39 @@ describe('listLeagueGames', () => {
       needsSettling: true,
     });
     expect(result.data.games[1]).toMatchObject({ homeRuns: null, awayRuns: null, hasManualResult: true, needsSettling: false });
+  });
+});
+
+describe('listLeagueGames needs settling', () => {
+  const listed = (id: string, home: string) => ({
+    id, season: 'Spring 2027', scheduled_at: '2026-11-11T02:00:00.000Z', time_zone: null, venue_name: null,
+    status: 'completed', home_team_id: HOME, away_team_id: AWAY, home_game_id: home, away_game_id: null,
+    home_runs: 1, away_runs: 0,
+  });
+  const player = (playerId: string, stat: string) => ({ kind: 'player_batting', playerId, stat, homeLog: 1, awayLog: 2 });
+
+  it('should use the shared unsettled count: one decision settles a player, resolved settles all', async () => {
+    const { db } = fakeDb({
+      'league_staff.select': staff('league_manager'),
+      'league_games.select': { data: [listed('g1', 'h1'), listed('g2', 'h2'), listed('g3', 'h3')] },
+      'teams.select': { data: [] },
+      'game_reconciliations.select': {
+        data: [
+          // a1's two conflicts are settled by one choice.
+          { home_game_id: 'h1', conflicts: [player('a1', 'hits'), player('a1', 'rbi')], resolved_overrides: [{ key: 'player_batting:a1:rbi', useAwayValue: true }], resolved_at: null },
+          // b2 is still open.
+          { home_game_id: 'h2', conflicts: [player('a1', 'hits'), player('b2', 'hits')], resolved_overrides: [{ key: 'player_batting:a1:hits', useAwayValue: true }], resolved_at: null },
+          { home_game_id: 'h3', conflicts: [player('c3', 'hits')], resolved_overrides: [], resolved_at: '2026-11-09T00:00:00Z' },
+        ],
+      },
+      'league_game_manual_results.select': { data: [] },
+    });
+    const result = await listLeagueGames(db, 'u1', { leagueId: LEAGUE });
+    expect(result.ok && result.data.games.map((g) => [g.id, g.needsSettling])).toEqual([
+      ['g1', false],
+      ['g2', true],
+      ['g3', false],
+    ]);
   });
 });
 

@@ -358,6 +358,86 @@ describe('refreshLeagueGame', () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
+  it('should recompute a current reconciliation when a placeholder match forces it', async () => {
+    const { db, calls, invoke } = leagueGameDb({
+      leagueGameStatus: 'completed',
+      home: gameRow('home', { status: 'completed', away_score: 1 }),
+      away: gameRow('away', { status: 'completed', away_score: 2 }),
+      events: { [HOME_GAME]: HOME_BOOK, [AWAY_GAME]: AWAY_BOOK },
+      reconciliation: {
+        id: 'recon-1',
+        computed_at: '2026-11-08T04:00:00.000Z',
+        conflicts: [{ kind: 'final_score', side: 'away', homeLog: 1, awayLog: 2 }],
+        resolved_overrides: [],
+        resolved_at: null,
+      },
+    });
+
+    await refreshLeagueGame(db, LEAGUE_GAME, 'home-coach');
+    expect(writes(calls, 'game_reconciliations', 'upsert')).toHaveLength(0);
+
+    await refreshLeagueGame(db, LEAGUE_GAME, 'home-coach', { forceReconcile: true });
+    const upserts = writes(calls, 'game_reconciliations', 'upsert');
+    expect(upserts).toHaveLength(1);
+    expect((upserts[0].payload as { conflicts: { kind: string }[] }).conflicts.map((c) => c.kind)).toEqual(
+      expect.arrayContaining(['final_score', 'player_batting', 'player_pitching']),
+    );
+    // Not a new reconciliation, so no second push.
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("should reopen a settled reconciliation when a newly matched player's lines differ", async () => {
+    const { db, calls } = leagueGameDb({
+      leagueGameStatus: 'completed',
+      home: gameRow('home', { status: 'completed', away_score: 1 }),
+      away: gameRow('away', { status: 'completed', away_score: 2 }),
+      events: { [HOME_GAME]: HOME_BOOK, [AWAY_GAME]: AWAY_BOOK },
+      reconciliation: {
+        id: 'recon-1',
+        computed_at: '2026-11-08T04:00:00.000Z',
+        conflicts: [{ kind: 'final_score', side: 'away', homeLog: 1, awayLog: 2 }],
+        resolved_overrides: [{ key: 'final_score:away', useAwayValue: true }],
+        resolved_at: '2026-11-08T05:00:00.000Z',
+      },
+    });
+
+    await refreshLeagueGame(db, LEAGUE_GAME, 'admin-1', { forceReconcile: true });
+
+    const [upsert] = writes(calls, 'game_reconciliations', 'upsert');
+    expect(upsert.payload).toMatchObject({ resolved_at: null, resolved_by: null });
+  });
+
+  it('should keep a settled reconciliation settled when a recompute finds nothing new', async () => {
+    const books = {
+      leagueGameStatus: 'completed',
+      home: gameRow('home', { status: 'completed', away_score: 1 }),
+      away: gameRow('away', { status: 'completed', away_score: 2 }),
+      events: { [HOME_GAME]: HOME_BOOK, [AWAY_GAME]: AWAY_BOOK },
+    };
+    // The differences these two books have, as a first reconciliation records them.
+    const first = leagueGameDb(books);
+    await refreshLeagueGame(first.db, LEAGUE_GAME, 'home-coach');
+    const [created] = writes(first.calls, 'game_reconciliations', 'upsert');
+    const conflicts = (created.payload as { conflicts: unknown[] }).conflicts;
+    expect(conflicts.length).toBeGreaterThan(0);
+
+    const { db, calls } = leagueGameDb({
+      ...books,
+      reconciliation: {
+        id: 'recon-1',
+        computed_at: '2026-11-08T04:00:00.000Z',
+        conflicts,
+        resolved_overrides: [],
+        resolved_at: '2026-11-08T05:00:00.000Z',
+      },
+    });
+
+    await refreshLeagueGame(db, LEAGUE_GAME, 'admin-1', { forceReconcile: true });
+
+    const [upsert] = writes(calls, 'game_reconciliations', 'upsert');
+    expect(upsert.payload).not.toHaveProperty('resolved_at');
+  });
+
   it('should write a hand-entered result onto both team rows', async () => {
     const { db, calls } = leagueGameDb({
       home: gameRow('home'),

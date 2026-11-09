@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { ReconciliationOverride, ScoreConflict } from '@baseball/shared';
+import { conflictPlayerId, type ReconciliationOverride, type ScoreConflict } from '@baseball/shared';
 import { countUnsettledConflicts } from './unsettled';
 import { authorizeReconciliationSettler } from '@/lib/services/games/resolve-reconciliation-conflict';
 
@@ -17,6 +17,29 @@ export interface ReconciliationView {
   canSettle: boolean;
   /** Differences still to settle (none once resolved); see `countUnsettledConflicts`. */
   unsettledCount: number;
+  /** Names of the players the conflicts are about, by player id (missing when unreadable). */
+  playerNames: Record<string, string>;
+}
+
+/** Names for the conflicts' players; empty (labels fall back to short ids) when the read fails. */
+async function loadConflictPlayerNames(
+  db: SupabaseClient,
+  conflicts: readonly ScoreConflict[],
+  reconciliationId: string,
+): Promise<Record<string, string>> {
+  const ids = [...new Set(conflicts.map(conflictPlayerId).filter((id): id is string => id !== null))];
+  if (ids.length === 0) return {};
+  const { data, error } = await db.from('players').select('id, first_name, last_name').in('id', ids);
+  if (error) {
+    console.error(`[dual-scorekeeper] player-name lookup failed recon=${reconciliationId}: ${error.message}`);
+    return {};
+  }
+  const names: Record<string, string> = {};
+  for (const row of (data ?? []) as { id: string; first_name: string | null; last_name: string | null }[]) {
+    const name = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim();
+    if (name) names[row.id] = name;
+  }
+  return names;
 }
 
 /**
@@ -44,9 +67,11 @@ export async function loadReconciliationForGame(
   }
   if (!recon) return null;
 
-  const [{ data: teams, error: teamsErr }, settler] = await Promise.all([
+  const conflicts = (recon.conflicts ?? []) as ScoreConflict[];
+  const [{ data: teams, error: teamsErr }, settler, playerNames] = await Promise.all([
     db.from('games').select('id, teams(name)').in('id', [recon.home_game_id, recon.away_game_id]),
     authorizeReconciliationSettler(db, viewerUserId, recon.home_game_id as string),
+    loadConflictPlayerNames(db, conflicts, recon.id as string),
   ]);
   if (teamsErr) {
     console.error(
@@ -64,7 +89,7 @@ export async function loadReconciliationForGame(
     reconciliationId: recon.id as string,
     homeGameId: recon.home_game_id as string,
     awayGameId: recon.away_game_id as string,
-    conflicts: (recon.conflicts ?? []) as ScoreConflict[],
+    conflicts,
     overrides: (recon.resolved_overrides ?? []) as ReconciliationOverride[],
     homeTeamLabel: nameByGame.get(recon.home_game_id as string) ?? 'Home',
     awayTeamLabel: nameByGame.get(recon.away_game_id as string) ?? 'Away',
@@ -75,5 +100,6 @@ export async function loadReconciliationForGame(
       recon.resolved_overrides as ReconciliationOverride[] | null,
       recon.resolved_at as string | null,
     ),
+    playerNames,
   };
 }

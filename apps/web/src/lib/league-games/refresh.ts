@@ -122,10 +122,20 @@ function isStale(reconciliation: ReconciliationRow, home: TeamRow, away: TeamRow
   return [home.latestEventAt, away.latestEventAt].some((at) => at !== null && Date.parse(at) > computedAt);
 }
 
+/** Options for `refreshLeagueGame`. */
+export interface RefreshLeagueGameOptions {
+  /**
+   * Recompute the reconciliation even though no book changed: a placeholder
+   * was matched, so a player the books could not line up before now can.
+   */
+  forceReconcile?: boolean;
+}
+
 /**
  * Step 2: with both books complete, (re)compute the reconciliation when there
- * is none or a book changed since it was computed. Reports whether a new one
- * was created, so the teams are told about a discrepancy only once.
+ * is none, a book changed since it was computed, or the caller forces it.
+ * Reports whether a new one was created, so the teams are told about a
+ * discrepancy only once.
  */
 async function reconcileBooks(
   db: SupabaseClient,
@@ -133,11 +143,12 @@ async function reconcileBooks(
   home: TeamRow | null,
   away: TeamRow | null,
   actorUserId: string | undefined,
+  forceReconcile: boolean,
 ): Promise<{ reconciliation: ReconciliationRow | null; created: boolean }> {
   if (!home) return { reconciliation: null, created: false };
   const existing = await loadReconciliation(db, home.id, leagueGameId);
   if (!bookCounts(home) || !bookCounts(away)) return { reconciliation: existing, created: false };
-  if (existing && !isStale(existing, home, away)) return { reconciliation: existing, created: false };
+  if (existing && !forceReconcile && !isStale(existing, home, away)) return { reconciliation: existing, created: false };
 
   const reconciliationId = await runReconciliationForGame(db, home.id, actorUserId);
   const reconciliation = await loadReconciliation(db, home.id, leagueGameId);
@@ -284,26 +295,44 @@ async function notifyMismatch(db: SupabaseClient, leagueGame: LeagueGameRow): Pr
   }
 }
 
-async function refreshResult(db: SupabaseClient, leagueGame: LeagueGameRow, actorUserId?: string): Promise<void> {
+async function refreshResult(
+  db: SupabaseClient,
+  leagueGame: LeagueGameRow,
+  actorUserId: string | undefined,
+  options: RefreshLeagueGameOptions,
+): Promise<void> {
   const [home, away] = await Promise.all([
     loadTeamRow(db, leagueGame.home_game_id, leagueGame.id),
     loadTeamRow(db, leagueGame.away_game_id, leagueGame.id),
   ]);
-  const { reconciliation, created } = await reconcileBooks(db, leagueGame.id, home, away, actorUserId);
+  const { reconciliation, created } = await reconcileBooks(
+    db,
+    leagueGame.id,
+    home,
+    away,
+    actorUserId,
+    options.forceReconcile ?? false,
+  );
   await applyResult(db, leagueGame, home, away, reconciliation);
   if (created && reconciliation && reconciliation.conflicts.length > 0) await notifyMismatch(db, leagueGame);
 }
 
 /**
  * Refresh a league game after it changed. In order: read both team rows and
- * their events; reconcile two complete books (notifying both teams when a new
- * reconciliation finds differences); resolve the result source, put its runs
+ * their events; reconcile two complete books when they changed or
+ * `forceReconcile` asks (notifying both teams when a new reconciliation finds
+ * differences); resolve the result source, put its runs
  * on the league game (marking it completed) and write the result onto rows
  * without a book; then rebuild the league snapshot. A cancelled league game
  * only has its runs cleared before the rebuild.
  * Errors are logged with the league game id and never thrown.
  */
-export async function refreshLeagueGame(db: SupabaseClient, leagueGameId: string, actorUserId?: string): Promise<void> {
+export async function refreshLeagueGame(
+  db: SupabaseClient,
+  leagueGameId: string,
+  actorUserId?: string,
+  options: RefreshLeagueGameOptions = {},
+): Promise<void> {
   let leagueGame: LeagueGameRow | null;
   try {
     leagueGame = await loadLeagueGame(db, leagueGameId);
@@ -318,7 +347,7 @@ export async function refreshLeagueGame(db: SupabaseClient, leagueGameId: string
 
   try {
     if (leagueGame.status === 'cancelled') await writeLeagueGameResult(db, leagueGame, null);
-    else await refreshResult(db, leagueGame, actorUserId);
+    else await refreshResult(db, leagueGame, actorUserId, options);
   } catch (error) {
     console.error(`[refreshLeagueGame] result refresh failed league_game=${leagueGameId}:`, error);
   }

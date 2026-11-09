@@ -395,8 +395,10 @@ export async function resolvePlaceholder(
   }
 
   // The match is saved; a refresh problem must not turn it into a failure.
+  // No event changed, so the reconciliation is recomputed explicitly: the
+  // newly matched player's line can now be compared across the two books.
   try {
-    await refreshLeagueGame(db, leagueGameId, actorUserId);
+    await refreshLeagueGame(db, leagueGameId, actorUserId, { forceReconcile: true });
   } catch (error) {
     console.error(`[league-placeholders] refresh failed league_game=${leagueGameId} ${context}:`, error);
   }

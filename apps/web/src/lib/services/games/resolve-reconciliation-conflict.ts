@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   conflictKey,
+  conflictPlayerId,
   isCoachRole,
   resolveReconciliationConflictInputSchema,
   type ScoreConflict,
@@ -103,9 +104,12 @@ export async function authorizeReconciliationSettler(
 
 /**
  * Accepts the away scorekeeper's value for one reconciliation conflict, or
- * reverts it to the home value. Overrides annotate the record and never touch
- * game_events. For a league game the league result and snapshot are then
- * refreshed, since a settled difference can change the result that counts.
+ * reverts it to the home value. A player is settled as a whole (the result
+ * takes their whole line from one book): accepting any of a player's
+ * conflicts puts all of them on the away value, and reverting clears every
+ * one of that player's overrides. Overrides annotate the record and never
+ * touch game_events. For a league game the league result and snapshot are
+ * then refreshed, since a settled difference can change the result that counts.
  */
 export async function resolveReconciliationConflict(
   db: SupabaseClient,
@@ -129,21 +133,31 @@ export async function resolveReconciliationConflict(
   // Reject a key that no longer matches a current conflict (stale screen or
   // tampered input) so resolved_overrides never accumulates dangling entries.
   const conflicts = Array.isArray(recon.conflicts) ? (recon.conflicts as ScoreConflict[]) : [];
-  if (!conflicts.some((c) => conflictKey(c) === input.conflictKey)) {
+  const target = conflicts.find((c) => conflictKey(c) === input.conflictKey);
+  if (!target) {
     return serviceError('conflict', 'That conflict no longer exists — reload the game.');
   }
 
-  // One UPDATE that filters-then-appends, so two near-simultaneous edits can't
-  // drop each other's change.
-  const { error } = await db.rpc('set_reconciliation_override', {
-    p_reconciliation_id: input.reconciliationId,
-    p_key: input.conflictKey,
-    p_use_away: input.useAwayValue,
-    p_resolved_by: actorUserId,
-  });
-  if (error) {
-    console.error(`[resolveReconciliationConflict] recon=${input.reconciliationId} actor=${actorUserId}:`, error);
-    return serviceError('failed', `Failed to save override: ${error.message}`);
+  // Reverting a player clears an away override on any of their conflicts.
+  const playerId = conflictPlayerId(target);
+  const keys =
+    input.useAwayValue || !playerId
+      ? [input.conflictKey]
+      : conflicts.filter((c) => conflictPlayerId(c) === playerId).map(conflictKey);
+
+  // Each call is one UPDATE that filters-then-appends, so two near-simultaneous
+  // edits can't drop each other's change.
+  for (const key of keys) {
+    const { error } = await db.rpc('set_reconciliation_override', {
+      p_reconciliation_id: input.reconciliationId,
+      p_key: key,
+      p_use_away: input.useAwayValue,
+      p_resolved_by: actorUserId,
+    });
+    if (error) {
+      console.error(`[resolveReconciliationConflict] recon=${input.reconciliationId} key=${key} actor=${actorUserId}:`, error);
+      return serviceError('failed', `Failed to save override: ${error.message}`);
+    }
   }
 
   if (auth.data.leagueGameId) await refreshLeagueGame(db, auth.data.leagueGameId, actorUserId);

@@ -199,6 +199,33 @@ describe('loadGameDetail', () => {
     if (!parentResult.ok) throw new Error(parentResult.error);
     expect(parentResult.data.reconciliation?.canOverride).toBe(false);
   });
+
+  it("should name players and show a player's whole line on the away value once any of it is accepted", async () => {
+    mockLoadReconciliation.mockResolvedValue({
+      reconciliationId: RECON_ID,
+      homeGameId: GAME_ID,
+      awayGameId: 'away-game',
+      conflicts: [
+        { kind: 'player_batting', playerId: 'p-ada', stat: 'hits', homeLog: 1, awayLog: 2 },
+        { kind: 'player_batting', playerId: 'p-ada', stat: 'rbi', homeLog: 0, awayLog: 1 },
+        { kind: 'player_pitching', playerId: 'p-unknown-123', stat: 'strikeouts', homeLog: 4, awayLog: 5 },
+      ],
+      overrides: [{ key: 'player_batting:p-ada:rbi', useAwayValue: true }],
+      homeTeamLabel: 'Huskies',
+      awayTeamLabel: 'Eagles',
+      viewerOnHomeSide: true,
+      canSettle: true,
+      playerNames: { 'p-ada': 'Ada Abbott' },
+    });
+    const coach = fakeDb({ 'games.select': { data: gameRow }, 'team_members.select': { data: { role: 'head_coach' } } });
+    const result = await loadGameDetail(coach.db, 'coach-1', { gameId: GAME_ID });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.data.reconciliation?.conflicts.map((c) => [c.label, c.overridden])).toEqual([
+      ['Batting · hits (Ada Abbott)', true],
+      ['Batting · rbi (Ada Abbott)', true],
+      ['Pitching · strikeouts (player p-unknow)', false],
+    ]);
+  });
 });
 
 describe('cancelGame', () => {
@@ -349,5 +376,39 @@ describe('resolveReconciliationConflict', () => {
     expect(rpcCalls).toEqual([['set_reconciliation_override', {
       p_reconciliation_id: RECON_ID, p_key: 'final_score:home', p_use_away: true, p_resolved_by: 'coach-1',
     }]]);
+  });
+
+  describe('per player', () => {
+    const playerRecon = {
+      ...recon,
+      conflicts: [
+        { kind: 'player_batting', playerId: 'a1', stat: 'hits', homeLog: 1, awayLog: 2 },
+        { kind: 'player_pitching', playerId: 'a1', stat: 'strikeouts', homeLog: 3, awayLog: 4 },
+        { kind: 'player_batting', playerId: 'b2', stat: 'hits', homeLog: 0, awayLog: 1 },
+      ],
+    };
+    const keysWritten = (rpcCalls: [string, unknown][]) =>
+      rpcCalls.map(([, args]) => [(args as { p_key: string }).p_key, (args as { p_use_away: boolean }).p_use_away]);
+
+    it("should accept a player's whole line with one override", async () => {
+      const { db, rpcCalls } = fakeDb({ ...settler('head_coach'), 'game_reconciliations.select': { data: playerRecon } });
+      const result = await resolveReconciliationConflict(db, 'coach-1', {
+        reconciliationId: RECON_ID, conflictKey: 'player_batting:a1:hits', useAwayValue: true,
+      });
+      expect(result.ok).toBe(true);
+      expect(keysWritten(rpcCalls)).toEqual([['player_batting:a1:hits', true]]);
+    });
+
+    it("should revert every override of that player and no one else's", async () => {
+      const { db, rpcCalls } = fakeDb({ ...settler('head_coach'), 'game_reconciliations.select': { data: playerRecon } });
+      const result = await resolveReconciliationConflict(db, 'coach-1', {
+        reconciliationId: RECON_ID, conflictKey: 'player_batting:a1:hits', useAwayValue: false,
+      });
+      expect(result.ok).toBe(true);
+      expect(keysWritten(rpcCalls)).toEqual([
+        ['player_batting:a1:hits', false],
+        ['player_pitching:a1:strikeouts', false],
+      ]);
+    });
   });
 });

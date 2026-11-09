@@ -376,6 +376,7 @@ export default async function GameDetailPage({
           canOverride={reconciliation.canSettle}
           homeTeamLabel={reconciliation.homeTeamLabel}
           awayTeamLabel={reconciliation.awayTeamLabel}
+          playerNames={reconciliation.playerNames}
         />
       )}
 

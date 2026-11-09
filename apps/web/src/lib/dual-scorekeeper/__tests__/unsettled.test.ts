@@ -21,4 +21,13 @@ describe('countUnsettledConflicts', () => {
     ];
     expect(countUnsettledConflicts([...conflicts], overrides, null)).toBe(0);
   });
+
+  it("should count a player's conflicts settled once any of them has a decision", () => {
+    const playerConflicts = [
+      { kind: 'player_batting', playerId: 'a1', stat: 'hits', homeLog: 1, awayLog: 2 },
+      { kind: 'player_pitching', playerId: 'a1', stat: 'strikeouts', homeLog: 3, awayLog: 4 },
+      { kind: 'player_batting', playerId: 'b2', stat: 'hits', homeLog: 0, awayLog: 1 },
+    ] as const;
+    expect(countUnsettledConflicts([...playerConflicts], [{ key: 'player_batting:a1:hits', useAwayValue: true }], null)).toBe(1);
+  });
 });

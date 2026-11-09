@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  conflictKey,
   deriveBattingStats,
   derivePitchingStats,
   filterResetAndReverted,
@@ -9,6 +10,7 @@ import {
   type BattingStats,
   type GameEvent,
   type PitchingStats,
+  type ScoreConflict,
 } from '@baseball/shared';
 import { loadSideIdMaps, type BookSideMaps } from '@/lib/league-games/side-maps';
 
@@ -61,6 +63,29 @@ function bookPlayerStats(events: Record<string, unknown>[], maps: BookSideMaps):
 }
 
 /**
+ * For a league game, whether a recompute must reopen a reconciliation already
+ * marked settled: it found a difference that was not there before (a book
+ * changed, or a placeholder was matched so a player's lines now line up), and
+ * that difference has had no say yet. Other paired games keep their settled
+ * mark as before.
+ */
+async function reopensSettled(
+  db: SupabaseClient,
+  homeGameId: string,
+  conflicts: readonly ScoreConflict[],
+): Promise<boolean> {
+  const { data, error } = await db
+    .from('game_reconciliations')
+    .select('conflicts, resolved_at')
+    .eq('home_game_id', homeGameId)
+    .maybeSingle();
+  if (error) throw new Error(`reconciliation load failed home=${homeGameId}: ${error.message}`);
+  if (!data?.resolved_at) return false;
+  const before = new Set((Array.isArray(data.conflicts) ? (data.conflicts as ScoreConflict[]) : []).map(conflictKey));
+  return conflicts.some((conflict) => !before.has(conflictKey(conflict)));
+}
+
+/**
  * Compute (or refresh) the dual-scorekeeper reconciliation for a paired game.
  *
  * Called after a game is marked done. The reconciliation is only computed once
@@ -74,6 +99,10 @@ function bookPlayerStats(events: Record<string, unknown>[], maps: BookSideMaps):
  * and pitching line: both books are translated into real player ids through
  * the league roster records (`loadSideIdMaps`). Other paired games have no
  * cross-roster identity bridge, so they stay at the line-score level.
+ *
+ * For a league game, a recompute that finds a new difference reopens a
+ * reconciliation already marked settled (`reopensSettled`), so the new
+ * difference is shown as still to settle; the overrides already made stay.
  *
  * Best-effort: failures are logged and swallowed so they never block End Game.
  * Must run with a service-role client to read both teams' rows.
@@ -124,6 +153,7 @@ export async function runReconciliationForGame(
     }
 
     const result = reconcileScoreLogs({ events: homeEvents, ...homeStats }, { events: awayEvents, ...awayStats });
+    const reopen = game.league_game_id ? await reopensSettled(db, homeGameId, result.conflicts) : false;
 
     const { data: row, error } = await db
       .from('game_reconciliations')
@@ -134,6 +164,7 @@ export async function runReconciliationForGame(
           conflicts: result.conflicts,
           computed_at: new Date().toISOString(),
           computed_by: computedBy ?? null,
+          ...(reopen ? { resolved_at: null, resolved_by: null } : {}),
         },
         { onConflict: 'home_game_id' },
       )

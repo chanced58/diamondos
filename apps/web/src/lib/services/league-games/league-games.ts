@@ -6,7 +6,10 @@ import {
   updateLeagueGameInputSchema,
   utcToZonedDateTime,
   zonedDateTimeToUtc,
+  type ReconciliationOverride,
+  type ScoreConflict,
 } from '@baseball/shared';
+import { countUnsettledConflicts } from '@/lib/dual-scorekeeper/unsettled';
 import { refreshLeagueGame } from '@/lib/league-games/refresh';
 import { authorizeLeagueStaff } from '../league-admin/authorize';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
@@ -340,6 +343,13 @@ interface ListedLeagueGame {
   away_runs: number | null;
 }
 
+interface ReconciliationRow {
+  home_game_id: string;
+  conflicts: ScoreConflict[] | null;
+  resolved_overrides: ReconciliationOverride[] | null;
+  resolved_at: string | null;
+}
+
 export async function listLeagueGames(
   db: SupabaseClient,
   actorUserId: string,
@@ -371,7 +381,10 @@ export async function listLeagueGames(
 
     const [teams, reconciliations, manualResults] = await Promise.all([
       db.from('teams').select('id, name').in('id', teamIds),
-      db.from('game_reconciliations').select('home_game_id, conflicts, resolved_at').in('home_game_id', homeGameIds),
+      db
+        .from('game_reconciliations')
+        .select('home_game_id, conflicts, resolved_overrides, resolved_at')
+        .in('home_game_id', homeGameIds),
       db.from('league_game_manual_results').select('league_game_id').in('league_game_id', leagueGameIds),
     ]);
     for (const result of [teams, reconciliations, manualResults]) {
@@ -379,13 +392,11 @@ export async function listLeagueGames(
     }
 
     const names = new Map<string, string>((teams.data ?? []).map((t: { id: string; name: string }) => [t.id, t.name]));
+    // The same definition of "still to settle" as the game page and dashboard banners.
     const needsSettling = new Set<string>(
-      (reconciliations.data ?? [])
-        .filter(
-          (r: { conflicts: unknown; resolved_at: string | null }) =>
-            Array.isArray(r.conflicts) && r.conflicts.length > 0 && r.resolved_at === null,
-        )
-        .map((r: { home_game_id: string }) => r.home_game_id),
+      ((reconciliations.data ?? []) as ReconciliationRow[])
+        .filter((r) => countUnsettledConflicts(r.conflicts, r.resolved_overrides, r.resolved_at) > 0)
+        .map((r) => r.home_game_id),
     );
     const manual = new Set<string>((manualResults.data ?? []).map((r: { league_game_id: string }) => r.league_game_id));
 

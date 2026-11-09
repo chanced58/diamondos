@@ -1,4 +1,12 @@
-import { reconcileScoreLogs, conflictKey, describeScoreConflict } from '../reconcile-scorelogs';
+import {
+  reconcileScoreLogs,
+  awayValueConflictKeys,
+  conflictKey,
+  describeScoreConflict,
+  groupConflictsForSettling,
+  settledConflictKeys,
+  type ScoreConflict,
+} from '../reconcile-scorelogs';
 import type { BattingStats } from '../../types/batting';
 import type { PitchingStats } from '../../types/pitching';
 
@@ -204,5 +212,48 @@ describe('describeScoreConflict', () => {
     expect(describeScoreConflict({
       kind: 'player_batting', playerId: 'abcdef1234567890', stat: 'hits', homeLog: 2, awayLog: 1,
     })).toBe('Batting · hits (player abcdef12)');
+  });
+
+  it("should name the player when the name is known", () => {
+    const names = { 'p-1': 'Ada Abbott' };
+    expect(describeScoreConflict({ kind: 'player_pitching', playerId: 'p-1', stat: 'strikeouts', homeLog: 5, awayLog: 6 }, names))
+      .toBe('Pitching · strikeouts (Ada Abbott)');
+  });
+});
+
+describe('settling conflicts per player', () => {
+  const conflicts: ScoreConflict[] = [
+    { kind: 'final_score', side: 'away', homeLog: 1, awayLog: 2 },
+    { kind: 'player_batting', playerId: 'a1', stat: 'hits', homeLog: 1, awayLog: 2 },
+    { kind: 'player_pitching', playerId: 'h1', stat: 'hitsAllowed', homeLog: 1, awayLog: 2 },
+    { kind: 'player_batting', playerId: 'a1', stat: 'homeRuns', homeLog: 1, awayLog: 2 },
+    { kind: 'team_hits', side: 'away', homeLog: 1, awayLog: 2 },
+  ];
+
+  it('should group each player into one choice keyed by their first conflict', () => {
+    const groups = groupConflictsForSettling(conflicts);
+    expect(groups.map((g) => [g.key, g.playerId, g.conflicts.length])).toEqual([
+      ['final_score:away', null, 1],
+      ['player_batting:a1:hits', 'a1', 2],
+      ['player_pitching:h1:hitsAllowed', 'h1', 1],
+      ['team_hits:away', null, 1],
+    ]);
+  });
+
+  it("should put every conflict of a player on the away value when any of theirs is accepted", () => {
+    const keys = awayValueConflictKeys(conflicts, [{ key: 'player_batting:a1:homeRuns', useAwayValue: true }]);
+    expect([...keys].sort()).toEqual(['player_batting:a1:hits', 'player_batting:a1:homeRuns']);
+  });
+
+  it('should count a player settled by one decision, and a line-score conflict only by its own', () => {
+    const settled = settledConflictKeys(conflicts, [
+      { key: 'player_batting:a1:hits', useAwayValue: false },
+      { key: 'final_score:away', useAwayValue: true },
+    ]);
+    expect([...settled].sort()).toEqual(['final_score:away', 'player_batting:a1:hits', 'player_batting:a1:homeRuns']);
+    expect(conflicts.filter((c) => !settled.has(conflictKey(c))).map(conflictKey)).toEqual([
+      'player_pitching:h1:hitsAllowed',
+      'team_hits:away',
+    ]);
   });
 });
