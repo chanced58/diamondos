@@ -46,3 +46,4 @@ export * from './team-members';
 export * from './team-seasons';
 export * from './player-documents';
 export * from './league-admin';
+export * from './league-games';
