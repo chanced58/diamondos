@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { leagueStatsHref } from '@/lib/league-home/stats-href';
 import { BATTING_COLUMNS, PITCHING_COLUMNS, type StatsTab } from '@/lib/league-stats/columns';
 import type { MyPlayer, StatsTeam } from '@/lib/league-stats/load';
@@ -9,6 +8,7 @@ import type { RankTable, StatsPlayer } from '@/lib/league-stats/ranks';
 import { visiblePlayers, type ViewState } from '@/lib/league-stats/view';
 import { FilterBar } from './FilterBar';
 import { PlayerStatsTable } from './PlayerStatsTable';
+import { SeasonSwitcher } from './SeasonSwitcher';
 import { TeamStatsTable } from './TeamStatsTable';
 import { YourRanksCard } from './YourRanksCard';
 
@@ -31,6 +31,8 @@ const defaultSortFor = (tab: StatsTab) => DEFAULT_SORT[tab === 'pitching' ? 'pit
 export function LeagueStatsView({
   slug,
   season,
+  seasons,
+  leagueName,
   initialTab,
   players,
   ranks,
@@ -43,6 +45,9 @@ export function LeagueStatsView({
 }: {
   slug: string;
   season: string;
+  /** All seasons with data, newest first, for the season switcher. */
+  seasons: string[];
+  leagueName: string;
   initialTab: StatsTab;
   players: StatsPlayer[];
   ranks: { batting: RankTable; pitching: RankTable } | null;
@@ -53,7 +58,6 @@ export function LeagueStatsView({
   rankingEnabled: boolean;
   standingsRankEnabled: boolean;
 }): JSX.Element {
-  const router = useRouter();
   const [tab, setTab] = useState<StatsTab>(initialTab);
   const [view, setView] = useState<ViewState>(() => ({
     teamId: 'all',
@@ -68,7 +72,10 @@ export function LeagueStatsView({
     setTab(next);
     // A new tab starts at its default sort; team filter and search carry over.
     setView((v) => ({ ...v, ...defaultSortFor(next) }));
-    router.replace(leagueStatsHref(slug, season, next), { scroll: false });
+    // Rewrite the URL only: a router navigation would re-run the force-dynamic
+    // server page (auth + every snapshot query) on each tap. Next 14.2 keeps
+    // useSearchParams in sync with history.replaceState.
+    window.history.replaceState(null, '', leagueStatsHref(slug, season, next));
   };
 
   const onSort = (key: string, naturalDir: 'asc' | 'desc'): void =>
@@ -82,6 +89,19 @@ export function LeagueStatsView({
 
   return (
     <div className="space-y-6">
+      <header className="space-y-1">
+        <a
+          href={`/l/${slug}?season=${encodeURIComponent(season)}`}
+          className="text-sm font-semibold text-app-fg-muted hover:text-app-fg hover:underline"
+        >
+          ← {leagueName}
+        </a>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="display text-2xl font-bold md:text-3xl">League Stats</h1>
+          <SeasonSwitcher slug={slug} season={season} seasons={seasons} tab={tab} />
+        </div>
+      </header>
+
       <YourRanksCard
         myPlayers={myPlayers}
         players={players}

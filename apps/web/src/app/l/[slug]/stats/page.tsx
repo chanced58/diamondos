@@ -68,42 +68,16 @@ export default async function LeagueStatsPage({
   }
 
   return (
-    <main className={`league-scheme-${data.theme.colorScheme} mx-auto max-w-5xl space-y-6 p-4 md:p-8`}>
-      <header className="space-y-1">
-        <a
-          href={`/l/${data.slug}?season=${encodeURIComponent(data.season)}`}
-          className="text-sm font-semibold text-app-fg-muted hover:text-app-fg hover:underline"
-        >
-          ← {data.league.name}
-        </a>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="display text-2xl font-bold md:text-3xl">League Stats</h1>
-          {data.seasons.length > 1 ? (
-            <nav
-              aria-label="Season"
-              className="inline-flex rounded-lg border border-app-border bg-app-surface-2 p-0.5 text-sm"
-            >
-              {data.seasons.map((s) => (
-                <a
-                  key={s}
-                  href={leagueStatsHref(data.slug, s, tab)}
-                  aria-current={s === data.season ? 'true' : undefined}
-                  className={`rounded-md px-2.5 py-1 font-semibold transition-colors ${
-                    s === data.season ? 'bg-app-surface text-app-fg shadow-sm' : 'text-app-fg-muted hover:text-app-fg'
-                  }`}
-                >
-                  {s}
-                </a>
-              ))}
-            </nav>
-          ) : null}
-        </div>
-      </header>
+    <main className={`league-scheme-${data.theme.colorScheme} mx-auto max-w-5xl p-4 md:p-8`}>
+      {/* The header (back link, title, season switcher) lives in the client view so
+          season links keep the current tab. */}
       <LeagueStatsView
         // Remount on season change so tab/filter/sort state starts fresh for the new data.
         key={data.season}
         slug={data.slug}
         season={data.season}
+        seasons={data.seasons}
+        leagueName={data.league.name}
         initialTab={tab}
         players={data.players}
         ranks={data.ranks}

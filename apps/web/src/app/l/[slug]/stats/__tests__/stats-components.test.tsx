@@ -9,8 +9,9 @@ import { TeamStatsTable } from '../_components/TeamStatsTable';
 import { LeagueStatsView } from '../_components/LeagueStatsView';
 
 const mockReplace = jest.fn();
+// The view must not trigger a server round trip on tab change; fail loudly if it does.
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: mockReplace }),
+  useRouter: () => ({ replace: mockReplace, push: mockReplace }),
 }));
 
 const mins = { paMin: 10, ipOutsMin: 9 };
@@ -253,6 +254,8 @@ describe('LeagueStatsView', () => {
   const viewProps = {
     slug: 'metro',
     season: '2026',
+    seasons: ['2026', '2025'],
+    leagueName: 'Metro League',
     initialTab: 'batting' as const,
     players,
     ranks: { batting: battingRanks, pitching: pitchingRanks },
@@ -264,13 +267,38 @@ describe('LeagueStatsView', () => {
     standingsRankEnabled: true,
   };
 
-  beforeEach(() => mockReplace.mockReset());
+  let replaceState: jest.SpyInstance;
+  beforeEach(() => {
+    mockReplace.mockReset();
+    replaceState = jest.spyOn(window.history, 'replaceState');
+  });
+  afterEach(() => replaceState.mockRestore());
 
-  it('syncs the tab to ?tab= without scrolling', () => {
+  it('syncs the tab to ?tab= via history.replaceState, without a router navigation', () => {
     render(<LeagueStatsView {...viewProps} />);
     fireEvent.click(screen.getByRole('tab', { name: 'Teams' }));
-    expect(mockReplace).toHaveBeenCalledWith('/l/metro/stats?season=2026&tab=teams', { scroll: false });
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/l/metro/stats?season=2026&tab=teams');
+    expect(mockReplace).not.toHaveBeenCalled();
     expect(screen.getByRole('tab', { name: 'Teams' }).getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('season links carry the current tab after a tab change', () => {
+    render(<LeagueStatsView {...viewProps} />);
+    const nav = screen.getByRole('navigation', { name: 'Season' });
+    expect(within(nav).getByRole('link', { name: '2025' }).getAttribute('href')).toBe(
+      '/l/metro/stats?season=2025&tab=batting',
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Pitching' }));
+    expect(within(nav).getByRole('link', { name: '2025' }).getAttribute('href')).toBe(
+      '/l/metro/stats?season=2025&tab=pitching',
+    );
+    expect(within(nav).getByRole('link', { name: '2026' }).getAttribute('aria-current')).toBe('true');
+  });
+
+  it('hides the season switcher when there is only one season', () => {
+    render(<LeagueStatsView {...viewProps} seasons={['2026']} />);
+    expect(screen.queryByRole('navigation', { name: 'Season' })).toBeNull();
+    expect(screen.getByRole('link', { name: '← Metro League' }).getAttribute('href')).toBe('/l/metro?season=2026');
   });
 
   it('shows AVG ranks in the rank columns when sorted by player name', () => {
