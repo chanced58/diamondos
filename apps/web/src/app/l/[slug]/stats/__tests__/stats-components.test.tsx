@@ -55,18 +55,20 @@ const tableProps = {
 const rowFor = (name: string): HTMLElement => screen.getByText(name).closest('tr') as HTMLElement;
 
 describe('PlayerStatsTable', () => {
-  it('hides Lg #/Team # when ranks is null', () => {
+  it('hides Lg/Tm when ranks is null', () => {
     render(<PlayerStatsTable {...tableProps} ranks={null} />);
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
-    expect(headers).not.toContain('Lg #');
-    expect(headers).not.toContain('Team #');
+    expect(headers).not.toContain('Lg');
+    expect(headers).not.toContain('Tm');
     expect(headers.some((h) => h?.startsWith('Player'))).toBe(true);
   });
 
   it('shows "—" ranks and muted style for an unqualified row', () => {
     render(<PlayerStatsTable {...tableProps} ranks={battingRanks} />);
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
-    expect(headers.slice(0, 2)).toEqual(['Lg #', 'Team #']);
+    expect(headers.slice(0, 2)).toEqual(['Lg', 'Tm']);
+    expect(screen.getByRole('columnheader', { name: 'League rank' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Team rank' })).toBeTruthy();
 
     const bobCells = within(rowFor('Bob Baker')).getAllByRole('cell');
     expect(bobCells[0].textContent).toBe('—');
@@ -79,12 +81,44 @@ describe('PlayerStatsTable', () => {
     expect(rowFor('Alice Avery').className).not.toContain('text-app-fg-subtle');
   });
 
-  it('marks the viewer’s own row with the turf highlight and ◆ marker', () => {
-    render(<PlayerStatsTable {...tableProps} ranks={battingRanks} />);
-    expect(rowFor('Alice Avery').className).toContain('bg-turf-50');
+  it('marks the selected player’s row with the turf highlight and ◆ marker', () => {
+    render(<PlayerStatsTable {...tableProps} ranks={battingRanks} highlightId="a" />);
+    expect(rowFor('Alice Avery').classList.contains('bg-turf-50')).toBe(true);
     expect(within(rowFor('Alice Avery')).getByLabelText('Your player')).toBeTruthy();
     expect(within(rowFor('Cara Cole')).queryByLabelText('Your player')).toBeNull();
     expect(rowFor('Alice Avery').id).toBe('row-a');
+  });
+
+  it('gives other linked players the lighter tint without the ◆ marker', () => {
+    const kidRow = { ...cara, mine: true };
+    render(<PlayerStatsTable {...tableProps} players={[alice, bob, kidRow]} ranks={battingRanks} highlightId="c" />);
+    expect(rowFor('Cara Cole').classList.contains('bg-turf-50')).toBe(true);
+    expect(within(rowFor('Cara Cole')).getByLabelText('Your player')).toBeTruthy();
+    expect(rowFor('Alice Avery').classList.contains('bg-turf-50')).toBe(false);
+    expect(rowFor('Alice Avery').classList.contains('bg-turf-50/50')).toBe(true);
+    expect(within(rowFor('Alice Avery')).queryByLabelText('Your player')).toBeNull();
+    expect(screen.getAllByLabelText('Your player')).toHaveLength(1);
+  });
+
+  it('keeps the sticky Player cell offset equal to the two rank columns and caps the name', () => {
+    const { unmount } = render(<PlayerStatsTable {...tableProps} ranks={battingRanks} />);
+    const [lgTh, tmTh, playerTh] = screen.getAllByRole('columnheader');
+    expect(lgTh.className).toContain('w-10');
+    expect(tmTh.className).toContain('left-10');
+    expect(tmTh.className).toContain('w-10');
+    expect(playerTh.className).toContain('left-20');
+    const cells = within(rowFor('Alice Avery')).getAllByRole('cell');
+    expect(cells[0].className).toContain('w-10');
+    expect(cells[1].className).toContain('left-10');
+    expect(cells[2].className).toContain('left-20');
+    const name = screen.getByTitle('Alice Avery');
+    expect(name.className).toContain('max-w-[8rem]');
+    expect(name.className).toContain('truncate');
+    unmount();
+
+    render(<PlayerStatsTable {...tableProps} ranks={null} />);
+    expect(screen.getAllByRole('columnheader')[0].className).toContain('left-0');
+    expect(within(rowFor('Alice Avery')).getAllByRole('cell')[0].className).toContain('left-0');
   });
 
   it('links team names to the season-scoped team page', () => {

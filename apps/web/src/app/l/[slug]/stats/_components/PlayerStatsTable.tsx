@@ -15,10 +15,12 @@ function cellDisplay(p: StatsPlayer, col: SortColumnSpec): string {
 /**
  * Row tint. `row` goes on the <tr>; `sticky` is an opaque equivalent for the
  * sticky cells, which must hide the columns scrolling underneath them.
+ * The selected player gets the full highlight; the viewer's other linked players
+ * and (for coaches) their active team's rows get the lighter tint.
  */
 function rowTone(p: StatsPlayer, highlighted: boolean): { row: string; sticky: string } {
   if (highlighted) return { row: 'bg-turf-50', sticky: 'bg-turf-50' };
-  if (p.ourTeam) {
+  if (p.mine || p.ourTeam) {
     // A translucent background-image over the opaque surface color keeps the
     // lighter tint while staying opaque.
     return {
@@ -45,20 +47,22 @@ export function PlayerStatsTable({
   columns: SortColumnSpec[];
   /** This tab's rank table; null when the league hides rankings. */
   ranks: RankTable | null;
-  /** Column whose ranks fill Lg #/Team # (the sorted stat, or the tab default when sorted by name). */
+  /** Column whose ranks fill Lg/Tm (the sorted stat, or the tab default when sorted by name). */
   rankKey: string;
   sortKey: string;
   sortDir: SortDir;
   onSort: (key: string, naturalDir: SortDir) => void;
-  /** The card's selected player — highlighted like the viewer's own row. */
+  /** The card's selected player — the only row with the full highlight and ◆ marker. */
   highlightId: string | null;
   slug: string;
   season: string;
 }): JSX.Element {
   const showRanks = ranks !== null;
   const rankMap = ranks?.[rankKey];
-  // Sticky offsets: Lg # (w-12) and Team # (4.5rem) precede Player when ranks show.
-  const playerLeft = showRanks ? 'left-[7.5rem]' : 'left-0';
+  // Sticky offsets: Lg (w-10) and Tm (w-10) precede Player when ranks show, so
+  // Player sits at their sum (left-20 = 5rem). Kept narrow so stat columns stay
+  // visible on a phone.
+  const playerLeft = showRanks ? 'left-20' : 'left-0';
 
   const header = (key: string, label: string, natural: SortDir, align: 'left' | 'center', extra = ''): JSX.Element => {
     const active = key === sortKey;
@@ -91,8 +95,20 @@ export function PlayerStatsTable({
           <tr className="border-b border-app-border text-left text-xs font-medium uppercase tracking-wider text-app-fg-muted">
             {showRanks ? (
               <>
-                <th className="sticky left-0 z-10 w-12 min-w-[3rem] bg-app-surface px-2 py-2.5 text-center">Lg #</th>
-                <th className="sticky left-12 z-10 w-[4.5rem] min-w-[4.5rem] whitespace-nowrap bg-app-surface px-2 py-2.5 text-center">Team #</th>
+                <th
+                  aria-label="League rank"
+                  title="League rank"
+                  className="sticky left-0 z-10 w-10 min-w-[2.5rem] max-w-[2.5rem] bg-app-surface px-1 py-2.5 text-center"
+                >
+                  Lg
+                </th>
+                <th
+                  aria-label="Team rank"
+                  title="Team rank"
+                  className="sticky left-10 z-10 w-10 min-w-[2.5rem] max-w-[2.5rem] bg-app-surface px-1 py-2.5 text-center"
+                >
+                  Tm
+                </th>
               </>
             ) : null}
             {header('name', 'Player', 'asc', 'left', `sticky ${playerLeft} z-10 bg-app-surface`)}
@@ -102,7 +118,7 @@ export function PlayerStatsTable({
         </thead>
         <tbody className="divide-y divide-app-border">
           {players.map((p) => {
-            const highlighted = p.mine || p.playerId === highlightId;
+            const highlighted = p.playerId === highlightId;
             const tone = rowTone(p, highlighted);
             const cell = rankMap?.[p.playerId];
             const unranked = showRanks && cell?.league == null;
@@ -114,10 +130,10 @@ export function PlayerStatsTable({
               >
                 {showRanks ? (
                   <>
-                    <td className={`mono sticky left-0 z-10 w-12 min-w-[3rem] px-2 py-2.5 text-center ${tone.sticky}`}>
+                    <td className={`mono sticky left-0 z-10 w-10 min-w-[2.5rem] max-w-[2.5rem] px-1 py-2.5 text-center ${tone.sticky}`}>
                       {cell?.league ?? '—'}
                     </td>
-                    <td className={`mono sticky left-12 z-10 w-[4.5rem] min-w-[4.5rem] whitespace-nowrap px-2 py-2.5 text-center ${tone.sticky}`}>
+                    <td className={`mono sticky left-10 z-10 w-10 min-w-[2.5rem] max-w-[2.5rem] px-1 py-2.5 text-center ${tone.sticky}`}>
                       {cell?.team ?? '—'}
                     </td>
                   </>
@@ -127,7 +143,9 @@ export function PlayerStatsTable({
                     unranked ? '' : 'text-app-fg'
                   } ${tone.sticky}`}
                 >
-                  {p.name}
+                  <span title={p.name} className="inline-block max-w-[8rem] truncate align-bottom">
+                    {p.name}
+                  </span>
                   {highlighted ? (
                     <span
                       aria-label="Your player"
