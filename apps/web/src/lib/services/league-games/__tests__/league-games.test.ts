@@ -1,6 +1,11 @@
 import { cancelLeagueGame, createLeagueGame, listLeagueGames, updateLeagueGame } from '../league-games';
 import { fakeDb, type FakeResult } from '../../__tests__/fake-db';
 
+const mockRefreshLeagueGame = jest.fn();
+jest.mock('@/lib/league-games/refresh', () => ({
+  refreshLeagueGame: (...args: unknown[]) => mockRefreshLeagueGame(...args),
+}));
+
 const LEAGUE = '11111111-1111-4111-8111-111111111111';
 const HOME = '22222222-2222-4222-8222-222222222222';
 const AWAY = '33333333-3333-4333-8333-333333333333';
@@ -186,6 +191,13 @@ describe('cancelLeagueGame', () => {
     const gamesUpdate = calls.find((c) => c.table === 'games' && c.op === 'update');
     expect(gamesUpdate?.payload).toEqual({ status: 'cancelled' });
     expect(gamesUpdate?.filters).toEqual({ id: [HOME_GAME, AWAY_GAME] });
+    expect(mockRefreshLeagueGame).not.toHaveBeenCalled();
+  });
+
+  it('should refresh the league when a completed league game is cancelled', async () => {
+    const { db } = fakeDb({ 'league_games.select': existing('completed'), 'league_staff.select': staff('league_admin') });
+    expect(await cancelLeagueGame(db, 'u1', { leagueGameId: LEAGUE_GAME })).toMatchObject({ ok: true });
+    expect(mockRefreshLeagueGame).toHaveBeenCalledWith(db, LEAGUE_GAME, 'u1');
   });
 
   it('should hide a game from someone off the league staff', async () => {

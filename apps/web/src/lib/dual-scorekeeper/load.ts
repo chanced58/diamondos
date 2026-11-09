@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ReconciliationOverride, ScoreConflict } from '@baseball/shared';
+import { authorizeReconciliationSettler } from '@/lib/services/games/resolve-reconciliation-conflict';
 
 export interface ReconciliationView {
   reconciliationId: string;
@@ -11,16 +12,20 @@ export interface ReconciliationView {
   awayTeamLabel: string;
   /** True when the supplied gameId is the home (canonical) game. */
   viewerOnHomeSide: boolean;
+  /** True when the viewer may settle the differences (`authorizeReconciliationSettler`). */
+  canSettle: boolean;
 }
 
 /**
  * Load the dual-scorekeeper reconciliation that involves `gameId` (as either
  * the home or away side), if one exists. Returns null when the game is not
- * paired or has not been reconciled yet.
+ * paired or has not been reconciled yet. `viewerUserId` is who is looking,
+ * for `canSettle`.
  */
 export async function loadReconciliationForGame(
   db: SupabaseClient,
   gameId: string,
+  viewerUserId: string,
 ): Promise<ReconciliationView | null> {
   const { data: recon, error: reconErr } = await db
     .from('game_reconciliations')
@@ -36,10 +41,10 @@ export async function loadReconciliationForGame(
   }
   if (!recon) return null;
 
-  const { data: teams, error: teamsErr } = await db
-    .from('games')
-    .select('id, teams(name)')
-    .in('id', [recon.home_game_id, recon.away_game_id]);
+  const [{ data: teams, error: teamsErr }, settler] = await Promise.all([
+    db.from('games').select('id, teams(name)').in('id', [recon.home_game_id, recon.away_game_id]),
+    authorizeReconciliationSettler(db, viewerUserId, recon.home_game_id as string),
+  ]);
   if (teamsErr) {
     console.error(
       `[dual-scorekeeper] team-label lookup failed recon=${recon.id} game=${gameId}: ${teamsErr.message}`,
@@ -61,5 +66,6 @@ export async function loadReconciliationForGame(
     homeTeamLabel: nameByGame.get(recon.home_game_id as string) ?? 'Home',
     awayTeamLabel: nameByGame.get(recon.away_game_id as string) ?? 'Away',
     viewerOnHomeSide: recon.home_game_id === gameId,
+    canSettle: settler.ok,
   };
 }

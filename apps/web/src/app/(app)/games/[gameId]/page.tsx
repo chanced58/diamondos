@@ -209,7 +209,7 @@ export default async function GameDetailPage({
   const { date: scheduledDate, time: scheduledTime } = utcToZonedDateTime(game.scheduled_at, game.time_zone);
 
   // Dual scorekeeper: surface the reconciliation panel once the game is done.
-  const reconciliation = isCompleted ? await loadReconciliationForGame(db, params.gameId) : null;
+  const reconciliation = isCompleted ? await loadReconciliationForGame(db, params.gameId, user.id) : null;
 
   return (
     <div className="p-8 max-w-2xl">

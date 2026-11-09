@@ -39,7 +39,7 @@ export async function loadGameDetail(
     countRows(db, 'game_lineups', gameId),
     countRows(db, 'opponent_game_lineups', gameId),
     isCompleted && viewer.isCoach ? loadTakeaways(db, game) : Promise.resolve(null),
-    isCompleted ? loadReconciliationForGame(db, gameId) : Promise.resolve(null),
+    isCompleted ? loadReconciliationForGame(db, gameId, actorUserId) : Promise.resolve(null),
   ]);
 
   return serviceOk({

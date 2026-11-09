@@ -7,6 +7,7 @@ import {
   utcToZonedDateTime,
   zonedDateTimeToUtc,
 } from '@baseball/shared';
+import { refreshLeagueGame } from '@/lib/league-games/refresh';
 import { authorizeLeagueStaff } from '../league-admin/authorize';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import { ensureTeamSeason } from './ensure-team-season';
@@ -317,6 +318,8 @@ export async function cancelLeagueGame(
     const { error: gamesError } = await db.from('games').update({ status: 'cancelled' }).in('id', gameIds);
     if (gamesError) return failed('cancelLeagueGame games', `league_game=${row.id}`, actorUserId, gamesError);
   }
+  // A completed game counted in the league; rebuild the snapshot without it.
+  if (row.status === 'completed') await refreshLeagueGame(db, row.id, actorUserId);
   return serviceOk({ leagueGameId: row.id });
 }
 

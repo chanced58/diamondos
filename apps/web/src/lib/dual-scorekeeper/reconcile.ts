@@ -1,11 +1,28 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { reconcileScoreLogs } from '@baseball/shared';
+import {
+  deriveBattingStats,
+  derivePitchingStats,
+  filterResetAndReverted,
+  PLACEHOLDER_PREFIX,
+  reconcileScoreLogs,
+  translateBookForSide,
+  type BattingStats,
+  type GameEvent,
+  type PitchingStats,
+} from '@baseball/shared';
+import { loadSideIdMaps, type BookSideMaps } from '@/lib/league-games/side-maps';
 
 interface PairedGameRow {
   id: string;
   status: string;
   scorer_side: string | null;
   paired_game_id: string | null;
+  league_game_id: string | null;
+}
+
+interface BookPlayerStats {
+  batting: Map<string, BattingStats>;
+  pitching: Map<string, PitchingStats>;
 }
 
 /** Load a game's full event log in sequence order; throws on a real query error. */
@@ -23,6 +40,27 @@ async function loadEvents(db: SupabaseClient, gameId: string): Promise<Record<st
 }
 
 /**
+ * Both teams' player lines from one league book, keyed by real player id:
+ * the book is read once from each team's side and each read keeps only that
+ * side's own players. Unmatched placeholders are left out — each book has its
+ * own placeholder rows, so they can never line up across books; their plays
+ * still show in the line-score diffs.
+ */
+function bookPlayerStats(events: Record<string, unknown>[], maps: BookSideMaps): BookPlayerStats {
+  const active = filterResetAndReverted(events);
+  const batting = new Map<string, BattingStats>();
+  const pitching = new Map<string, PitchingStats>();
+  for (const sideMap of [maps.scoringSide, maps.otherSide]) {
+    const translated = translateBookForSide(active, sideMap) as unknown as GameEvent[];
+    const sidePlayers = new Set(sideMap.toOurPlayer.values());
+    const isSidePlayer = (id: string) => sidePlayers.has(id) && !id.startsWith(PLACEHOLDER_PREFIX);
+    for (const [id, line] of deriveBattingStats(translated, [])) if (isSidePlayer(id)) batting.set(id, line);
+    for (const [id, line] of derivePitchingStats(translated, [])) if (isSidePlayer(id)) pitching.set(id, line);
+  }
+  return { batting, pitching };
+}
+
+/**
  * Compute (or refresh) the dual-scorekeeper reconciliation for a paired game.
  *
  * Called after a game is marked done. The reconciliation is only computed once
@@ -31,10 +69,11 @@ async function loadEvents(db: SupabaseClient, gameId: string): Promise<Record<st
  * canonical; conflicts record both values for the home coach to review.
  *
  * Comparison is at the line-score level (final score, per-half-inning runs,
- * team hits/errors), which is derived purely from each side's event stream and
- * needs no cross-roster identity matching. Per-player diffs are supported by
- * reconcileScoreLogs but require a player-identity bridge between the two
- * rosters that does not yet exist; they are intentionally omitted here.
+ * team hits/errors), derived purely from each side's event stream. For a
+ * league game (`games.league_game_id`) it also diffs every player's batting
+ * and pitching line: both books are translated into real player ids through
+ * the league roster records (`loadSideIdMaps`). Other paired games have no
+ * cross-roster identity bridge, so they stay at the line-score level.
  *
  * Best-effort: failures are logged and swallowed so they never block End Game.
  * Must run with a service-role client to read both teams' rows.
@@ -49,7 +88,7 @@ export async function runReconciliationForGame(
   try {
     const { data: game, error: gameErr } = await db
       .from('games')
-      .select('id, status, scorer_side, paired_game_id')
+      .select('id, status, scorer_side, paired_game_id, league_game_id')
       .eq('id', gameId)
       .maybeSingle<PairedGameRow>();
     if (gameErr) throw new Error(`game load failed ${gameId}: ${gameErr.message}`);
@@ -58,7 +97,7 @@ export async function runReconciliationForGame(
 
     const { data: mirror, error: mirrorErr } = await db
       .from('games')
-      .select('id, status, scorer_side, paired_game_id')
+      .select('id, status, scorer_side, paired_game_id, league_game_id')
       .eq('id', game.paired_game_id)
       .maybeSingle<PairedGameRow>();
     if (mirrorErr) throw new Error(`mirror load failed ${game.paired_game_id}: ${mirrorErr.message}`);
@@ -76,7 +115,15 @@ export async function runReconciliationForGame(
       loadEvents(db, awayGameId),
     ]);
 
-    const result = reconcileScoreLogs({ events: homeEvents }, { events: awayEvents });
+    let homeStats: BookPlayerStats | undefined;
+    let awayStats: BookPlayerStats | undefined;
+    if (game.league_game_id) {
+      const maps = await loadSideIdMaps(db, game.league_game_id);
+      homeStats = bookPlayerStats(homeEvents, maps.homeBook);
+      awayStats = bookPlayerStats(awayEvents, maps.awayBook);
+    }
+
+    const result = reconcileScoreLogs({ events: homeEvents, ...homeStats }, { events: awayEvents, ...awayStats });
 
     const { data: row, error } = await db
       .from('game_reconciliations')

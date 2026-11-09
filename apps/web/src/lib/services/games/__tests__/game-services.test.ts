@@ -24,6 +24,7 @@ jest.mock('@baseball/database', () => ({
 jest.mock('@/lib/dual-scorekeeper/load', () => ({
   loadReconciliationForGame: (...args: unknown[]) => mockLoadReconciliation(...args),
 }));
+jest.mock('@/lib/league-games/refresh', () => ({ refreshLeagueGame: jest.fn() }));
 
 const GAME_ID = '11111111-1111-4111-8111-111111111111';
 const RECON_ID = '22222222-2222-4222-8222-222222222222';
@@ -46,6 +47,7 @@ function fakeDb(results: Record<string, Result>, rpcResult: Result = { error: nu
         insert: (payload: unknown) => { call.op = 'insert'; call.payload = payload; return builder; },
         update: (payload: unknown) => { call.op = 'update'; call.payload = payload; return builder; },
         eq: (col: string, val: unknown) => { call.filters[col] = val; return builder; },
+        in: (col: string, val: unknown) => { call.filters[col] = val; return builder; },
         order: () => builder,
         limit: () => builder,
         maybeSingle: resolve,
@@ -269,24 +271,29 @@ describe('resolveReconciliationConflict', () => {
       .toEqual({ ok: false, code: 'not_found', error: 'Reconciliation not found.' });
   });
 
+  // The home game of a paired game outside a league, and the actor's seats on its team.
+  const settler = (role: string | null): Record<string, Result> => ({
+    'games.select': { data: { team_id: 'team-1', league_game_id: null } },
+    'user_profiles.select': { data: { is_platform_admin: false } },
+    'team_members.select': { data: role ? [{ team_id: 'team-1', role }] : [] },
+  });
+
   it('should only let the home coach override', async () => {
-    mockGetAuthorizedCoach.mockResolvedValue({ error: 'Only coaches can perform this action.', code: 'forbidden' });
-    const { db, rpcCalls } = fakeDb({ 'game_reconciliations.select': { data: recon } });
+    const { db, rpcCalls } = fakeDb({ ...settler(null), 'game_reconciliations.select': { data: recon } });
     expect(await resolveReconciliationConflict(db, 'away-coach', input))
       .toEqual({ ok: false, code: 'forbidden', error: 'Only the home team coach can resolve conflicts.' });
-    expect(mockGetAuthorizedCoach).toHaveBeenCalledWith(db, 'away-coach', GAME_ID);
     expect(rpcCalls).toHaveLength(0);
   });
 
   it('should reject a key that is no longer a current conflict', async () => {
-    const { db, rpcCalls } = fakeDb({ 'game_reconciliations.select': { data: recon } });
+    const { db, rpcCalls } = fakeDb({ ...settler('head_coach'), 'game_reconciliations.select': { data: recon } });
     const result = await resolveReconciliationConflict(db, 'coach-1', { ...input, conflictKey: 'team_hits:home' });
     expect(result).toEqual({ ok: false, code: 'conflict', error: 'That conflict no longer exists — reload the game.' });
     expect(rpcCalls).toHaveLength(0);
   });
 
   it('should save the override through the atomic RPC', async () => {
-    const { db, rpcCalls } = fakeDb({ 'game_reconciliations.select': { data: recon } });
+    const { db, rpcCalls } = fakeDb({ ...settler('head_coach'), 'game_reconciliations.select': { data: recon } });
     expect(await resolveReconciliationConflict(db, 'coach-1', input))
       .toEqual({ ok: true, data: { homeGameId: GAME_ID } });
     expect(rpcCalls).toEqual([['set_reconciliation_override', {
