@@ -174,6 +174,7 @@ describe('loadGameDetail', () => {
       homeTeamLabel: 'Huskies',
       awayTeamLabel: 'Eagles',
       viewerOnHomeSide: true,
+      canSettle: true,
     });
     const coach = fakeDb({ 'games.select': { data: gameRow }, 'team_members.select': { data: { role: 'head_coach' } } });
     const coachResult = await loadGameDetail(coach.db, 'coach-1', { gameId: GAME_ID });
@@ -189,6 +190,7 @@ describe('loadGameDetail', () => {
       ],
     });
 
+    mockLoadReconciliation.mockResolvedValue({ ...(await mockLoadReconciliation()), canSettle: false });
     const parent = fakeDb({ 'games.select': { data: gameRow }, 'team_members.select': { data: { role: 'parent' } } });
     const parentResult = await loadGameDetail(parent.db, 'parent-1', { gameId: GAME_ID });
     if (!parentResult.ok) throw new Error(parentResult.error);

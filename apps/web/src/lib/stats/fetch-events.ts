@@ -30,14 +30,14 @@ const MAX_PAGES = 50;
  * 80% of the events in our worst-case prod data — leaving stats panels
  * displaying ~20% of correct totals.
  *
- * Throws on any Supabase error, and on suspected MAX_PAGES truncation, so
+ * `eventTypes` null reads every type. Throws on any Supabase error, and on suspected MAX_PAGES truncation, so
  * the caller's page fails loudly instead of rendering partial data with
  * no signal.
  */
 export async function fetchAllEventsForGames(
   db: SupabaseClient,
   gameIds: string[],
-  eventTypes: readonly string[],
+  eventTypes: readonly string[] | null,
 ): Promise<Record<string, unknown>[]> {
   if (gameIds.length === 0) return [];
 
@@ -45,11 +45,9 @@ export async function fetchAllEventsForGames(
   let from = 0;
 
   for (let iter = 0; iter < MAX_PAGES; iter++) {
-    const { data, error } = await db
-      .from('game_events')
-      .select('*')
-      .in('game_id', gameIds)
-      .in('event_type', eventTypes as unknown as string[])
+    let query = db.from('game_events').select('*').in('game_id', gameIds);
+    if (eventTypes) query = query.in('event_type', eventTypes as unknown as string[]);
+    const { data, error } = await query
       .order('game_id')
       .order('sequence_number')
       .range(from, from + PAGE_SIZE - 1);
@@ -75,7 +73,7 @@ export async function fetchAllEventsForGames(
       throw new Error(
         `[stats/fetch-events] hit MAX_PAGES (${MAX_PAGES}) at offset ${from} ` +
           `with a full final page of ${PAGE_SIZE} rows for ${gameIds.length} game(s); ` +
-          `more events exist but would be silently dropped. Event types: ${eventTypes.join(',')}.`,
+          `more events exist but would be silently dropped. Event types: ${eventTypes ? eventTypes.join(',') : 'all'}.`,
       );
     }
   }

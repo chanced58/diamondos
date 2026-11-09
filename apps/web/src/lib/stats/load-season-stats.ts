@@ -14,7 +14,7 @@ import {
 } from '@baseball/shared';
 import { RELEVANT_EVENT_TYPES } from '@/app/(app)/compliance/constants';
 import { buildLineupsByGameId } from './lineups';
-import { fetchAllEventsForGames } from './fetch-events';
+import { loadEventsForTeamGames } from '@/lib/league-games/paired-book';
 import { rowsOf } from './rows-of';
 
 export interface PitcherComplianceInfo {
@@ -77,6 +77,8 @@ type GameRow = {
   away_score: number | null;
   location_type: string;
   neutral_home_team: string | null;
+  league_game_id: string | null;
+  result_source: string | null;
 };
 
 type PlayerRef = { id: string; firstName: string; lastName: string };
@@ -112,7 +114,7 @@ export async function loadTeamSeasonStats(
 
   let gamesQuery = db
     .from('games')
-    .select('id, opponent_team_id, opponent_name, home_score, away_score, location_type, neutral_home_team')
+    .select('id, opponent_team_id, opponent_name, home_score, away_score, location_type, neutral_home_team, league_game_id, result_source')
     .eq('team_id', teamId)
     .in('status', ['completed', 'in_progress']);
   if (season) gamesQuery = gamesQuery.eq('season_id', season.id);
@@ -121,7 +123,8 @@ export async function loadTeamSeasonStats(
 
   // Paginated: a season with 12+ scored games easily exceeds PostgREST's
   // 1000-row limit, which would otherwise silently truncate the events feed.
-  const rawEvents = await fetchAllEventsForGames(db, gameIds, RELEVANT_EVENT_TYPES as unknown as readonly string[]);
+  // A league game the other team scored reads that team's book, translated for us.
+  const rawEvents = await loadEventsForTeamGames(db, teamId, games, RELEVANT_EVENT_TYPES as unknown as readonly string[]);
   const filteredEvents = filterResetAndReverted(rawEvents);
 
   // Per-game lineups let deriveBattingStats infer the batter when a PA-closing

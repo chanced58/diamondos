@@ -83,6 +83,13 @@ const announcementSchema = z.object({
 });
 export type DashboardAnnouncement = z.infer<typeof announcementSchema>;
 
+const pendingSettlementSchema = z.object({
+  /** The team's own game row, which opens the settle panel. */
+  gameId: z.string(),
+  label: z.string(),
+});
+export type DashboardPendingSettlement = z.infer<typeof pendingSettlementSchema>;
+
 export const dashboardResponseSchema = z.object({
   teamId: z.string(),
   teamName: z.string(),
@@ -98,5 +105,7 @@ export const dashboardResponseSchema = z.object({
   announcements: z.array(announcementSchema),
   /** The team's announcement channel a coach posts in, or null when the viewer can't post. */
   announcementChannelId: z.string().nullable(),
+  /** Completed league games of the team whose two scorebooks differ and are not yet settled. */
+  pendingSettlements: z.array(pendingSettlementSchema),
 });
 export type DashboardResponse = z.infer<typeof dashboardResponseSchema>;

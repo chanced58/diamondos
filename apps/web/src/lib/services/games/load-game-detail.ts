@@ -73,7 +73,7 @@ export async function loadGameDetail(
           reconciliationId: reconciliation.reconciliationId,
           homeTeamLabel: reconciliation.homeTeamLabel,
           awayTeamLabel: reconciliation.awayTeamLabel,
-          canOverride: viewer.isCoach && reconciliation.viewerOnHomeSide,
+          canOverride: reconciliation.canSettle,
           conflicts: reconciliation.conflicts.map((conflict) => {
             const key = conflictKey(conflict);
             return {
