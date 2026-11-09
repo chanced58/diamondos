@@ -351,6 +351,12 @@ describe('LeagueStatsView', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Qualified only' }));
     const divider = screen.getByText('Not ranked · listed by name').closest('tr') as HTMLElement;
     expect(divider.nextElementSibling).toBe(rowFor('Bob Baker'));
+    // The unranked rows form their own row group, apart from the ranked rows.
+    expect(divider.parentElement?.tagName).toBe('TBODY');
+    expect(divider.parentElement).not.toBe(rowFor('Alice Avery').parentElement);
+    // The table is no longer in one sort order: say so instead of "descending".
+    expect(screen.getByRole('columnheader', { name: /^AVG/ }).getAttribute('aria-sort')).toBe('other');
+    expect(screen.getByRole('table', { name: /unranked players follow, by name/ })).toBeTruthy();
   });
 
   it('hides unqualified players by default and shows them when the switch is off', () => {

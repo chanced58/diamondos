@@ -1,4 +1,3 @@
-import { Fragment } from 'react';
 import type { SortColumnSpec } from '@/lib/league-home/team-table-sort';
 import { formatStat } from '@/lib/league-home/format-stat';
 import { getStatValue } from '@/lib/league-home/stat-value';
@@ -72,13 +71,17 @@ export function PlayerStatsTable({
   const firstUnranked =
     showRanks && sortKey !== 'name' ? players.findIndex((p) => rankMap?.[p.playerId]?.league == null) : -1;
   const colCount = (showRanks ? 2 : 0) + 2 + columns.length;
+  const split = firstUnranked !== -1;
+  const ranked = split ? players.slice(0, firstUnranked) : players;
+  const unrankedRows = split ? players.slice(firstUnranked) : [];
 
   const header = (key: string, label: string, natural: SortDir, align: 'left' | 'center', extra = ''): JSX.Element => {
     const active = key === sortKey;
     return (
       <th
         key={key}
-        aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+        // With an unranked group the table is not in one sort order; the caption explains.
+        aria-sort={active ? (split ? 'other' : sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
         className={`${align === 'left' ? 'px-3' : 'px-2 text-center'} py-2.5 ${extra}`}
       >
         <button
@@ -97,10 +100,63 @@ export function PlayerStatsTable({
     );
   };
 
+  const renderRow = (p: StatsPlayer): JSX.Element => {
+    const highlighted = p.playerId === highlightId;
+    const tone = rowTone(p, highlighted);
+    const cell = rankMap?.[p.playerId];
+    const unranked = showRanks && cell?.league == null;
+    return (
+      <tr
+        key={p.playerId}
+        id={`row-${p.playerId}`}
+        className={`${tone.row} ${unranked ? 'text-app-fg-subtle' : ''}`}
+      >
+        {showRanks ? (
+          <>
+            <td className={`mono sticky left-0 z-10 w-10 min-w-[2.5rem] max-w-[2.5rem] px-1 py-2.5 text-center ${tone.sticky}`}>
+              {cell?.league ?? '—'}
+            </td>
+            <td className={`mono sticky left-10 z-10 w-10 min-w-[2.5rem] max-w-[2.5rem] px-1 py-2.5 text-center ${tone.sticky}`}>
+              {cell?.team ?? '—'}
+            </td>
+          </>
+        ) : null}
+        <td
+          className={`sticky ${playerLeft} z-10 whitespace-nowrap px-3 py-2.5 font-medium ${
+            unranked ? '' : 'text-app-fg'
+          } ${tone.sticky}`}
+        >
+          <span title={p.name} className="inline-block max-w-[8rem] truncate align-bottom">
+            {p.name}
+          </span>
+          {highlighted ? (
+            <span
+              aria-label="Your player"
+              title="Your player"
+              className="ml-1 inline-block h-2 w-2 rotate-45 rounded-[1px] bg-turf-600 align-middle"
+            />
+          ) : null}
+        </td>
+        <td className="whitespace-nowrap px-3 py-2.5">
+          <a href={teamHref(slug, p.teamId, season)} className="hover:underline">
+            {p.teamName}
+          </a>
+        </td>
+        {columns.map((c) => (
+          <td key={c.key} className="mono px-2 py-2.5 text-center">
+            {cellDisplay(p, c)}
+          </td>
+        ))}
+      </tr>
+    );
+  };
+
   return (
     <div className="overflow-x-auto rounded-xl border border-app-border bg-app-surface">
       <table className="w-full text-sm">
-        <caption className="sr-only">{caption}</caption>
+        <caption className="sr-only">
+          {split ? `${caption}. Ranked players are sorted by the selected column; unranked players follow, by name.` : caption}
+        </caption>
         <thead>
           <tr className="border-b border-app-border text-left text-xs font-medium uppercase tracking-wider text-app-fg-muted">
             {showRanks ? (
@@ -126,70 +182,22 @@ export function PlayerStatsTable({
             {columns.map((c) => header(c.key, c.label, c.sortDir, 'center'))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-app-border">
-          {players.map((p, i) => {
-            const highlighted = p.playerId === highlightId;
-            const tone = rowTone(p, highlighted);
-            const cell = rankMap?.[p.playerId];
-            const unranked = showRanks && cell?.league == null;
-            return (
-              <Fragment key={p.playerId}>
-                {i === firstUnranked ? (
-                  <tr className="bg-app-surface-2">
-                    <th
-                      scope="rowgroup"
-                      colSpan={colCount}
-                      className="px-3 py-1.5 text-left text-xs font-semibold text-app-fg-muted"
-                    >
-                      Not ranked · listed by name
-                    </th>
-                  </tr>
-                ) : null}
-                <tr
-                  id={`row-${p.playerId}`}
-                  className={`${tone.row} ${unranked ? 'text-app-fg-subtle' : ''}`}
-                >
-                  {showRanks ? (
-                    <>
-                      <td className={`mono sticky left-0 z-10 w-10 min-w-[2.5rem] max-w-[2.5rem] px-1 py-2.5 text-center ${tone.sticky}`}>
-                        {cell?.league ?? '—'}
-                      </td>
-                      <td className={`mono sticky left-10 z-10 w-10 min-w-[2.5rem] max-w-[2.5rem] px-1 py-2.5 text-center ${tone.sticky}`}>
-                        {cell?.team ?? '—'}
-                      </td>
-                    </>
-                  ) : null}
-                  <td
-                    className={`sticky ${playerLeft} z-10 whitespace-nowrap px-3 py-2.5 font-medium ${
-                      unranked ? '' : 'text-app-fg'
-                    } ${tone.sticky}`}
-                  >
-                    <span title={p.name} className="inline-block max-w-[8rem] truncate align-bottom">
-                      {p.name}
-                    </span>
-                    {highlighted ? (
-                      <span
-                        aria-label="Your player"
-                        title="Your player"
-                        className="ml-1 inline-block h-2 w-2 rotate-45 rounded-[1px] bg-turf-600 align-middle"
-                      />
-                    ) : null}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2.5">
-                    <a href={teamHref(slug, p.teamId, season)} className="hover:underline">
-                      {p.teamName}
-                    </a>
-                  </td>
-                  {columns.map((c) => (
-                    <td key={c.key} className="mono px-2 py-2.5 text-center">
-                      {cellDisplay(p, c)}
-                    </td>
-                  ))}
-                </tr>
-              </Fragment>
-            );
-          })}
-        </tbody>
+        {ranked.length > 0 ? <tbody className="divide-y divide-app-border">{ranked.map(renderRow)}</tbody> : null}
+        {unrankedRows.length > 0 ? (
+          // Its own <tbody> so the divider's scope="rowgroup" covers exactly these rows.
+          <tbody className="divide-y divide-app-border border-t border-app-border">
+            <tr className="bg-app-surface-2">
+              <th
+                scope="rowgroup"
+                colSpan={colCount}
+                className="px-3 py-1.5 text-left text-xs font-semibold text-app-fg-muted"
+              >
+                Not ranked · listed by name
+              </th>
+            </tr>
+            {unrankedRows.map(renderRow)}
+          </tbody>
+        ) : null}
       </table>
     </div>
   );
