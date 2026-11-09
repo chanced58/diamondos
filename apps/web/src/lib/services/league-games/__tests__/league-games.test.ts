@@ -236,3 +236,19 @@ describe('listLeagueGames', () => {
     expect(result.data.games[1]).toMatchObject({ homeRuns: null, awayRuns: null, hasManualResult: true, needsSettling: false });
   });
 });
+
+describe('createLeagueGame rollback', () => {
+  it('should log a rollback step that fails and still try the rest', async () => {
+    const { db, calls } = createFixture({
+      'games.insert': [{ data: { id: HOME_GAME } }, { error: { message: 'boom' } }],
+      'games.delete': { error: { message: 'delete blocked' } },
+    });
+    const logged = jest.spyOn(console, 'error');
+    expect(await createLeagueGame(db, 'u1', input)).toMatchObject({ ok: false, code: 'failed' });
+    const rollbackLogs = logged.mock.calls.filter((c) => String(c[0]).includes('rollback delete games failed'));
+    expect(rollbackLogs).toHaveLength(1);
+    expect(String(rollbackLogs[0][0])).toContain(`league_game=${LEAGUE_GAME}`);
+    expect(String(rollbackLogs[0][0])).toContain(HOME_GAME);
+    expect(calls.some((c) => c.table === 'league_games' && c.op === 'delete')).toBe(true);
+  });
+});

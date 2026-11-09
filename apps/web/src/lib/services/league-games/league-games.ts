@@ -198,16 +198,25 @@ export async function createLeagueGame(
   }
 }
 
-/** Best-effort removal of a half-created matchup; the pairing columns go first so deletes are not blocked. */
+/**
+ * Best-effort removal of a half-created matchup; the pairing columns go first so deletes are not blocked.
+ * supabase-js returns `{ error }` rather than throwing, so each step's error is logged and the rest still run.
+ */
 async function rollbackCreate(db: SupabaseClient, leagueGameId: string | null, gameIds: string[]): Promise<void> {
+  const context = `league_game=${leagueGameId} games=${gameIds.join(',')}`;
+  const log = (step: string, error: unknown) => {
+    if (error) console.error(`[league-games] rollback ${step} failed ${context}:`, error);
+  };
   try {
     if (gameIds.length > 0) {
-      await db.from('games').update({ paired_game_id: null }).in('id', gameIds);
-      await db.from('games').delete().in('id', gameIds);
+      log('unpair', (await db.from('games').update({ paired_game_id: null }).in('id', gameIds)).error);
+      log('delete games', (await db.from('games').delete().in('id', gameIds)).error);
     }
-    if (leagueGameId) await db.from('league_games').delete().eq('id', leagueGameId);
+    if (leagueGameId) {
+      log('delete league game', (await db.from('league_games').delete().eq('id', leagueGameId)).error);
+    }
   } catch (error) {
-    console.error(`[league-games] rollback failed league_game=${leagueGameId}:`, error);
+    log('step', error);
   }
 }
 
