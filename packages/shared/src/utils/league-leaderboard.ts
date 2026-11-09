@@ -2,7 +2,12 @@ import type { StatDef } from '../constants/stat-catalog';
 
 export interface LeaderRow {
   id: string; name: string; value: number; qualifierValue: number; teamName?: string; teamId?: string;
+  /** PA for batting/special stats, IP outs for pitching stats; omitted for team rows (always eligible). */
+  activity?: number;
 }
+/** Fixed-locale collation so server (SSR) and browser order ties identically. */
+const collator = new Intl.Collator('en');
+
 export interface RankedLeaderRow extends LeaderRow { rank: number; }
 export interface BuildOpts { minQualifier: number; limit: number; }
 
@@ -49,11 +54,21 @@ export function leaderQualifierMinimums(
   return { paMin: paPerGame * leagueGames, ipOutsMin: ipPerGame * leagueGames * 3 };
 }
 
-export function buildLeaderboard(rows: LeaderRow[], stat: StatDef, opts: BuildOpts): RankedLeaderRow[] {
-  const eligible = stat.qualifier === 'none' || !stat.isRate
-    ? rows
-    : rows.filter((r) => r.qualifierValue >= opts.minQualifier);
-  const sorted = [...eligible].sort((a, b) => (stat.sortDir === 'asc' ? a.value - b.value : b.value - a.value));
+/** All eligible rows, ranked (ties share a rank, shown in name order). No limit. */
+export function rankLeaderRows(
+  rows: LeaderRow[],
+  stat: Pick<StatDef, 'sortDir' | 'isRate' | 'qualifier'>,
+  minQualifier: number,
+): RankedLeaderRow[] {
+  const eligible = rows.filter(
+    (r) =>
+      (r.activity === undefined || r.activity > 0) &&
+      (!stat.isRate || stat.qualifier === 'none' || r.qualifierValue >= minQualifier),
+  );
+  const sorted = [...eligible].sort((a, b) => {
+    const diff = stat.sortDir === 'asc' ? a.value - b.value : b.value - a.value;
+    return diff !== 0 ? diff : collator.compare(a.name, b.name);
+  });
   const ranked: RankedLeaderRow[] = [];
   let lastValue: number | null = null;
   let lastRank = 0;
@@ -62,5 +77,9 @@ export function buildLeaderboard(rows: LeaderRow[], stat: StatDef, opts: BuildOp
     ranked.push({ ...row, rank });
     lastValue = row.value; lastRank = rank;
   });
-  return ranked.slice(0, opts.limit);
+  return ranked;
+}
+
+export function buildLeaderboard(rows: LeaderRow[], stat: StatDef, opts: BuildOpts): RankedLeaderRow[] {
+  return rankLeaderRows(rows, stat, opts.minQualifier).slice(0, opts.limit);
 }

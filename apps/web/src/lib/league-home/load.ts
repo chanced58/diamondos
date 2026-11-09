@@ -2,13 +2,10 @@ import type { Database } from '@baseball/database';
 import { createClient } from '@supabase/supabase-js';
 import {
   buildLeaderboard,
-  leaderQualifierMinimums,
   getStatDef,
   publicDisplayName,
   memberDisplayName,
   mergeWithThemeDefaults,
-  leagueLeaderConfigSchema,
-  DEFAULT_LEADER_CONFIG,
   formatDate,
   weAreHome,
   type LeaderRow,
@@ -22,6 +19,8 @@ import {
   type StandingsDivisionGroup,
 } from './standings-divisions';
 import { getStatValue } from './stat-value';
+import { resolveSeason, qualifierMinsFor } from './league-context';
+import { compareStandings } from './standings-order';
 
 export { getStatValue } from './stat-value';
 
@@ -78,6 +77,7 @@ export function toLeaderRows(snap: LeaderPlayerSnapshot[], statKey: StatKey, isA
       teamId: r.team_id,
       value: getStatValue(r.stats, def.field),
       qualifierValue: def.qualifier === 'ip' ? r.innings_pitched_outs : r.plate_appearances,
+      activity: def.group === 'pitching' ? r.innings_pitched_outs : r.plate_appearances,
     }));
 }
 
@@ -262,20 +262,12 @@ export async function getLeagueHomeData(
   }
 
   const theme = mergeWithThemeDefaults(league.home_theme);
-  // Tolerate a malformed leader_config (e.g. hand-edited in the DB) rather than
-  // 500 the public page — fall back to defaults.
-  const parsedLeader = leagueLeaderConfigSchema.safeParse(league.leader_config ?? {});
-  const leaderConfig = parsedLeader.success ? parsedLeader.data : DEFAULT_LEADER_CONFIG;
-
   // Resolve available seasons (distinct snapshot season names) and the active one.
   const { data: seasonRows } = await db
     .from('league_standings_snapshot')
     .select('season')
     .eq('league_id', league.id);
-  const seasons = Array.from(new Set((seasonRows ?? []).map((r: { season: string }) => r.season))).sort((a, b) =>
-    b.localeCompare(a),
-  );
-  const season = seasonParam ?? league.current_season ?? seasons[0] ?? '';
+  const { season, seasons } = resolveSeason(seasonRows ?? [], league.current_season, seasonParam);
 
   const [
     { data: standings, error: standingsErr },
@@ -296,7 +288,8 @@ export async function getLeagueHomeData(
     throw new Error('Failed to load league data. Please try again.');
   }
 
-  const standingsSorted = (standings ?? []).sort((a, b) => b.win_pct - a.win_pct);
+  // Same order (and tie-break) as the stats page's Teams tab and the team-page rank.
+  const standingsSorted = (standings ?? []).sort(compareStandings);
   // Per-division breakdown for the public page. Empty when the league has no
   // divisions; unassigned rows appear only in the overall table.
   const divisions = groupStandingsByDivision(standingsSorted, leagueDivisions ?? []);
@@ -304,15 +297,8 @@ export async function getLeagueHomeData(
   // so derive games-played metrics from platform rows only — otherwise leaderboard
   // qualifiers and game counts inflate.
   const platformStandings = standingsSorted.filter((r): r is typeof r & { team_id: string } => Boolean(r.team_id));
-  const leagueGames = platformStandings.reduce(
-    (max, r) => Math.max(max, r.wins + r.losses + r.ties),
-    0,
-  );
-  const { paMin, ipOutsMin } = leaderQualifierMinimums(
-    leagueGames,
-    leaderConfig.qualifierOverrides,
-    league.level,
-  );
+  // Tolerates a malformed leader_config rather than 500ing the public page.
+  const { paMin, ipOutsMin, leaderConfig } = qualifierMinsFor(platformStandings, league.leader_config, league.level);
 
   // "Your team" marking only applies to authenticated viewers with an active team.
   const ourRef: ActiveTeamRef | null = isAuthed ? activeTeam ?? null : null;
