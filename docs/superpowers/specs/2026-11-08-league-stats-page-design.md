@@ -1,7 +1,7 @@
 # League Stats Page — Design
 
 **Date:** 2026-11-08
-**Status:** Draft — builder-checked, pending user approval
+**Status:** Approved (2026-11-08)
 **Branch:** `feature/league-stats-page`
 
 ## Why
@@ -111,10 +111,14 @@ Team names in the player tables link to the team page, as elsewhere.
 - **One shared ranking function** *(our call)*: add a pure eligibility-and-ranking function to
   `packages/shared/src/utils/league-leaderboard.ts`, unit-tested, used by the card, the table,
   **and the home page** — re-implement `buildLeaderboard` on top of it so the two pages can't
-  drift. This deliberately changes two home-page behaviours, both bug fixes:
+  drift. This deliberately changes these home-page behaviours:
   - non-pitchers (0 IP) no longer appear on ERA/WHIP boards when the IP minimum is 0
     (early season, or `qualifierOverrides.ipPerGame: 0`);
-  - ties get a stable name order instead of database row order.
+  - ties get a stable name order instead of database row order;
+  - players with 0 PA but R > 0 (courtesy / pinch runners) no longer appear on the Runs
+    board, because the shared `activity` rule requires PA > 0 for batting stats;
+  - the mobile app's league home (which calls `getLeagueHomeData`) changes the same way;
+  - the team page's hero rank breaks win-pct ties by team name.
   The home-page change is in scope for this branch.
 
 ### The viewer's own row is never hidden *(our call)*
