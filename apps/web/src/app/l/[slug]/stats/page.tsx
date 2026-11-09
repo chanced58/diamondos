@@ -109,6 +109,7 @@ export default async function LeagueStatsPage({
         ranks={data.ranks}
         teams={data.teams}
         myPlayers={data.myPlayers}
+        ourTeamId={data.ourTeamId}
         mins={data.mins}
         rankingEnabled={data.rankingEnabled}
         standingsRankEnabled={data.standingsRankEnabled}

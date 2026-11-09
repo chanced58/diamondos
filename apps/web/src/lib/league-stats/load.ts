@@ -53,6 +53,8 @@ export type LeagueStatsData =
       ranks: { batting: RankTable; pitching: RankTable } | null;
       teams: StatsTeam[];
       myPlayers: MyPlayer[];
+      /** Coach view: the active team, tinted on the Teams tab. Null for public and player/parent viewers. */
+      ourTeamId: string | null;
     };
 
 export interface AssembleInput {
@@ -165,6 +167,7 @@ export function assembleLeagueStats(input: AssembleInput): Extract<LeagueStatsDa
     ranks,
     teams,
     myPlayers,
+    ourTeamId: markOurTeam ? activeTeam!.id : null,
   };
 }
 

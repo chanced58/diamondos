@@ -44,6 +44,7 @@ export function TeamStatsTable({
   slug,
   season,
   highlightTeamId,
+  ourTeamId,
 }: {
   /** Already in standings order. */
   teams: StatsTeam[];
@@ -51,7 +52,10 @@ export function TeamStatsTable({
   showRank: boolean;
   slug: string;
   season: string;
+  /** The card's selected player's team: full highlight and ◆ marker. */
   highlightTeamId: string | null;
+  /** A coach's active team: lighter tint, used only when no player is selected. */
+  ourTeamId: string | null;
 }): JSX.Element {
   const [sort, setSort] = useState<{ key: string; dir: SortDir }>({ key: 'pct', dir: 'desc' });
 
@@ -103,8 +107,13 @@ export function TeamStatsTable({
         <tbody className="divide-y divide-app-border">
           {sorted.map((t) => {
             const highlighted = t.teamId === highlightTeamId;
+            const ours = !highlightTeamId && t.teamId === ourTeamId;
             return (
-              <tr key={t.teamId} id={teamRowId(t.teamId)} className={highlighted ? 'bg-turf-50' : ''}>
+              <tr
+                key={t.teamId}
+                id={teamRowId(t.teamId)}
+                className={highlighted ? 'bg-turf-50' : ours ? 'bg-turf-50/50' : ''}
+              >
                 {showRank ? (
                   <td className="mono px-3 py-2.5 text-center text-app-fg-subtle">{t.rank ?? '—'}</td>
                 ) : null}

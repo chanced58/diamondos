@@ -213,19 +213,39 @@ describe('YourRanksCard', () => {
 
 describe('TeamStatsTable', () => {
   it('hides the # column when standings rank is off', () => {
-    render(<TeamStatsTable teams={teams.map((t) => ({ ...t, rank: null }))} showRank={false} slug="metro" season="2026" highlightTeamId={null} />);
+    render(<TeamStatsTable teams={teams.map((t) => ({ ...t, rank: null }))} showRank={false} slug="metro" season="2026" highlightTeamId={null} ourTeamId={null} />);
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
     expect(headers).not.toContain('#');
     expect(headers.some((h) => h?.startsWith('Team AVG'))).toBe(true);
   });
 
   it('shows the standings rank and links team names', () => {
-    render(<TeamStatsTable teams={teams} showRank slug="metro" season="2026" highlightTeamId={null} />);
+    render(<TeamStatsTable teams={teams} showRank slug="metro" season="2026" highlightTeamId={null} ourTeamId={null} />);
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
     expect(headers[0]).toBe('#');
     const owls = screen.getByRole('link', { name: 'Owls' });
     expect(owls.getAttribute('href')).toBe('/l/metro/team/t2?season=2026');
     expect(within(owls.closest('tr') as HTMLElement).getAllByRole('cell')[0].textContent).toBe('2');
+  });
+});
+
+describe('TeamStatsTable highlight', () => {
+  const props = { teams, showRank: true, slug: 'metro', season: '2026' };
+  const teamRow = (name: string) => screen.getByRole('link', { name }).closest('tr') as HTMLElement;
+
+  it('gives the coach’s active team the lighter tint when no player is selected', () => {
+    render(<TeamStatsTable {...props} highlightTeamId={null} ourTeamId="t2" />);
+    expect(teamRow('Owls').classList.contains('bg-turf-50/50')).toBe(true);
+    expect(teamRow('Owls').classList.contains('bg-turf-50')).toBe(false);
+    expect(within(teamRow('Owls')).queryByLabelText('Your team')).toBeNull();
+    expect(teamRow('Hawks').className).not.toContain('bg-turf');
+  });
+
+  it('prefers the selected player’s team over the active team', () => {
+    render(<TeamStatsTable {...props} highlightTeamId="t1" ourTeamId="t2" />);
+    expect(teamRow('Hawks').classList.contains('bg-turf-50')).toBe(true);
+    expect(within(teamRow('Hawks')).getByLabelText('Your team')).toBeTruthy();
+    expect(teamRow('Owls').className).not.toContain('bg-turf');
   });
 });
 
@@ -238,6 +258,7 @@ describe('LeagueStatsView', () => {
     ranks: { batting: battingRanks, pitching: pitchingRanks },
     teams,
     myPlayers: [me],
+    ourTeamId: null,
     mins,
     rankingEnabled: true,
     standingsRankEnabled: true,

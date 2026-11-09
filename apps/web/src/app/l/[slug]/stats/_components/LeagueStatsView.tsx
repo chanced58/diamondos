@@ -36,6 +36,7 @@ export function LeagueStatsView({
   ranks,
   teams,
   myPlayers,
+  ourTeamId,
   mins,
   rankingEnabled,
   standingsRankEnabled,
@@ -47,6 +48,7 @@ export function LeagueStatsView({
   ranks: { batting: RankTable; pitching: RankTable } | null;
   teams: StatsTeam[];
   myPlayers: MyPlayer[];
+  ourTeamId: string | null;
   mins: { paMin: number; ipOutsMin: number };
   rankingEnabled: boolean;
   standingsRankEnabled: boolean;
@@ -123,6 +125,7 @@ export function LeagueStatsView({
             slug={slug}
             season={season}
             highlightTeamId={selectedTeamId}
+            ourTeamId={ourTeamId}
           />
         )
       ) : (

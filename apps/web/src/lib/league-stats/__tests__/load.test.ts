@@ -158,6 +158,17 @@ describe('assembleLeagueStats', () => {
     expect(ours({ isAuthed: true, myPlayerIds: new Set(['p3']) })).toEqual([]);
   });
 
+  it('ourTeamId is the active team only for non-player authed viewers', () => {
+    const playerSnap = [player({ player_id: 'p1' })];
+    const activeTeam = { id: 'reds', name: 'Reds' };
+    const ourTeamId = (over: Record<string, unknown>) =>
+      assembleLeagueStats(base({ playerSnap, activeTeam, ...over })).ourTeamId;
+    expect(ourTeamId({ isAuthed: false })).toBeNull();
+    expect(ourTeamId({ isAuthed: true })).toBe('reds');
+    expect(ourTeamId({ isAuthed: true, myPlayerIds: new Set(['p1']) })).toBeNull();
+    expect(ourTeamId({ isAuthed: true, activeTeam: null })).toBeNull();
+  });
+
   it('a public viewer cannot be given a my-player card for an opted-out player', () => {
     const playerSnap = [player({ player_id: 'p2', last_name: 'Zzyzxlee', public_opt_out: true })];
     const result = assembleLeagueStats(base({ playerSnap, myPlayerIds: new Set(['p2']) }));
