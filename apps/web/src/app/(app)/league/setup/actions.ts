@@ -2,6 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { createLeagueManagedTeam } from '@/lib/services/league-admin/league-managed-teams';
 
 type SetupInput = {
   leagueId: string;
@@ -52,6 +53,9 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
   const cleanTeamNames = input.teamNames.map((n) => n.trim()).filter(Boolean);
   if (cleanTeamNames.length < 2) return { error: 'At least 2 team names are required' };
 
+  // Adult leagues run their own schedule with league-managed teams.
+  const isAdultLeague = input.leagueType === 'adult';
+
   // 1. Update the league row (without setup_completed_at — set only after all steps succeed)
   const { error: updateError } = await db
     .from('leagues')
@@ -62,6 +66,7 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
       state_code: input.stateCode || null,
       current_season: input.currentSeason,
       logo_url: input.logoUrl,
+      ...(isAdultLeague ? { schedules_games: true } : {}),
     })
     .eq('id', input.leagueId);
 
@@ -82,9 +87,24 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
     }
   }
 
-  // 3. Create opponent_teams (league-owned) and league_members for each team
+  // 3. Create each team: a league-managed team for adult leagues, otherwise a
+  // league-owned opponent_team, plus its league_members row
   for (let i = 0; i < cleanTeamNames.length; i++) {
     const teamName = cleanTeamNames[i];
+
+    // Resolve division assignment
+    const assignedDivisionName = input.teamDivisions[String(i)];
+    const divisionId = assignedDivisionName ? divisionMap[assignedDivisionName] ?? null : null;
+
+    if (isAdultLeague) {
+      const created = await createLeagueManagedTeam(db, user.id, {
+        leagueId: input.leagueId,
+        name: teamName,
+        divisionId: divisionId ?? undefined,
+      });
+      if (!created.ok) return { error: `Failed to create team "${teamName}": ${created.error}` };
+      continue;
+    }
 
     // Create an opponent_team owned by the league (team_id is null)
     const { data: opponentTeam, error: otError } = await db
@@ -97,10 +117,6 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
       .single();
 
     if (otError) return { error: `Failed to create team "${teamName}": ${otError.message}` };
-
-    // Resolve division assignment
-    const assignedDivisionName = input.teamDivisions[String(i)];
-    const divisionId = assignedDivisionName ? divisionMap[assignedDivisionName] ?? null : null;
 
     // Create league_members row linking the opponent_team to the league
     const { error: lmError } = await db

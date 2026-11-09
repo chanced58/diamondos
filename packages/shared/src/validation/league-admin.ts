@@ -258,3 +258,19 @@ export type LeagueStaffResponse = z.infer<typeof leagueStaffResponseSchema>;
 
 export const leagueStaffWriteResponseSchema = z.object({ staffId: z.string() });
 export type LeagueStaffWriteResponse = z.infer<typeof leagueStaffWriteResponseSchema>;
+
+// ── League-managed teams ─────────────────────────────────────────────────────
+
+/** A real team run by the league (no team members) until a coach joins. */
+export const createLeagueManagedTeamInputSchema = z.object({
+  leagueId: uuid,
+  name: z.string().trim().min(1, 'Team name is required').max(100),
+  divisionId: uuid.optional(),
+});
+export type CreateLeagueManagedTeamInput = z.infer<typeof createLeagueManagedTeamInputSchema>;
+
+export const setLeagueSchedulesGamesInputSchema = z.object({
+  leagueId: uuid,
+  schedulesGames: z.boolean(),
+});
+export type SetLeagueSchedulesGamesInput = z.infer<typeof setLeagueSchedulesGamesInputSchema>;
