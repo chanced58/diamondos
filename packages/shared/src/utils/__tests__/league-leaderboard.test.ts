@@ -1,5 +1,6 @@
 import {
   buildLeaderboard,
+  rankLeaderRows,
   leaderQualifierMinimums,
   DEFAULT_IP_PER_GAME,
   type LeaderRow,
@@ -106,5 +107,30 @@ describe('buildLeaderboard teamId passthrough', () => {
     const ranked = buildLeaderboard(rows, getStatDef('avg'), { minQualifier: 0, limit: 10 });
     expect(ranked[0].teamId).toBe('t1');
     expect(ranked[1].teamId).toBe('t2');
+  });
+});
+
+describe('rankLeaderRows', () => {
+  it('excludes rows with activity 0 even when minQualifier is 0', () => {
+    const eraRows: LeaderRow[] = [
+      { id: 'np', name: 'NP', value: 0, qualifierValue: 0, activity: 0 },
+      { id: 'p', name: 'P', value: 3.5, qualifierValue: 9, activity: 9 },
+    ];
+    const out = rankLeaderRows(eraRows, getStatDef('era'), 0);
+    expect(out.map((r) => r.id)).toEqual(['p']);
+  });
+  it('breaks ties by name', () => {
+    const tied: LeaderRow[] = [
+      { id: 'z', name: 'Zed', value: 0.35, qualifierValue: 30 },
+      { id: 'a', name: 'Amy', value: 0.35, qualifierValue: 30 },
+      { id: 'd', name: 'Dan', value: 0.3, qualifierValue: 30 },
+    ];
+    const out = rankLeaderRows(tied, getStatDef('avg'), 10);
+    expect(out.map((r) => r.name)).toEqual(['Amy', 'Zed', 'Dan']);
+    expect(out.map((r) => r.rank)).toEqual([1, 1, 3]);
+  });
+  it('keeps rows without activity (team rows)', () => {
+    const teamRows: LeaderRow[] = [{ id: 't', name: 'T', value: 5, qualifierValue: 1 }];
+    expect(rankLeaderRows(teamRows, getStatDef('avg'), 0).map((r) => r.id)).toEqual(['t']);
   });
 });

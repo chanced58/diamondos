@@ -78,6 +78,7 @@ export function toLeaderRows(snap: LeaderPlayerSnapshot[], statKey: StatKey, isA
       teamId: r.team_id,
       value: getStatValue(r.stats, def.field),
       qualifierValue: def.qualifier === 'ip' ? r.innings_pitched_outs : r.plate_appearances,
+      activity: def.group === 'pitching' ? r.innings_pitched_outs : r.plate_appearances,
     }));
 }
 

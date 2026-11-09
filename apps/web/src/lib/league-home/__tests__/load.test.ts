@@ -36,6 +36,15 @@ describe('league-home load helpers', () => {
     expect(rows[0].value).toBe(2.5);
   });
 
+  it('toLeaderRows sets activity from innings_pitched_outs for pitching stats and plate_appearances otherwise', () => {
+    const snap = [
+      { player_id: 'p4', first_name: 'Lee', last_name: 'Cho', public_opt_out: false, team_id: 'reds', team_name: 'Reds', stats: { era: 2.5, strikeoutsP: 4, homeRuns: 2 }, plate_appearances: 40, innings_pitched_outs: 21 },
+    ];
+    expect(toLeaderRows(snap, 'era', true)[0].activity).toBe(21);
+    expect(toLeaderRows(snap, 'strikeoutsP', true)[0].activity).toBe(21);
+    expect(toLeaderRows(snap, 'homeRuns', true)[0].activity).toBe(40);
+  });
+
   it('resolveVisibility blocks anon on signed_in leagues', () => {
     expect(resolveVisibility('signed_in', false)).toBe('blocked');
     expect(resolveVisibility('signed_in', true)).toBe('ok');
