@@ -1561,7 +1561,7 @@ export type Database = {
             columns: ["league_game_id"]
             isOneToOne: false
             referencedRelation: "league_game_manual_results"
-            referencedColumns: ["id"]
+            referencedColumns: ["league_game_id"]
           },
           {
             foreignKeyName: "league_game_manual_batting_lines_player_id_fkey"
