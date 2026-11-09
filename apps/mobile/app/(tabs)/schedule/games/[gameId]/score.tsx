@@ -47,9 +47,11 @@ import { describeFinalizeStatus } from '../../../../../src/sync/finalize-status'
 import { addLineupRow, createLocalGuest, prepareLineupRow } from '../../../../../src/features/lineup/local-guest';
 import { withLineupChangeLock } from '../../../../../src/features/lineup/lineup-change-lock';
 import { useGameLineups } from '../../../../../src/features/lineup/use-game-lineups';
+import { currentOpponentPitcherId } from '../../../../../src/features/scoring/opponent-pitcher';
 import { useOpponentLineup, type OpponentBatter } from '../../../../../src/features/lineup/use-opponent-lineup';
 import {
   addNewOpponentBatter,
+  addNewOpponentPitcher,
   addOpponentBatterFromRoster,
   opponentDisplayName,
   rosterNotYetBatting,
@@ -364,6 +366,7 @@ function ScoringScreenContent() {
   const [showOpponentBatterPicker, setShowOpponentBatterPicker] = useState(false);
   const [showAddOpponentBatter, setShowAddOpponentBatter] = useState(false);
   const [showAddOurBatter, setShowAddOurBatter] = useState(false);
+  const [showChangeOpponentPitcher, setShowChangeOpponentPitcher] = useState(false);
   const [contractionSide, setContractionSide] = useState<'us' | 'opponent'>('us');
   const [showRemoveBatter, setShowRemoveBatter] = useState(false);
   const [removingBatter, setRemovingBatter] = useState(false);
@@ -546,6 +549,20 @@ function ScoringScreenContent() {
     return pid;
   }, [events, isHome]);
 
+  // Their pitcher: their lineup's P, then their own pitching changes. Kept
+  // apart from gameState.currentPitcherId, which INNING_CHANGE resets and
+  // which mobile never sets for the opponent. Null leaves events unattributed.
+  const opponentPitcherId = useMemo(
+    () => currentOpponentPitcherId(
+      opponentSlots.map((slot) => ({
+        opponentPlayerRemoteId: slot.playerId,
+        startingPosition: slot.startingPosition ?? null,
+      })),
+      events,
+    ),
+    [opponentSlots, events],
+  );
+
   // Every platform player id we can safely attribute events to: our roster
   // plus everyone in the lineup (guests included). Ids outside this set are
   // opponent players (or stale leaks) and must go in opponent* fields.
@@ -566,6 +583,7 @@ function ScoringScreenContent() {
         ourBatterId,
         ourPitcherId,
         statePitcherId: gameState.currentPitcherId,
+        opponentPitcherId,
         // Prefer the batter derived from the opponent's own order over
         // gameState.currentBatterId. The latter is only ever set by a
         // previous PITCH_THROWN, so for an opponent half it is null until
@@ -1446,9 +1464,47 @@ function ScoringScreenContent() {
     if (!gameState) return;
     const payload: PitchingChangePayload = {
       newPitcherId,
-      outgoingPitcherId: currentPitcherId,
+      // Our own pitcher, not the reducer's: an opponent change made this half
+      // leaves the reducer pointing at their pitcher.
+      outgoingPitcherId: ourPitcherId ?? currentPitcherId,
     };
     await recordEvent(EventType.PITCHING_CHANGE, gameState.inning, gameState.isTopOfInning, payload);
+  }
+
+  /**
+   * Record their pitching change: pick from their roster, or add a player
+   * nobody can name (an unknown player on a league game, as for batters).
+   * Only the opponent_players row is written — a pitcher joins no batting order.
+   */
+  async function handleChangeOpponentPitcher(input:
+    | { kind: 'roster'; opponentPlayerId: string }
+    | { kind: 'new'; firstName: string; lastName: string; jerseyNumber: string }
+  ): Promise<string | null> {
+    if (!gameState) return 'The game is still loading.';
+    let newPitcherId: string;
+    if (input.kind === 'roster') {
+      newPitcherId = input.opponentPlayerId;
+    } else {
+      if (!game?.opponentTeamId) return 'This game has no opponent team on file.';
+      const created = await addNewOpponentPitcher({
+        opponentTeamId: game.opponentTeamId,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        jerseyNumber: input.jerseyNumber,
+        placeholderGameId: game.leagueGameId,
+      });
+      if (!created.ok) return created.message;
+      newPitcherId = created.opponentPlayerId;
+    }
+    const payload: PitchingChangePayload = {
+      newPitcherId,
+      ...(opponentPitcherId ? { outgoingPitcherId: opponentPitcherId } : {}),
+      isOpponentChange: true,
+    };
+    await recordEvent(EventType.PITCHING_CHANGE, gameState.inning, gameState.isTopOfInning, payload);
+    setShowChangeOpponentPitcher(false);
+    triggerSync().catch(() => {});
+    return null;
   }
 
   async function handlePinchHitter(newBatterId: string) {
@@ -2189,6 +2245,25 @@ function ScoringScreenContent() {
       />
 
 
+      {/* Their pitcher — the other team's book, so a league game credits
+          their pitchers. Shown whenever we can name the opponent. */}
+      {gameStarted && game?.opponentTeamId && (
+        <View className="flex-row items-center px-4 py-2 border-t border-gray-100">
+          <Text className="flex-1 text-score-sm text-gray-500" numberOfLines={1}>
+            {opponentName} pitcher:{' '}
+            <Text className="font-semibold text-gray-800">
+              {opponentPitcherId ? opponentNameById.get(opponentPitcherId) ?? 'Unknown player' : 'not set'}
+            </Text>
+          </Text>
+          <TouchableOpacity
+            onPress={() => setShowChangeOpponentPitcher(true)}
+            className="px-3 py-1 rounded-full bg-slate-200"
+          >
+            <Text className="text-score-xs font-semibold text-slate-700">Change their pitcher</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Next up — on deck while we bat, leading off our next half while the
           opponent does. Named for what it is in each case so the scorer
           doesn't have to work out which. */}
@@ -2367,6 +2442,19 @@ function ScoringScreenContent() {
         allowUnknownPlayer={!!game?.leagueGameId}
         onSubmit={handleAddOpponentBatter}
         onCancel={() => setShowAddOpponentBatter(false)}
+      />
+
+      <AddBatterModal
+        visible={showChangeOpponentPitcher}
+        title={`${opponentName} pitching change`}
+        rosterLabel="ON THEIR ROSTER"
+        roster={opponentRoster
+          .filter((p) => p.remoteId !== opponentPitcherId)
+          .map((p) => ({ id: p.remoteId, name: opponentDisplayName(p) }))}
+        allowUnknownPlayer={!!game?.leagueGameId}
+        noun="pitcher"
+        onSubmit={handleChangeOpponentPitcher}
+        onCancel={() => setShowChangeOpponentPitcher(false)}
       />
 
       <CaughtStealingModal
@@ -3433,6 +3521,7 @@ function AddBatterModal({
   roster,
   topOfOrder = null,
   allowUnknownPlayer = false,
+  noun = 'batter',
   onSubmit,
   onCancel,
 }: {
@@ -3442,6 +3531,9 @@ function AddBatterModal({
   roster: Array<{ id: string; name: string }>;
   /** League games: offer adding a batter nobody can name, jersey optional. */
   allowUnknownPlayer?: boolean;
+  /** What is being added: 'batter' goes to the end of the order, 'pitcher'
+   *  takes the mound and joins no order. */
+  noun?: 'batter' | 'pitcher';
   /** "Who's up?" after a partial order's last batter: the order turning over
    *  is offered first, ahead of adding someone new. */
   topOfOrder?: { name: string; onPick: () => void } | null;
@@ -3513,7 +3605,7 @@ function AddBatterModal({
       // A rejected write would otherwise leave busy=true, disabling every
       // button in the modal until it is closed and reopened.
       console.warn(`AddBatterModal submit failed title=${title}:`, err);
-      setError('Could not add the batter. Try again.');
+      setError(`Could not add the ${noun}. Try again.`);
     } finally {
       setBusy(false);
     }
@@ -3531,8 +3623,10 @@ function AddBatterModal({
         <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '85%' }}>
           <Text className="text-score-lg font-bold text-gray-900 mb-1">{title}</Text>
           <Text className="text-score-sm text-gray-500 mb-4">
-            Goes to the end of their order. Saves on the device — it reaches
-            the server whenever you have signal.
+            {noun === 'pitcher'
+              ? 'Takes the mound now.'
+              : 'Goes to the end of their order.'}{' '}
+            Saves on the device — it reaches the server whenever you have signal.
           </Text>
 
           {error && (
@@ -3560,7 +3654,9 @@ function AddBatterModal({
                 </TouchableOpacity>
               </>
             )}
-            <Text className="text-score-xs font-semibold text-gray-500 mb-2">NEW BATTER</Text>
+            <Text className="text-score-xs font-semibold text-gray-500 mb-2">
+              {noun === 'pitcher' ? 'NEW PITCHER' : 'NEW BATTER'}
+            </Text>
             <View
               onLayout={(event) => {
                 newBatterOffsetY.current = event.nativeEvent.layout.y;
@@ -3600,7 +3696,9 @@ function AddBatterModal({
                 onPress={() => run({ kind: 'new', firstName, lastName, jerseyNumber: jersey })}
                 className={`mt-3 rounded-xl py-3 items-center ${busy ? 'bg-slate-300' : 'bg-slate-700'}`}
               >
-                <Text className="text-white font-semibold">Add to order</Text>
+                <Text className="text-white font-semibold">
+                  {noun === 'pitcher' ? 'Put in to pitch' : 'Add to order'}
+                </Text>
               </TouchableOpacity>
               <Text className="text-score-xs text-gray-400 mt-2">
                 A jersey number on its own is enough — you can add the name later.
