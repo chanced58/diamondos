@@ -16,6 +16,7 @@ import {
   getAuthorizedCoach,
   finalizeGame,
 } from '@/lib/games/finalize';
+import { authorizeGameStart } from '@/lib/services/games/authorize';
 import { cancelGame } from '@/lib/services/games/cancel-game';
 import { updateGame } from '@/lib/services/games/update-game';
 import { gameFormFieldsFromFormData } from '@/lib/services/games/game-form-data';
@@ -63,9 +64,10 @@ export async function startGameAction(_prevState: string | null | undefined, for
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error ?? null;
-  const { game } = result;
+  // Coaches of the game, or league staff on a league game's home row.
+  const result = await authorizeGameStart(supabase, user.id, gameId);
+  if (!result.ok) return result.error;
+  const game = result.data;
 
   if (game.status !== 'scheduled' && game.status !== 'in_progress') {
     return 'Game is not in a schedulable state.';

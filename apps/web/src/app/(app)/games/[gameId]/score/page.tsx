@@ -52,9 +52,11 @@ export default async function ScorePage({ params }: { params: { gameId: string }
     if (!membership) notFound();
   }
 
-  // Must be in_progress to score
-  if (game.status === 'scheduled') redirect(`/games/${params.gameId}`);
-  if (game.status === 'completed' || game.status === 'cancelled') redirect(`/games/${params.gameId}`);
+  // Must be in_progress to score. League staff without a seat on the team
+  // can't open the game page, so they go back to the League Games list, where
+  // a scheduled game is started.
+  const notScorable = game.status === 'scheduled' || game.status === 'completed' || game.status === 'cancelled';
+  if (notScorable) redirect(isLeagueScorer ? '/league/admin/games' : `/games/${params.gameId}`);
 
   const [lineupResult, eventsResult, rosterResult, opponentPlayersResult, opponentLineupResult] = await Promise.all([
     db
@@ -242,7 +244,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
   // empty active event list). Redirect to the game detail page so the coach can
   // explicitly start a new session rather than seeing a blank scoring board.
   if (!activeEvents.some((e) => e.event_type === 'game_start')) {
-    redirect(`/games/${params.gameId}`);
+    redirect(isLeagueScorer ? '/league/admin/games' : `/games/${params.gameId}`);
   }
 
   // Compute the global max sequence number across ALL events (not just the active

@@ -83,3 +83,27 @@ export async function authorizeLeagueGameScorer(
   });
   return access.ok;
 }
+
+/**
+ * Who may start scoring a game: its coaches (as `authorizeGameCoach`), and
+ * league staff on the HOME row of a league game, so a game neither team
+ * scores can still be run from the League Games page. The game row comes back
+ * with the same columns either way.
+ */
+export async function authorizeGameStart(
+  db: SupabaseClient,
+  actorUserId: string,
+  gameId: string,
+): Promise<ServiceResult<AuthorizedGame>> {
+  const coach = await authorizeGameCoach(db, actorUserId, gameId);
+  if (coach.ok) return coach;
+  if (!(await authorizeLeagueGameScorer(db, actorUserId, gameId))) return coach;
+
+  const { data, error } = await db
+    .from('games')
+    .select('team_id, opponent_name, opponent_team_id, scheduled_at, time_zone, status, location_type, neutral_home_team, tournament_id')
+    .eq('id', gameId)
+    .maybeSingle();
+  if (error || !data) return serviceError('not_found', 'Game not found.');
+  return { ok: true, data: data as AuthorizedGame };
+}

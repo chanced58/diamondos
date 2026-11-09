@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState, type FormEvent, type JSX } from 'react';
+import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatDate, formatTime, utcToZonedDateTime } from '@baseball/shared';
 import type { LeagueGameListItem } from '@/lib/services/league-games/league-games';
+import { startGameAction } from '@/app/(app)/games/[gameId]/actions';
 import { cancelLeagueGameAction, createLeagueGameAction, updateLeagueGameAction } from './actions';
 
 interface LeagueGamesClientProps {
@@ -42,6 +44,23 @@ function canEnterResult(game: LeagueGameListItem): boolean {
 function scoreLabel(game: LeagueGameListItem): string {
   if (game.homeRuns === null || game.awayRuns === null) return '—';
   return `${game.awayRuns}–${game.homeRuns}`;
+}
+
+function StartButton(): JSX.Element {
+  const { pending } = useFormStatus();
+  return <button type="submit" disabled={pending} className={`${LINK} disabled:opacity-50`}>{pending ? 'Starting…' : 'Start scoring'}</button>;
+}
+
+/** Starts the home row's book (needs its lineup); lands on the web scorer. */
+function StartScoringForm({ gameId }: { gameId: string }): JSX.Element {
+  const [error, formAction] = useFormState(startGameAction, null);
+  return (
+    <form action={formAction} className="inline">
+      <input type="hidden" name="gameId" value={gameId} />
+      <StartButton />
+      {error ? <span role="alert" className="ml-2 text-xs text-red-600">{error}</span> : null}
+    </form>
+  );
 }
 
 function AddGameForm({ leagueId, teams, onDone }: { leagueId: string; teams: LeagueGamesClientProps['teams']; onDone: () => void }): JSX.Element {
@@ -206,7 +225,8 @@ function GameRow({ game, isLeagueAdmin }: { game: LeagueGameListItem; isLeagueAd
             {game.home.gameId && (game.status === 'scheduled' || game.status === 'in_progress') ? (
               <Link href={`/games/${game.home.gameId}/lineup`} className={LINK}>Set home lineup</Link>
             ) : null}
-            {canEnterResult(game) ? (
+            {game.home.gameId && game.status === 'scheduled' ? <StartScoringForm gameId={game.home.gameId} /> : null}
+            {isLeagueAdmin && canEnterResult(game) ? (
               <Link href={`/league/admin/games/${game.id}/result`} className={LINK}>
                 {game.hasManualResult ? 'Edit result' : 'Enter result'}
               </Link>
