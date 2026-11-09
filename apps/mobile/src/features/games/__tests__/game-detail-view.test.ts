@@ -32,6 +32,8 @@ function detail(game: Partial<Game> = {}, isCoach = false): GameDetailResponse {
       latitude: null,
       longitude: null,
       tournamentId: null,
+      leagueGameId: null,
+      resultSource: null,
       ...game,
     },
     viewer: { isCoach },
@@ -125,5 +127,23 @@ describe('gameDetailSections', () => {
     expect(gameDetailSections(detail({ status: 'in_progress' }, true), true).showOpponentLineup).toBe(true);
     expect(gameDetailSections(detail({ tournamentId: 'tour', status: 'scheduled' }, true), true).showOpponentLineup).toBe(true);
     expect(gameDetailSections(detail({ tournamentId: 'tour', status: 'in_progress' }, true), true).showOpponentLineup).toBe(false);
+  });
+
+  it('should leave edit and cancel of a league game to League Games', () => {
+    const sections = gameDetailSections(detail({ leagueGameId: 'lg-1' }, true), true);
+    expect(sections.canEdit).toBe(false);
+    expect(sections.canCancel).toBe(false);
+  });
+
+  it('should hide recalculate and reset on a row whose result the league wrote', () => {
+    const sections = gameDetailSections(detail({ status: 'completed', leagueGameId: 'lg-1', resultSource: 'paired' }, true), true);
+    expect(sections.canRecalculate).toBe(false);
+    expect(sections.canReset).toBe(false);
+  });
+
+  it("should let coaches recalculate their own finished league book but not reset it", () => {
+    const sections = gameDetailSections(detail({ status: 'completed', leagueGameId: 'lg-1' }, true), true);
+    expect(sections.canRecalculate).toBe(true);
+    expect(sections.canReset).toBe(false);
   });
 });

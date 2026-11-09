@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { cancelGameInputSchema, formatDate } from '@baseball/shared';
+import { cancelGameInputSchema, formatDate, leagueGameControlRefusal } from '@baseball/shared';
 import { postEventAlert } from '@/app/(app)/messages/notify';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import { authorizeGameCoach } from './authorize';
@@ -7,7 +7,8 @@ import { authorizeGameCoach } from './authorize';
 /**
  * Marks a game cancelled (the record is kept). With `notifyTeam`, posts the
  * cancellation to the team's announcement channel — skipped for a TBD
- * opponent, where "Game vs. null" helps no one.
+ * opponent, where "Game vs. null" helps no one. A league game's row is
+ * cancelled by league admins from League Games, never here.
  */
 export async function cancelGame(
   db: SupabaseClient,
@@ -21,6 +22,8 @@ export async function cancelGame(
   const auth = await authorizeGameCoach(db, actorUserId, gameId);
   if (!auth.ok) return auth;
   const game = auth.data;
+  const refusal = leagueGameControlRefusal('cancel', game);
+  if (refusal) return serviceError('conflict', refusal);
 
   const { error } = await db
     .from('games')

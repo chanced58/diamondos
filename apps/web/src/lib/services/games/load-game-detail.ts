@@ -63,6 +63,8 @@ export async function loadGameDetail(
       latitude: game.latitude ?? null,
       longitude: game.longitude ?? null,
       tournamentId: game.tournament_id ?? null,
+      leagueGameId: game.league_game_id ?? null,
+      resultSource: game.result_source ?? null,
     },
     viewer: { isCoach: viewer.isCoach },
     hasLineup: lineupCount > 0,

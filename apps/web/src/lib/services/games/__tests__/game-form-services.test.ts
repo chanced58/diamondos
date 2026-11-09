@@ -171,6 +171,16 @@ describe('updateGame', () => {
     expect(update?.payload).toMatchObject({ time_zone: 'America/Denver', scheduled_at: '2026-10-23T00:00:00.000Z' });
     expect(update?.filters).toEqual({ id: GAME });
   });
+
+  it("should send a league game's edits to League Games without touching the row", async () => {
+    const { db, calls } = fakeDb({
+      ...coach,
+      'games.select': { data: { team_id: TEAM, status: 'scheduled', time_zone: null, tournament_id: null, league_game_id: 'lg-1' } },
+    });
+    expect(await updateGame(db, 'coach', { gameId: GAME, ...form }))
+      .toEqual({ ok: false, code: 'conflict', error: 'Edit league games from League Games.' });
+    expect(calls.some((c) => c.op !== 'select')).toBe(false);
+  });
 });
 
 describe('loadGameFormOptions', () => {

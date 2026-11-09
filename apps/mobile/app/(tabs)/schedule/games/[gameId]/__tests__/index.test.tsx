@@ -58,6 +58,8 @@ function detail(overrides: Partial<GameDetailResponse['game']> = {}, isCoach = f
       latitude: null,
       longitude: null,
       tournamentId: null,
+      leagueGameId: null,
+      resultSource: null,
       ...overrides,
     },
     viewer: { isCoach },

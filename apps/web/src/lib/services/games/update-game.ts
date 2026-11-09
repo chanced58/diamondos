@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { updateGameInputSchema } from '@baseball/shared';
+import { updateGameInputSchema, leagueGameControlRefusal } from '@baseball/shared';
 import { ensureTournamentOpponentTeam } from '@/lib/games/tournament-opponent-team';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import {
@@ -13,7 +13,8 @@ import {
 /**
  * Edits a game's opponent, time, location, venue and notes. Platform admins
  * and the team's active coaches may. Once play has started the opponent can't
- * go back to TBD — that would orphan the game's events and stats.
+ * go back to TBD — that would orphan the game's events and stats. A league
+ * game's row is edited from League Games (`updateLeagueGame`), never here.
  */
 export async function updateGame(
   db: SupabaseClient,
@@ -26,7 +27,7 @@ export async function updateGame(
 
   const { data: game } = await db
     .from('games')
-    .select('team_id, status, time_zone, tournament_id')
+    .select('team_id, status, time_zone, tournament_id, league_game_id')
     .eq('id', input.gameId)
     .maybeSingle();
   if (!game) return serviceError('not_found', 'Game not found.');
@@ -34,6 +35,8 @@ export async function updateGame(
 
   const allowed = (await isPlatformAdmin(db, actorUserId)) || (await isActiveTeamCoach(db, actorUserId, teamId));
   if (!allowed) return serviceError('forbidden', 'Only coaches can edit games.');
+  const refusal = leagueGameControlRefusal('edit', game as { status: string; league_game_id: string | null });
+  if (refusal) return serviceError('conflict', refusal);
 
   if (input.opponentTbd && (game.status === 'in_progress' || game.status === 'completed')) {
     return serviceError('conflict', 'Cannot clear the opponent on a game that has started or completed.');

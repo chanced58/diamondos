@@ -42,3 +42,4 @@ export * from './team-record';
 export * from './league-game-book';
 export * from './league-game-result';
 export * from './opponent-roster';
+export * from './league-game-controls';

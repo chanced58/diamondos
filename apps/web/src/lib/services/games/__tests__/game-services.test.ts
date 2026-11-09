@@ -24,7 +24,10 @@ jest.mock('@baseball/database', () => ({
 jest.mock('@/lib/dual-scorekeeper/load', () => ({
   loadReconciliationForGame: (...args: unknown[]) => mockLoadReconciliation(...args),
 }));
-jest.mock('@/lib/league-games/refresh', () => ({ refreshLeagueGame: jest.fn() }));
+const mockRefreshLeagueGame = jest.fn();
+jest.mock('@/lib/league-games/refresh', () => ({
+  refreshLeagueGame: (...args: unknown[]) => mockRefreshLeagueGame(...args),
+}));
 
 const GAME_ID = '11111111-1111-4111-8111-111111111111';
 const RECON_ID = '22222222-2222-4222-8222-222222222222';
@@ -217,6 +220,15 @@ describe('cancelGame', () => {
     expect(mockPostEventAlert).toHaveBeenCalledWith(db, 'team-1', 'coach-1', expect.stringContaining('Eagles'));
   });
 
+  it('should leave cancelling a league game to League Games', async () => {
+    mockGetAuthorizedCoach.mockResolvedValue({ game: { ...authorizedGame, status: 'scheduled', league_game_id: 'lg-1' } });
+    const { db, calls } = fakeDb({});
+    expect(await cancelGame(db, 'coach-1', { gameId: GAME_ID, notifyTeam: true }))
+      .toEqual({ ok: false, code: 'conflict', error: 'League admins cancel league games from League Games.' });
+    expect(calls.filter((c) => c.op === 'update')).toHaveLength(0);
+    expect(mockPostEventAlert).not.toHaveBeenCalled();
+  });
+
   it('should not announce a cancelled game against a TBD opponent', async () => {
     mockGetAuthorizedCoach.mockResolvedValue({ game: { ...authorizedGame, opponent_name: '  ' } });
     const { db } = fakeDb({});
@@ -232,6 +244,25 @@ describe('resetGame', () => {
     expect(await resetGame(db, 'coach-1', { gameId: GAME_ID }, 'mobile'))
       .toEqual({ ok: false, code: 'conflict', error: 'Game is already in scheduled state.' });
     expect(calls.filter((c) => c.op !== 'select')).toHaveLength(0);
+  });
+
+  it('should refuse a row whose result the league wrote and a finished league book', async () => {
+    for (const game of [
+      { ...authorizedGame, status: 'completed', league_game_id: 'lg-1', result_source: 'manual' },
+      { ...authorizedGame, status: 'completed', league_game_id: 'lg-1', result_source: null },
+    ]) {
+      mockGetAuthorizedCoach.mockResolvedValue({ game });
+      const { db, calls } = fakeDb({});
+      expect(await resetGame(db, 'coach-1', { gameId: GAME_ID }, 'web')).toMatchObject({ ok: false, code: 'conflict' });
+      expect(calls.filter((c) => c.op !== 'select')).toHaveLength(0);
+    }
+  });
+
+  it('should still reset a league book that is in progress', async () => {
+    mockGetAuthorizedCoach.mockResolvedValue({ game: { ...authorizedGame, status: 'in_progress', league_game_id: 'lg-1', result_source: null } });
+    const { db, calls } = fakeDb({ 'game_events.select': { data: { sequence_number: 3 } } });
+    expect(await resetGame(db, 'coach-1', { gameId: GAME_ID }, 'web')).toMatchObject({ ok: true });
+    expect(calls.some((c) => c.table === 'game_events' && c.op === 'insert')).toBe(true);
   });
 
   it('should append a game_reset event after the last one and reschedule the game', async () => {
@@ -256,6 +287,23 @@ describe('recalculateScores', () => {
       .toEqual({ ok: true, data: { gameId: GAME_ID, homeScore: 7, awayScore: 4 } });
     const update = calls.find((c) => c.table === 'games' && c.op === 'update');
     expect(update?.payload).toMatchObject({ home_score: 7, away_score: 4 });
+    expect(mockRefreshLeagueGame).not.toHaveBeenCalled();
+  });
+
+  it('should refuse a row whose result the league wrote', async () => {
+    mockGetAuthorizedCoach.mockResolvedValue({ game: { ...authorizedGame, league_game_id: 'lg-1', result_source: 'paired' } });
+    const { db, calls } = fakeDb({});
+    expect(await recalculateScores(db, 'coach-1', { gameId: GAME_ID })).toMatchObject({ ok: false, code: 'conflict' });
+    expect(calls.filter((c) => c.op === 'update')).toHaveLength(0);
+    expect(mockDeriveScores).not.toHaveBeenCalled();
+  });
+
+  it("should refresh the league game after recalculating a team's finished league book", async () => {
+    mockGetAuthorizedCoach.mockResolvedValue({ game: { ...authorizedGame, league_game_id: 'lg-1', result_source: null } });
+    mockDeriveScores.mockResolvedValue({ homeScore: 2, awayScore: 1 });
+    const { db } = fakeDb({});
+    expect(await recalculateScores(db, 'coach-1', { gameId: GAME_ID })).toMatchObject({ ok: true });
+    expect(mockRefreshLeagueGame).toHaveBeenCalledWith(db, 'lg-1', 'coach-1');
   });
 });
 

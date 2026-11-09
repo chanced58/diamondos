@@ -53,6 +53,10 @@ export const gameDetailGameSchema = z.object({
   latitude: z.number().nullable(),
   longitude: z.number().nullable(),
   tournamentId: z.string().nullable(),
+  /** The league game this row is a team's book of; absent from older servers. */
+  leagueGameId: z.string().nullish().transform((value) => value ?? null),
+  /** 'paired' / 'manual' when the league wrote this row's result; absent from older servers. */
+  resultSource: z.string().nullish().transform((value) => value ?? null),
 });
 
 export const gameTakeawaySchema = z.object({

@@ -6,7 +6,14 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveLeague } from '@/lib/active-league';
 import { getUserAccess } from '@/lib/user-access';
-import { formatDate, formatTime, utcToZonedDateTime, weAreHome, type GameRsvpStatus } from '@baseball/shared';
+import {
+  formatDate,
+  formatTime,
+  utcToZonedDateTime,
+  weAreHome,
+  leagueGameControlRefusal,
+  type GameRsvpStatus,
+} from '@baseball/shared';
 import { CancelGameForm } from './CancelGameForm';
 import { StartGameForm } from './StartGameForm';
 import { LocationMap } from '@/components/maps/LocationMap';
@@ -177,6 +184,14 @@ export default async function GameDetailPage({
     : `Neutral site (${game.neutral_home_team === 'opponent' ? 'away' : 'home'})`;
   const vsAt = isHome ? 'vs' : '@';
   const isCompleted = game.status === 'completed';
+  // The same rules the services enforce: a league game is edited and
+  // cancelled from League Games, and a row whose result the league wrote has
+  // no book to recalculate or reset.
+  const canEditGame = isCoach && !leagueGameControlRefusal('edit', game);
+  const canRecalculate =
+    isCoach && (isCompleted || game.status === 'in_progress') && !leagueGameControlRefusal('recalculate', game);
+  const canReset = isCoach && game.status !== 'scheduled' && !leagueGameControlRefusal('reset', game);
+  const canCancel = isCoach && !leagueGameControlRefusal('cancel', game);
   // Treat NULL, empty, and whitespace-only opponent names as TBD. opponentForChild
   // is the empty-string normalisation passed to client components that key TBD
   // off `!opponentName`.
@@ -299,8 +314,8 @@ export default async function GameDetailPage({
         </div>
       )}
 
-      {/* ── Edit game (coaches only) ────────────────────────────── */}
-      {isCoach && (
+      {/* ── Edit game (coaches only; a league game is edited from League Games) ── */}
+      {canEditGame && (
         <div className="mb-6">
           <EditGameButton
             gameId={game.id}
@@ -489,32 +504,30 @@ export default async function GameDetailPage({
         </div>
       )}
 
-      {/* ── Danger zone (coaches only) ──────────────────────────── */}
-      {isCoach && (
+      {/* ── Danger zone (coaches only; league games keep only what applies) ── */}
+      {(canRecalculate || canReset || canCancel) && (
         <div className="mt-4 pt-6 border-t border-gray-200">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
             Danger Zone
           </p>
           <div className="space-y-3">
-            {(game.status === 'completed' || game.status === 'in_progress') && (
-              <RecalculateScoresForm gameId={game.id} />
-            )}
-            {game.status !== 'scheduled' && (
-              <ResetGameForm gameId={game.id} />
-            )}
-            <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-red-900">Cancel this game</p>
-                <p className="text-xs text-red-600 mt-0.5">
-                  Marks the game as cancelled. The record is preserved.
-                </p>
+            {canRecalculate && <RecalculateScoresForm gameId={game.id} />}
+            {canReset && <ResetGameForm gameId={game.id} />}
+            {canCancel && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-red-900">Cancel this game</p>
+                  <p className="text-xs text-red-600 mt-0.5">
+                    Marks the game as cancelled. The record is preserved.
+                  </p>
+                </div>
+                <CancelGameForm
+                  gameId={game.id}
+                  opponentName={opponentForChild}
+                  currentStatus={game.status}
+                />
               </div>
-              <CancelGameForm
-                gameId={game.id}
-                opponentName={opponentForChild}
-                currentStatus={game.status}
-              />
-            </div>
+            )}
           </div>
         </div>
       )}

@@ -57,8 +57,11 @@ describe('resolveReconciliationConflictInputSchema', () => {
 describe('gameDetailResponseSchema', () => {
   it('should accept a full payload and strip unknown keys', () => {
     const parsed = gameDetailResponseSchema.parse({ ...detail, extra: 'ignored' });
-    // Older servers omit the venue address and place id; they parse as null.
-    expect(parsed).toEqual({ ...detail, game: { ...detail.game, venueAddress: null, placeId: null } });
+    // Older servers omit the venue address, place id and league fields; they parse as null.
+    expect(parsed).toEqual({
+      ...detail,
+      game: { ...detail.game, venueAddress: null, placeId: null, leagueGameId: null, resultSource: null },
+    });
   });
 
   it('should reject an unknown game status', () => {
