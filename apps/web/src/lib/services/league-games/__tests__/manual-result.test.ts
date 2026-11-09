@@ -42,7 +42,7 @@ interface Setup {
 
 /** Actor seats, the game, any existing entry and the event count. */
 function setup(opts: Setup = {}) {
-  const results: Record<string, FakeResult | ((call: FakeCall) => FakeResult)> = {
+  const results: Record<string, FakeResult | FakeResult[] | ((call: FakeCall) => FakeResult)> = {
     'league_games.select': { data: leagueGame },
     'league_staff.select': (call) => {
       if (call.filters.user_id === ADMIN_USER) return { data: { role: 'league_admin' } };
