@@ -24,6 +24,7 @@ import { getSupabaseClient } from '../lib/supabase';
 import type { Database as RemoteDatabase, Json } from '@baseball/database';
 import { pushTournamentEventQueue, reconcilePendingSequences, type TournamentSyncRejection } from './tournament-event-sync';
 import { deletedMessagesSince, splitDeletedMessages } from './message-deletions';
+import { pushOpponentPlayers } from './opponent-player-push';
 import {
   EMPTY_TEAM_BACKFILL,
   fetchAllByParentIds,
@@ -1247,17 +1248,17 @@ export async function syncWithSupabase(): Promise<void> {
       // 3b. Opponent players added at the field. RLS lets a coach on the
       // game's team insert these directly, so there is no server action in
       // the path and the whole flow works offline. Client UUID becomes the
-      // server PK, like game_events. Upsert without ignoreDuplicates so a
-      // name or jersey corrected after a partial push still merges.
+      // server PK, like game_events. A placeholder the server has since
+      // matched is refused by RLS; pushOpponentPlayers drops it rather than
+      // letting it fail every row with it (see opponent-player-push.ts).
       const createdOppPlayers = tableChanges.opponent_players?.created ?? [];
       const updatedOppPlayers = tableChanges.opponent_players?.updated ?? [];
-      const oppPlayerWrites = [...createdOppPlayers, ...updatedOppPlayers];
-      if (oppPlayerWrites.length > 0) {
-        const { error } = await supabase.from('opponent_players').upsert(
-          oppPlayerWrites.map(toOpponentPlayerWrite),
-          { onConflict: 'id' },
+      const oppPlayerRows = [...createdOppPlayers, ...updatedOppPlayers];
+      if (oppPlayerRows.length > 0) {
+        const oppPlayerPush = await pushOpponentPlayers(oppPlayerRows, (writes) =>
+          supabase.from('opponent_players').upsert(writes, { onConflict: 'id' }),
         );
-        if (error) deferredErrors.push(`opponent_players upsert: ${error.message}`);
+        deferredErrors.push(...oppPlayerPush.errors);
       }
 
       // 3c. Opponent batting order. Must follow 3b — opponent_player_id is a
@@ -1900,26 +1901,6 @@ export function mapOpponentPlayer(r: Record<string, unknown>) {
     is_fill_in: r.is_fill_in ?? false,
     updated_at: r.updated_at ? new Date(r.updated_at as string).getTime() : Date.now(),
     synced_at: Date.now(),
-  };
-}
-
-/**
- * The server row for an opponent player pushed from the device (step 3b).
- * Every row carries placeholder_game_id, null for an ordinary opponent: one
- * upsert sends the union of its rows' keys and nulls a key a row lacks, so a
- * key sent only for some rows would clear it on the others. linked_player_id
- * and is_fill_in are maintained on the server and never sent.
- */
-export function toOpponentPlayerWrite(p: Record<string, unknown>) {
-  return {
-    id: p.remote_id as string,
-    opponent_team_id: p.opponent_team_id as string,
-    first_name: p.first_name as string,
-    last_name: p.last_name as string,
-    jersey_number: (p.jersey_number as string | null) || null,
-    primary_position: ((p.primary_position as string | null) || null) as PlayerPosition | null,
-    is_active: (p.is_active as boolean | undefined) ?? true,
-    placeholder_game_id: (p.placeholder_game_id as string | null | undefined) || null,
   };
 }
 

@@ -18,7 +18,6 @@ import {
   loadLocalPlayState,
   mapGame,
   mapOpponentPlayer,
-  toOpponentPlayerWrite,
 } from '../sync-engine';
 
 describe('isFinalizeConfigured', () => {
@@ -347,21 +346,5 @@ describe('league game columns', () => {
       id: 'op-1', opponent_team_id: 'ot-1', first_name: '', last_name: '',
       linked_player_id: null, placeholder_game_id: 'lg-1', is_fill_in: true,
     })).toMatchObject({ linked_player_id: null, placeholder_game_id: 'lg-1', is_fill_in: true });
-  });
-
-  it('should push placeholder_game_id for an unknown player added during a league game', () => {
-    expect(toOpponentPlayerWrite({
-      remote_id: 'op-9', opponent_team_id: 'ot-1', first_name: '', last_name: '',
-      jersey_number: '12', primary_position: null, is_active: true, placeholder_game_id: 'lg-1',
-    })).toEqual({
-      id: 'op-9', opponent_team_id: 'ot-1', first_name: '', last_name: '',
-      jersey_number: '12', primary_position: null, is_active: true, placeholder_game_id: 'lg-1',
-    });
-  });
-
-  it('should push a null placeholder_game_id for an ordinary opponent player', () => {
-    expect(toOpponentPlayerWrite({
-      remote_id: 'op-1', opponent_team_id: 'ot-1', first_name: 'Ann', last_name: 'Lee', is_active: true,
-    })).toMatchObject({ placeholder_game_id: null });
   });
 });
