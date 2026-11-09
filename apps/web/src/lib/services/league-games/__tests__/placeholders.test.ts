@@ -74,7 +74,7 @@ describe('resolvePlaceholder', () => {
     expect(result).toEqual({ ok: true, data: { playerId: PLAYER } });
     const update = calls.find((c) => c.table === 'opponent_players' && c.op === 'update');
     expect(update?.payload).toMatchObject({ linked_player_id: PLAYER, is_fill_in: false });
-    expect(update?.filters).toEqual({ id: PLACEHOLDER });
+    expect(update?.filters).toEqual({ id: PLACEHOLDER, 'linked_player_id is': null });
     expect(mockRefreshLeagueGame).toHaveBeenCalledWith(db, LEAGUE_GAME, ACTOR);
   });
 
@@ -125,6 +125,40 @@ describe('resolvePlaceholder', () => {
     expect(result).toMatchObject({ ok: false, code: 'conflict' });
     expect(calls.some((c) => c.table === 'opponent_players' && c.op === 'update')).toBe(false);
     expect(mockRefreshLeagueGame).not.toHaveBeenCalled();
+  });
+
+  const createInput = { action: 'create' as const, placeholderId: PLACEHOLDER, firstName: 'Sam', lastName: 'Lee', jerseyNumber: 7 };
+  const expectCreatedPlayerRemoved = (calls: { table: string; op: string }[]) => {
+    for (const table of ['league_players', 'player_team_memberships', 'players']) {
+      expect(calls.some((c) => c.table === table && c.op === 'delete')).toBe(true);
+    }
+  };
+
+  it('should remove the new roster player when linking it fails', async () => {
+    const { db, calls } = fixture(
+      { leagueRole: 'league_admin' },
+      { 'players.insert': { data: { id: NEW_PLAYER } }, 'opponent_players.update': { error: { message: 'boom' } } },
+    );
+    expect(await resolvePlaceholder(db, ACTOR, createInput)).toMatchObject({ ok: false, code: 'failed' });
+    expectCreatedPlayerRemoved(calls);
+    expect(mockRefreshLeagueGame).not.toHaveBeenCalled();
+  });
+
+  it('should report a concurrent match as a conflict and remove the new roster player', async () => {
+    const { db, calls } = fixture(
+      { leagueRole: 'league_admin' },
+      { 'players.insert': { data: { id: NEW_PLAYER } }, 'opponent_players.update': { data: [] } },
+    );
+    expect(await resolvePlaceholder(db, ACTOR, createInput)).toMatchObject({ ok: false, code: 'conflict' });
+    expect(calls.find((c) => c.table === 'opponent_players' && c.op === 'update')?.filters).toMatchObject({ 'linked_player_id is': null });
+    expectCreatedPlayerRemoved(calls);
+  });
+
+  it('should still succeed when the league refresh throws', async () => {
+    mockRefreshLeagueGame.mockRejectedValue(new Error('refresh down'));
+    const { db } = fixture({ leagueRole: 'league_admin' });
+    const result = await resolvePlaceholder(db, ACTOR, { action: 'link', placeholderId: PLACEHOLDER, playerId: PLAYER });
+    expect(result).toEqual({ ok: true, data: { playerId: PLAYER } });
   });
 
   it('should mark a placeholder as a fill-in', async () => {

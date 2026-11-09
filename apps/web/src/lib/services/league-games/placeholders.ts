@@ -241,6 +241,23 @@ export async function listUnmatchedPlaceholders(
 
 // ── Create a roster player ───────────────────────────────────────────────────
 
+/** Removes a just-created roster player and whatever was added with it; each failed step is logged and the rest still run. */
+async function removeRosterPlayer(
+  db: SupabaseClient,
+  teamId: string,
+  playerId: string,
+  added: { membership: boolean; registry: boolean },
+): Promise<void> {
+  const steps: [string, PromiseLike<{ error: unknown }>][] = [];
+  if (added.registry) steps.push(['registry', db.from('league_players').delete().eq('player_id', playerId)]);
+  if (added.membership) steps.push(['membership', db.from('player_team_memberships').delete().eq('player_id', playerId).eq('team_id', teamId)]);
+  steps.push(['player', db.from('players').delete().eq('id', playerId).eq('team_id', teamId)]);
+  for (const [name, step] of steps) {
+    const { error } = await step;
+    if (error) console.error(`[league-placeholders] ${name} cleanup failed player=${playerId}:`, error);
+  }
+}
+
 /**
  * Adds a player to a team's roster and registers them in the league: the
  * player row, an active membership carrying the jersey number, and the
@@ -266,21 +283,11 @@ export async function createLeagueRosterPlayer(
   }
   const playerId = player.id as string;
 
-  // Nothing references the new player yet, so a failed step removes what was added.
-  const undo = async (membershipAdded: boolean) => {
-    if (membershipAdded) {
-      const { error: membershipCleanup } = await db.from('player_team_memberships').delete().eq('player_id', playerId).eq('team_id', teamId);
-      if (membershipCleanup) console.error(`[league-placeholders] membership cleanup failed player=${playerId}:`, membershipCleanup);
-    }
-    const { error: playerCleanup } = await db.from('players').delete().eq('id', playerId).eq('team_id', teamId);
-    if (playerCleanup) console.error(`[league-placeholders] player cleanup failed player=${playerId}:`, playerCleanup);
-  };
-
   const { error: membershipError } = await db
     .from('player_team_memberships')
     .insert({ player_id: playerId, team_id: teamId, jersey_number: jersey, is_active: true });
   if (membershipError) {
-    await undo(false);
+    await removeRosterPlayer(db, teamId, playerId, { membership: false, registry: false });
     if ((membershipError as { code?: string }).code === UNIQUE_VIOLATION) {
       return serviceError('conflict', `Jersey #${jersey} is already taken on this team.`);
     }
@@ -290,7 +297,7 @@ export async function createLeagueRosterPlayer(
 
   const { error: registryError } = await db.from('league_players').insert({ league_id: leagueId, player_id: playerId });
   if (registryError) {
-    await undo(true);
+    await removeRosterPlayer(db, teamId, playerId, { membership: true, registry: false });
     console.error(`[league-placeholders] createLeagueRosterPlayer league registry insert failed ${context}:`, registryError);
     return serviceError('failed', 'Something went wrong. Please try again.');
   }
@@ -326,6 +333,8 @@ export async function resolvePlaceholder(
   if (!parsed.success) return invalidInput(parsed.error);
   const input = parsed.data;
   const context = `placeholder=${input.placeholderId}`;
+  let leagueGameId: string;
+  let playerId: string | null = null;
 
   try {
     const row = await loadPlaceholderRow(db, input.placeholderId);
@@ -338,7 +347,7 @@ export async function resolvePlaceholder(
     }
     if (row?.linked_player_id) return serviceError('conflict', 'This player is already matched.');
 
-    let playerId: string | null = null;
+    leagueGameId = placeholder.leagueGame.id;
     if (input.action === 'link') {
       if (!(await isOnTeam(db, input.playerId, placeholder.teamId))) {
         return serviceError('invalid', 'That player is not on this team.');
@@ -356,6 +365,13 @@ export async function resolvePlaceholder(
       playerId = created.data.playerId;
     }
 
+    const undoCreate = async () => {
+      if (input.action === 'create' && playerId) {
+        await removeRosterPlayer(db, placeholder.teamId, playerId, { membership: true, registry: true });
+      }
+    };
+
+    // Guarded on still being unmatched, so two resolvers can't overwrite each other.
     const { data, error } = await db
       .from('opponent_players')
       .update(
@@ -364,13 +380,25 @@ export async function resolvePlaceholder(
           : { is_fill_in: true, updated_at: new Date().toISOString() },
       )
       .eq('id', input.placeholderId)
+      .is('linked_player_id', null)
       .select('id');
-    if (error) throw error;
-    if (!data || data.length === 0) return serviceError('not_found', 'Unknown player not found.');
-
-    await refreshLeagueGame(db, placeholder.leagueGame.id, actorUserId);
-    return serviceOk({ playerId });
+    if (error) {
+      await undoCreate();
+      throw error;
+    }
+    if (!data || data.length === 0) {
+      await undoCreate();
+      return serviceError('conflict', 'This player is already matched.');
+    }
   } catch (error) {
     return failed('resolvePlaceholder', context, actorUserId, error);
   }
+
+  // The match is saved; a refresh problem must not turn it into a failure.
+  try {
+    await refreshLeagueGame(db, leagueGameId, actorUserId);
+  } catch (error) {
+    console.error(`[league-placeholders] refresh failed league_game=${leagueGameId} ${context}:`, error);
+  }
+  return serviceOk({ playerId });
 }
