@@ -113,6 +113,28 @@ describe('opponent roster', () => {
     });
   });
 
+  it("should tie an unknown player to the game's league game", async () => {
+    coachGame();
+    const LEAGUE_GAME = '99999999-9999-4999-8999-999999999999';
+    const { db, calls } = fakeDb({
+      'games.select': { data: { league_game_id: LEAGUE_GAME } },
+      'opponent_players.insert': { data: { id: P1 } },
+    });
+    const result = await addOpponentPlayer(db, 'coach', { gameId: GAME_ID, firstName: 'Unknown', lastName: '#7', placeholder: true });
+    expect(result).toEqual({ ok: true, data: { playerId: P1 } });
+    expect(calls.find((c) => c.table === 'opponent_players')?.payload).toMatchObject({
+      opponent_team_id: OPP_TEAM, placeholder_game_id: LEAGUE_GAME,
+    });
+  });
+
+  it('should refuse an unknown player outside a league game', async () => {
+    coachGame();
+    const { db, calls } = fakeDb({ 'games.select': { data: { league_game_id: null } } });
+    const result = await addOpponentPlayer(db, 'coach', { gameId: GAME_ID, firstName: 'Unknown', lastName: '#7', placeholder: true });
+    expect(result).toMatchObject({ ok: false, code: 'invalid' });
+    expect(calls.some((c) => c.table === 'opponent_players')).toBe(false);
+  });
+
   it('should need an opponent team before adding players', async () => {
     coachGame({ opponent_team_id: null });
     const { db } = fakeDb();

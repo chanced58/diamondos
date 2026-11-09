@@ -33,14 +33,24 @@ export async function addOpponentPlayer(
 ): Promise<ServiceResult<{ playerId: string }>> {
   const parsed = addOpponentPlayerInputSchema.safeParse(rawInput);
   if (!parsed.success) return invalidInput(parsed.error);
-  const { gameId, firstName, lastName, jerseyNumber, primaryPosition } = parsed.data;
+  const { gameId, firstName, lastName, jerseyNumber, primaryPosition, placeholder } = parsed.data;
 
   const auth = await authorizeWithTeam(db, actorUserId, gameId);
   if (!auth.ok) return auth;
 
+  // A placeholder belongs to the league game, so it can be matched once the game is over.
+  let placeholderGameId: string | null = null;
+  if (placeholder) {
+    const { data: game, error: gameError } = await db.from('games').select('league_game_id').eq('id', gameId).maybeSingle();
+    if (gameError) return writeFailed('addOpponentPlayer', gameId, actorUserId, gameError);
+    placeholderGameId = (game?.league_game_id as string | null | undefined) ?? null;
+    if (!placeholderGameId) return serviceError('invalid', 'Unknown players can only be added in league games.');
+  }
+
   const { data, error } = await db
     .from('opponent_players')
     .insert({
+      ...(placeholderGameId ? { placeholder_game_id: placeholderGameId } : {}),
       opponent_team_id: auth.data.opponentTeamId,
       first_name: firstName,
       last_name: lastName,

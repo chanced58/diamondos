@@ -14,6 +14,9 @@ import { EditGameButton, ResetGameForm, RecalculateScoresForm } from './GameDeta
 import { GameTakeaways } from './GameTakeaways';
 import { ReconciliationPanel } from './ReconciliationPanel';
 import { RsvpButtons } from './RsvpButtons';
+import { UnmatchedPlayersPanel } from '@/components/league-games/UnmatchedPlayersPanel';
+import { loadRosterOptions } from '@/lib/league-games/placeholder-rosters';
+import { listUnmatchedPlaceholders } from '@/lib/services/league-games/placeholders';
 import { AttendancePanel } from './AttendancePanel';
 import { loadReconciliationForGame } from '@/lib/dual-scorekeeper/load';
 import { getGameWeaknesses, listGameRsvpsForPlayers } from '@baseball/database';
@@ -211,6 +214,14 @@ export default async function GameDetailPage({
   // Dual scorekeeper: surface the reconciliation panel once the game is done.
   const reconciliation = isCompleted ? await loadReconciliationForGame(db, params.gameId, user.id) : null;
 
+  // League games: unknown players still to be matched, for those who may match them.
+  const unmatched =
+    isCompleted && game.league_game_id
+      ? await listUnmatchedPlaceholders(db, user.id, { leagueGameId: game.league_game_id as string })
+      : null;
+  const unmatchedPlaceholders = unmatched?.ok ? unmatched.data.placeholders.filter((p) => p.canResolve) : [];
+  const placeholderRosters = await loadRosterOptions(db, unmatchedPlaceholders.map((p) => p.teamId));
+
   return (
     <div className="p-8 max-w-2xl">
       {/* ── Back link ──────────────────────────────────────────── */}
@@ -330,6 +341,10 @@ export default async function GameDetailPage({
             </div>
           </div>
         </div>
+      )}
+
+      {unmatchedPlaceholders.length > 0 && (
+        <UnmatchedPlayersPanel placeholders={unmatchedPlaceholders} rosters={placeholderRosters} />
       )}
 
       {reconciliation && (
