@@ -191,12 +191,16 @@ export async function finalizeGame(
     return { error: `Failed to complete game: ${updateErr.message}` };
   }
 
+  // The row is completed, but whether it is a league game decides what runs
+  // next; a failed reload answers an error so the caller retries (finalize is
+  // idempotent) instead of skipping the league refresh for good.
   const finalized = await loadFinalizedGame(supabase, gameId);
+  if ('error' in finalized) return finalized;
 
   // A league game: the league refresh reconciles both books, notifies the
   // teams, writes the result onto the other team's row and rebuilds the
   // league snapshot (best-effort; it logs and never throws).
-  if (finalized?.league_game_id) {
+  if (finalized.league_game_id) {
     await refreshLeagueGame(supabase, finalized.league_game_id, userId);
     return { ok: true };
   }
@@ -206,7 +210,7 @@ export async function finalizeGame(
   // (runReconciliationForGame catches internally).
   await runReconciliationForGame(supabase, gameId, userId);
 
-  if (finalized) await recomputeTeamLeagues(supabase, gameId, finalized);
+  await recomputeTeamLeagues(supabase, gameId, finalized);
 
   return { ok: true };
 }
@@ -217,17 +221,21 @@ interface FinalizedGame {
   league_game_id: string | null;
 }
 
-async function loadFinalizedGame(supabase: SupabaseClient, gameId: string): Promise<FinalizedGame | null> {
+async function loadFinalizedGame(
+  supabase: SupabaseClient,
+  gameId: string,
+): Promise<FinalizedGame | { error: string }> {
   const { data, error } = await supabase
     .from('games')
     .select('team_id, season_id, league_game_id')
     .eq('id', gameId)
     .maybeSingle();
-  if (error) {
-    console.error(`[finalizeGame] finalized game reload failed game=${gameId}: ${error.message}`);
-    return null;
+  if (error || !data) {
+    const reason = error?.message ?? 'row not found';
+    console.error(`[finalizeGame] finalized game reload failed game=${gameId}: ${reason}`);
+    return { error: 'The game was completed but its follow-up failed. Please try again.' };
   }
-  return (data as FinalizedGame | null) ?? null;
+  return data as FinalizedGame;
 }
 
 /**
