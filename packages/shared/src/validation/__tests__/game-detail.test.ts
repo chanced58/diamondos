@@ -64,6 +64,16 @@ describe('gameDetailResponseSchema', () => {
     });
   });
 
+  it('should carry whether a conflict is settled, and accept an older server that omits it', () => {
+    const conflict = { key: 'final_score:home', label: 'Final score', homeLog: 2, awayLog: 3, overridden: false };
+    const withReconciliation = (conflicts: unknown[]) => ({
+      ...detail,
+      reconciliation: { reconciliationId: 'r', homeTeamLabel: 'H', awayTeamLabel: 'A', canOverride: true, conflicts },
+    });
+    const parsed = gameDetailResponseSchema.parse(withReconciliation([{ ...conflict, settled: true }, conflict]));
+    expect(parsed.reconciliation?.conflicts.map((c) => c.settled)).toEqual([true, undefined]);
+  });
+
   it('should reject an unknown game status', () => {
     const game = { ...detail.game, status: 'suspended' };
     expect(gameDetailResponseSchema.safeParse({ ...detail, game }).success).toBe(false);

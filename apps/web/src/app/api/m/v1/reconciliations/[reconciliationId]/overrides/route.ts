@@ -1,6 +1,7 @@
 /**
- * Accept the away scorekeeper's value for one reconciliation conflict (or
- * revert to home), from the mobile app. Body: `{ conflictKey, useAwayValue }`.
+ * Settle one reconciliation conflict from the mobile app: the away
+ * scorekeeper's value (`useAwayValue` true) or the home value (false), each a
+ * recorded decision. Body: `{ conflictKey, useAwayValue }`.
  * Responds `{ homeGameId }`. Same service as the web
  * `resolveReconciliationConflictAction`.
  */

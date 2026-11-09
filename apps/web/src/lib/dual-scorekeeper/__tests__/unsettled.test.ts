@@ -30,4 +30,12 @@ describe('countUnsettledConflicts', () => {
     ] as const;
     expect(countUnsettledConflicts([...playerConflicts], [{ key: 'player_batting:a1:hits', useAwayValue: true }], null)).toBe(1);
   });
+
+  it("should count a player kept at the home line as settled", () => {
+    const playerConflicts = [
+      { kind: 'player_batting', playerId: 'a1', stat: 'hits', homeLog: 1, awayLog: 2 },
+      { kind: 'player_pitching', playerId: 'a1', stat: 'strikeouts', homeLog: 3, awayLog: 4 },
+    ] as const;
+    expect(countUnsettledConflicts([...playerConflicts], [{ key: 'player_batting:a1:hits', useAwayValue: false }], null)).toBe(0);
+  });
 });

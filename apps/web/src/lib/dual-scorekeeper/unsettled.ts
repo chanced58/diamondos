@@ -2,11 +2,15 @@ import { conflictKey, settledConflictKeys, type ReconciliationOverride, type Sco
 
 /**
  * How many differences between two scorebooks still need settling: conflicts
- * nobody decided, or none once the reconciliation is marked resolved. A player
- * is settled as a whole: a decision on any of their conflicts covers all of
- * them (`settledConflictKeys`), as the result takes the player's whole line
- * from one book. The one definition behind the game page banner, the
- * dashboard's pending list and League Games' "needs settling".
+ * nobody decided, or none once the reconciliation is marked resolved. A
+ * decision is an override either way — keeping the home value is recorded
+ * (`useAwayValue: false`) as much as taking the away one. A player is settled
+ * as a whole: a decision on any of their conflicts covers all of them
+ * (`settledConflictKeys`), as the result takes the player's whole line from
+ * one book. `resolved_at` is set only once nothing is left (see
+ * `resolveReconciliationConflict`); rows marked under the older
+ * one-click rule still count as settled. The one definition behind the game
+ * page banner, the dashboard's pending list and League Games' "needs settling".
  */
 export function countUnsettledConflicts(
   conflicts: readonly ScoreConflict[] | null | undefined,

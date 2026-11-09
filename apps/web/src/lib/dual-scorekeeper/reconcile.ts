@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  conflictKey,
   deriveBattingStats,
   derivePitchingStats,
   filterResetAndReverted,
@@ -10,9 +9,11 @@ import {
   type BattingStats,
   type GameEvent,
   type PitchingStats,
+  type ReconciliationOverride,
   type ScoreConflict,
 } from '@baseball/shared';
 import { loadSideIdMaps, type BookSideMaps } from '@/lib/league-games/side-maps';
+import { countUnsettledConflicts } from './unsettled';
 
 interface PairedGameRow {
   id: string;
@@ -64,10 +65,12 @@ function bookPlayerStats(events: Record<string, unknown>[], maps: BookSideMaps):
 
 /**
  * For a league game, whether a recompute must reopen a reconciliation already
- * marked settled: it found a difference that was not there before (a book
- * changed, or a placeholder was matched so a player's lines now line up), and
- * that difference has had no say yet. Other paired games keep their settled
- * mark as before.
+ * marked settled: a difference it found (a book changed, or a placeholder was
+ * matched so a player's lines now line up) has had no decision yet — a
+ * line-score conflict without an override, or a player none of whose
+ * conflicts has one. Settled means every choice was made, so a new difference
+ * on a player already decided keeps it settled. Other paired games keep their
+ * settled mark as before.
  */
 async function reopensSettled(
   db: SupabaseClient,
@@ -76,13 +79,13 @@ async function reopensSettled(
 ): Promise<boolean> {
   const { data, error } = await db
     .from('game_reconciliations')
-    .select('conflicts, resolved_at')
+    .select('resolved_overrides, resolved_at')
     .eq('home_game_id', homeGameId)
     .maybeSingle();
   if (error) throw new Error(`reconciliation load failed home=${homeGameId}: ${error.message}`);
   if (!data?.resolved_at) return false;
-  const before = new Set((Array.isArray(data.conflicts) ? (data.conflicts as ScoreConflict[]) : []).map(conflictKey));
-  return conflicts.some((conflict) => !before.has(conflictKey(conflict)));
+  const overrides = Array.isArray(data.resolved_overrides) ? (data.resolved_overrides as ReconciliationOverride[]) : [];
+  return countUnsettledConflicts(conflicts, overrides, null) > 0;
 }
 
 /**
@@ -100,9 +103,9 @@ async function reopensSettled(
  * the league roster records (`loadSideIdMaps`). Other paired games have no
  * cross-roster identity bridge, so they stay at the line-score level.
  *
- * For a league game, a recompute that finds a new difference reopens a
- * reconciliation already marked settled (`reopensSettled`), so the new
- * difference is shown as still to settle; the overrides already made stay.
+ * For a league game, a recompute that finds a difference with no decision yet
+ * reopens a reconciliation already marked settled (`reopensSettled`), so it is
+ * shown as still to settle; the overrides already made stay.
  *
  * Best-effort: failures are logged and swallowed so they never block End Game.
  * Must run with a service-role client to read both teams' rows.

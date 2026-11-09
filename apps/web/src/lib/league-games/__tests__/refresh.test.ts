@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { conflictKey, conflictPlayerId, type ScoreConflict } from '@baseball/shared';
 import { refreshLeagueGame } from '../refresh';
 import { finalizeGame } from '@/lib/games/finalize';
 import { fakeDb, type FakeCall, type FakeResult } from '@/lib/services/__tests__/fake-db';
@@ -421,13 +422,50 @@ describe('refreshLeagueGame', () => {
     const conflicts = (created.payload as { conflicts: unknown[] }).conflicts;
     expect(conflicts.length).toBeGreaterThan(0);
 
+    // Settled: every difference was decided (kept at the home value).
+    const decided = (conflicts as ScoreConflict[]).map((c) => ({ key: conflictKey(c), useAwayValue: false }));
     const { db, calls } = leagueGameDb({
       ...books,
       reconciliation: {
         id: 'recon-1',
         computed_at: '2026-11-08T04:00:00.000Z',
         conflicts,
-        resolved_overrides: [],
+        resolved_overrides: decided,
+        resolved_at: '2026-11-08T05:00:00.000Z',
+      },
+    });
+
+    await refreshLeagueGame(db, LEAGUE_GAME, 'admin-1', { forceReconcile: true });
+
+    const [upsert] = writes(calls, 'game_reconciliations', 'upsert');
+    expect(upsert.payload).not.toHaveProperty('resolved_at');
+  });
+
+  it('should keep a reconciliation settled when the new difference is on a player already decided', async () => {
+    const books = {
+      leagueGameStatus: 'completed',
+      home: gameRow('home', { status: 'completed', away_score: 1 }),
+      away: gameRow('away', { status: 'completed', away_score: 2 }),
+      events: { [HOME_GAME]: HOME_BOOK, [AWAY_GAME]: AWAY_BOOK },
+    };
+    const first = leagueGameDb(books);
+    await refreshLeagueGame(first.db, LEAGUE_GAME, 'home-coach');
+    const [created] = writes(first.calls, 'game_reconciliations', 'upsert');
+    const conflicts = (created.payload as { conflicts: ScoreConflict[] }).conflicts;
+    // A player with two differences: the earlier reconciliation saw only the first.
+    const playerId = conflicts.map(conflictPlayerId).find(
+      (id, index, ids) => id !== null && ids.indexOf(id) !== index,
+    );
+    expect(playerId).toBeTruthy();
+    const unseen = conflicts.filter((c) => conflictPlayerId(c) === playerId)[1];
+    const before = conflicts.filter((c) => c !== unseen);
+    const { db, calls } = leagueGameDb({
+      ...books,
+      reconciliation: {
+        id: 'recon-1',
+        computed_at: '2026-11-08T04:00:00.000Z',
+        conflicts: before,
+        resolved_overrides: before.map((c) => ({ key: conflictKey(c), useAwayValue: false })),
         resolved_at: '2026-11-08T05:00:00.000Z',
       },
     });

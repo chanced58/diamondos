@@ -533,9 +533,9 @@ export async function replayAtBatAction(
 }
 
 /**
- * Dual scorekeeper: the home team's coach overrides one reconciliation
- * conflict to accept the away log's value (or reverts to the canonical home
- * value). Overrides are recorded on the reconciliation row — they annotate the
+ * Dual scorekeeper: the settler decides one reconciliation conflict — the
+ * away log's value or the canonical home value, both recorded as a decision.
+ * Overrides are recorded on the reconciliation row — they annotate the
  * record and the displayed final line; they do not mutate the immutable
  * game_events log. Returns null on success or an error string.
  */

@@ -4,8 +4,10 @@ import {
   conflictPlayerId,
   isCoachRole,
   resolveReconciliationConflictInputSchema,
+  type ReconciliationOverride,
   type ScoreConflict,
 } from '@baseball/shared';
+import { countUnsettledConflicts } from '@/lib/dual-scorekeeper/unsettled';
 import { refreshLeagueGame } from '@/lib/league-games/refresh';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 
@@ -103,13 +105,18 @@ export async function authorizeReconciliationSettler(
 }
 
 /**
- * Accepts the away scorekeeper's value for one reconciliation conflict, or
- * reverts it to the home value. A player is settled as a whole (the result
- * takes their whole line from one book): accepting any of a player's
- * conflicts puts all of them on the away value, and reverting clears every
- * one of that player's overrides. Overrides annotate the record and never
- * touch game_events. For a league game the league result and snapshot are
- * then refreshed, since a settled difference can change the result that counts.
+ * Records the settler's choice for one difference: the away scorekeeper's
+ * value (`useAwayValue` true) or the home value (false). Both are saved as an
+ * override, so keeping the home value counts as a decision. A player is
+ * settled as a whole (the result takes their whole line from one book): the
+ * choice is written on every one of that player's conflicts. Overrides
+ * annotate the record and never touch game_events.
+ *
+ * The reconciliation is marked settled (`resolved_at`) only once every choice
+ * — each line-score conflict and each player — has a decision, and the mark is
+ * cleared while any is still open. For a league game the league result and
+ * snapshot are then refreshed, since a settled difference can change the
+ * result that counts.
  */
 export async function resolveReconciliationConflict(
   db: SupabaseClient,
@@ -138,12 +145,11 @@ export async function resolveReconciliationConflict(
     return serviceError('conflict', 'That conflict no longer exists — reload the game.');
   }
 
-  // Reverting a player clears an away override on any of their conflicts.
+  // One choice per player: write it on all of the player's conflicts.
   const playerId = conflictPlayerId(target);
-  const keys =
-    input.useAwayValue || !playerId
-      ? [input.conflictKey]
-      : conflicts.filter((c) => conflictPlayerId(c) === playerId).map(conflictKey);
+  const keys = playerId
+    ? conflicts.filter((c) => conflictPlayerId(c) === playerId).map(conflictKey)
+    : [input.conflictKey];
 
   // Each call is one UPDATE that filters-then-appends, so two near-simultaneous
   // edits can't drop each other's change.
@@ -160,7 +166,46 @@ export async function resolveReconciliationConflict(
     }
   }
 
+  const settled = await markSettledState(db, input.reconciliationId, actorUserId);
+  if (!settled.ok) return settled;
+
   if (auth.data.leagueGameId) await refreshLeagueGame(db, auth.data.leagueGameId, actorUserId);
 
   return serviceOk({ homeGameId: recon.home_game_id as string });
+}
+
+/**
+ * Sets `resolved_at` / `resolved_by` when every conflict group has a decision
+ * and clears them otherwise, from the overrides as saved. The write is held to
+ * the `computed_at` it read, so a recompute that lands in between (and may
+ * have added a difference) is not marked settled from stale conflicts.
+ */
+async function markSettledState(
+  db: SupabaseClient,
+  reconciliationId: string,
+  actorUserId: string,
+): Promise<ServiceResult<void>> {
+  const context = `recon=${reconciliationId} actor=${actorUserId}`;
+  const { data: row, error: readError } = await db
+    .from('game_reconciliations')
+    .select('conflicts, resolved_overrides, computed_at')
+    .eq('id', reconciliationId)
+    .maybeSingle();
+  if (readError || !row) return failed('settled-state load', context, readError ?? 'row not found');
+
+  const conflicts = Array.isArray(row.conflicts) ? (row.conflicts as ScoreConflict[]) : [];
+  const overrides = Array.isArray(row.resolved_overrides) ? (row.resolved_overrides as ReconciliationOverride[]) : [];
+  const allDecided = countUnsettledConflicts(conflicts, overrides, null) === 0;
+
+  const { error: writeError } = await db
+    .from('game_reconciliations')
+    .update(
+      allDecided
+        ? { resolved_at: new Date().toISOString(), resolved_by: actorUserId }
+        : { resolved_at: null, resolved_by: null },
+    )
+    .eq('id', reconciliationId)
+    .eq('computed_at', row.computed_at as string);
+  if (writeError) return failed('settled-state write', context, writeError);
+  return serviceOk(undefined);
 }

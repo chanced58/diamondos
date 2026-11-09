@@ -9,6 +9,7 @@ import {
   conflictPlayerLabel,
   describeScoreConflict,
   groupConflictsForSettling,
+  settledConflictKeys,
 } from '@baseball/shared';
 import { resolveReconciliationConflictAction } from './actions';
 
@@ -74,15 +75,41 @@ function ValuePair({
   );
 }
 
+/** A form that records one choice for a group: the away value, or the home value. */
+function ChoiceForm({
+  formAction,
+  reconciliationId,
+  groupKey,
+  useAwayValue,
+  label,
+}: {
+  formAction: (formData: FormData) => void;
+  reconciliationId: string;
+  groupKey: string;
+  useAwayValue: boolean;
+  label: string;
+}): JSX.Element {
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="reconciliationId" value={reconciliationId} />
+      <input type="hidden" name="conflictKey" value={groupKey} />
+      <input type="hidden" name="useAwayValue" value={useAwayValue ? 'true' : 'false'} />
+      <SubmitButton label={label} />
+    </form>
+  );
+}
+
 /**
  * One choice: a line-score conflict, or every difference for one player. A
  * player is settled as a whole — the result takes their whole line from one
- * book — so the group has one button that accepts or reverts all of it.
+ * book. Keeping the home value is a decision too: an undecided group offers
+ * both, a decided one offers the other side.
  */
 function ConflictGroupRow({
   reconciliationId,
   group,
   overridden,
+  decided,
   canOverride,
   homeTeamLabel,
   awayTeamLabel,
@@ -91,6 +118,7 @@ function ConflictGroupRow({
   reconciliationId: string;
   group: ConflictGroup;
   overridden: boolean;
+  decided: boolean;
   canOverride: boolean;
   homeTeamLabel: string;
   awayTeamLabel: string;
@@ -100,6 +128,8 @@ function ConflictGroupRow({
   const using = overridden ? awayTeamLabel : homeTeamLabel;
   const [first] = group.conflicts;
   const isPlayer = group.playerId !== null;
+  const what = isPlayer ? 'line' : 'value';
+  const choice = { formAction, reconciliationId, groupKey: group.key };
 
   return (
     <div className="py-3 border-b border-gray-100 last:border-0">
@@ -108,7 +138,7 @@ function ConflictGroupRow({
           {isPlayer ? conflictPlayerLabel(group.playerId as string, playerNames) : describeScoreConflict(first)}
         </span>
         <span className="text-xs text-gray-400">
-          Using {using}
+          {decided ? 'Using' : 'Not settled · using'} {using}
           {!isPlayer && (
             <>
               :{' '}
@@ -129,21 +159,19 @@ function ConflictGroupRow({
         </div>
       ))}
       {canOverride && (
-        <form action={formAction} className="mt-2 flex items-center gap-2">
-          <input type="hidden" name="reconciliationId" value={reconciliationId} />
-          <input type="hidden" name="conflictKey" value={group.key} />
-          <input type="hidden" name="useAwayValue" value={overridden ? 'false' : 'true'} />
-          <SubmitButton
-            label={
-              overridden
-                ? `Revert to ${homeTeamLabel}`
-                : isPlayer
-                  ? `Use ${awayTeamLabel} line`
-                  : `Use ${awayTeamLabel} value`
-            }
-          />
+        <div className="mt-2 flex items-center gap-2">
+          {(!decided || overridden) && (
+            <ChoiceForm
+              {...choice}
+              useAwayValue={false}
+              label={`${overridden ? 'Use' : 'Keep'} ${homeTeamLabel} ${what}`}
+            />
+          )}
+          {(!decided || !overridden) && (
+            <ChoiceForm {...choice} useAwayValue label={`Use ${awayTeamLabel} ${what}`} />
+          )}
           {error && <span className="text-xs text-red-600">{error}</span>}
-        </form>
+        </div>
       )}
     </div>
   );
@@ -153,7 +181,9 @@ function ConflictGroupRow({
  * Completed-game panel comparing the two scorekeepers' logs. Shows a green
  * agreement state when there are no conflicts, otherwise lists each
  * difference — one entry per line-score conflict and one per player — with the
- * home (canonical) and away values; the settler can accept the away side.
+ * home (canonical) and away values. The settler keeps the home value or
+ * accepts the away one for each; the differences stay to settle until every
+ * one has a choice.
  */
 export function ReconciliationPanel({
   reconciliationId,
@@ -165,7 +195,9 @@ export function ReconciliationPanel({
   playerNames,
 }: ReconciliationPanelProps): JSX.Element {
   const awayKeys = awayValueConflictKeys(conflicts, overrides);
+  const decidedKeys = settledConflictKeys(conflicts, overrides);
   const groups = groupConflictsForSettling(conflicts);
+  const openCount = groups.filter((group) => !decidedKeys.has(group.key)).length;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
@@ -181,9 +213,10 @@ export function ReconciliationPanel({
       ) : (
         <>
           <p className="text-xs text-gray-500 mb-3">
-            {conflicts.length} difference{conflicts.length === 1 ? '' : 's'} between the two logs.
-            The home value stands unless {canOverride ? 'you accept' : 'the home coach accepts'} the
-            away value; a player&apos;s line is taken from one log as a whole.
+            {conflicts.length} difference{conflicts.length === 1 ? '' : 's'} between the two logs
+            {openCount > 0 ? `, ${openCount} still to settle` : ', all settled'}. The home value stands
+            unless {canOverride ? 'you accept' : 'the home coach accepts'} the away value; a
+            player&apos;s line is taken from one log as a whole.
           </p>
           <div>
             {groups.map((group) => (
@@ -192,6 +225,7 @@ export function ReconciliationPanel({
                 reconciliationId={reconciliationId}
                 group={group}
                 overridden={awayKeys.has(group.key)}
+                decided={decidedKeys.has(group.key)}
                 canOverride={canOverride}
                 homeTeamLabel={homeTeamLabel}
                 awayTeamLabel={awayTeamLabel}

@@ -98,6 +98,22 @@ describe('selectResultSource', () => {
     expect(source).toEqual({ kind: 'dual', scoreFrom: 'away', playerLineFrom: new Map() });
   });
 
+  it("should keep a player's line in the home book when the home line was chosen for them", () => {
+    const source = selectResultSource({
+      home: done,
+      away: done,
+      reconciliation: {
+        conflicts: [batting, pitching],
+        overrides: [
+          { key: conflictKey(batting), useAwayValue: false },
+          { key: conflictKey(pitching), useAwayValue: false },
+        ],
+      },
+      hasManualResult: false,
+    });
+    expect(source).toEqual({ kind: 'dual', scoreFrom: 'home', playerLineFrom: new Map() });
+  });
+
   it('should take a player\'s whole line from the away book when any of their stats was overridden', () => {
     const source = selectResultSource({
       home: done,

@@ -78,7 +78,11 @@ export function conflictKey(c: ScoreConflict): string {
   }
 }
 
-/** A coach's decision on one conflict, stored in `game_reconciliations.resolved_overrides`. */
+/**
+ * A settler's decision on one conflict, stored in
+ * `game_reconciliations.resolved_overrides`: the away book's value (true) or
+ * the home book's (false).
+ */
 export interface ReconciliationOverride {
   /** Stable conflict identity (see `conflictKey`). */
   key: string;
@@ -147,7 +151,8 @@ export function awayValueConflictKeys(
 /**
  * The conflict keys someone has decided: a line-score conflict with its own
  * override, and every conflict of a player with an override on any of them
- * (one choice per player settles the player's whole line).
+ * (one choice per player settles the player's whole line). An override either
+ * way is a decision: keeping the home value is saved as `useAwayValue: false`.
  */
 export function settledConflictKeys(
   conflicts: readonly ScoreConflict[],
