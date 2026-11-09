@@ -74,6 +74,11 @@ export function PlayerStatsTable({
   const split = firstUnranked !== -1;
   const ranked = split ? players.slice(0, firstUnranked) : players;
   const unrankedRows = split ? players.slice(firstUnranked) : [];
+  // The sort arrow is aria-hidden, so the caption carries the ranked rows' direction.
+  const sortLabel = columns.find((c) => c.key === sortKey)?.label ?? sortKey;
+  const splitOrder = `Ranked players are sorted by ${sortLabel}, ${
+    sortDir === 'asc' ? 'ascending' : 'descending'
+  }; unranked players follow, by name.`;
 
   const header = (key: string, label: string, natural: SortDir, align: 'left' | 'center', extra = ''): JSX.Element => {
     const active = key === sortKey;
@@ -155,7 +160,7 @@ export function PlayerStatsTable({
     <div className="overflow-x-auto rounded-xl border border-app-border bg-app-surface">
       <table className="w-full text-sm">
         <caption className="sr-only">
-          {split ? `${caption}. Ranked players are sorted by the selected column; unranked players follow, by name.` : caption}
+          {split ? `${caption}. ${splitOrder}` : caption}
         </caption>
         <thead>
           <tr className="border-b border-app-border text-left text-xs font-medium uppercase tracking-wider text-app-fg-muted">

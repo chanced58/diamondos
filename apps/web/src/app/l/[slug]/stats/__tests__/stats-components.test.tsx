@@ -356,7 +356,14 @@ describe('LeagueStatsView', () => {
     expect(divider.parentElement).not.toBe(rowFor('Alice Avery').parentElement);
     // The table is no longer in one sort order: say so instead of "descending".
     expect(screen.getByRole('columnheader', { name: /^AVG/ }).getAttribute('aria-sort')).toBe('other');
-    expect(screen.getByRole('table', { name: /unranked players follow, by name/ })).toBeTruthy();
+    expect(
+      screen.getByRole('table', {
+        name: 'Batting stats. Ranked players are sorted by AVG, descending; unranked players follow, by name.',
+      }),
+    ).toBeTruthy();
+    // Flip the sort: the caption follows the direction.
+    fireEvent.click(screen.getByRole('button', { name: /^AVG/ }));
+    expect(screen.getByRole('table', { name: /sorted by AVG, ascending;/ })).toBeTruthy();
   });
 
   it('hides unqualified players by default and shows them when the switch is off', () => {
