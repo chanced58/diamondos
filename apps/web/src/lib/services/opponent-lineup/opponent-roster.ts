@@ -5,25 +5,67 @@ import {
   updateOpponentPlayerInputSchema,
 } from '@baseball/shared';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
-import { authorizeOpponentLineupEdit, writeFailed, type OpponentLineupGame } from './context';
+import { authorizeOpponentLineupEdit, isLeagueRosterRecord, writeFailed, type OpponentLineupGame } from './context';
 
 /**
  * Roster edits for the game's opponent team. Every write is scoped to the
  * team linked to the game, so a player id from another team matches nothing.
  * Writes set updated_at themselves (the table has no touch trigger) because
  * phones pull opponent players by it.
+ *
+ * A league roster record (the opponent of every league game) is the league's
+ * mirror of a real team's roster: from a game, a scorer only adds unknown
+ * players (placeholders) to it, every add on a league game is one, and only
+ * this league game's unmatched placeholders may be edited or removed.
+ * Matching and fill-ins go through `resolvePlaceholder`.
  */
+
+const ROSTER_RECORD_REFUSAL = "This team's roster comes from the league; only this game's unknown players can be changed here.";
+
+type GameWithTeam = OpponentLineupGame & { opponentTeamId: string; isRosterRecord: boolean };
 
 async function authorizeWithTeam(
   db: SupabaseClient,
   actorUserId: string,
   gameId: string,
-): Promise<ServiceResult<OpponentLineupGame & { opponentTeamId: string }>> {
+): Promise<ServiceResult<GameWithTeam>> {
   const auth = await authorizeOpponentLineupEdit(db, actorUserId, gameId);
   if (!auth.ok) return auth;
   const { opponentTeamId } = auth.data;
   if (!opponentTeamId) return serviceError('conflict', 'Name the opponent team first.');
-  return serviceOk({ ...auth.data, opponentTeamId });
+  const rosterRecord = await isLeagueRosterRecord(db, opponentTeamId);
+  if (!rosterRecord.ok) return rosterRecord;
+  return serviceOk({ ...auth.data, opponentTeamId, isRosterRecord: rosterRecord.data });
+}
+
+/**
+ * On a league roster record, only an unmatched placeholder of this game's
+ * league game may be changed; elsewhere any player on the team may.
+ */
+async function guardRosterRecordPlayer(
+  db: SupabaseClient,
+  game: GameWithTeam,
+  playerId: string,
+): Promise<ServiceResult<null>> {
+  if (!game.isRosterRecord) return serviceOk(null);
+  const { data, error } = await db
+    .from('opponent_players')
+    .select('placeholder_game_id, linked_player_id, is_fill_in')
+    .eq('id', playerId)
+    .eq('opponent_team_id', game.opponentTeamId)
+    .maybeSingle();
+  if (error) {
+    console.error(`[opponent-roster] game=${game.gameId} player=${playerId} read failed:`, error);
+    return serviceError('failed', 'Failed to load the player.');
+  }
+  if (!data) return serviceError('not_found', 'Player not found on this opponent team.');
+  const player = data as { placeholder_game_id: string | null; linked_player_id: string | null; is_fill_in: boolean };
+  const ownPlaceholder =
+    game.leagueGameId !== null &&
+    player.placeholder_game_id === game.leagueGameId &&
+    !player.linked_player_id &&
+    !player.is_fill_in;
+  return ownPlaceholder ? serviceOk(null) : serviceError('conflict', ROSTER_RECORD_REFUSAL);
 }
 
 export async function addOpponentPlayer(
@@ -38,14 +80,14 @@ export async function addOpponentPlayer(
   const auth = await authorizeWithTeam(db, actorUserId, gameId);
   if (!auth.ok) return auth;
 
-  // A placeholder belongs to the league game, so it can be matched once the game is over.
-  let placeholderGameId: string | null = null;
-  if (placeholder) {
-    const { data: game, error: gameError } = await db.from('games').select('league_game_id').eq('id', gameId).maybeSingle();
-    if (gameError) return writeFailed('addOpponentPlayer', gameId, actorUserId, gameError);
-    placeholderGameId = (game?.league_game_id as string | null | undefined) ?? null;
-    if (!placeholderGameId) return serviceError('invalid', 'Unknown players can only be added in league games.');
+  // Every player added in a league game is a placeholder of it, whether or
+  // not the caller asked, so it can be matched once the game is over and never
+  // joins the roster the league mirrors from the real team.
+  const placeholderGameId = auth.data.leagueGameId;
+  if (placeholder && !placeholderGameId) {
+    return serviceError('invalid', 'Unknown players can only be added in league games.');
   }
+  if (!placeholderGameId && auth.data.isRosterRecord) return serviceError('conflict', ROSTER_RECORD_REFUSAL);
 
   const { data, error } = await db
     .from('opponent_players')
@@ -75,6 +117,8 @@ export async function updateOpponentPlayer(
 
   const auth = await authorizeWithTeam(db, actorUserId, gameId);
   if (!auth.ok) return auth;
+  const guard = await guardRosterRecordPlayer(db, auth.data, playerId);
+  if (!guard.ok) return guard;
 
   const { data, error } = await db
     .from('opponent_players')
@@ -106,6 +150,8 @@ export async function removeOpponentPlayer(
 
   const auth = await authorizeWithTeam(db, actorUserId, gameId);
   if (!auth.ok) return auth;
+  const guard = await guardRosterRecordPlayer(db, auth.data, playerId);
+  if (!guard.ok) return guard;
 
   const { data, error } = await db
     .from('opponent_players')

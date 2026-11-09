@@ -109,7 +109,7 @@ export async function authorizeGameScorer(
 
   const { data, error } = await db
     .from('games')
-    .select('team_id, opponent_name, opponent_team_id, scheduled_at, time_zone, status, location_type, neutral_home_team, tournament_id')
+    .select('team_id, opponent_name, opponent_team_id, scheduled_at, time_zone, status, location_type, neutral_home_team, tournament_id, league_game_id, result_source')
     .eq('id', gameId)
     .maybeSingle();
   if (error || !data) return serviceError('not_found', 'Game not found.');

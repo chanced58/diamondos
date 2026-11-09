@@ -2,6 +2,7 @@ import type { JSX } from 'react';
 import { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import { visibleOpponentRoster } from '@baseball/shared';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
 import { getScoringSettingsForGame } from '@/lib/game-scoring-settings';
@@ -30,7 +31,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
 
   const { data: game } = await db
     .from('games')
-    .select('id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, season_id, opponent_team_id, tournament_id, scoring_settings_snapshot')
+    .select('id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, season_id, opponent_team_id, tournament_id, scoring_settings_snapshot, league_game_id')
     .eq('id', params.gameId)
     .single();
 
@@ -78,11 +79,20 @@ export default async function ScorePage({ params }: { params: { gameId: string }
     game.opponent_team_id
       ? db
           .from('opponent_players')
-          .select('id, first_name, last_name, jersey_number')
+          .select('id, first_name, last_name, jersey_number, placeholder_game_id, is_fill_in')
           .eq('opponent_team_id', game.opponent_team_id)
           .eq('is_active', true)
           .order('last_name')
-      : Promise.resolve({ data: [] as { id: string; first_name: string; last_name: string; jersey_number: string | null }[] }),
+      : Promise.resolve({
+          data: [] as {
+            id: string;
+            first_name: string;
+            last_name: string;
+            jersey_number: string | null;
+            placeholder_game_id: string | null;
+            is_fill_in: boolean;
+          }[],
+        }),
     game.opponent_team_id
       ? db
           .from('opponent_game_lineups')
@@ -224,7 +234,12 @@ export default async function ScorePage({ params }: { params: { gameId: string }
     jerseyNumber: p.jersey_number ?? null,
   }));
 
-  const opponentRoster = (opponentPlayersResult.data ?? []).map((p) => ({
+  // The picker leaves out other league games' unknown players and fill-ins
+  // (opponentLineup above still names anyone already in this game's order).
+  const opponentRoster = visibleOpponentRoster(
+    (opponentPlayersResult.data ?? []).map((p) => ({ ...p, placeholderGameId: p.placeholder_game_id, isFillIn: p.is_fill_in })),
+    game.league_game_id,
+  ).map((p) => ({
     id: p.id,
     firstName: p.first_name,
     lastName: p.last_name,

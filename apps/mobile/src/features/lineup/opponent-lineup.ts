@@ -260,23 +260,12 @@ export function opponentDisplayName(
   return battingOrder != null ? `Batter ${battingOrder}` : 'Unnamed batter';
 }
 
-type RosterEntry = { remoteId: string; placeholderGameId?: string; isFillIn: boolean };
-
 /**
- * The opponent players a scorer can pick for this game: an unknown player
- * belongs only to the league game it was added in, and a fill-in (settled as
- * someone off the roster) is never picked again. `leagueGameId` is undefined
- * for a game that is not a league game, which hides every placeholder.
+ * The opponent players a scorer can pick for this game (`@baseball/shared`,
+ * shared with the web pickers): an unknown player belongs only to the league
+ * game it was added in, and a fill-in is never picked again.
  */
-export function visibleOpponentRoster<T extends RosterEntry>(
-  roster: readonly T[],
-  leagueGameId: string | undefined,
-): T[] {
-  return roster.filter((player) => {
-    if (player.isFillIn) return false;
-    return !player.placeholderGameId || player.placeholderGameId === leagueGameId;
-  });
-}
+export { visibleOpponentRoster } from '@baseball/shared';
 
 /** Roster players not already in the batting order, offered to add to it. */
 export function rosterNotYetBatting<T extends { remoteId: string }>(

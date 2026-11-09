@@ -1,12 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { saveOpponentTeamInputSchema } from '@baseball/shared';
-import { invalidInput, serviceOk, type ServiceResult } from '../result';
-import { authorizeOpponentLineupEdit, writeFailed } from './context';
+import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
+import { authorizeOpponentLineupEdit, isLeagueRosterRecord, writeFailed } from './context';
 
 /**
  * Names the game's opponent team: renames the team already linked to the
  * game, or creates one for the coach's team and links it. Only ever the
- * game's own link — never a team id the caller names.
+ * game's own link — never a team id the caller names. A league game's
+ * opponent is the other team's league roster record, set by the league:
+ * it is never re-pointed or renamed from here, nor is any roster record.
  */
 export async function saveOpponentTeam(
   db: SupabaseClient,
@@ -22,7 +24,13 @@ export async function saveOpponentTeam(
   const game = auth.data;
   const now = new Date().toISOString();
 
+  if (game.leagueGameId) return serviceError('conflict', "A league game's opponent is set by the league.");
+
   if (game.opponentTeamId) {
+    const rosterRecord = await isLeagueRosterRecord(db, game.opponentTeamId);
+    if (!rosterRecord.ok) return rosterRecord;
+    if (rosterRecord.data) return serviceError('conflict', "This team's name comes from the league.");
+
     const { error } = await db
       .from('opponent_teams')
       .update({ name, updated_at: now })
