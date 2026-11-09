@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  isFinishedBook,
   selectResultSource,
   type ReconciliationOverride,
   type ResultSource,
@@ -104,16 +105,6 @@ async function loadReconciliation(
     conflicts: Array.isArray(data.conflicts) ? (data.conflicts as ScoreConflict[]) : [],
     overrides: Array.isArray(data.resolved_overrides) ? (data.resolved_overrides as ReconciliationOverride[]) : [],
   };
-}
-
-/**
- * A row's own book is finished only when its team finalized it: completed with
- * no `result_source`. A row completed by a written league result (`paired` /
- * `manual`) may still be receiving its team's live events; its book counts
- * only once `finalizeGame` clears the result source.
- */
-function isFinishedBook(row: TeamRow | null): boolean {
-  return row !== null && row.status === 'completed' && row.result_source === null;
 }
 
 function bookState(row: TeamRow | null) {

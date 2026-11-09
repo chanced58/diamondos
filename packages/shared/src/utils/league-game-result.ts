@@ -18,6 +18,17 @@ interface BookState {
   eventCount: number;
 }
 
+/**
+ * Whether a team's row of a league game holds a finished book of its own: its
+ * team completed it, so it carries no written league result (`result_source`
+ * `paired` / `manual`). A row completed by a written result may still be
+ * receiving its team's live events; its book counts only once the team
+ * finalizes it and the result source is cleared.
+ */
+export function isFinishedBook(row: { status: string; result_source: string | null } | null): boolean {
+  return row !== null && row.status === 'completed' && row.result_source === null;
+}
+
 /** A scorebook counts only when its game is completed and it recorded events. */
 function bookCounts(book: BookState): boolean {
   return book.completed && book.eventCount > 0;
@@ -227,7 +238,7 @@ const BATTING_COUNT_KEYS = [
 
 /** Sum two batting lines' counts and recompute the rates the way the reducer does. */
 export function mergeBattingStats(a: BattingStats, b: BattingStats): BattingStats {
-  const merged: BattingStats = { ...a };
+  const merged: BattingStats = { ...a, playerName: a.playerName || b.playerName };
   for (const key of BATTING_COUNT_KEYS) merged[key] = a[key] + b[key];
   merged.qabPlateAppearances =
     (a.qabPlateAppearances ?? a.plateAppearances) + (b.qabPlateAppearances ?? b.plateAppearances);
@@ -256,11 +267,12 @@ const PITCHING_COUNT_KEYS = [
 
 /** Sum two pitching lines' counts and recompute the rates the way the reducer does. */
 export function mergePitchingStats(a: PitchingStats, b: PitchingStats): PitchingStats {
-  const merged: PitchingStats = { ...a, baByCount: {} };
+  const merged: PitchingStats = { ...a, playerName: a.playerName || b.playerName, baByCount: {} };
   for (const key of PITCHING_COUNT_KEYS) merged[key] = a[key] + b[key];
-  for (const count of Object.keys(a.baByCount)) {
-    const left = a.baByCount[count];
-    const right = b.baByCount[count] ?? { atBats: 0, hits: 0, average: NaN };
+  const noCount = { atBats: 0, hits: 0, average: NaN };
+  for (const count of new Set([...Object.keys(a.baByCount), ...Object.keys(b.baByCount)])) {
+    const left = a.baByCount[count] ?? noCount;
+    const right = b.baByCount[count] ?? noCount;
     merged.baByCount[count] = {
       atBats: left.atBats + right.atBats,
       hits: left.hits + right.hits,

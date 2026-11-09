@@ -1,5 +1,6 @@
 import {
   computeLeagueGameStandings,
+  isFinishedBook,
   manualLinesToBattingStats,
   mergeBattingStats,
   mergePitchingStats,
@@ -24,6 +25,22 @@ function line(overrides: Partial<ManualBattingLine>): ManualBattingLine {
     rbi: 0, bb: 0, so: 0, hbp: 0, sf: 0, sb: 0, ...overrides,
   };
 }
+
+describe('isFinishedBook', () => {
+  it('should count a row its team completed', () => {
+    expect(isFinishedBook({ status: 'completed', result_source: null })).toBe(true);
+  });
+
+  it('should not count a row completed by a written league result', () => {
+    expect(isFinishedBook({ status: 'completed', result_source: 'paired' })).toBe(false);
+    expect(isFinishedBook({ status: 'completed', result_source: 'manual' })).toBe(false);
+  });
+
+  it('should not count a missing or unfinished row', () => {
+    expect(isFinishedBook(null)).toBe(false);
+    expect(isFinishedBook({ status: 'in_progress', result_source: null })).toBe(false);
+  });
+});
 
 describe('selectResultSource', () => {
   it('should use the only completed book', () => {
@@ -180,6 +197,12 @@ describe('mergeBattingStats', () => {
     const b = manualLinesToBattingStats([line({ ab: 4, h: 3 })]).get('p1')!;
     expect(mergeBattingStats(a, b).avg).toBeCloseTo(0.5);
   });
+
+  it('should keep the second line\'s name when the first line has none', () => {
+    const manual = manualLinesToBattingStats([line({ ab: 1 })]).get('p1')!;
+    const named = { ...reducerLine(), playerName: 'Alex Ramirez' };
+    expect(mergeBattingStats(manual, named).playerName).toBe('Alex Ramirez');
+  });
 });
 
 function pitcher(overrides: Partial<PitchingStats>): PitchingStats {
@@ -205,5 +228,16 @@ describe('mergePitchingStats', () => {
     expect(merged.era).toBeCloseTo((3 * 7) / 7);
     expect(merged.whip).toBeCloseTo((2 + 6) / 7);
     expect(merged.baByCount['0-0']).toEqual({ atBats: 4, hits: 2, average: 0.5 });
+  });
+
+  it('should keep count buckets that only the second line has', () => {
+    const second = pitcher({ baByCount: { '3-2': { atBats: 4, hits: 1, average: 0.25 } } });
+    const merged = mergePitchingStats(pitcher({}), second);
+    expect(merged.baByCount['0-0']).toEqual({ atBats: 2, hits: 1, average: 0.5 });
+    expect(merged.baByCount['3-2']).toEqual({ atBats: 4, hits: 1, average: 0.25 });
+  });
+
+  it('should keep the second line\'s name when the first line has none', () => {
+    expect(mergePitchingStats(pitcher({ playerName: '' }), pitcher({})).playerName).toBe('P');
   });
 });

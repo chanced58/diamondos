@@ -3,7 +3,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   deriveBattingStats,
   derivePitchingStats,
-  selectSpotlights,
   filterResetAndReverted,
   EventType,
   type GameEvent,
@@ -12,7 +11,15 @@ import { fetchAllEventsForGames } from '@/lib/stats/fetch-events';
 import { buildLineupsByGameId } from '@/lib/stats/lineups';
 import { resolveLeagueSeasonGameIds } from './season';
 import { computeStandings, computeOpponentStandings } from './standings';
-import { combinePlayerStats, type PlayerTeamInfo } from './aggregate';
+import {
+  combinePlayerStats,
+  spotlightRows,
+  standingRow,
+  teamStatRow,
+  type PlayerTeamInfo,
+} from './aggregate';
+import { clearLeagueSeasonSnapshots, replaceLeagueSeasonSnapshot } from './write';
+import { recomputeScheduledLeagueSnapshot } from './scheduled/recompute-scheduled';
 
 const NIL = '00000000-0000-0000-0000-000000000000';
 
@@ -25,23 +32,41 @@ function assertOk(error: { message: string } | null, what: string, leagueId: str
   if (error) throw new Error(`recompute ${what} failed (league=${leagueId} season=${season}): ${error.message}`);
 }
 
-/** Remove all snapshot rows for one league-season. */
-async function clearLeagueSeasonSnapshots(db: SupabaseClient<Database>, leagueId: string, season: string): Promise<void> {
-  await db.from('league_player_stat_snapshot').delete().eq('league_id', leagueId).eq('season', season);
-  await db.from('league_standings_snapshot').delete().eq('league_id', leagueId).eq('season', season);
-  await db.from('league_team_stat_snapshot').delete().eq('league_id', leagueId).eq('season', season);
-  await db.from('league_spotlight_snapshot').delete().eq('league_id', leagueId).eq('season', season);
+/**
+ * Recompute and replace all four league snapshot tables for one league-season.
+ * A league that schedules its own games (`leagues.schedules_games`) is built
+ * from its league games (`recomputeScheduledLeagueSnapshot`); every other
+ * league from its teams' games, as below.
+ */
+export async function recomputeLeagueSnapshot(
+  db: SupabaseClient<Database>,
+  leagueId: string,
+  season: string,
+): Promise<void> {
+  const { data: league, error: leagueErr } = await db
+    .from('leagues')
+    .select('schedules_games')
+    .eq('id', leagueId)
+    .maybeSingle();
+  assertOk(leagueErr, 'leagues', leagueId, season);
+  if (league?.schedules_games) {
+    await recomputeScheduledLeagueSnapshot(db, leagueId, season);
+    return;
+  }
+  await recomputeTeamGameSnapshot(db, leagueId, season);
 }
 
 /**
- * Recompute and upsert all four league snapshot tables for one league-season.
+ * The snapshot of a league whose teams create their own games.
  *
  * Reuses the @baseball/shared TS stat reducers. Player→team attribution comes
  * from players.team_id (game_lineups has no team_id), and home/away is derived
  * from the game row (game_lineups has no is_home). Fielding stats are not
- * surfaced on the home page in v1, so fielding aggregation is skipped.
+ * surfaced on the home page in v1, so fielding aggregation is skipped. Each
+ * player's line is written under both scopes (`season` and `team`), identical
+ * here, so the leaderboards and team pages read the same way for every league.
  */
-export async function recomputeLeagueSnapshot(
+async function recomputeTeamGameSnapshot(
   db: SupabaseClient<Database>,
   leagueId: string,
   season: string,
@@ -151,135 +176,72 @@ export async function recomputeLeagueSnapshot(
   const batting = deriveBattingStats(evts, players, battingCtx);
   const pitching = derivePitchingStats(evts, players);
 
-  const playerSnapshotRows = combinePlayerStats({
+  const seasonPlayerRows = combinePlayerStats({
     batting,
     pitching,
     fielding: new Map(),
     teamOf,
     leagueId,
     season,
+    scope: 'season',
   });
+  const playerSnapshotRows = [
+    ...seasonPlayerRows,
+    ...seasonPlayerRows.map((row) => ({ ...row, scope: 'team' as const })),
+  ];
 
   // 8) standings — platform teams from their own perspective, opponent teams
   //    from the inverse of games recorded against them.
   const standings = computeStandings(games ?? [], teamIds);
   const opponentStandings = computeOpponentStandings(games ?? [], opponentTeamIds);
 
-  // 9) team stats — team AVG (hits/AB) and team ERA (ER*7 / IP) from the reducer maps
-  const teamStatRows = Array.from(standings.entries()).map(([teamId, rec]) => {
-    let hits = 0;
-    let atBats = 0;
-    let earnedRuns = 0;
-    let outs = 0;
-    for (const [pid, info] of teamOf) {
-      if (info.teamId !== teamId) continue;
-      const b = batting.get(pid);
-      if (b) {
-        hits += b.hits ?? 0;
-        atBats += b.atBats ?? 0;
-      }
-      const p = pitching.get(pid);
-      if (p) {
-        earnedRuns += p.earnedRunsAllowed ?? 0;
-        outs += p.inningsPitchedOuts ?? 0;
-      }
-    }
-    const teamAvg = atBats > 0 ? Number((hits / atBats).toFixed(3)) : 0;
-    const teamEra = outs > 0 ? Number(((earnedRuns * 7) / (outs / 3)).toFixed(2)) : 0;
-    return {
-      league_id: leagueId,
+  // 9) team stats — team AVG and ERA over the lines of the team's roster
+  const teamStatRows = Array.from(standings.entries()).map(([teamId, record]) => {
+    const rosterIds = Array.from(teamOf).filter(([, info]) => info.teamId === teamId).map(([pid]) => pid);
+    return teamStatRow({
+      leagueId,
       season,
-      team_id: teamId,
-      team_name: teamName.get(teamId) ?? '',
-      stats: {
-        teamAvg,
-        teamEra,
-        runsScored: rec.runsFor,
-        runDiff: rec.runsFor - rec.runsAgainst,
-      },
-    };
+      teamId,
+      teamName: teamName.get(teamId) ?? '',
+      record,
+      batting: rosterIds.map((pid) => batting.get(pid)).filter((line) => line !== undefined),
+      pitching: rosterIds.map((pid) => pitching.get(pid)).filter((line) => line !== undefined),
+    });
   });
 
   const standingRows = [
-    ...Array.from(standings.entries()).map(([teamId, rec]) => ({
-      league_id: leagueId,
-      season,
-      team_id: teamId,
-      opponent_team_id: null,
-      division_id: divisionOf.get(teamId) ?? null,
-      team_name: teamName.get(teamId) ?? '',
-      wins: rec.wins,
-      losses: rec.losses,
-      ties: rec.ties,
-      runs_for: rec.runsFor,
-      runs_against: rec.runsAgainst,
-      win_pct: rec.winPct,
-      streak: '',
-    })),
-    ...Array.from(opponentStandings.entries()).map(([opponentTeamId, rec]) => ({
-      league_id: leagueId,
-      season,
-      team_id: null,
-      opponent_team_id: opponentTeamId,
-      division_id: divisionOf.get(opponentTeamId) ?? null,
-      team_name: opponentName.get(opponentTeamId) ?? '',
-      wins: rec.wins,
-      losses: rec.losses,
-      ties: rec.ties,
-      runs_for: rec.runsFor,
-      runs_against: rec.runsAgainst,
-      win_pct: rec.winPct,
-      streak: '',
-    })),
+    ...Array.from(standings.entries()).map(([teamId, record]) =>
+      standingRow({
+        leagueId,
+        season,
+        teamId,
+        opponentTeamId: null,
+        divisionId: divisionOf.get(teamId) ?? null,
+        teamName: teamName.get(teamId) ?? '',
+        record,
+      }),
+    ),
+    ...Array.from(opponentStandings.entries()).map(([opponentTeamId, record]) =>
+      standingRow({
+        leagueId,
+        season,
+        teamId: null,
+        opponentTeamId,
+        divisionId: divisionOf.get(opponentTeamId) ?? null,
+        teamName: opponentName.get(opponentTeamId) ?? '',
+        record,
+      }),
+    ),
   ];
 
   // 10) spotlights
-  const batterCandidates = playerSnapshotRows
-    .filter((r) => !r.public_opt_out)
-    .map((r) => ({
-      id: r.player_id,
-      name: `${r.first_name} ${r.last_name}`,
-      teamName: r.team_name,
-      score: (r.stats.ops ?? 0) * Math.min(r.plate_appearances, 50),
-      qualifierValue: r.plate_appearances,
-    }));
-  const teamCandidates = teamStatRows.map((t) => ({
-    id: t.team_id,
-    name: t.team_name,
-    score: t.stats.runDiff,
-    qualifierValue: 1,
-  }));
-  const spot = selectSpotlights({ batters: batterCandidates, teams: teamCandidates, minBatterQualifier: 5 });
-  const spotlightRows = [
-    spot.playerOfWeek && {
-      league_id: leagueId,
-      season,
-      type: 'player_of_week',
-      subject_id: spot.playerOfWeek.id,
-      subject_name: spot.playerOfWeek.name,
-      team_name: spot.playerOfWeek.teamName ?? null,
-      blurb: 'Top performer over the season',
-      window_days: 7,
-    },
-    spot.hotTeam && {
-      league_id: leagueId,
-      season,
-      type: 'hot_team',
-      subject_id: spot.hotTeam.id,
-      subject_name: spot.hotTeam.name,
-      team_name: null,
-      blurb: 'Best run differential',
-      window_days: 7,
-    },
-  ].filter((row): row is NonNullable<typeof row> => row !== null);
+  const spotlights = spotlightRows(seasonPlayerRows, teamStatRows, leagueId, season);
 
   // 11) replace snapshot rows for this league-season.
-  // NOTE: not a single transaction (supabase-js limitation) — a mid-write
-  // failure is healed by the next finalize/cron recompute. A transactional RPC
-  // or staged version-swap is tracked as a v2 hardening item.
-  await clearLeagueSeasonSnapshots(db, leagueId, season);
-  if (playerSnapshotRows.length) await db.from('league_player_stat_snapshot').insert(playerSnapshotRows);
-  if (standingRows.length) await db.from('league_standings_snapshot').insert(standingRows);
-  if (teamStatRows.length) await db.from('league_team_stat_snapshot').insert(teamStatRows);
-  if (spotlightRows.length) await db.from('league_spotlight_snapshot').insert(spotlightRows);
+  await replaceLeagueSeasonSnapshot(db, leagueId, season, {
+    players: playerSnapshotRows,
+    standings: standingRows,
+    teamStats: teamStatRows,
+    spotlights,
+  });
 }

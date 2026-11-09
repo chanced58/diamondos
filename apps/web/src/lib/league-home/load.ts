@@ -277,7 +277,13 @@ export async function getLeagueHomeData(
     { data: leagueDivisions, error: divisionsErr },
   ] = await Promise.all([
     db.from('league_standings_snapshot').select('*').eq('league_id', league.id).eq('season', season),
-    db.from('league_player_stat_snapshot').select('*').eq('league_id', league.id).eq('season', season),
+    // Leaderboards rank each player's whole-season line (a traded player once).
+    db
+      .from('league_player_stat_snapshot')
+      .select('*')
+      .eq('league_id', league.id)
+      .eq('season', season)
+      .eq('scope', 'season'),
     db.from('league_team_stat_snapshot').select('*').eq('league_id', league.id).eq('season', season),
     db.from('league_spotlight_snapshot').select('*').eq('league_id', league.id).eq('season', season),
     db.from('league_divisions').select('id, name').eq('league_id', league.id),

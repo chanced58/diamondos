@@ -198,7 +198,14 @@ export async function getTeamStatPageData(
       .eq('season', season)
       .eq('team_id', teamId)
       .maybeSingle(),
-    db.from('league_player_stat_snapshot').select('*').eq('league_id', league.id).eq('season', season).eq('team_id', teamId),
+    // The player's line for this team only (a traded player's other team keeps its own).
+    db
+      .from('league_player_stat_snapshot')
+      .select('*')
+      .eq('league_id', league.id)
+      .eq('season', season)
+      .eq('scope', 'team')
+      .eq('team_id', teamId),
     db.from('teams').select('id, name, logo_url').eq('id', teamId).maybeSingle(),
   ]);
   const snapErr = standingsErr || teamStatErr || playerErr || teamMetaErr;
