@@ -29,6 +29,12 @@ const leagueGame = {
 interface Setup {
   leagueRole?: string;
   teamRole?: string;
+  /** The actor's team (default HOME). */
+  teamId?: string;
+  /** Seats of other users (an earlier entry's author), by user id. */
+  seats?: Record<string, { team_id: string; role: string }[]>;
+  lineRows?: Record<string, unknown>[];
+  insertResults?: FakeResult[];
   events?: number;
   existing?: { entered_by: string; kind?: string } | null;
   players?: { id: string; team_id: string | null }[];
@@ -42,7 +48,12 @@ function setup(opts: Setup = {}) {
       if (call.filters.user_id === ADMIN_USER) return { data: { role: 'league_admin' } };
       return { data: opts.leagueRole ? { role: opts.leagueRole } : null };
     },
-    'team_members.select': { data: opts.teamRole ? [{ team_id: HOME, role: opts.teamRole }] : [] },
+    'team_members.select': (call) => {
+      if (call.filters.user_id === ACTOR) return { data: opts.teamRole ? [{ team_id: opts.teamId ?? HOME, role: opts.teamRole }] : [] };
+      return { data: opts.seats?.[call.filters.user_id as string] ?? [] };
+    },
+    'league_game_manual_batting_lines.select': { data: opts.lineRows ?? [] },
+    ...(opts.insertResults ? { 'league_game_manual_batting_lines.insert': opts.insertResults } : {}),
     'game_events.select': { count: opts.events ?? 0 },
     'league_game_manual_results.select': {
       data: opts.existing ? { league_game_id: LEAGUE_GAME, kind: 'final', home_runs: 1, away_runs: 0, ...opts.existing } : null,
@@ -109,6 +120,69 @@ describe('enterManualResult', () => {
     const result = await enterManualResult(db, ACTOR, finalInput);
     expect(result.ok).toBe(true);
     expect(calls.find((c) => c.op === 'upsert')?.payload).toMatchObject({ entered_by: ACTOR, home_runs: 3 });
+  });
+
+  it('should refuse the away coach replacing the home coach’s entry', async () => {
+    const { db, calls } = setup({
+      teamRole: 'head_coach',
+      teamId: AWAY,
+      existing: { entered_by: 'home-coach' },
+      seats: { 'home-coach': [{ team_id: HOME, role: 'head_coach' }] },
+    });
+    expect(await enterManualResult(db, ACTOR, finalInput)).toMatchObject({ ok: false, code: 'forbidden' });
+    expect(calls.some((c) => c.op === 'upsert')).toBe(false);
+  });
+
+  it('should let the away coach edit their own team’s entry', async () => {
+    const { db } = setup({
+      teamRole: 'assistant_coach',
+      teamId: AWAY,
+      existing: { entered_by: 'away-coach' },
+      seats: { 'away-coach': [{ team_id: AWAY, role: 'head_coach' }] },
+    });
+    expect((await enterManualResult(db, ACTOR, finalInput)).ok).toBe(true);
+  });
+
+  it('should restore the previous result and lines when saving the new lines fails', async () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const oldLine = { id: 'l1', league_game_id: LEAGUE_GAME, team_id: HOME, player_id: HOME_PLAYER, ab: 2 };
+    const { db, calls } = setup({
+      teamRole: 'head_coach',
+      existing: { entered_by: ACTOR, kind: 'batting' },
+      lineRows: [oldLine],
+      players: [{ id: HOME_PLAYER, team_id: HOME }],
+      insertResults: [{ error: { message: 'boom' } }, {}],
+    });
+    const result = await enterManualResult(db, ACTOR, {
+      ...boxInput,
+      kind: 'batting',
+      lines: [{ teamId: HOME, playerId: HOME_PLAYER, ...line }],
+    });
+    expect(result).toMatchObject({ ok: false, code: 'failed' });
+    expect(mockRefreshLeagueGame).not.toHaveBeenCalled();
+    const upserts = calls.filter((c) => c.table === 'league_game_manual_results' && c.op === 'upsert');
+    expect(upserts).toHaveLength(2);
+    expect(upserts[1].payload).toMatchObject({ league_game_id: LEAGUE_GAME, kind: 'batting', home_runs: 1 });
+    const inserts = calls.filter((c) => c.table === 'league_game_manual_batting_lines' && c.op === 'insert');
+    expect(inserts[1].payload).toEqual([oldLine]);
+    spy.mockRestore();
+  });
+
+  it('should delete a new result when there was none and the lines fail to save', async () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { db, calls } = setup({
+      teamRole: 'head_coach',
+      players: [{ id: HOME_PLAYER, team_id: HOME }],
+      insertResults: [{ error: { message: 'boom' } }],
+    });
+    const result = await enterManualResult(db, ACTOR, {
+      ...boxInput,
+      kind: 'batting',
+      lines: [{ teamId: HOME, playerId: HOME_PLAYER, ...line }],
+    });
+    expect(result).toMatchObject({ ok: false, code: 'failed' });
+    expect(calls.some((c) => c.table === 'league_game_manual_results' && c.op === 'delete')).toBe(true);
+    spy.mockRestore();
   });
 
   it('should refuse a player who is not a coach or league admin', async () => {

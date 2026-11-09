@@ -86,6 +86,7 @@ interface Powers {
   isLeagueAdmin: boolean;
   isLeagueStaff: boolean;
   isTeamCoach: boolean;
+  isHomeCoach: boolean;
   /** Any active seat on either team. */
   onEitherTeam: boolean;
 }
@@ -139,6 +140,7 @@ async function loadPowers(db: SupabaseClient, game: LeagueGameRow, actorUserId: 
     isLeagueAdmin: role === 'league_admin',
     isLeagueStaff: role === 'league_admin' || role === 'league_manager',
     isTeamCoach: seats.some((seat) => isCoachRole(seat.role)),
+    isHomeCoach: seats.some((seat) => seat.team_id === game.home_team_id && isCoachRole(seat.role)),
     onEitherTeam: seats.length > 0,
   };
 }
@@ -212,12 +214,32 @@ function toInput(row: ResultRow, lines: LineRow[]): ManualResultInput | null {
   };
 }
 
-/** The actor may change this entry: an admin always, a coach unless an admin made it. */
+/** The sides (by team id) the user holds an active seat on. */
+async function seatTeams(db: SupabaseClient, game: LeagueGameRow, userId: string | null): Promise<Set<string>> {
+  if (!userId) return new Set();
+  const { data, error } = await db
+    .from('team_members')
+    .select('team_id')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .in('team_id', [game.home_team_id, game.away_team_id]);
+  if (error) throw error;
+  return new Set(((data ?? []) as { team_id: string }[]).map((row) => row.team_id));
+}
+
+/**
+ * A league admin's entry is final except to league admins. Otherwise league
+ * admins and the home team's coaches may replace any entry; an away coach only
+ * one made by an away team member (never by a home coach).
+ */
 async function mayEdit(db: SupabaseClient, game: LeagueGameRow, powers: Powers, existing: ResultRow | null): Promise<boolean> {
   if (powers.isLeagueAdmin) return true;
   if (!powers.isTeamCoach) return false;
   if (!existing) return true;
-  return !(await isActiveLeagueAdmin(db, game.league_id, existing.entered_by));
+  if (await isActiveLeagueAdmin(db, game.league_id, existing.entered_by)) return false;
+  if (powers.isHomeCoach) return true;
+  const authorSeats = await seatTeams(db, game, existing.entered_by);
+  return authorSeats.has(game.away_team_id) && !authorSeats.has(game.home_team_id);
 }
 
 function failed<T>(action: string, context: string, actorUserId: string, error: unknown): ServiceResult<T> {
@@ -308,6 +330,63 @@ function resultRowFor(input: ManualResultInput, game: LeagueGameRow, actorUserId
   };
 }
 
+async function loadLineRows(db: SupabaseClient, leagueGameId: string): Promise<Record<string, unknown>[]> {
+  const { data, error } = await db.from('league_game_manual_batting_lines').select('*').eq('league_game_id', leagueGameId);
+  if (error) throw error;
+  return (data ?? []) as Record<string, unknown>[];
+}
+
+/** Replaces the game's batting lines; returns the first error, if any. */
+async function replaceLines(db: SupabaseClient, leagueGameId: string, lines: ManualBattingLineInput[]): Promise<unknown> {
+  const { error: deleteError } = await db.from('league_game_manual_batting_lines').delete().eq('league_game_id', leagueGameId);
+  if (deleteError) return deleteError;
+  if (lines.length === 0) return null;
+  const { error: insertError } = await db.from('league_game_manual_batting_lines').insert(
+    lines.map((line) => ({
+      league_game_id: leagueGameId,
+      team_id: line.teamId,
+      player_id: line.playerId,
+      ab: line.ab,
+      r: line.r,
+      h: line.h,
+      doubles: line.doubles,
+      triples: line.triples,
+      hr: line.hr,
+      rbi: line.rbi,
+      bb: line.bb,
+      so: line.so,
+      hbp: line.hbp,
+      sf: line.sf,
+      sb: line.sb,
+    })),
+  );
+  return insertError;
+}
+
+/** Puts back what was saved before a failed write; each failed step is logged and the rest still run. */
+async function restorePrevious(
+  db: SupabaseClient,
+  leagueGameId: string,
+  previous: ResultRow | null,
+  previousLines: Record<string, unknown>[],
+  actorUserId: string,
+): Promise<void> {
+  const log = (step: string, error: unknown): void =>
+    console.error(`[league-manual-result] restore ${step} failed league_game=${leagueGameId} actor=${actorUserId}:`, error);
+  const step = async (name: string, run: () => PromiseLike<{ error: unknown }>): Promise<void> => {
+    try {
+      const { error } = await run();
+      if (error) log(name, error);
+    } catch (error) {
+      log(name, error);
+    }
+  };
+  await step('lines clear', () => db.from('league_game_manual_batting_lines').delete().eq('league_game_id', leagueGameId));
+  if (previous) await step('result', () => db.from('league_game_manual_results').upsert(previous, { onConflict: 'league_game_id' }));
+  else await step('result delete', () => db.from('league_game_manual_results').delete().eq('league_game_id', leagueGameId));
+  if (previousLines.length > 0) await step('lines', () => db.from('league_game_manual_batting_lines').insert(previousLines));
+}
+
 export async function enterManualResult(
   db: SupabaseClient,
   actorUserId: string,
@@ -343,35 +422,17 @@ export async function enterManualResult(
       if (problem) return serviceError('invalid', problem);
     }
 
+    const previousLines = existing ? await loadLineRows(db, leagueGameId) : [];
     const now = new Date().toISOString();
     const { error: upsertError } = await db
       .from('league_game_manual_results')
       .upsert(resultRowFor(input, game, actorUserId, now), { onConflict: 'league_game_id' });
     if (upsertError) return failed('result upsert', context, actorUserId, upsertError);
 
-    const { error: deleteError } = await db.from('league_game_manual_batting_lines').delete().eq('league_game_id', leagueGameId);
-    if (deleteError) return failed('lines delete', context, actorUserId, deleteError);
-    if (input.kind === 'batting' && input.lines.length > 0) {
-      const { error: insertError } = await db.from('league_game_manual_batting_lines').insert(
-        input.lines.map((line) => ({
-          league_game_id: leagueGameId,
-          team_id: line.teamId,
-          player_id: line.playerId,
-          ab: line.ab,
-          r: line.r,
-          h: line.h,
-          doubles: line.doubles,
-          triples: line.triples,
-          hr: line.hr,
-          rbi: line.rbi,
-          bb: line.bb,
-          so: line.so,
-          hbp: line.hbp,
-          sf: line.sf,
-          sb: line.sb,
-        })),
-      );
-      if (insertError) return failed('lines insert', context, actorUserId, insertError);
+    const writeError = await replaceLines(db, leagueGameId, input.kind === 'batting' ? input.lines : []);
+    if (writeError) {
+      await restorePrevious(db, leagueGameId, existing, previousLines, actorUserId);
+      return failed('lines write', context, actorUserId, writeError);
     }
   } catch (error) {
     return failed('enter', context, actorUserId, error);
