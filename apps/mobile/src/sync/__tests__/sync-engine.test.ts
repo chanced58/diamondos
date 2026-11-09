@@ -15,6 +15,7 @@ import {
   shouldReconcileDeletions,
   reconcileGameLifecycle,
   keepLocalPlayOverWrittenResult,
+  loadLocalPlayState,
   mapGame,
   mapOpponentPlayer,
   toOpponentPlayerWrite,
@@ -159,6 +160,13 @@ describe('shouldReconcileDeletions', () => {
 
 const mockDatabase = jest.requireMock('../../db').database as Record<string, unknown>;
 
+// Harnesses below stub methods onto the shared mocked database; put it back
+// to its bare shape after each test so no stub leaks into the next one.
+afterEach(() => {
+  delete mockDatabase.get;
+  delete mockDatabase.localStorage;
+});
+
 function chain(result: unknown) {
   // A thenable query builder: every filter returns itself, awaiting it (or
   // maybeSingle) yields the canned result.
@@ -233,7 +241,7 @@ describe('keepLocalPlayOverWrittenResult', () => {
   };
   const localInProgress = {
     status: 'in_progress', homeScore: 2, awayScore: 3,
-    currentInning: 4, isTopOfInning: true, outs: 1, hasUnsyncedEvents: false,
+    currentInning: 4, isTopOfInning: true, outs: 1, hasEvents: false,
   };
 
   it('should not overwrite a local in-progress game with a paired result', () => {
@@ -244,8 +252,8 @@ describe('keepLocalPlayOverWrittenResult', () => {
     });
   });
 
-  it('should not overwrite a local game whose events have not reached the server', () => {
-    const localEnded = { ...localInProgress, status: 'completed', hasUnsyncedEvents: true };
+  it('should not overwrite a local game that has events of its own', () => {
+    const localEnded = { ...localInProgress, status: 'completed', hasEvents: true };
     expect(keepLocalPlayOverWrittenResult(pairedResult, localEnded)).toMatchObject({
       status: 'completed', home_score: 2, away_score: 3, current_inning: 4,
     });
@@ -260,6 +268,66 @@ describe('keepLocalPlayOverWrittenResult', () => {
   it('should apply a game the team scored itself as usual', () => {
     const ownBook = { ...pairedResult, result_source: null };
     expect(keepLocalPlayOverWrittenResult(ownBook, localInProgress)).toEqual(ownBook);
+  });
+});
+
+describe('loadLocalPlayState', () => {
+  // Local games and the number of local events each has, synced or not.
+  function localDatabase(
+    games: Array<Record<string, unknown>>,
+    eventCounts: Record<string, number>,
+  ) {
+    mockDatabase.get = (table: string) => ({
+      query: (...conditions: unknown[]) => ({
+        fetch: async () => {
+          if (table !== 'games') throw new Error(`unexpected fetch on ${table}`);
+          return games;
+        },
+        fetchCount: async () => {
+          if (table !== 'game_events') throw new Error(`unexpected count on ${table}`);
+          const filter = JSON.stringify(conditions);
+          return Object.entries(eventCounts)
+            .filter(([gameId]) => filter.includes(`"${gameId}"`))
+            .reduce((sum, [, count]) => sum + count, 0);
+        },
+      }),
+    });
+  }
+
+  const localGame = (remoteId: string, status: string) => ({
+    remoteId, status, homeScore: 2, awayScore: 3, currentInning: 7, isTopOfInning: false, outs: 3,
+  });
+  const pairedResult = (id: string) => ({
+    id, status: 'completed', home_score: 9, away_score: 1,
+    current_inning: 7, is_top_of_inning: false, outs: 3, result_source: 'paired',
+  });
+
+  it('should keep the local state of a completed game whose events have all synced', async () => {
+    // The phone ended the game and every event reached the server, but its
+    // finalize has not gone through yet, so the row still shows the result
+    // written from the other book.
+    localDatabase([localGame('g-ended', 'completed')], { 'g-ended': 120 });
+
+    const states = await loadLocalPlayState(['g-ended']);
+
+    expect(states.get('g-ended')).toMatchObject({ status: 'completed', hasEvents: true });
+    expect(keepLocalPlayOverWrittenResult(pairedResult('g-ended'), states.get('g-ended'))).toMatchObject({
+      status: 'completed', home_score: 2, away_score: 3,
+    });
+  });
+
+  it('should let a written result reach a game this phone has no events for', async () => {
+    localDatabase([localGame('g-fresh', 'scheduled')], { 'g-other': 50 });
+
+    const states = await loadLocalPlayState(['g-fresh']);
+
+    expect(states.get('g-fresh')).toMatchObject({ hasEvents: false });
+    expect(keepLocalPlayOverWrittenResult(pairedResult('g-fresh'), states.get('g-fresh')))
+      .toEqual(pairedResult('g-fresh'));
+  });
+
+  it('should read nothing when no pulled game carries a written result', async () => {
+    expect((await loadLocalPlayState([])).size).toBe(0);
   });
 });
 

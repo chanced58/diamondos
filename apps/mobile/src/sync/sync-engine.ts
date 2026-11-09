@@ -1675,8 +1675,11 @@ export interface LocalPlayState {
   currentInning: number;
   isTopOfInning: boolean;
   outs: number;
-  /** Any event recorded here that has not come back from the server yet. */
-  hasUnsyncedEvents: boolean;
+  /**
+   * Any event for this game on the device, synced or not. A written result
+   * lands only on a row with no events, so these are this team's own book.
+   */
+  hasEvents: boolean;
 }
 
 type PulledGameRow = {
@@ -1693,15 +1696,16 @@ type PulledGameRow = {
  * A league game's result written onto this team's row (from the other team's
  * book, or by hand) lands only while the server row has no events, but this
  * phone may already be scoring the game offline. While the local game is in
- * progress or holds events not yet on the server, keep its status, score and
- * inning state; the result clears once this book is finalized.
+ * progress or has any events of its own (unsynced, or synced but not yet
+ * finalized), keep its status, score and inning state; the result clears once
+ * this book is finalized.
  */
 export function keepLocalPlayOverWrittenResult<T extends PulledGameRow>(
   pulled: T,
   local: LocalPlayState | undefined,
 ): T {
   if (pulled.result_source == null || !local) return pulled;
-  if (local.status !== 'in_progress' && !local.hasUnsyncedEvents) return pulled;
+  if (local.status !== 'in_progress' && !local.hasEvents) return pulled;
   return {
     ...pulled,
     status: local.status,
@@ -1714,18 +1718,26 @@ export function keepLocalPlayOverWrittenResult<T extends PulledGameRow>(
 }
 
 /** Local play state of the given games, for keepLocalPlayOverWrittenResult. */
-async function loadLocalPlayState(gameRemoteIds: string[]): Promise<Map<string, LocalPlayState>> {
+export async function loadLocalPlayState(
+  gameRemoteIds: string[],
+): Promise<Map<string, LocalPlayState>> {
   const states = new Map<string, LocalPlayState>();
   if (gameRemoteIds.length === 0) return states;
-  const [games, unsyncedEvents] = await Promise.all([
-    database.get<Game>('games').query(Q.where('remote_id', Q.oneOf(gameRemoteIds))).fetch(),
-    database
-      .get<GameEvent>('game_events')
-      .query(Q.where('game_remote_id', Q.oneOf(gameRemoteIds)), Q.where('synced_at', null))
-      .fetch(),
-  ]);
-  const gamesWithUnsyncedEvents = new Set(unsyncedEvents.map((event) => event.gameRemoteId));
-  for (const game of games) {
+  const games = await database
+    .get<Game>('games')
+    .query(Q.where('remote_id', Q.oneOf(gameRemoteIds)))
+    .fetch();
+  // A count per game rather than the events themselves: a finished book is
+  // hundreds of rows, and only whether any exist matters.
+  const eventCounts = await Promise.all(
+    games.map((game) =>
+      database
+        .get<GameEvent>('game_events')
+        .query(Q.where('game_remote_id', game.remoteId))
+        .fetchCount(),
+    ),
+  );
+  games.forEach((game, index) => {
     states.set(game.remoteId, {
       status: game.status,
       homeScore: game.homeScore,
@@ -1733,9 +1745,9 @@ async function loadLocalPlayState(gameRemoteIds: string[]): Promise<Map<string, 
       currentInning: game.currentInning,
       isTopOfInning: game.isTopOfInning,
       outs: game.outs,
-      hasUnsyncedEvents: gamesWithUnsyncedEvents.has(game.remoteId),
+      hasEvents: eventCounts[index] > 0,
     });
-  }
+  });
   return states;
 }
 
