@@ -5575,6 +5575,10 @@ export type Database = {
         Args: { p_league_id: string; p_user_id: string }
         Returns: undefined
       }
+      sync_league_roster_record: {
+        Args: { p_league_id: string; p_team_id: string }
+        Returns: string
+      }
     }
     Enums: {
       ai_generation_feature:
