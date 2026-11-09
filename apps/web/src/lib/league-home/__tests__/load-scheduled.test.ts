@@ -57,9 +57,16 @@ const standing = (team_id: string, team_name: string) => ({
   wins: 3, losses: 3, ties: 0, win_pct: 0.5, runs_for: 0, runs_against: 0,
 });
 
-const leagueGame = (id: string, season: string, status: string, scheduled_at: string, home_game_id: string | null = null) => ({
+const leagueGame = (
+  id: string,
+  season: string,
+  status: string,
+  scheduled_at: string,
+  home_game_id: string | null = null,
+  runs: { home_runs: number | null; away_runs: number | null } = { home_runs: null, away_runs: null },
+) => ({
   id, league_id: 'L1', season, status, scheduled_at, time_zone: 'America/Chicago',
-  home_team_id: 'owls', away_team_id: 'hawks', home_game_id,
+  home_team_id: 'owls', away_team_id: 'hawks', home_game_id, ...runs,
 });
 
 const future = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
@@ -70,9 +77,10 @@ beforeEach(() => {
   mockTables.leagues = [LEAGUE];
   mockTables.league_standings_snapshot = [standing('hawks', 'Hawks'), standing('owls', 'Owls')];
   mockTables.teams = [{ id: 'owls', name: 'Owls' }, { id: 'hawks', name: 'Hawks' }];
-  mockTables.games = [{ id: 'g-home', home_score: 5, away_score: 2 }];
+  // The home row holds its own (overridden) book; the league game holds the result that counts.
+  mockTables.games = [{ id: 'g-home', home_score: 1, away_score: 2 }];
   mockTables.league_games = [
-    leagueGame('lg1', '2027', 'completed', past(3), 'g-home'),
+    leagueGame('lg1', '2027', 'completed', past(3), 'g-home', { home_runs: 5, away_runs: 2 }),
     leagueGame('lg2', '2027', 'scheduled', future(2)),
     leagueGame('lg3', '2027', 'scheduled', past(1)),
     leagueGame('lg4', '2026', 'completed', past(300)),
@@ -87,7 +95,7 @@ async function load() {
 }
 
 describe('league home for a league that schedules its games', () => {
-  it('should list each league game once with both teams', async () => {
+  it("should list each league game once with both teams and the score that counts, not the home row's", async () => {
     const data = await load();
     expect(data.leagueGames?.recent).toEqual([
       {

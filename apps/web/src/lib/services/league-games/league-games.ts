@@ -336,6 +336,8 @@ interface ListedLeagueGame {
   away_team_id: string;
   home_game_id: string | null;
   away_game_id: string | null;
+  home_runs: number | null;
+  away_runs: number | null;
 }
 
 export async function listLeagueGames(
@@ -353,7 +355,9 @@ export async function listLeagueGames(
   try {
     let query = db
       .from('league_games')
-      .select('id, season, scheduled_at, time_zone, venue_name, status, home_team_id, away_team_id, home_game_id, away_game_id')
+      .select(
+        'id, season, scheduled_at, time_zone, venue_name, status, home_team_id, away_team_id, home_game_id, away_game_id, home_runs, away_runs',
+      )
       .eq('league_id', leagueId);
     if (season) query = query.eq('season', season);
     const { data, error } = await query.order('scheduled_at', { ascending: true });
@@ -363,28 +367,18 @@ export async function listLeagueGames(
 
     const teamIds = [...new Set(rows.flatMap((row) => [row.home_team_id, row.away_team_id]))];
     const leagueGameIds = rows.map((row) => row.id);
-    const completedHomeGameIds = rows
-      .filter((row) => row.status === 'completed' && row.home_game_id)
-      .map((row) => row.home_game_id as string);
     const homeGameIds = rows.map((row) => row.home_game_id).filter((id): id is string => id !== null);
 
-    const [teams, scores, reconciliations, manualResults] = await Promise.all([
+    const [teams, reconciliations, manualResults] = await Promise.all([
       db.from('teams').select('id, name').in('id', teamIds),
-      db.from('games').select('id, home_score, away_score').in('id', completedHomeGameIds),
       db.from('game_reconciliations').select('home_game_id, conflicts, resolved_at').in('home_game_id', homeGameIds),
       db.from('league_game_manual_results').select('league_game_id').in('league_game_id', leagueGameIds),
     ]);
-    for (const result of [teams, scores, reconciliations, manualResults]) {
+    for (const result of [teams, reconciliations, manualResults]) {
       if (result.error) throw result.error;
     }
 
     const names = new Map<string, string>((teams.data ?? []).map((t: { id: string; name: string }) => [t.id, t.name]));
-    const runs = new Map<string, { home: number; away: number }>(
-      (scores.data ?? []).map((g: { id: string; home_score: number; away_score: number }) => [
-        g.id,
-        { home: g.home_score, away: g.away_score },
-      ]),
-    );
     const needsSettling = new Set<string>(
       (reconciliations.data ?? [])
         .filter(
@@ -395,8 +389,9 @@ export async function listLeagueGames(
     );
     const manual = new Set<string>((manualResults.data ?? []).map((r: { league_game_id: string }) => r.league_game_id));
 
+    // The runs of the result that counts, which refreshLeagueGame keeps on the league game.
     const games = rows.map((row): LeagueGameListItem => {
-      const score = row.status === 'completed' && row.home_game_id ? runs.get(row.home_game_id) : undefined;
+      const counted = row.status === 'completed';
       return {
         id: row.id,
         season: row.season,
@@ -406,8 +401,8 @@ export async function listLeagueGames(
         status: row.status,
         home: { teamId: row.home_team_id, name: names.get(row.home_team_id) ?? 'Unknown', gameId: row.home_game_id },
         away: { teamId: row.away_team_id, name: names.get(row.away_team_id) ?? 'Unknown', gameId: row.away_game_id },
-        homeRuns: score?.home ?? null,
-        awayRuns: score?.away ?? null,
+        homeRuns: counted ? row.home_runs : null,
+        awayRuns: counted ? row.away_runs : null,
         hasManualResult: manual.has(row.id),
         needsSettling: row.home_game_id ? needsSettling.has(row.home_game_id) : false,
       };

@@ -29,6 +29,8 @@ interface LeagueGameRow {
   away_team_id: string;
   home_game_id: string | null;
   away_game_id: string | null;
+  home_runs: number | null;
+  away_runs: number | null;
 }
 
 interface TeamRow {
@@ -61,7 +63,7 @@ function fail(what: string, leagueGameId: string, error: unknown): never {
 async function loadLeagueGame(db: SupabaseClient, leagueGameId: string): Promise<LeagueGameRow | null> {
   const { data, error } = await db
     .from('league_games')
-    .select('id, league_id, season, status, home_team_id, away_team_id, home_game_id, away_game_id')
+    .select('id, league_id, season, status, home_team_id, away_team_id, home_game_id, away_game_id, home_runs, away_runs')
     .eq('id', leagueGameId)
     .maybeSingle();
   if (error) fail('league_games load', leagueGameId, error);
@@ -206,6 +208,25 @@ async function writeResult(
   }
 }
 
+/**
+ * Puts the runs of the result that counts on the league game (null when
+ * nothing counts), so every list shows the resolved score rather than one
+ * row's; a result marks it completed. Skips the write when nothing changed.
+ */
+async function writeLeagueGameResult(db: SupabaseClient, leagueGame: LeagueGameRow, runs: Runs | null): Promise<void> {
+  const homeRuns = runs?.home ?? null;
+  const awayRuns = runs?.away ?? null;
+  const status = runs ? 'completed' : leagueGame.status;
+  const unchanged =
+    leagueGame.status === status && leagueGame.home_runs === homeRuns && leagueGame.away_runs === awayRuns;
+  if (unchanged) return;
+  const { error } = await db
+    .from('league_games')
+    .update({ status, home_runs: homeRuns, away_runs: awayRuns })
+    .eq('id', leagueGame.id);
+  if (error) fail('league_games result write', leagueGame.id, error);
+}
+
 /** Step 3: resolve which result counts and put it on the league game and the rows without a book. */
 async function applyResult(
   db: SupabaseClient,
@@ -221,19 +242,10 @@ async function applyResult(
     reconciliation: reconciliation ? { conflicts: reconciliation.conflicts, overrides: reconciliation.overrides } : null,
     hasManualResult: manualRuns !== null,
   });
-  if (source.kind === 'none') return;
-
-  if (leagueGame.status !== 'completed') {
-    const { error } = await db.from('league_games').update({ status: 'completed' }).eq('id', leagueGame.id);
-    if (error) fail('league_games status write', leagueGame.id, error);
-  }
-
-  if (source.kind === 'manual' && manualRuns) {
-    await writeResult(db, leagueGame.id, [home, away], manualRuns, 'manual');
-    return;
-  }
-  const runs = bookRuns(source, home, away);
-  if (runs) await writeResult(db, leagueGame.id, [home, away], runs, 'paired');
+  const runs = source.kind === 'manual' ? manualRuns : bookRuns(source, home, away);
+  await writeLeagueGameResult(db, leagueGame, runs);
+  if (!runs) return;
+  await writeResult(db, leagueGame.id, [home, away], runs, source.kind === 'manual' ? 'manual' : 'paired');
 }
 
 /** Step 4: tell the coaches and scorekeepers of both teams that the two books disagree. */
@@ -285,9 +297,10 @@ async function refreshResult(db: SupabaseClient, leagueGame: LeagueGameRow, acto
 /**
  * Refresh a league game after it changed. In order: read both team rows and
  * their events; reconcile two complete books (notifying both teams when a new
- * reconciliation finds differences); resolve the result source, mark the
- * league game completed and write the result onto rows without a book; then
- * rebuild the league snapshot. A cancelled league game only gets the rebuild.
+ * reconciliation finds differences); resolve the result source, put its runs
+ * on the league game (marking it completed) and write the result onto rows
+ * without a book; then rebuild the league snapshot. A cancelled league game
+ * only has its runs cleared before the rebuild.
  * Errors are logged with the league game id and never thrown.
  */
 export async function refreshLeagueGame(db: SupabaseClient, leagueGameId: string, actorUserId?: string): Promise<void> {
@@ -303,12 +316,11 @@ export async function refreshLeagueGame(db: SupabaseClient, leagueGameId: string
     return;
   }
 
-  if (leagueGame.status !== 'cancelled') {
-    try {
-      await refreshResult(db, leagueGame, actorUserId);
-    } catch (error) {
-      console.error(`[refreshLeagueGame] result refresh failed league_game=${leagueGameId}:`, error);
-    }
+  try {
+    if (leagueGame.status === 'cancelled') await writeLeagueGameResult(db, leagueGame, null);
+    else await refreshResult(db, leagueGame, actorUserId);
+  } catch (error) {
+    console.error(`[refreshLeagueGame] result refresh failed league_game=${leagueGameId}:`, error);
   }
 
   try {

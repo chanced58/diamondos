@@ -208,7 +208,7 @@ describe('cancelLeagueGame', () => {
 
 describe('listLeagueGames', () => {
   it('should list games with runs, manual-result and settling flags', async () => {
-    const row = (id: string, status: string, home: string | null) => ({
+    const row = (id: string, status: string, home: string | null, runs: [number, number] | null = null) => ({
       id,
       season: 'Spring 2027',
       scheduled_at: '2026-11-11T02:00:00.000Z',
@@ -219,12 +219,16 @@ describe('listLeagueGames', () => {
       away_team_id: AWAY,
       home_game_id: home,
       away_game_id: null,
+      home_runs: runs?.[0] ?? null,
+      away_runs: runs?.[1] ?? null,
     });
     const { db } = fakeDb({
       'league_staff.select': staff('league_manager'),
-      'league_games.select': { data: [row('g1', 'completed', HOME_GAME), row('g2', 'scheduled', 'hg2')] },
+      // The league game carries the result that counts (here the away book's, accepted
+      // over the home row's own 5-1), so the home row's score is never read.
+      'league_games.select': { data: [row('g1', 'completed', HOME_GAME, [5, 3]), row('g2', 'scheduled', 'hg2')] },
       'teams.select': { data: [{ id: HOME, name: 'Hawks' }, { id: AWAY, name: 'Bears' }] },
-      'games.select': { data: [{ id: HOME_GAME, home_score: 5, away_score: 3 }] },
+      'games.select': { data: [{ id: HOME_GAME, home_score: 5, away_score: 1 }] },
       'game_reconciliations.select': {
         data: [
           { home_game_id: HOME_GAME, conflicts: [{ key: 'x' }], resolved_at: null },

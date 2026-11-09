@@ -21,6 +21,8 @@ create table public.league_games (
   scheduled_at  timestamptz not null,
   time_zone     text,
   venue_name    text,
+  home_runs     integer,
+  away_runs     integer,
   status        text not null default 'scheduled'
                   check (status in ('scheduled', 'completed', 'cancelled')),
   created_by    uuid references auth.users(id),
@@ -41,6 +43,10 @@ comment on column public.league_games.scheduled_at is 'Scheduled first-pitch tim
 comment on column public.league_games.time_zone is
   'IANA zone the start time was entered in; null = unknown.';
 comment on column public.league_games.venue_name is 'Free-text venue name.';
+comment on column public.league_games.home_runs is
+  'The home team''s runs in the result that counts (a book, the settled home book, or the hand-entered result; 0 for a forfeit). Written by refreshLeagueGame; null while nothing counts or the game is cancelled.';
+comment on column public.league_games.away_runs is
+  'The away team''s runs in the result that counts; see home_runs.';
 comment on column public.league_games.status is
   'scheduled, completed (a result exists), or cancelled.';
 comment on column public.league_games.created_by is 'The league admin who scheduled the game.';

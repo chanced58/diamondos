@@ -85,6 +85,8 @@ function gameRow(side: 'home' | 'away', overrides: Partial<GameRow> = {}): GameR
 
 interface Scenario {
   leagueGameStatus?: string;
+  /** The runs an earlier refresh put on the league game. */
+  leagueGameRuns?: { home_runs: number | null; away_runs: number | null };
   home: GameRow;
   away: GameRow;
   events?: Record<string, EventRow[]>;
@@ -116,6 +118,7 @@ function leagueGameDb(scenario: Scenario) {
         away_team_id: AWAY_TEAM,
         home_game_id: HOME_GAME,
         away_game_id: AWAY_GAME,
+        ...(scenario.leagueGameRuns ?? { home_runs: null, away_runs: null }),
       },
     },
     'games.select': (call: FakeCall) => {
@@ -281,7 +284,9 @@ describe('refreshLeagueGame', () => {
 
     await refreshLeagueGame(db, LEAGUE_GAME, 'home-coach');
 
-    expect(writes(calls, 'league_games', 'update').map((c) => c.payload)).toEqual([{ status: 'completed' }]);
+    expect(writes(calls, 'league_games', 'update').map((c) => c.payload)).toEqual([
+      { status: 'completed', home_runs: 3, away_runs: 1 },
+    ]);
     const gameUpdates = writes(calls, 'games', 'update');
     expect(gameUpdates).toHaveLength(1);
     expect(gameUpdates[0].filters).toEqual({ id: AWAY_GAME });
@@ -306,7 +311,9 @@ describe('refreshLeagueGame', () => {
     await refreshLeagueGame(db, LEAGUE_GAME);
 
     expect(writes(calls, 'games', 'update')).toHaveLength(0);
-    expect(writes(calls, 'league_games', 'update').map((c) => c.payload)).toEqual([{ status: 'completed' }]);
+    expect(writes(calls, 'league_games', 'update').map((c) => c.payload)).toEqual([
+      { status: 'completed', home_runs: 3, away_runs: 1 },
+    ]);
   });
 
   it('should not send a second push when the reconciliation already exists and nothing changed', async () => {
@@ -365,7 +372,9 @@ describe('refreshLeagueGame', () => {
     for (const update of gameUpdates) {
       expect(update.payload).toMatchObject({ status: 'completed', home_score: 4, away_score: 2, result_source: 'manual' });
     }
-    expect(writes(calls, 'league_games', 'update').map((c) => c.payload)).toEqual([{ status: 'completed' }]);
+    expect(writes(calls, 'league_games', 'update').map((c) => c.payload)).toEqual([
+      { status: 'completed', home_runs: 4, away_runs: 2 },
+    ]);
   });
 
   it('should add no runs to either row for a forfeit', async () => {
@@ -380,6 +389,78 @@ describe('refreshLeagueGame', () => {
     const gameUpdates = writes(calls, 'games', 'update');
     expect(gameUpdates.map((c) => c.filters.id)).toEqual([HOME_GAME]);
     expect(gameUpdates[0].payload).toMatchObject({ home_score: 0, away_score: 0, result_source: 'manual' });
+    expect(writes(calls, 'league_games', 'update').map((c) => c.payload)).toEqual([
+      { status: 'completed', home_runs: 0, away_runs: 0 },
+    ]);
+  });
+
+  it("should put the away book's score on the league game when the home coach accepted it", async () => {
+    const { db, calls } = leagueGameDb({
+      leagueGameStatus: 'completed',
+      leagueGameRuns: { home_runs: 0, away_runs: 1 },
+      home: gameRow('home', { status: 'completed', away_score: 1 }),
+      away: gameRow('away', { status: 'completed', away_score: 2 }),
+      events: { [HOME_GAME]: HOME_BOOK, [AWAY_GAME]: AWAY_BOOK },
+      reconciliation: {
+        id: 'recon-1',
+        computed_at: '2026-11-08T04:00:00.000Z',
+        conflicts: [{ kind: 'final_score', side: 'away', homeLog: 1, awayLog: 2 }],
+        resolved_overrides: [{ key: 'final_score:away', useAwayValue: true }],
+      },
+    });
+
+    await refreshLeagueGame(db, LEAGUE_GAME, 'home-coach');
+
+    expect(writes(calls, 'league_games', 'update').map((c) => c.payload)).toEqual([
+      { status: 'completed', home_runs: 0, away_runs: 2 },
+    ]);
+  });
+
+  it("should put the away book's score on the league game while the home book is still being scored", async () => {
+    const { db, calls } = leagueGameDb({
+      home: gameRow('home', { status: 'in_progress', away_score: 1 }),
+      away: gameRow('away', { status: 'completed', away_score: 2 }),
+      events: { [HOME_GAME]: HOME_BOOK.slice(0, 2), [AWAY_GAME]: AWAY_BOOK },
+    });
+
+    await refreshLeagueGame(db, LEAGUE_GAME, 'away-coach');
+
+    expect(writes(calls, 'league_games', 'update').map((c) => c.payload)).toEqual([
+      { status: 'completed', home_runs: 0, away_runs: 2 },
+    ]);
+    // The home row is being scored, so the result is not written onto it.
+    expect(writes(calls, 'games', 'update')).toHaveLength(0);
+  });
+
+  it('should not rewrite the league game when its result is unchanged', async () => {
+    const { db, calls } = leagueGameDb({
+      leagueGameStatus: 'completed',
+      leagueGameRuns: { home_runs: 3, away_runs: 1 },
+      home: gameRow('home', { status: 'completed', home_score: 3, away_score: 1 }),
+      away: gameRow('away', { status: 'completed', result_source: 'paired', home_score: 3, away_score: 1 }),
+      events: { [HOME_GAME]: HOME_BOOK },
+    });
+
+    await refreshLeagueGame(db, LEAGUE_GAME, 'home-coach');
+
+    expect(writes(calls, 'league_games', 'update')).toHaveLength(0);
+  });
+
+  it('should clear the runs of a cancelled league game', async () => {
+    const { db, calls } = leagueGameDb({
+      leagueGameStatus: 'cancelled',
+      leagueGameRuns: { home_runs: 4, away_runs: 2 },
+      home: gameRow('home', { status: 'cancelled' }),
+      away: gameRow('away', { status: 'cancelled' }),
+    });
+
+    await refreshLeagueGame(db, LEAGUE_GAME, 'admin-1');
+
+    expect(writes(calls, 'league_games', 'update').map((c) => c.payload)).toEqual([
+      { status: 'cancelled', home_runs: null, away_runs: null },
+    ]);
+    expect(writes(calls, 'games', 'update')).toHaveLength(0);
+    expect(recomputeLeagueSnapshot).toHaveBeenCalledWith(db, LEAGUE, SEASON);
   });
 
   it('should only rebuild the snapshot for a cancelled league game', async () => {

@@ -1648,10 +1648,12 @@ export type Database = {
       league_games: {
         Row: {
           away_game_id: string | null
+          away_runs: number | null
           away_team_id: string
           created_at: string
           created_by: string | null
           home_game_id: string | null
+          home_runs: number | null
           home_team_id: string
           id: string
           league_id: string
@@ -1664,10 +1666,12 @@ export type Database = {
         }
         Insert: {
           away_game_id?: string | null
+          away_runs?: number | null
           away_team_id: string
           created_at?: string
           created_by?: string | null
           home_game_id?: string | null
+          home_runs?: number | null
           home_team_id: string
           id?: string
           league_id: string
@@ -1680,10 +1684,12 @@ export type Database = {
         }
         Update: {
           away_game_id?: string | null
+          away_runs?: number | null
           away_team_id?: string
           created_at?: string
           created_by?: string | null
           home_game_id?: string | null
+          home_runs?: number | null
           home_team_id?: string
           id?: string
           league_id?: string

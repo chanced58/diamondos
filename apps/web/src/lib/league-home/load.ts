@@ -271,7 +271,7 @@ async function loadLeagueGamesAround(
   leagueId: string,
   season: string,
 ): Promise<{ games: LeagueGamesAround; completedCount: number }> {
-  const columns = 'id, home_team_id, away_team_id, home_game_id, scheduled_at, time_zone';
+  const columns = 'id, home_team_id, away_team_id, home_runs, away_runs, scheduled_at, time_zone';
   const [recentRes, upcomingRes, countRes] = await Promise.all([
     db
       .from('league_games')
@@ -306,31 +306,26 @@ async function loadLeagueGamesAround(
   const upcomingRows = upcomingRes.data ?? [];
 
   const teamIds = [...new Set([...recentRows, ...upcomingRows].flatMap((g) => [g.home_team_id, g.away_team_id]))];
-  const homeGameIds = recentRows.map((g) => g.home_game_id).filter((id): id is string => !!id);
-  const [teamsRes, scoresRes] = await Promise.all([
-    teamIds.length ? db.from('teams').select('id, name').in('id', teamIds) : { data: [], error: null },
-    // The league result is written onto the home row (manual results included).
-    homeGameIds.length
-      ? db.from('games').select('id, home_score, away_score').in('id', homeGameIds)
-      : { data: [], error: null },
-  ]);
-  const detailErr = teamsRes.error ?? scoresRes.error;
+  const teamsRes = teamIds.length
+    ? await db.from('teams').select('id, name').in('id', teamIds)
+    : { data: [] as { id: string; name: string }[], error: null };
+  const detailErr = teamsRes.error;
   if (detailErr) {
     console.error(`[league-home] league game details failed league=${leagueId} season=${season}: ${detailErr.message}`);
     return { games: { recent: [], upcoming: [] }, completedCount: countRes.count ?? 0 };
   }
   const nameById = new Map((teamsRes.data ?? []).map((t) => [t.id, t.name]));
-  const scoreByGameId = new Map((scoresRes.data ?? []).map((g) => [g.id, g]));
 
+  // The runs of the result that counts, which refreshLeagueGame keeps on the league game.
   const toItem = (g: (typeof recentRows)[number], withRuns: boolean): LeagueGameItem => {
-    const score = withRuns && g.home_game_id ? scoreByGameId.get(g.home_game_id) : undefined;
+    const hasRuns = withRuns && g.home_runs !== null && g.away_runs !== null;
     return {
       id: g.id,
       homeTeamId: g.home_team_id,
       homeName: nameById.get(g.home_team_id) ?? 'Team',
       awayTeamId: g.away_team_id,
       awayName: nameById.get(g.away_team_id) ?? 'Team',
-      ...(score ? { homeRuns: score.home_score, awayRuns: score.away_score } : {}),
+      ...(hasRuns ? { homeRuns: g.home_runs as number, awayRuns: g.away_runs as number } : {}),
       scheduledAt: g.scheduled_at,
       timeZone: g.time_zone,
     };
