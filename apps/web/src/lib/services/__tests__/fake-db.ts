@@ -14,6 +14,8 @@ export interface FakeCall {
   op: FakeOp;
   filters: Record<string, unknown>;
   payload?: unknown;
+  /** The `.range(from, to)` a paged read asked for, when it asked for one. */
+  range?: [number, number];
 }
 export type FakeResult = { data?: unknown; error?: unknown; count?: number };
 export type FakeResultFor = (call: FakeCall) => FakeResult;
@@ -60,7 +62,7 @@ export function fakeDb(results: Record<string, FakeResult | FakeResult[] | FakeR
         not: () => builder,
         order: () => builder,
         limit: () => builder,
-        range: () => builder,
+        range: (from: number, to: number) => { call.range = [from, to]; return builder; },
         single: resolve,
         maybeSingle: resolve,
         then: (onFulfilled: (v: unknown) => unknown, onRejected?: (e: unknown) => unknown) =>

@@ -28,10 +28,21 @@ import {
 type Side = 'home' | 'away';
 type PlayerNames = ScheduledLeagueInputs['players'];
 
-/** What one league game contributes: its result for the standings and each team's lines. */
+/** What one league game contributes to the standings, the team totals and the player rows. */
 interface GameContribution {
   result: LeagueGameResult;
-  lines: Record<Side, SideStats>;
+  /**
+   * Each team's full lines from the one source the result comes from,
+   * placeholders included: what the team totals add up.
+   */
+  teamLines: Record<Side, SideStats>;
+  /**
+   * Each team's player lines. With two books, each player's line comes from
+   * the book chosen for them, so these may mix books; they feed player rows
+   * only, never team totals (an away line taken for a player the home book
+   * recorded as a placeholder would otherwise count twice).
+   */
+  playerLines: Record<Side, SideStats>;
 }
 
 function emptyLines(): SideStats {
@@ -90,6 +101,7 @@ function manualContribution(game: ScheduledLeagueGame): GameContribution {
         : new Map(),
     pitching: new Map(),
   });
+  const lines = { home: linesFor(game.homeTeamId), away: linesFor(game.awayTeamId) };
   return {
     result: {
       homeTeamId: game.homeTeamId,
@@ -99,7 +111,8 @@ function manualContribution(game: ScheduledLeagueGame): GameContribution {
       awayRuns: forfeit ? 0 : manual.awayRuns ?? 0,
       forfeitWinnerTeamId: forfeit ? manual.forfeitWinnerTeamId : null,
     },
-    lines: { home: linesFor(game.homeTeamId), away: linesFor(game.awayTeamId) },
+    teamLines: lines,
+    playerLines: lines,
   };
 }
 
@@ -121,14 +134,17 @@ export function resolveGameContribution(game: ScheduledLeagueGame, players: Play
       return null;
     case 'manual':
       return manualContribution(game);
-    case 'single':
-      return { result: bookRuns(game, source.side), lines: bookLines(game, source.side, players) };
+    case 'single': {
+      const lines = bookLines(game, source.side, players);
+      return { result: bookRuns(game, source.side), teamLines: lines, playerLines: lines };
+    }
     case 'dual': {
       const fromHome = bookLines(game, 'home', players);
       const fromAway = bookLines(game, 'away', players);
       return {
         result: bookRuns(game, source.scoreFrom),
-        lines: {
+        teamLines: source.scoreFrom === 'home' ? fromHome : fromAway,
+        playerLines: {
           home: pickLines(fromHome.home, fromAway.home, source.playerLineFrom),
           away: pickLines(fromHome.away, fromAway.away, source.playerLineFrom),
         },
@@ -144,6 +160,13 @@ function mergeInto<T>(target: Map<string, T>, lines: Map<string, T>, merge: (a: 
   }
 }
 
+function addLines(byTeam: Map<string, SideStats>, teamId: string, lines: SideStats): void {
+  const teamLines = byTeam.get(teamId) ?? emptyLines();
+  mergeInto(teamLines.batting, lines.batting, mergeBattingStats);
+  mergeInto(teamLines.pitching, lines.pitching, mergePitchingStats);
+  byTeam.set(teamId, teamLines);
+}
+
 function realPlayersOnly<T>(lines: Map<string, T>): Map<string, T> {
   return new Map([...lines].filter(([id]) => !isPlaceholder(id)));
 }
@@ -152,8 +175,8 @@ function realPlayersOnly<T>(lines: Map<string, T>): Map<string, T> {
  * Build a scheduled league's snapshot rows from its league games: standings
  * from one result per game, `team` player rows per (player, team they played
  * for), `season` player rows merging each player's team lines under the team
- * of their latest league game, team stats over every line (placeholders
- * included) and spotlights.
+ * of their latest league game, team stats over every line of the source each
+ * result came from (placeholders included) and spotlights.
  */
 export function buildScheduledSnapshot(
   inputs: ScheduledLeagueInputs,
@@ -164,6 +187,7 @@ export function buildScheduledSnapshot(
   const teamName = (teamId: string) => inputs.teamNames.get(teamId) ?? '';
   const results: LeagueGameResult[] = [];
   const linesByTeam = new Map<string, SideStats>();
+  const totalsByTeam = new Map<string, SideStats>();
   const latestTeamOf = new Map<string, string>();
 
   // Games are oldest first, so a player's last write here is their latest team.
@@ -173,11 +197,9 @@ export function buildScheduledSnapshot(
     results.push(contribution.result);
     for (const side of ['home', 'away'] as const) {
       const teamId = side === 'home' ? game.homeTeamId : game.awayTeamId;
-      const lines = contribution.lines[side];
-      const teamLines = linesByTeam.get(teamId) ?? emptyLines();
-      mergeInto(teamLines.batting, lines.batting, mergeBattingStats);
-      mergeInto(teamLines.pitching, lines.pitching, mergePitchingStats);
-      linesByTeam.set(teamId, teamLines);
+      addLines(totalsByTeam, teamId, contribution.teamLines[side]);
+      const lines = contribution.playerLines[side];
+      addLines(linesByTeam, teamId, lines);
       for (const id of [...lines.batting.keys(), ...lines.pitching.keys()]) {
         if (!isPlaceholder(id)) latestTeamOf.set(id, teamId);
       }
@@ -233,8 +255,8 @@ export function buildScheduledSnapshot(
       teamId,
       teamName: teamName(teamId),
       record,
-      batting: linesByTeam.get(teamId)?.batting.values() ?? [],
-      pitching: linesByTeam.get(teamId)?.pitching.values() ?? [],
+      batting: totalsByTeam.get(teamId)?.batting.values() ?? [],
+      pitching: totalsByTeam.get(teamId)?.pitching.values() ?? [],
     }),
   );
 

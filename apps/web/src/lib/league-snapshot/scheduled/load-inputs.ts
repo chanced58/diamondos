@@ -9,7 +9,7 @@ import {
   type ScoreConflict,
 } from '@baseball/shared';
 import { fetchAllEventsForGames } from '@/lib/stats/fetch-events';
-import { buildLineupsByGameId } from '@/lib/stats/lineups';
+import { lineupContextsFromRows, type LineupRow } from '@/lib/stats/lineups';
 import {
   buildLeagueGameSideMaps,
   type LeagueGameSideMaps,
@@ -118,11 +118,39 @@ interface PlayerRow {
 
 type QueryResult = { data: unknown; error: { message: string } | null };
 
+/** PostgREST caps each response at 1000 rows (`max_rows`), so list reads page until a short page. */
+export const SNAPSHOT_READ_PAGE = 1000;
+/** Upper bound on pages for one read; past it the read throws rather than return part of the rows. */
+const MAX_READ_PAGES = 200;
+
 function rowsOf<T>(result: QueryResult, what: string, leagueId: string, season: string): T[] {
   if (result.error) {
     throw new Error(`snapshot ${what} load failed (league=${leagueId} season=${season}): ${result.error.message}`);
   }
   return (result.data ?? []) as T[];
+}
+
+/**
+ * Every row of a list read, paging with `.range` (the query must order by a
+ * unique column so no row is skipped or repeated). Throws on an error, and
+ * when the rows run past MAX_READ_PAGES pages.
+ */
+async function readAllPages<T>(
+  page: (from: number, to: number) => PromiseLike<QueryResult>,
+  what: string,
+  leagueId: string,
+  season: string,
+): Promise<T[]> {
+  const all: T[] = [];
+  for (let index = 0; index < MAX_READ_PAGES; index++) {
+    const from = index * SNAPSHOT_READ_PAGE;
+    const rows = rowsOf<T>(await page(from, from + SNAPSHOT_READ_PAGE - 1), what, leagueId, season);
+    Array.prototype.push.apply(all, rows);
+    if (rows.length < SNAPSHOT_READ_PAGE) return all;
+  }
+  throw new Error(
+    `snapshot ${what} load exceeded ${MAX_READ_PAGES} pages (league=${leagueId} season=${season})`,
+  );
 }
 
 function addTo(map: Map<string, Set<string>>, key: string, value: string): void {
@@ -175,28 +203,36 @@ export async function loadScheduledLeagueInputs(
   season: string,
 ): Promise<ScheduledLeagueInputs> {
   const check = <T>(result: QueryResult, what: string) => rowsOf<T>(result, what, leagueId, season);
+  const readAll = <T>(what: string, page: (from: number, to: number) => PromiseLike<QueryResult>) =>
+    readAllPages<T>(page, what, leagueId, season);
 
-  const [membersResult, leagueGamesResult, optOutResult] = await Promise.all([
+  const [membersResult, leagueGameRows, optOutRows] = await Promise.all([
     db.from('league_members').select('team_id, division_id').eq('league_id', leagueId).eq('is_active', true),
-    db
-      .from('league_games')
-      .select('id, home_team_id, away_team_id, home_game_id, away_game_id, scheduled_at')
-      .eq('league_id', leagueId)
-      .eq('season', season)
-      .neq('status', 'cancelled'),
-    db.from('league_players').select('player_id, public_opt_out').eq('league_id', leagueId),
+    readAll<LeagueGameRow>('league_games', (from, to) =>
+      db
+        .from('league_games')
+        .select('id, home_team_id, away_team_id, home_game_id, away_game_id, scheduled_at')
+        .eq('league_id', leagueId)
+        .eq('season', season)
+        .neq('status', 'cancelled')
+        .order('id')
+        .range(from, to),
+    ),
+    readAll<{ player_id: string; public_opt_out: boolean }>('league_players', (from, to) =>
+      db
+        .from('league_players')
+        .select('player_id, public_opt_out')
+        .eq('league_id', leagueId)
+        .order('player_id')
+        .range(from, to),
+    ),
   ]);
   const members = check<{ team_id: string | null; division_id: string | null }>(membersResult, 'league_members')
     .filter((member): member is { team_id: string; division_id: string | null } => member.team_id !== null);
-  const leagueGames = check<LeagueGameRow>(leagueGamesResult, 'league_games').sort(
+  const leagueGames = leagueGameRows.sort(
     (a, b) => a.scheduled_at.localeCompare(b.scheduled_at) || a.id.localeCompare(b.id),
   );
-  const optOut = new Map(
-    check<{ player_id: string; public_opt_out: boolean }>(optOutResult, 'league_players').map((row) => [
-      row.player_id,
-      row.public_opt_out,
-    ]),
-  );
+  const optOut = new Map(optOutRows.map((row) => [row.player_id, row.public_opt_out]));
 
   const memberTeamIds = members.map((member) => member.team_id);
   const divisionOf = new Map(members.map((member) => [member.team_id, member.division_id]));
@@ -218,33 +254,76 @@ export async function loadScheduledLeagueInputs(
   const rowIds = leagueGames.flatMap((game) => [game.home_game_id, game.away_game_id]).filter((id): id is string => !!id);
   const homeRowIds = leagueGames.map((game) => game.home_game_id).filter((id): id is string => !!id);
 
-  const [rowsResult, reconciliationResult, manualResult, manualLinesResult, rosterResult, membershipResult, lineupResult] =
+  const [teamRows, reconciliationRows, manualRows, manualLineRows, rosterRows, membershipRows, allLineupRows] =
     await Promise.all([
-      db
-        .from('games')
-        .select('id, team_id, status, result_source, home_score, away_score, location_type, neutral_home_team, opponent_team_id')
-        .in('id', rowIds),
-      db.from('game_reconciliations').select('home_game_id, conflicts, resolved_overrides').in('home_game_id', homeRowIds),
-      db
-        .from('league_game_manual_results')
-        .select('league_game_id, kind, home_runs, away_runs, forfeit_winner_team_id')
-        .in('league_game_id', leagueGameIds),
-      db
-        .from('league_game_manual_batting_lines')
-        .select('league_game_id, team_id, player_id, ab, r, h, doubles, triples, hr, rbi, bb, so, hbp, sf, sb')
-        .in('league_game_id', leagueGameIds),
-      db.from('players').select('id, team_id, first_name, last_name').in('team_id', gameTeamIds),
-      db.from('player_team_memberships').select('player_id, team_id').in('team_id', gameTeamIds),
-      db.from('game_lineups').select('game_id, player_id').in('game_id', rowIds),
+      readAll<LeagueGameTeamRow>('games', (from, to) =>
+        db
+          .from('games')
+          .select('id, team_id, status, result_source, home_score, away_score, location_type, neutral_home_team, opponent_team_id')
+          .in('id', rowIds)
+          .order('id')
+          .range(from, to),
+      ),
+      readAll<{ home_game_id: string; conflicts: unknown; resolved_overrides: unknown }>('game_reconciliations', (from, to) =>
+        db
+          .from('game_reconciliations')
+          .select('home_game_id, conflicts, resolved_overrides')
+          .in('home_game_id', homeRowIds)
+          .order('home_game_id')
+          .range(from, to),
+      ),
+      readAll<{
+        league_game_id: string;
+        kind: LeagueGameManualResult['kind'];
+        home_runs: number | null;
+        away_runs: number | null;
+        forfeit_winner_team_id: string | null;
+      }>('league_game_manual_results', (from, to) =>
+        db
+          .from('league_game_manual_results')
+          .select('league_game_id, kind, home_runs, away_runs, forfeit_winner_team_id')
+          .in('league_game_id', leagueGameIds)
+          .order('league_game_id')
+          .range(from, to),
+      ),
+      readAll<ManualLineRow>('league_game_manual_batting_lines', (from, to) =>
+        db
+          .from('league_game_manual_batting_lines')
+          .select('league_game_id, team_id, player_id, ab, r, h, doubles, triples, hr, rbi, bb, so, hbp, sf, sb')
+          .in('league_game_id', leagueGameIds)
+          .order('id')
+          .range(from, to),
+      ),
+      readAll<PlayerRow>('players', (from, to) =>
+        db
+          .from('players')
+          .select('id, team_id, first_name, last_name')
+          .in('team_id', gameTeamIds)
+          .order('id')
+          .range(from, to),
+      ),
+      readAll<{ player_id: string; team_id: string }>('player_team_memberships', (from, to) =>
+        db
+          .from('player_team_memberships')
+          .select('player_id, team_id')
+          .in('team_id', gameTeamIds)
+          .order('id')
+          .range(from, to),
+      ),
+      // One read serves both the side maps (who is on each team) and each book's lineup context.
+      readAll<LineupRow>('game_lineups', (from, to) =>
+        db
+          .from('game_lineups')
+          .select('game_id, player_id, batting_order, is_guest, count_toward_stats')
+          .in('game_id', rowIds)
+          .order('id')
+          .range(from, to),
+      ),
     ]);
 
-  const teamRows = check<LeagueGameTeamRow>(rowsResult, 'games');
   const rowById = new Map(teamRows.map((row) => [row.id, row]));
   const reconciliationByHomeRow = new Map(
-    check<{ home_game_id: string; conflicts: unknown; resolved_overrides: unknown }>(
-      reconciliationResult,
-      'game_reconciliations',
-    ).map((row) => [
+    reconciliationRows.map((row) => [
       row.home_game_id,
       {
         conflicts: Array.isArray(row.conflicts) ? (row.conflicts as ScoreConflict[]) : [],
@@ -253,13 +332,7 @@ export async function loadScheduledLeagueInputs(
     ]),
   );
   const manualByGame = new Map(
-    check<{
-      league_game_id: string;
-      kind: LeagueGameManualResult['kind'];
-      home_runs: number | null;
-      away_runs: number | null;
-      forfeit_winner_team_id: string | null;
-    }>(manualResult, 'league_game_manual_results').map((row) => [
+    manualRows.map((row) => [
       row.league_game_id,
       {
         kind: row.kind,
@@ -269,11 +342,8 @@ export async function loadScheduledLeagueInputs(
       },
     ]),
   );
-  const manualLineRows = check<ManualLineRow>(manualLinesResult, 'league_game_manual_batting_lines');
   const manualLinesByGame = groupBy(manualLineRows, (row) => row.league_game_id);
-  const rosterRows = check<PlayerRow>(rosterResult, 'players');
-  const membershipRows = check<{ player_id: string; team_id: string }>(membershipResult, 'player_team_memberships');
-  const lineupRows = check<{ game_id: string; player_id: string }>(lineupResult, 'game_lineups');
+  const lineupRows = allLineupRows.filter((row): row is LineupRow & { player_id: string } => row.player_id !== null);
 
   const rosterPlayerIds = new Map<string, Set<string>>();
   for (const row of rosterRows) if (row.team_id) addTo(rosterPlayerIds, row.team_id, row.id);
@@ -281,12 +351,13 @@ export async function loadScheduledLeagueInputs(
 
   const recordIds = [...new Set(teamRows.map((row) => row.opponent_team_id).filter((id): id is string => !!id))];
   const recordRows = recordIds.length
-    ? check<RosterRecordRow>(
-        await db
+    ? await readAll<RosterRecordRow>('opponent_players', (from, to) =>
+        db
           .from('opponent_players')
           .select('id, opponent_team_id, linked_player_id, placeholder_game_id, is_fill_in')
-          .in('opponent_team_id', recordIds),
-        'opponent_players',
+          .in('opponent_team_id', recordIds)
+          .order('id')
+          .range(from, to),
       )
     : [];
 
@@ -295,7 +366,7 @@ export async function loadScheduledLeagueInputs(
   const finishedRowIds = finishedRows.map((row) => row.id);
   const rawEvents = await fetchAllEventsForGames(db, finishedRowIds, SNAPSHOT_EVENT_TYPES);
   const rawEventsByRow = groupBy(rawEvents, (event) => String(event.game_id));
-  const lineupByRow = await buildLineupsByGameId(db, finishedRows, { strict: true });
+  const lineupByRow = lineupContextsFromRows(finishedRows, allLineupRows);
 
   const bookFor = (rowId: string | null): LeagueGameBook | null => {
     const row = rowId ? rowById.get(rowId) : undefined;
@@ -333,31 +404,33 @@ export async function loadScheduledLeagueInputs(
     }),
   }));
 
-  const players = await loadPlayerNames(db, rosterRows, [
-    ...membershipRows.map((row) => row.player_id),
-    ...lineupRows.map((row) => row.player_id),
-    ...recordRows.map((row) => row.linked_player_id).filter((id): id is string => !!id),
-    ...manualLineRows.map((row) => row.player_id),
-  ], check);
+  const players = await loadPlayerNames(
+    rosterRows,
+    [
+      ...membershipRows.map((row) => row.player_id),
+      ...lineupRows.map((row) => row.player_id),
+      ...recordRows.map((row) => row.linked_player_id).filter((id): id is string => !!id),
+      ...manualLineRows.map((row) => row.player_id),
+    ],
+    (ids) =>
+      readAll<PlayerRow>('players by id', (from, to) =>
+        db.from('players').select('id, team_id, first_name, last_name').in('id', ids).order('id').range(from, to),
+      ),
+  );
 
   return { memberTeamIds, divisionOf, teamNames, players, optOut, games };
 }
 
 /** Names for the teams' current players plus anyone else who can be credited (past members, guests, linked players). */
 async function loadPlayerNames(
-  db: SupabaseClient,
   rosterRows: PlayerRow[],
   otherPlayerIds: string[],
-  check: <T>(result: QueryResult, what: string) => T[],
+  readById: (ids: string[]) => Promise<PlayerRow[]>,
 ): Promise<{ id: string; firstName: string; lastName: string }[]> {
   const named = new Map(rosterRows.map((row) => [row.id, row]));
   const missing = [...new Set(otherPlayerIds)].filter((id) => !named.has(id));
   if (missing.length) {
-    const rows = check<PlayerRow>(
-      await db.from('players').select('id, team_id, first_name, last_name').in('id', missing),
-      'players by id',
-    );
-    for (const row of rows) named.set(row.id, row);
+    for (const row of await readById(missing)) named.set(row.id, row);
   }
   return [...named.values()].map((row) => ({ id: row.id, firstName: row.first_name, lastName: row.last_name }));
 }

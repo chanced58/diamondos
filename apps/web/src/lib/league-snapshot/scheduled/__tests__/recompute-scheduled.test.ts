@@ -1,6 +1,6 @@
 import { recomputeScheduledLeagueSnapshot } from '../recompute-scheduled';
 import { recomputeLeagueSnapshot } from '../../recompute';
-import { fakeDb, type FakeCall, type FakeResult } from '@/lib/services/__tests__/fake-db';
+import { fakeDb, type FakeCall, type FakeResult, type FakeResultFor } from '@/lib/services/__tests__/fake-db';
 
 const LEAGUE = 'league-1';
 const SEASON = 'Spring 2027';
@@ -64,7 +64,7 @@ interface Scenario {
   manual?: Row[];
   manualLines?: Row[];
   reconciliations?: Row[];
-  overrides?: Record<string, FakeResult>;
+  overrides?: Record<string, FakeResult | FakeResultFor>;
 }
 
 const PLAYERS: Row[] = [
@@ -321,6 +321,75 @@ describe('recomputeScheduledLeagueSnapshot', () => {
     expect(playerRow(calls, 'team', 'o1', OWLS)?.stats).toMatchObject({ hits: 1, homeRuns: 0 });
     // Everyone else keeps the home book's line.
     expect(playerRow(calls, 'team', 'h1', HAWKS)?.stats).toMatchObject({ hits: 1 });
+  });
+
+  it('should not count a placeholder twice when the home coach takes the away line for that player', async () => {
+    const lg: LeagueGameSpec = { ...LG1, awayStatus: 'completed', homeScore: 0, awayScore: 0 };
+    const { db, calls } = scheduledLeague({
+      games: [lg],
+      records: [
+        ...RECORDS,
+        { id: 'rec-ph', opponent_team_id: OWLS_RECORD, linked_player_id: null, placeholder_game_id: 'lg-1', is_fill_in: false },
+      ],
+      events: {
+        // The Hawks' scorer didn't know o1 and recorded a placeholder striking out.
+        'lg-1-home': [
+          event('lg-1-home', 1, 'game_start', true),
+          event('lg-1-home', 2, 'strikeout', true, { opponentBatterId: 'rec-ph' }),
+        ],
+        // The Owls' book has o1 singling in that at-bat.
+        'lg-1-away': [
+          event('lg-1-away', 1, 'game_start', true),
+          event('lg-1-away', 2, 'hit', true, { batterId: 'o1', hitType: 'single' }),
+        ],
+      },
+      reconciliations: [
+        {
+          home_game_id: 'lg-1-home',
+          conflicts: [{ kind: 'player_batting', playerId: 'o1', stat: 'hits', homeLog: 0, awayLog: 1 }],
+          resolved_overrides: [{ key: 'player_batting:o1:hits', useAwayValue: true }],
+        },
+      ],
+    });
+
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON);
+
+    expect(playerRow(calls, 'team', 'o1', OWLS)?.stats).toMatchObject({ hits: 1 });
+    // Team totals come from the home book alone: one at-bat, no hits — not two at-bats.
+    const owlsStats = inserted(calls, 'league_team_stat_snapshot').find((row) => row.team_id === OWLS);
+    expect(owlsStats?.stats).toMatchObject({ teamAvg: 0 });
+  });
+
+  it('should read every page of a list read past the 1000-row cap', async () => {
+    // 1000 placeholders from other games fill the first page of the roster-record read.
+    const filler = Array.from({ length: 1000 }, (_, index) => ({
+      id: `filler-${String(index).padStart(4, '0')}`,
+      opponent_team_id: OWLS_RECORD,
+      linked_player_id: null,
+      placeholder_game_id: 'lg-other',
+      is_fill_in: false,
+    }));
+    const allRecords = [...filler, ...RECORDS];
+    const { db, calls } = scheduledLeague({
+      games: [LG1],
+      events: { 'lg-1-home': HAWKS_BOOK },
+      overrides: {
+        'opponent_players.select': (call: FakeCall) => {
+          const [from, to] = call.range ?? [0, allRecords.length - 1];
+          return { data: allRecords.slice(from, to + 1) };
+        },
+      },
+    });
+
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON);
+
+    const pages = calls.filter((call) => call.table === 'opponent_players').map((call) => call.range);
+    expect(pages).toEqual([
+      [0, 999],
+      [1000, 1999],
+    ]);
+    // rec-o1 is on the second page: without it o1's home run would go uncredited.
+    expect(playerRow(calls, 'team', 'o1', OWLS)?.stats).toMatchObject({ homeRuns: 1 });
   });
 
   it('should throw when a snapshot insert fails', async () => {
