@@ -11,7 +11,7 @@ import {
   type StandingRow,
   type ActiveTeamRef,
 } from '../league-home/load';
-import { computeTeamRank } from '../league-home/team-load';
+import { computeTeamRank, compareStandings } from '../league-home/team-load';
 import { resolveSeason, enabledSections, qualifierMinsFor } from '../league-home/league-context';
 import { BATTING_COLUMNS, PITCHING_COLUMNS } from './columns';
 import { computeRankTable, type StatsPlayer, type RankTable } from './ranks';
@@ -132,7 +132,7 @@ export function assembleLeagueStats(input: AssembleInput): Extract<LeagueStatsDa
 
   const teamStatsById = new Map(teamSnap.map((t) => [t.team_id, t.stats]));
   const teams: StatsTeam[] = [...platformStandings]
-    .sort((a, b) => b.win_pct - a.win_pct || a.team_name.localeCompare(b.team_name))
+    .sort(compareStandings)
     .map((s) => ({
       teamId: s.team_id,
       name: s.team_name,

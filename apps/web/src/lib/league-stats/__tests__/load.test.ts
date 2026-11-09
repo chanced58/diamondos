@@ -120,6 +120,12 @@ describe('assembleLeagueStats', () => {
     expect(result.teams[0].stats).toEqual({});
   });
 
+  it('teams tied on win pct are listed in rank order by name', () => {
+    const standings = [standing('a', 'Beta', 0.5), standing('z', 'Alpha', 0.5)];
+    const result = assembleLeagueStats(base({ standings }));
+    expect(result.teams.map((t) => [t.name, t.rank])).toEqual([['Alpha', 1], ['Beta', 2]]);
+  });
+
   it('unknown season yields empty players/teams without throwing', () => {
     const result = assembleLeagueStats(base({ season: '1999', standings: [] }));
     expect(result.players).toEqual([]);

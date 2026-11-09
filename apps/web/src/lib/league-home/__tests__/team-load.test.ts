@@ -47,6 +47,17 @@ describe('computeTeamRank', () => {
   });
 });
 
+describe('computeTeamRank name tie-break', () => {
+  it('orders win_pct ties by team name, not team_id', () => {
+    const tied = [
+      { team_id: 'z', team_name: 'Alpha', win_pct: 0.5 },
+      { team_id: 'a', team_name: 'Beta', win_pct: 0.5 },
+    ];
+    expect(computeTeamRank(tied, 'z')).toEqual({ rank: 1, total: 2 });
+    expect(computeTeamRank([...tied].reverse(), 'a')).toEqual({ rank: 2, total: 2 });
+  });
+});
+
 describe('toTeamPlayerRows', () => {
   const snap = [
     { player_id: 'p1', first_name: 'Alex', last_name: 'Ramirez', public_opt_out: false, stats: { avg: 0.35 }, plate_appearances: 30, innings_pitched_outs: 0 },

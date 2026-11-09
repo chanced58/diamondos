@@ -16,19 +16,30 @@ export interface RankStandingRow {
 }
 
 /**
+ * Standings order: win_pct descending, then team name (missing names last), then
+ * team_id so the order is stable regardless of snapshot row order.
+ */
+export function compareStandings(a: RankStandingRow, b: RankStandingRow): number {
+  if (b.win_pct !== a.win_pct) return b.win_pct - a.win_pct;
+  if (a.team_name && b.team_name) {
+    const byName = a.team_name.localeCompare(b.team_name);
+    if (byName !== 0) return byName;
+  } else if (a.team_name || b.team_name) {
+    return a.team_name ? -1 : 1;
+  }
+  return String(a.team_id).localeCompare(String(b.team_id));
+}
+
+/**
  * Rank a team among the league's *platform* teams (rows with a non-null team_id)
- * by win_pct, 1-based and descending. `rank` is null when the team is absent.
+ * ordered by `compareStandings`, 1-based. `rank` is null when the team is absent.
  */
 export function computeTeamRank(
   standings: RankStandingRow[],
   teamId: string,
 ): { rank: number | null; total: number } {
   const platform = standings.filter((r) => r.team_id);
-  // Tie-break on team_id so equal win_pct produces a stable rank regardless of
-  // snapshot row order (the standings query imposes no DB ordering).
-  const sorted = [...platform].sort(
-    (a, b) => b.win_pct - a.win_pct || String(a.team_id).localeCompare(String(b.team_id)),
-  );
+  const sorted = [...platform].sort(compareStandings);
   const idx = sorted.findIndex((r) => r.team_id === teamId);
   return { rank: idx === -1 ? null : idx + 1, total: platform.length };
 }
