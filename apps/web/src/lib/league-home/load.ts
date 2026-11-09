@@ -1,5 +1,5 @@
 import type { Database } from '@baseball/database';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
   buildLeaderboard,
   getStatDef,
@@ -47,6 +47,25 @@ export interface RecentGame {
   ourScore: number;
   theirScore: number;
   result: 'W' | 'L' | 'T';
+}
+
+/** One league game on the public home page: both teams named, runs once it is completed. */
+export interface LeagueGameItem {
+  id: string;
+  homeTeamId: string;
+  homeName: string;
+  awayTeamId: string;
+  awayName: string;
+  homeRuns?: number;
+  awayRuns?: number;
+  scheduledAt: string;
+  timeZone: string | null;
+}
+
+/** Recent and upcoming league games of the selected season, for leagues that schedule their own games. */
+export interface LeagueGamesAround {
+  recent: LeagueGameItem[];
+  upcoming: LeagueGameItem[];
 }
 
 export function resolveVisibility(visibility: string, isAuthed: boolean): 'ok' | 'blocked' {
@@ -184,6 +203,8 @@ export type LeagueHomeData =
       spotlights: Database['public']['Tables']['league_spotlight_snapshot']['Row'][];
       recent: RecentGame[];
       upcoming: Array<{ id: string; label: string }>;
+      /** Set for leagues that schedule their own games; `recent`/`upcoming` are then empty. */
+      leagueGames: LeagueGamesAround | null;
       counters: { teams: number; games: number };
       /** ISO timestamp of the most recent snapshot row, for the "Updated N ago" pill. */
       updatedAt: string | null;
@@ -236,6 +257,91 @@ export async function listPublicLeagues(): Promise<PublicLeagueListItem[]> {
     leagueType: leagueRow.league_type,
     level: leagueRow.level,
   }));
+}
+
+const AROUND_THE_LEAGUE_LIMIT = 6;
+
+/**
+ * Recent results and upcoming games from the league's own games (one row per
+ * game) for the selected season, plus how many it has completed. Degrades to
+ * empty on a read error, as the platform-team path does.
+ */
+async function loadLeagueGamesAround(
+  db: SupabaseClient<Database>,
+  leagueId: string,
+  season: string,
+): Promise<{ games: LeagueGamesAround; completedCount: number }> {
+  const columns = 'id, home_team_id, away_team_id, home_game_id, scheduled_at, time_zone';
+  const [recentRes, upcomingRes, countRes] = await Promise.all([
+    db
+      .from('league_games')
+      .select(columns)
+      .eq('league_id', leagueId)
+      .eq('season', season)
+      .eq('status', 'completed')
+      .order('scheduled_at', { ascending: false })
+      .limit(AROUND_THE_LEAGUE_LIMIT),
+    db
+      .from('league_games')
+      .select(columns)
+      .eq('league_id', leagueId)
+      .eq('season', season)
+      .eq('status', 'scheduled')
+      .gte('scheduled_at', new Date().toISOString())
+      .order('scheduled_at', { ascending: true })
+      .limit(AROUND_THE_LEAGUE_LIMIT),
+    db
+      .from('league_games')
+      .select('id', { count: 'exact', head: true })
+      .eq('league_id', leagueId)
+      .eq('season', season)
+      .eq('status', 'completed'),
+  ]);
+  const readErr = recentRes.error ?? upcomingRes.error ?? countRes.error;
+  if (readErr) {
+    console.error(`[league-home] league games read failed league=${leagueId} season=${season}: ${readErr.message}`);
+    return { games: { recent: [], upcoming: [] }, completedCount: 0 };
+  }
+  const recentRows = recentRes.data ?? [];
+  const upcomingRows = upcomingRes.data ?? [];
+
+  const teamIds = [...new Set([...recentRows, ...upcomingRows].flatMap((g) => [g.home_team_id, g.away_team_id]))];
+  const homeGameIds = recentRows.map((g) => g.home_game_id).filter((id): id is string => !!id);
+  const [teamsRes, scoresRes] = await Promise.all([
+    teamIds.length ? db.from('teams').select('id, name').in('id', teamIds) : { data: [], error: null },
+    // The league result is written onto the home row (manual results included).
+    homeGameIds.length
+      ? db.from('games').select('id, home_score, away_score').in('id', homeGameIds)
+      : { data: [], error: null },
+  ]);
+  const detailErr = teamsRes.error ?? scoresRes.error;
+  if (detailErr) {
+    console.error(`[league-home] league game details failed league=${leagueId} season=${season}: ${detailErr.message}`);
+    return { games: { recent: [], upcoming: [] }, completedCount: countRes.count ?? 0 };
+  }
+  const nameById = new Map((teamsRes.data ?? []).map((t) => [t.id, t.name]));
+  const scoreByGameId = new Map((scoresRes.data ?? []).map((g) => [g.id, g]));
+
+  const toItem = (g: (typeof recentRows)[number], withRuns: boolean): LeagueGameItem => {
+    const score = withRuns && g.home_game_id ? scoreByGameId.get(g.home_game_id) : undefined;
+    return {
+      id: g.id,
+      homeTeamId: g.home_team_id,
+      homeName: nameById.get(g.home_team_id) ?? 'Team',
+      awayTeamId: g.away_team_id,
+      awayName: nameById.get(g.away_team_id) ?? 'Team',
+      ...(score ? { homeRuns: score.home_score, awayRuns: score.away_score } : {}),
+      scheduledAt: g.scheduled_at,
+      timeZone: g.time_zone,
+    };
+  };
+  return {
+    games: {
+      recent: recentRows.map((g) => toItem(g, true)),
+      upcoming: upcomingRows.map((g) => toItem(g, false)),
+    },
+    completedCount: countRes.count ?? 0,
+  };
 }
 
 export async function getLeagueHomeData(
@@ -334,7 +440,13 @@ export async function getLeagueHomeData(
   const teamIds = platformStandings.map((r) => r.team_id);
   let recent: RecentGame[] = [];
   let upcoming: Array<{ id: string; label: string }> = [];
-  if (teamIds.length) {
+  let leagueGames: LeagueGamesAround | null = null;
+  let completedLeagueGames = 0;
+  if (league.schedules_games) {
+    const around = await loadLeagueGamesAround(db, league.id, season);
+    leagueGames = around.games;
+    completedLeagueGames = around.completedCount;
+  } else if (teamIds.length) {
     const teamNameById = new Map<string, string>(platformStandings.map((r) => [r.team_id, r.team_name]));
     const [
       { data: recentGames, error: recentErr },
@@ -400,7 +512,12 @@ export async function getLeagueHomeData(
     spotlights: spots ?? [],
     recent,
     upcoming,
-    counters: { teams: standingsSorted.length, games: Math.floor(totalGames / 2) },
+    leagueGames,
+    counters: {
+      teams: standingsSorted.length,
+      // A league game is one row, so completed ones are counted as they are.
+      games: league.schedules_games ? completedLeagueGames : Math.floor(totalGames / 2),
+    },
     updatedAt,
   };
 }

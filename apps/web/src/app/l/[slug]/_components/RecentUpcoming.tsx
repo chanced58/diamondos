@@ -1,4 +1,5 @@
-import type { RecentGame } from '@/lib/league-home/load';
+import { formatDate, formatTime } from '@baseball/shared';
+import type { LeagueGameItem, LeagueGamesAround, RecentGame } from '@/lib/league-home/load';
 import { teamHref } from '@/lib/league-home/team-href';
 
 const RESULT_STYLE: Record<RecentGame['result'], string> = {
@@ -7,17 +8,97 @@ const RESULT_STYLE: Record<RecentGame['result'], string> = {
   T: 'bg-app-surface-2 text-app-fg-muted',
 };
 
+function TeamLink({ slug, season, id, name }: { slug: string; season: string; id: string; name: string }): JSX.Element {
+  return (
+    <a href={teamHref(slug, id, season)} className="font-medium text-app-fg hover:underline">
+      {name}
+    </a>
+  );
+}
+
+/** Both teams of a league game, away first, each linked to its stat page. */
+function Matchup({ game, slug, season }: { game: LeagueGameItem; slug: string; season: string }): JSX.Element {
+  return (
+    <span className="min-w-0 flex-1 truncate">
+      <TeamLink slug={slug} season={season} id={game.awayTeamId} name={game.awayName} />
+      <span className="text-app-fg-subtle"> at </span>
+      <TeamLink slug={slug} season={season} id={game.homeTeamId} name={game.homeName} />
+    </span>
+  );
+}
+
+function LeagueGamesColumns({
+  games,
+  slug,
+  season,
+}: {
+  games: LeagueGamesAround;
+  slug: string;
+  season: string;
+}): JSX.Element {
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-app-fg-muted">Recent Results</h3>
+        {games.recent.length ? (
+          <ul className="space-y-1">
+            {games.recent.map((g) => (
+              <li
+                key={g.id}
+                className="flex items-center gap-2 rounded-lg border border-app-border bg-app-surface px-3 py-2 text-sm"
+              >
+                <Matchup game={g} slug={slug} season={season} />
+                {g.homeRuns !== undefined && g.awayRuns !== undefined && (
+                  <span className="mono shrink-0 font-semibold text-app-fg">
+                    {g.awayRuns}–{g.homeRuns}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-app-fg-subtle">No results yet.</p>
+        )}
+      </div>
+      <div>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-app-fg-muted">Upcoming</h3>
+        {games.upcoming.length ? (
+          <ul className="space-y-1">
+            {games.upcoming.map((g) => (
+              <li
+                key={g.id}
+                className="flex items-center gap-2 rounded-lg border border-app-border bg-app-surface px-3 py-2 text-sm"
+              >
+                <Matchup game={g} slug={slug} season={season} />
+                <span className="shrink-0 text-app-fg-muted">
+                  {formatDate(g.scheduledAt, g.timeZone)} {formatTime(g.scheduledAt, g.timeZone)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-app-fg-subtle">Nothing scheduled.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function RecentUpcoming({
   recent,
   upcoming,
+  leagueGames,
   slug,
   season,
 }: {
   recent: RecentGame[];
   upcoming: Array<{ id: string; label: string }>;
+  /** Set for leagues that schedule their own games; shown instead of `recent` / `upcoming`. */
+  leagueGames?: LeagueGamesAround | null;
   slug: string;
   season: string;
 }): JSX.Element {
+  if (leagueGames) return <LeagueGamesColumns games={leagueGames} slug={slug} season={season} />;
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <div>

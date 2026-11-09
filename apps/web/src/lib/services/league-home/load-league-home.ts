@@ -1,12 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  formatDate,
   LEAGUE_HOME_SECTIONS,
   leagueHomeInputSchema,
   type LeagueHomeResponse,
   type LeagueHomeStandingRow,
   type LeagueLeaderBoard,
 } from '@baseball/shared';
-import { getLeagueHomeData, type ActiveTeamRef, type LeaderBoardResult, type StandingRow } from '@/lib/league-home/load';
+import { getLeagueHomeData, type ActiveTeamRef, type LeagueGameItem, type LeaderBoardResult, type StandingRow } from '@/lib/league-home/load';
 import { formatStat } from '@/lib/league-home/format-stat';
 import { teamIdByName } from '@/lib/league-home/team-load';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
@@ -70,7 +71,9 @@ export async function loadLeagueHome(
           blurb: s.blurb,
         };
       }),
-      recent: data.recent.map((g) => ({
+      // Older apps read only `recent` / `upcoming`, so a league's own games are
+      // also written in that shape (home team first) beside the full `leagueGames`.
+      recent: (data.leagueGames ? data.leagueGames.recent.map(toLegacyRecent) : data.recent.map((g) => ({
         id: g.id,
         teamName: g.team,
         teamId: g.team_id,
@@ -78,8 +81,9 @@ export async function loadLeagueHome(
         ourScore: g.ourScore,
         theirScore: g.theirScore,
         result: g.result,
-      })),
-      upcoming: data.upcoming,
+      }))),
+      upcoming: data.leagueGames ? data.leagueGames.upcoming.map(toLegacyUpcoming) : data.upcoming,
+      ...(data.leagueGames ? { leagueGames: data.leagueGames } : {}),
     });
   } catch (error) {
     console.error(`[loadLeagueHome] slug=${slug} actor=${actorUserId} failed:`, error);
@@ -125,4 +129,24 @@ function toBoard(board: LeaderBoardResult): LeagueLeaderBoard {
       ours: r.ours,
     })),
   };
+}
+
+/** A completed league game in the older `recent` shape: the home team's view. */
+function toLegacyRecent(g: LeagueGameItem) {
+  const homeRuns = g.homeRuns ?? 0;
+  const awayRuns = g.awayRuns ?? 0;
+  return {
+    id: g.id,
+    teamName: g.homeName,
+    teamId: g.homeTeamId,
+    opponent: g.awayName,
+    ourScore: homeRuns,
+    theirScore: awayRuns,
+    result: homeRuns > awayRuns ? ('W' as const) : homeRuns < awayRuns ? ('L' as const) : ('T' as const),
+  };
+}
+
+/** An upcoming league game in the older label shape. */
+function toLegacyUpcoming(g: LeagueGameItem) {
+  return { id: g.id, label: `${g.awayName} at ${g.homeName} — ${formatDate(g.scheduledAt, g.timeZone)}` };
 }
