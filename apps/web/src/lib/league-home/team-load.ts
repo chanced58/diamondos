@@ -93,14 +93,7 @@ export function buildTeamStatList(stats: unknown): TeamStatItem[] {
   }));
 }
 
-/** Batting columns for the team page, in display order. */
-export const TEAM_BATTING_KEYS = [
-  'avg', 'obp', 'slg', 'ops', 'homeRuns', 'rbi', 'hits', 'runs',
-  'doubles', 'triples', 'walks', 'qabPct', 'hardHitPct',
-] as const;
-
-/** Pitching columns for the team page, in display order (IP rendered separately). */
-export const TEAM_PITCHING_KEYS = ['era', 'whip', 'strikeoutsP'] as const;
+export { TEAM_BATTING_KEYS, TEAM_PITCHING_KEYS } from '../league-stats/columns';
 
 export interface TeamRecord {
   wins: number; losses: number; ties: number; winPct: number;
