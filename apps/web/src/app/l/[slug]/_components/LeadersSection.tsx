@@ -43,33 +43,36 @@ export function LeadersSection({
     <section>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 className="display text-xl font-bold">League Leaders</h2>
-        <a href={statsHref} className="text-sm font-semibold text-app-fg-muted hover:text-app-fg">
-          Full league stats →
-        </a>
-        {available.length > 1 ? (
-          <div
-            role="tablist"
-            aria-label="Leaderboard category"
-            className="inline-flex rounded-lg border border-app-border bg-app-surface-2 p-0.5 text-sm"
-          >
-            {available.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                aria-selected={active === t.id}
-                onClick={() => setActive(t.id)}
-                className={`rounded-md px-3 py-1 font-semibold transition-colors ${
-                  active === t.id
-                    ? 'bg-app-surface text-app-fg shadow-sm'
-                    : 'text-app-fg-muted hover:text-app-fg'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
+        {/* Link and tabs share one right-aligned group so the link sits beside the tabs. */}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+          <a href={statsHref} className="text-sm font-semibold text-app-fg-muted hover:text-app-fg">
+            Full league stats →
+          </a>
+          {available.length > 1 ? (
+            <div
+              role="tablist"
+              aria-label="Leaderboard category"
+              className="inline-flex rounded-lg border border-app-border bg-app-surface-2 p-0.5 text-sm"
+            >
+              {available.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active === t.id}
+                  onClick={() => setActive(t.id)}
+                  className={`rounded-md px-3 py-1 font-semibold transition-colors ${
+                    active === t.id
+                      ? 'bg-app-surface text-app-fg shadow-sm'
+                      : 'text-app-fg-muted hover:text-app-fg'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
       {activeBoards.length === 0 ? (
         <p className="text-sm text-app-fg-subtle">No qualified leaders yet.</p>
