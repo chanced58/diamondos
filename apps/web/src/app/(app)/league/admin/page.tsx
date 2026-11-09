@@ -104,6 +104,8 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
 
       <LeagueAdminClient
         leagueId={league.id}
+        leagueName={league.name}
+        leagueDescription={league.description}
         teams={teams.map((t) => ({
           id: t.id,
           teamId: t.team_id ?? t.opponent_team_id ?? '',
