@@ -106,6 +106,6 @@ export const dashboardResponseSchema = z.object({
   /** The team's announcement channel a coach posts in, or null when the viewer can't post. */
   announcementChannelId: z.string().nullable(),
   /** Completed league games of the team whose two scorebooks differ and are not yet settled. */
-  pendingSettlements: z.array(pendingSettlementSchema),
+  pendingSettlements: z.array(pendingSettlementSchema).default([]),
 });
 export type DashboardResponse = z.infer<typeof dashboardResponseSchema>;

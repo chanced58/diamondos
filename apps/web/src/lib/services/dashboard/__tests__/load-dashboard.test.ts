@@ -121,15 +121,17 @@ describe('loadDashboard', () => {
           call.filters.status === 'completed'
             ? [
                 game('lg-settled', { league_game_id: 'L2', opponent_name: 'Hawks', home_score: 1, away_score: 0, completed_at: soon(-2) }),
+                game('lg-resolved', { league_game_id: 'L3', opponent_name: 'Owls', home_score: 1, away_score: 0, completed_at: soon(-2) }),
                 game('lg-open', { league_game_id: 'L1', opponent_name: 'Rams', home_score: 1, away_score: 0, completed_at: soon(-1) }),
               ]
             : [],
       }),
-      'league_games.select': { data: [{ id: 'L1', home_game_id: 'H1' }, { id: 'L2', home_game_id: 'H2' }] },
+      'league_games.select': { data: [{ id: 'L1', home_game_id: 'H1' }, { id: 'L2', home_game_id: 'H2' }, { id: 'L3', home_game_id: 'H3' }] },
       'game_reconciliations.select': {
         data: [
           { home_game_id: 'H1', conflicts: [{ kind: 'final_score', side: 'home', homeLog: 1, awayLog: 2 }], resolved_overrides: [], resolved_at: null },
           { home_game_id: 'H2', conflicts: [{ kind: 'final_score', side: 'home', homeLog: 1, awayLog: 2 }], resolved_overrides: [{ key: 'final_score:home', useAwayValue: true }], resolved_at: null },
+          { home_game_id: 'H3', conflicts: [{ kind: 'final_score', side: 'home', homeLog: 1, awayLog: 2 }], resolved_overrides: [], resolved_at: '2026-11-09T00:00:00Z' },
         ],
       },
     });

@@ -5,7 +5,6 @@ import {
   deriveGameState,
   filterResetAndReverted,
   weAreHome,
-  conflictKey,
   type DashboardAnnouncement,
   type DashboardLiveGame,
   type DashboardPendingSettlement,
@@ -18,6 +17,7 @@ import {
   type ScoreConflict,
 } from '@baseball/shared';
 import { getLeagueForTeam, getLeagueTeamIds } from '@baseball/database';
+import { countUnsettledConflicts } from '@/lib/dual-scorekeeper/unsettled';
 import { fetchGameEventLog } from '@/lib/games/fetch-game-event-log';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import { resolveGameViewer } from '../games/authorize';
@@ -355,9 +355,9 @@ async function loadPendingSettlements(db: SupabaseClient, teamId: string): Promi
     resolved_overrides: ReconciliationOverride[] | null;
     resolved_at: string | null;
   }>) {
-    if (recon.resolved_at) continue;
-    const settled = new Set((recon.resolved_overrides ?? []).map((o) => o.key));
-    if ((recon.conflicts ?? []).some((c) => !settled.has(conflictKey(c)))) unsettledHomeGames.add(recon.home_game_id);
+    if (countUnsettledConflicts(recon.conflicts, recon.resolved_overrides, recon.resolved_at) > 0) {
+      unsettledHomeGames.add(recon.home_game_id);
+    }
   }
 
   return games

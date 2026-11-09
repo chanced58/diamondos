@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ReconciliationOverride, ScoreConflict } from '@baseball/shared';
+import { countUnsettledConflicts } from './unsettled';
 import { authorizeReconciliationSettler } from '@/lib/services/games/resolve-reconciliation-conflict';
 
 export interface ReconciliationView {
@@ -14,6 +15,8 @@ export interface ReconciliationView {
   viewerOnHomeSide: boolean;
   /** True when the viewer may settle the differences (`authorizeReconciliationSettler`). */
   canSettle: boolean;
+  /** Differences still to settle (none once resolved); see `countUnsettledConflicts`. */
+  unsettledCount: number;
 }
 
 /**
@@ -29,7 +32,7 @@ export async function loadReconciliationForGame(
 ): Promise<ReconciliationView | null> {
   const { data: recon, error: reconErr } = await db
     .from('game_reconciliations')
-    .select('id, home_game_id, away_game_id, conflicts, resolved_overrides')
+    .select('id, home_game_id, away_game_id, conflicts, resolved_overrides, resolved_at')
     .or(`home_game_id.eq.${gameId},away_game_id.eq.${gameId}`)
     .maybeSingle();
 
@@ -67,5 +70,10 @@ export async function loadReconciliationForGame(
     awayTeamLabel: nameByGame.get(recon.away_game_id as string) ?? 'Away',
     viewerOnHomeSide: recon.home_game_id === gameId,
     canSettle: settler.ok,
+    unsettledCount: countUnsettledConflicts(
+      recon.conflicts as ScoreConflict[] | null,
+      recon.resolved_overrides as ReconciliationOverride[] | null,
+      recon.resolved_at as string | null,
+    ),
   };
 }

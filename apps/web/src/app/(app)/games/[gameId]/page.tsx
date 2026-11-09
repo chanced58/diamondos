@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveLeague } from '@/lib/active-league';
 import { getUserAccess } from '@/lib/user-access';
-import { conflictKey, formatDate, formatTime, utcToZonedDateTime, weAreHome, type GameRsvpStatus } from '@baseball/shared';
+import { formatDate, formatTime, utcToZonedDateTime, weAreHome, type GameRsvpStatus } from '@baseball/shared';
 import { CancelGameForm } from './CancelGameForm';
 import { StartGameForm } from './StartGameForm';
 import { LocationMap } from '@/components/maps/LocationMap';
@@ -214,9 +214,6 @@ export default async function GameDetailPage({
   // Dual scorekeeper: surface the reconciliation panel once the game is done.
   const reconciliation = isCompleted ? await loadReconciliationForGame(db, params.gameId, user.id) : null;
 
-  const settledKeys = new Set((reconciliation?.overrides ?? []).map((o) => o.key));
-  const unsettledCount = (reconciliation?.conflicts ?? []).filter((c) => !settledKeys.has(conflictKey(c))).length;
-
   // League games: unknown players still to be matched, for those who may match them.
   const unmatched =
     isCompleted && game.league_game_id
@@ -350,7 +347,7 @@ export default async function GameDetailPage({
         <UnmatchedPlayersPanel placeholders={unmatchedPlaceholders} rosters={placeholderRosters} />
       )}
 
-      {reconciliation && unsettledCount > 0 && (
+      {reconciliation && reconciliation.unsettledCount > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 mb-4 text-sm text-amber-800">
           Both teams scored this game and the scorebooks differ.
         </div>
