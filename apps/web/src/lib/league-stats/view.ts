@@ -7,6 +7,9 @@ import type { RankCell, RankTable, StatsPlayer } from './ranks';
 
 type Tab = 'batting' | 'pitching';
 
+/** Fixed-locale collation so server (SSR) and browser order names identically. */
+const collator = new Intl.Collator('en');
+
 export interface ViewState {
   teamId: string | 'all';
   query: string;
@@ -59,7 +62,7 @@ export function visiblePlayers(
   });
 
   const dirMul = state.sortDir === 'asc' ? 1 : -1;
-  const byName = (a: StatsPlayer, b: StatsPlayer) => a.name.localeCompare(b.name);
+  const byName = (a: StatsPlayer, b: StatsPlayer) => collator.compare(a.name, b.name);
 
   if (state.sortKey === 'name') return rows.sort((a, b) => byName(a, b) * dirMul);
   if (!col) return rows.sort(byName);

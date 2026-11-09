@@ -5,6 +5,9 @@ export interface LeaderRow {
   /** PA for batting/special stats, IP outs for pitching stats; omitted for team rows (always eligible). */
   activity?: number;
 }
+/** Fixed-locale collation so server (SSR) and browser order ties identically. */
+const collator = new Intl.Collator('en');
+
 export interface RankedLeaderRow extends LeaderRow { rank: number; }
 export interface BuildOpts { minQualifier: number; limit: number; }
 
@@ -64,7 +67,7 @@ export function rankLeaderRows(
   );
   const sorted = [...eligible].sort((a, b) => {
     const diff = stat.sortDir === 'asc' ? a.value - b.value : b.value - a.value;
-    return diff !== 0 ? diff : a.name.localeCompare(b.name);
+    return diff !== 0 ? diff : collator.compare(a.name, b.name);
   });
   const ranked: RankedLeaderRow[] = [];
   let lastValue: number | null = null;

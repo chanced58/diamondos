@@ -129,6 +129,28 @@ describe('rankLeaderRows', () => {
     expect(out.map((r) => r.name)).toEqual(['Amy', 'Zed', 'Dan']);
     expect(out.map((r) => r.rank)).toEqual([1, 1, 3]);
   });
+  it('orders tied names by English collation regardless of the default locale', () => {
+    const tied: LeaderRow[] = [
+      { id: 'z', name: 'Zed', value: 0.35, qualifierValue: 30 },
+      { id: 'o', name: 'Ångström', value: 0.35, qualifierValue: 30 },
+      { id: 'a', name: 'Adam', value: 0.35, qualifierValue: 30 },
+    ];
+    const expected = ['Adam', 'Ångström', 'Zed'];
+    expect(rankLeaderRows(tied, getStatDef('avg'), 10).map((r) => r.name)).toEqual(expected);
+    // Simulate a runtime whose default locale is Swedish (Å sorts after Z): SSR and
+    // the browser must still agree, so the order may not follow the default locale.
+    const sv = new Intl.Collator('sv');
+    const spy = jest
+      .spyOn(String.prototype, 'localeCompare')
+      .mockImplementation(function (this: string, that: string) {
+        return sv.compare(this, that);
+      });
+    try {
+      expect(rankLeaderRows(tied, getStatDef('avg'), 10).map((r) => r.name)).toEqual(expected);
+    } finally {
+      spy.mockRestore();
+    }
+  });
   it('keeps rows without activity (team rows)', () => {
     const teamRows: LeaderRow[] = [{ id: 't', name: 'T', value: 5, qualifierValue: 1 }];
     expect(rankLeaderRows(teamRows, getStatDef('avg'), 0).map((r) => r.id)).toEqual(['t']);

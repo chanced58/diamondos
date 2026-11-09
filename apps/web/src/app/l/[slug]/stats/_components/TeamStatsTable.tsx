@@ -10,6 +10,9 @@ import { teamRowId } from './YourRanksCard';
 
 type SortDir = 'asc' | 'desc';
 
+/** Fixed-locale collation so server (SSR) and browser order names identically. */
+const collator = new Intl.Collator('en');
+
 interface TeamColumn {
   key: string;
   label: string;
@@ -59,7 +62,7 @@ export function TeamStatsTable({
   const active = STAT_COLUMNS.find((c) => c.key === sort.key);
   // Array.prototype.sort is stable, so ties keep the standings order.
   const sorted = [...teams].sort((a, b) =>
-    active ? (active.value(a) - active.value(b)) * mul : a.name.localeCompare(b.name) * mul,
+    active ? (active.value(a) - active.value(b)) * mul : collator.compare(a.name, b.name) * mul,
   );
 
   const header = (key: string, label: string, natural: SortDir, align: 'left' | 'center'): JSX.Element => {

@@ -8,6 +8,9 @@ import { getStatValue } from './stat-value';
 
 export { teamHref } from './team-href';
 
+/** Fixed-locale collation so server (SSR) and browser order ties identically. */
+const collator = new Intl.Collator('en');
+
 /** A minimal standings shape used for ranking and name→id mapping. */
 export interface RankStandingRow {
   team_id: string | null;
@@ -22,12 +25,12 @@ export interface RankStandingRow {
 export function compareStandings(a: RankStandingRow, b: RankStandingRow): number {
   if (b.win_pct !== a.win_pct) return b.win_pct - a.win_pct;
   if (a.team_name && b.team_name) {
-    const byName = a.team_name.localeCompare(b.team_name);
+    const byName = collator.compare(a.team_name, b.team_name);
     if (byName !== 0) return byName;
   } else if (a.team_name || b.team_name) {
     return a.team_name ? -1 : 1;
   }
-  return String(a.team_id).localeCompare(String(b.team_id));
+  return collator.compare(String(a.team_id), String(b.team_id));
 }
 
 /**
