@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { applyPitchReverted, computeLineScore } from '@baseball/shared';
 import { recomputeLeagueSnapshot } from '@/lib/league-snapshot/recompute';
 import { runReconciliationForGame } from '@/lib/dual-scorekeeper/reconcile';
+import { refreshLeagueGame } from '@/lib/league-games/refresh';
 
 export const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
@@ -37,7 +38,7 @@ async function authorizeGameRole(
 ) {
   const { data: game } = await supabase
     .from('games')
-    .select('team_id, opponent_name, opponent_team_id, scheduled_at, time_zone, status, location_type, neutral_home_team, tournament_id')
+    .select('team_id, opponent_name, opponent_team_id, scheduled_at, time_zone, status, location_type, neutral_home_team, tournament_id, league_game_id, result_source')
     .eq('id', gameId)
     .single();
   // `code` lets callers branch on the failure kind (e.g. 404 vs 403) without
@@ -114,7 +115,8 @@ export interface FinalizeGameArgs {
 /**
  * Finalize a game: ensure a game_end event exists, set games.status =
  * 'completed' with event-derived final scores, then run dual-scorekeeper
- * reconciliation and league snapshot recomputes (both best-effort).
+ * reconciliation and league snapshot recomputes (both best-effort). A league
+ * game's row hands both to `refreshLeagueGame` instead.
  *
  * Idempotent by construction — the mobile sync engine may retry the finalize
  * call across cycles, and the coach may have already recorded a game_end
@@ -131,6 +133,13 @@ export async function finalizeGame(
 ): Promise<{ ok: true } | { error: string }> {
   const { gameId, userId } = args;
   const now = new Date().toISOString();
+
+  // Read what the follow-up needs before writing anything: once the row is
+  // completed the phone treats it as settled and never calls again, so a
+  // failed read after that would skip the league refresh for good. Failing
+  // here answers an error with the row untouched, and the phone retries.
+  const target = await loadFinalizeTarget(supabase, gameId);
+  if ('error' in target) return target;
 
   const effectiveEvents = await fetchEffectiveEvents(supabase, gameId);
   const hasActiveGameEnd = effectiveEvents.some((e) => e.event_type === 'game_end');
@@ -172,6 +181,8 @@ export async function finalizeGame(
   // with the box score (computeLineScore is the single source of truth).
   const { homeScore, awayScore } = await deriveScoresFromEvents(supabase, gameId);
 
+  // result_source is cleared: once this row has its own finished book, a
+  // result an earlier league refresh wrote onto it no longer applies.
   const { error: updateErr } = await supabase
     .from('games')
     .update({
@@ -180,10 +191,19 @@ export async function finalizeGame(
       updated_at: now,
       home_score: homeScore,
       away_score: awayScore,
+      result_source: null,
     })
     .eq('id', gameId);
   if (updateErr) {
     return { error: `Failed to complete game: ${updateErr.message}` };
+  }
+
+  // A league game: the league refresh reconciles both books, notifies the
+  // teams, writes the result onto the other team's row and rebuilds the
+  // league snapshot (best-effort; it logs and never throws).
+  if (target.league_game_id) {
+    await refreshLeagueGame(supabase, target.league_game_id, userId);
+    return { ok: true };
   }
 
   // Dual scorekeeper: if this game is paired with an opponent's parallel game,
@@ -191,30 +211,56 @@ export async function finalizeGame(
   // (runReconciliationForGame catches internally).
   await runReconciliationForGame(supabase, gameId, userId);
 
-  // Refresh league home-page snapshots for the finalized game's league + season.
-  // Non-fatal: the scheduled rebuild (cron) self-heals if this is skipped/errors.
+  await recomputeTeamLeagues(supabase, gameId, target);
+
+  return { ok: true };
+}
+
+/** What the steps after completing the row need to know about the game. */
+interface FinalizeTarget {
+  team_id: string | null;
+  season_id: string | null;
+  league_game_id: string | null;
+}
+
+async function loadFinalizeTarget(
+  supabase: SupabaseClient,
+  gameId: string,
+): Promise<FinalizeTarget | { error: string }> {
+  const { data, error } = await supabase
+    .from('games')
+    .select('team_id, season_id, league_game_id')
+    .eq('id', gameId)
+    .maybeSingle();
+  if (error || !data) {
+    const reason = error?.message ?? 'row not found';
+    console.error(`[finalizeGame] game read before finalize failed game=${gameId}: ${reason}`);
+    return { error: 'The game could not be finalized. Please try again.' };
+  }
+  return data as FinalizeTarget;
+}
+
+/**
+ * Refresh league home-page snapshots for the finalized game's league + season.
+ * Non-fatal: the scheduled rebuild (cron) self-heals if this is skipped/errors.
+ */
+async function recomputeTeamLeagues(supabase: SupabaseClient, gameId: string, game: FinalizeTarget): Promise<void> {
   try {
-    const { data: g } = await supabase
-      .from('games')
-      .select('team_id, season_id')
-      .eq('id', gameId)
+    if (!game.team_id || !game.season_id) return;
+    const { data: s } = await supabase
+      .from('seasons')
+      .select('name')
+      .eq('id', game.season_id)
       .maybeSingle();
-    if (g?.team_id && g.season_id) {
-      const { data: s } = await supabase
-        .from('seasons')
-        .select('name')
-        .eq('id', g.season_id)
-        .maybeSingle();
-      // A team may belong to more than one league; refresh each.
-      const { data: memberships } = await supabase
-        .from('league_members')
-        .select('league_id')
-        .eq('team_id', g.team_id)
-        .eq('is_active', true);
-      if (s?.name) {
-        for (const m of memberships ?? []) {
-          if (m.league_id) await recomputeLeagueSnapshot(supabase, m.league_id, s.name);
-        }
+    // A team may belong to more than one league; refresh each.
+    const { data: memberships } = await supabase
+      .from('league_members')
+      .select('league_id')
+      .eq('team_id', game.team_id)
+      .eq('is_active', true);
+    if (s?.name) {
+      for (const m of memberships ?? []) {
+        if (m.league_id) await recomputeLeagueSnapshot(supabase, m.league_id, s.name);
       }
     }
   } catch (err) {
@@ -222,6 +268,4 @@ export async function finalizeGame(
       `[finalizeGame] snapshot recompute failed game=${gameId}: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
-
-  return { ok: true };
 }

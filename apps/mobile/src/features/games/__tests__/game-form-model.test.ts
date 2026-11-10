@@ -29,6 +29,8 @@ const game: Game = {
   latitude: 43.6,
   longitude: -116.2,
   tournamentId: null,
+  leagueGameId: null,
+  resultSource: null,
 };
 
 describe('emptyGameFormValues', () => {

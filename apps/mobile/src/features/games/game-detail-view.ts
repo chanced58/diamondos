@@ -1,4 +1,4 @@
-import { weAreHome, type GameDetailResponse } from '@baseball/shared';
+import { leagueGameControlRefusal, weAreHome, type GameDetailResponse } from '@baseball/shared';
 
 /**
  * What the game detail screen shows, derived from the API payload with the
@@ -89,6 +89,7 @@ export function gameDetailSections(detail: GameDetailResponse, canScore: boolean
   const coach = viewer.isCoach;
   const started = game.status === 'in_progress' || game.status === 'completed';
   const hasOpponent = opponentLabel(game) !== 'TBD';
+  const controlRow = { status: game.status, league_game_id: game.leagueGameId, result_source: game.resultSource };
 
   let score: ScoreEntry | null = null;
   if (game.status === 'in_progress') {
@@ -109,9 +110,12 @@ export function gameDetailSections(detail: GameDetailResponse, canScore: boolean
     showStatsAndHistory: started,
     // A started tournament game changes its lineup through the scorer's lineup events.
     showOpponentLineup: coach && game.status !== 'cancelled' && !(game.tournamentId && game.status !== 'scheduled'),
-    canEdit: coach,
-    canRecalculate: coach && started,
-    canReset: coach && game.status !== 'scheduled',
-    canCancel: coach && game.status !== 'cancelled',
+    // A league game is edited and cancelled from League Games, and a row whose
+    // result the league wrote has no book to recalculate or reset (the same
+    // rules the server enforces).
+    canEdit: coach && !leagueGameControlRefusal('edit', controlRow),
+    canRecalculate: coach && started && !leagueGameControlRefusal('recalculate', controlRow),
+    canReset: coach && game.status !== 'scheduled' && !leagueGameControlRefusal('reset', controlRow),
+    canCancel: coach && game.status !== 'cancelled' && !leagueGameControlRefusal('cancel', controlRow),
   };
 }

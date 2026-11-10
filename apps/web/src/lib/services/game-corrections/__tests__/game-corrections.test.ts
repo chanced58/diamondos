@@ -3,8 +3,12 @@ import { insertCorrectionEvents, replaceGameEvent, replayAtBat, voidGameEvent } 
 import { loadGameHistory } from '../load-game-history';
 
 const mockGetAuthorizedCoach = jest.fn();
+const mockAuthorizeLeagueStaff = jest.fn();
 jest.mock('@/lib/games/finalize', () => ({
   getAuthorizedCoach: (...args: unknown[]) => mockGetAuthorizedCoach(...args),
+}));
+jest.mock('../../league-admin/authorize', () => ({
+  authorizeLeagueStaff: (...args: unknown[]) => mockAuthorizeLeagueStaff(...args),
 }));
 
 const GAME_ID = '11111111-1111-4111-8111-111111111111';
@@ -17,6 +21,7 @@ const target = (id: string, sequence: number, payload: Record<string, unknown> =
 
 beforeEach(() => {
   mockGetAuthorizedCoach.mockReset().mockResolvedValue({ game: { team_id: 'team-1', status: 'completed' } });
+  mockAuthorizeLeagueStaff.mockReset().mockResolvedValue({ ok: true, data: {} });
   jest.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -72,7 +77,51 @@ describe('voidGameEvent', () => {
       ok: false,
       code: 'forbidden',
     });
-    expect(calls).toHaveLength(0);
+    expect(calls.filter((c) => c.table === 'game_events')).toHaveLength(0);
+  });
+});
+
+describe('corrections by league staff', () => {
+  const notCoach = () => mockGetAuthorizedCoach.mockResolvedValue({ error: 'Only coaches can perform this action.', code: 'forbidden' });
+
+  it('should let league staff correct the home row of a league game', async () => {
+    notCoach();
+    const { db, calls } = fakeDb({
+      'league_games.select': { data: { league_id: 'league-1' } },
+      'games.select': { data: { team_id: 'team-1', status: 'in_progress' } },
+      'game_events.select': [{ data: [target(EVENT_A, 12)] }, { data: { sequence_number: 40 } }],
+    });
+    expect(await voidGameEvent(db, 'staff', { gameId: GAME_ID, eventId: EVENT_A }, 'web')).toEqual({
+      ok: true,
+      data: { gameId: GAME_ID },
+    });
+    expect(calls.find((c) => c.table === 'league_games')?.filters).toEqual({ home_game_id: GAME_ID });
+    expect(inserted(calls)).toHaveLength(1);
+    expect(
+      await insertCorrectionEvents(db, 'staff', {
+        gameId: GAME_ID,
+        events: [{ eventType: 'walk', inning: 1, isTopOfInning: true, payload: {} }],
+      }, 'web'),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('should refuse league staff on the away row or a game outside any league', async () => {
+    notCoach();
+    // No league_games row has this game as its home row.
+    const { db, calls } = fakeDb({ 'league_games.select': { data: null } });
+    expect(await voidGameEvent(db, 'staff', { gameId: GAME_ID, eventId: EVENT_A }, 'web')).toMatchObject({ ok: false, code: 'forbidden' });
+    expect(
+      await replaceGameEvent(db, 'staff', { gameId: GAME_ID, eventId: EVENT_A, eventType: 'walk', payload: {} }, 'web'),
+    ).toMatchObject({ ok: false, code: 'forbidden' });
+    expect(inserted(calls)).toHaveLength(0);
+  });
+
+  it('should refuse someone who is not on the league staff', async () => {
+    notCoach();
+    mockAuthorizeLeagueStaff.mockResolvedValue({ ok: false, code: 'not_found', error: 'League not found.' });
+    const { db, calls } = fakeDb({ 'league_games.select': { data: { league_id: 'league-1' } } });
+    expect(await voidGameEvent(db, 'stranger', { gameId: GAME_ID, eventId: EVENT_A }, 'web')).toMatchObject({ ok: false });
+    expect(inserted(calls)).toHaveLength(0);
   });
 });
 

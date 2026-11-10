@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { getMaxBattingOrder, weAreHome } from '@baseball/shared';
+import { getMaxBattingOrder, visibleOpponentRoster, weAreHome } from '@baseball/shared';
 import { getScoringSettingsForGame } from '@/lib/game-scoring-settings';
+import { authorizeLeagueGameScorer } from '@/lib/services/games/authorize';
 import { OpponentLineupManager } from './OpponentLineupManager';
 
 export const metadata: Metadata = { title: 'Opponent Lineup' };
@@ -31,7 +32,7 @@ export default async function OpponentLineupPage({
 
   const { data: game } = await db
     .from('games')
-    .select('id, team_id, opponent_name, opponent_team_id, location_type, neutral_home_team, status, tournament_id, scoring_settings_snapshot')
+    .select('id, team_id, opponent_name, opponent_team_id, location_type, neutral_home_team, status, tournament_id, scoring_settings_snapshot, league_game_id')
     .eq('id', params.gameId)
     .single();
 
@@ -44,7 +45,8 @@ export default async function OpponentLineupPage({
     .eq('user_id', user.id)
     .single();
 
-  if (!membership || !COACH_ROLES.includes(membership.role)) {
+  const isTeamCoach = !!membership && COACH_ROLES.includes(membership.role);
+  if (!isTeamCoach && !(await authorizeLeagueGameScorer(db, user.id, params.gameId))) {
     redirect(`/games/${params.gameId}`);
   }
   if (game.tournament_id && game.status !== 'scheduled') redirect(`/games/${params.gameId}/score`);
@@ -61,7 +63,7 @@ export default async function OpponentLineupPage({
     game.opponent_team_id
       ? db
           .from('opponent_players')
-          .select('id, first_name, last_name, jersey_number, primary_position')
+          .select('id, first_name, last_name, jersey_number, primary_position, placeholder_game_id, is_fill_in')
           .eq('opponent_team_id', game.opponent_team_id)
           .eq('is_active', true)
           .order('last_name')
@@ -83,7 +85,12 @@ export default async function OpponentLineupPage({
     ? { id: opponentTeamResult.data.id, name: opponentTeamResult.data.name }
     : null;
 
-  const players = (playersResult.data ?? []).map((p) => ({
+  // Other league games' unknown players and fill-ins are never picked here.
+  const pickable = visibleOpponentRoster(
+    (playersResult.data ?? []).map((p) => ({ ...p, placeholderGameId: p.placeholder_game_id, isFillIn: p.is_fill_in })),
+    game.league_game_id,
+  );
+  const players = pickable.map((p) => ({
     id: p.id,
     firstName: p.first_name,
     lastName: p.last_name,

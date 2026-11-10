@@ -33,7 +33,12 @@ export const opponentPlayerFields = {
   primaryPosition: position.optional().transform((value) => value ?? null),
 };
 
-export const addOpponentPlayerInputSchema = z.object({ gameId, ...opponentPlayerFields });
+export const addOpponentPlayerInputSchema = z.object({
+  gameId,
+  ...opponentPlayerFields,
+  /** League game rows only: an unknown player to be matched to a real roster player after the game. */
+  placeholder: z.boolean().optional(),
+});
 export type AddOpponentPlayerInput = z.input<typeof addOpponentPlayerInputSchema>;
 
 export const updateOpponentPlayerInputSchema = z.object({

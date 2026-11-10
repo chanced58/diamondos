@@ -12,6 +12,7 @@ import {
   type PlayerPosition,
 } from '@baseball/shared';
 import { getScoringSettingsForGame } from '@/lib/game-scoring-settings';
+import { authorizeLeagueGameScorer } from '@/lib/services/games/authorize';
 
 export async function saveLineupAction(
   _prevState: string | null | undefined,
@@ -44,7 +45,8 @@ export async function saveLineupAction(
     .eq('user_id', user.id)
     .single();
 
-  if (!membership || !isCoachRole(membership.role)) {
+  const isTeamCoach = !!membership && isCoachRole(membership.role);
+  if (!isTeamCoach && !(await authorizeLeagueGameScorer(supabase, user.id, gameId))) {
     return 'Only coaches can set the lineup.';
   }
 

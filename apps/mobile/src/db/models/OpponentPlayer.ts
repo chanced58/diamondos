@@ -26,6 +26,15 @@ export class OpponentPlayer extends Model {
   @field('is_active') isActive!: boolean;
   @field('updated_at') updatedAt!: number;
   @field('synced_at') syncedAt!: number | undefined;
+  /** On a team's league roster record: the real player this row mirrors. */
+  @field('linked_player_id') linkedPlayerId!: string | undefined;
+  /**
+   * league_games.id when this is an unknown player added while scoring that
+   * one league game; such rows belong to that game only.
+   */
+  @field('placeholder_game_id') placeholderGameId!: string | undefined;
+  /** A placeholder settled as someone not on the team's roster. */
+  @field('is_fill_in') isFillIn!: boolean;
 
   get fullName(): string {
     return `${this.firstName} ${this.lastName}`.trim();

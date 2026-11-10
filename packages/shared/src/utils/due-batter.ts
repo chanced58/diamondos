@@ -149,7 +149,8 @@ export interface HalfAttribution {
  * against a stale leak from our own half being mis-filed as the opponent).
  *
  * - Our offensive half: `batterId` = our due batter; `opponentPitcherId` =
- *   the state pitcher when it is not one of ours.
+ *   the scorer-known opponent pitcher, else the state pitcher, when it is not
+ *   one of ours.
  * - Our defensive half: `pitcherId` = our current pitcher; `opponentBatterId`
  *   = the state batter when it is not one of ours.
  *
@@ -166,22 +167,29 @@ export function attributePlayersForHalf(args: {
    *  (persists across innings — unlike gameState.currentPitcherId, which
    *  INNING_CHANGE resets to null). */
   ourPitcherId: string | null;
-  /** gameState.currentPitcherId — used only to identify the opponent pitcher. */
+  /** gameState.currentPitcherId — used only to identify the opponent pitcher,
+   *  and only when `opponentPitcherId` is not given. */
   statePitcherId: string | null;
+  /** The opponent's pitcher as the scorer knows it (their lineup's P, then
+   *  their pitching changes). Wins over `statePitcherId` when set, since the
+   *  reducer's pitcher is reset every inning and mobile never sets it for the
+   *  opponent. Null/omitted keeps the `statePitcherId` behavior. */
+  opponentPitcherId?: string | null;
   /** gameState.currentBatterId — used only to identify the opponent batter. */
   stateBatterId: string | null;
   /** Every platform player id we can attribute to: roster + lineup (incl. guests). */
   ourPlayerIds: ReadonlySet<string>;
 }): HalfAttribution {
   const { weAreHome, isTopOfInning, ourBatterId, ourPitcherId, statePitcherId, stateBatterId, ourPlayerIds } = args;
+  const opponentPitcherId = args.opponentPitcherId ?? statePitcherId;
   // Home bats in the bottom half; away bats in the top half.
   const weBat = weAreHome ? !isTopOfInning : isTopOfInning;
   const result: HalfAttribution = {};
 
   if (weBat) {
     if (ourBatterId) result.batterId = ourBatterId;
-    if (statePitcherId && !ourPlayerIds.has(statePitcherId)) {
-      result.opponentPitcherId = statePitcherId;
+    if (opponentPitcherId && !ourPlayerIds.has(opponentPitcherId)) {
+      result.opponentPitcherId = opponentPitcherId;
     }
   } else {
     if (ourPitcherId) result.pitcherId = ourPitcherId;

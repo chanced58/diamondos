@@ -10,6 +10,7 @@ import {
   setLeagueTeamActive,
   setLeagueTeamDivision,
 } from '@/lib/services/league-admin/league-teams';
+import { createLeagueManagedTeam, setLeagueSchedulesGames } from '@/lib/services/league-admin/league-managed-teams';
 import { removeLeagueStaff } from '@/lib/services/league-admin/league-staff';
 import type { ServiceResult } from '@/lib/services/result';
 
@@ -56,4 +57,12 @@ export async function removeLeagueTeamAction(leagueId: string, membershipId: str
 
 export async function removeLeagueStaffAction(leagueId: string, staffId: string): Promise<string | null> {
   return run((db, userId) => removeLeagueStaff(db, userId, { leagueId, staffId }));
+}
+
+export async function createLeagueManagedTeamAction(leagueId: string, name: string, divisionId?: string): Promise<string | null> {
+  return run((db, userId) => createLeagueManagedTeam(db, userId, { leagueId, name, divisionId }));
+}
+
+export async function setLeagueSchedulesGamesAction(leagueId: string, schedulesGames: boolean): Promise<string | null> {
+  return run((db, userId) => setLeagueSchedulesGames(db, userId, { leagueId, schedulesGames }));
 }

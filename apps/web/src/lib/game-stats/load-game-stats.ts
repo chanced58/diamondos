@@ -13,6 +13,7 @@ import {
   computeLineScore,
 } from '@baseball/shared';
 import type { BattingStats, PitchingStats, OppBattingRow } from '@baseball/shared';
+import { loadEventsForTeamGames } from '@/lib/league-games/paired-book';
 import {
   DB_TO_POSITION,
   computeFieldingStats,
@@ -73,7 +74,7 @@ export async function loadGameStats(
   const { data: game, error: gameError } = await db
     .from('games')
     .select(
-      'id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, season_id, opponent_team_id, scheduled_at, time_zone',
+      'id, team_id, opponent_name, location_type, neutral_home_team, status, home_score, away_score, season_id, opponent_team_id, scheduled_at, time_zone, league_game_id, result_source',
     )
     .eq('id', gameId)
     .single();
@@ -93,11 +94,13 @@ export async function loadGameStats(
         .select('player_id, batting_order, starting_position, players(id, first_name, last_name, jersey_number)')
         .eq('game_id', gameId)
         .order('batting_order', { ascending: true, nullsFirst: false }),
-      db
-        .from('game_events')
-        .select('*')
-        .eq('game_id', gameId)
-        .order('sequence_number'),
+      // A league game the other team scored reads that team's book, translated for us.
+      game.result_source === 'paired'
+        ? loadEventsForTeamGames(db, game.team_id, [game], null).then(
+            (data) => ({ data, error: null as { message: string } | null }),
+            (error: Error) => ({ data: null, error: { message: error.message } }),
+          )
+        : db.from('game_events').select('*').eq('game_id', gameId).order('sequence_number'),
       // Fetch ALL players (not just active) so deactivated players who
       // participated in this game still resolve their names in stats.
       db

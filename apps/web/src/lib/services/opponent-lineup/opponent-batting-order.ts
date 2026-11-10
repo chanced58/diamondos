@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { gameIdInputSchema, PlayerPosition, saveOpponentLineupInputSchema } from '@baseball/shared';
+import { gameIdInputSchema, PlayerPosition, saveOpponentLineupInputSchema, visibleOpponentRoster } from '@baseball/shared';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import { authorizeOpponentLineupEdit, loadMaxBatters, touchGame, writeFailed } from './context';
 
@@ -77,8 +77,9 @@ export async function saveOpponentLineup(
 }
 
 /**
- * Seeds the game's order from the opponent's active roster: everyone on the
- * bench at their usual position, for the coach to number.
+ * Seeds the game's order from the opponent's active roster: everyone the
+ * scorer could pick (not other league games' unknown players or fill-ins) on
+ * the bench at their usual position, for the coach to number.
  */
 export async function autoFillOpponentLineup(
   db: SupabaseClient,
@@ -91,17 +92,22 @@ export async function autoFillOpponentLineup(
 
   const auth = await authorizeOpponentLineupEdit(db, actorUserId, gameId);
   if (!auth.ok) return auth;
-  const { opponentTeamId } = auth.data;
+  const { opponentTeamId, leagueGameId } = auth.data;
   if (!opponentTeamId) return serviceError('conflict', 'Name the opponent team first.');
 
-  const { data: players, error } = await db
+  const { data, error } = await db
     .from('opponent_players')
-    .select('id, primary_position')
+    .select('id, primary_position, placeholder_game_id, is_fill_in')
     .eq('opponent_team_id', opponentTeamId)
     .eq('is_active', true)
     .order('created_at');
   if (error) return writeFailed('autoFillOpponentLineup', gameId, actorUserId, error);
-  if (!players || players.length === 0) return serviceError('conflict', 'No active players in the roster.');
+  const players = visibleOpponentRoster(
+    ((data ?? []) as { id: string; primary_position: string | null; placeholder_game_id: string | null; is_fill_in: boolean }[])
+      .map((row) => ({ ...row, placeholderGameId: row.placeholder_game_id, isFillIn: row.is_fill_in })),
+    leagueGameId,
+  );
+  if (players.length === 0) return serviceError('conflict', 'No active players in the roster.');
 
   const replaced = await replaceOpponentLineup(
     db,

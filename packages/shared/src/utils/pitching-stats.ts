@@ -87,6 +87,33 @@ function inningsPitched(outs: number): number {
   return outs / 3;
 }
 
+/** Recompute every rate stat on `s` from its counting stats, in place. */
+export function finalizePitchingRates(s: PitchingStats): void {
+  const ip = inningsPitched(s.inningsPitchedOuts);
+
+  s.strikePercentage = s.totalPitches > 0 ? s.strikes / s.totalPitches : 0;
+  s.firstPitchStrikePercentage = s.totalPAs > 0 ? s.firstPitchStrikes / s.totalPAs : 0;
+  s.threeBallCountPercentage = s.totalPAs > 0 ? s.threeBallCountPAs / s.totalPAs : 0;
+  s.threeZeroCountPercentage = s.totalPAs > 0 ? s.threeZeroCountPAs / s.totalPAs : 0;
+
+  if (ip > 0) {
+    s.era = (s.earnedRunsAllowed * 7) / ip;
+    s.whip = (s.walksAllowed + s.hitsAllowed) / ip;
+    s.strikeoutsPerSeven = (s.strikeouts * 7) / ip;
+    s.walksPerSeven = (s.walksAllowed * 7) / ip;
+  } else {
+    s.era = Infinity;
+    s.whip = Infinity;
+    s.strikeoutsPerSeven = 0;
+    s.walksPerSeven = 0;
+  }
+
+  // Finalize BA by count averages
+  for (const cs of Object.values(s.baByCount)) {
+    cs.average = cs.atBats > 0 ? cs.hits / cs.atBats : NaN;
+  }
+}
+
 /** Format innings pitched as the conventional "6.1" display string. */
 export function formatInningsPitched(outs: number): string {
   return `${Math.floor(outs / 3)}.${outs % 3}`;
@@ -792,31 +819,7 @@ export function derivePitchingStats(
   }
 
   // ── Compute derived rates for all pitchers ─────────────────────────────
-  for (const s of statsMap.values()) {
-    const ip = inningsPitched(s.inningsPitchedOuts);
-
-    s.strikePercentage = s.totalPitches > 0 ? s.strikes / s.totalPitches : 0;
-    s.firstPitchStrikePercentage = s.totalPAs > 0 ? s.firstPitchStrikes / s.totalPAs : 0;
-    s.threeBallCountPercentage = s.totalPAs > 0 ? s.threeBallCountPAs / s.totalPAs : 0;
-    s.threeZeroCountPercentage = s.totalPAs > 0 ? s.threeZeroCountPAs / s.totalPAs : 0;
-
-    if (ip > 0) {
-      s.era = (s.earnedRunsAllowed * 7) / ip;
-      s.whip = (s.walksAllowed + s.hitsAllowed) / ip;
-      s.strikeoutsPerSeven = (s.strikeouts * 7) / ip;
-      s.walksPerSeven = (s.walksAllowed * 7) / ip;
-    } else {
-      s.era = Infinity;
-      s.whip = Infinity;
-      s.strikeoutsPerSeven = 0;
-      s.walksPerSeven = 0;
-    }
-
-    // Finalize BA by count averages
-    for (const cs of Object.values(s.baByCount)) {
-      cs.average = cs.atBats > 0 ? cs.hits / cs.atBats : NaN;
-    }
-  }
+  for (const s of statsMap.values()) finalizePitchingRates(s);
 
   return statsMap;
 }

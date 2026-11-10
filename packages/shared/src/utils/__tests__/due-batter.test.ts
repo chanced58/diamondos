@@ -221,6 +221,64 @@ describe('attributePlayersForHalf', () => {
     expect(result).toEqual({ batterId: 'us1', opponentPitcherId: 'opp-p' });
   });
 
+  it('should write opponentPitcherId on our half-inning events', () => {
+    // INNING_CHANGE reset the state pitcher; the scorer-known opponent pitcher
+    // still lands on the event.
+    const result = attributePlayersForHalf({
+      weAreHome: false,
+      isTopOfInning: true,
+      ourBatterId: 'us1',
+      ourPitcherId: 'our-pitcher',
+      statePitcherId: null,
+      opponentPitcherId: 'opp-known',
+      stateBatterId: null,
+      ourPlayerIds: OUR_IDS,
+    });
+    expect(result).toEqual({ batterId: 'us1', opponentPitcherId: 'opp-known' });
+  });
+
+  it('should prefer the scorer-known opponent pitcher over the state pitcher', () => {
+    const result = attributePlayersForHalf({
+      weAreHome: false,
+      isTopOfInning: true,
+      ourBatterId: 'us1',
+      ourPitcherId: null,
+      statePitcherId: 'opp-old',
+      opponentPitcherId: 'opp-relief',
+      stateBatterId: null,
+      ourPlayerIds: OUR_IDS,
+    });
+    expect(result.opponentPitcherId).toBe('opp-relief');
+  });
+
+  it('should not file one of our players as the opponent pitcher', () => {
+    const result = attributePlayersForHalf({
+      weAreHome: false,
+      isTopOfInning: true,
+      ourBatterId: 'us1',
+      ourPitcherId: null,
+      statePitcherId: null,
+      opponentPitcherId: 'us2',
+      stateBatterId: null,
+      ourPlayerIds: OUR_IDS,
+    });
+    expect(result).toEqual({ batterId: 'us1' });
+  });
+
+  it('should not write opponentPitcherId on the opponent half', () => {
+    const result = attributePlayersForHalf({
+      weAreHome: true,
+      isTopOfInning: true,
+      ourBatterId: null,
+      ourPitcherId: 'our-pitcher',
+      statePitcherId: null,
+      opponentPitcherId: 'opp-known',
+      stateBatterId: 'opp-b',
+      ourPlayerIds: OUR_IDS,
+    });
+    expect(result).toEqual({ opponentBatterId: 'opp-b', pitcherId: 'our-pitcher' });
+  });
+
   it('returns an empty attribution when nothing is known', () => {
     const result = attributePlayersForHalf({
       weAreHome: true,

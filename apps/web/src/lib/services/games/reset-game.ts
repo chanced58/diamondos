@@ -1,12 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { gameIdInputSchema } from '@baseball/shared';
+import { gameIdInputSchema, leagueGameControlRefusal } from '@baseball/shared';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import { authorizeGameCoach } from './authorize';
 
 /**
  * Returns a started or finished game to `scheduled`. game_events is
  * append-only, so the reset is recorded as a `game_reset` event (replay
- * ignores everything before it) rather than by deleting the log.
+ * ignores everything before it) rather than by deleting the log. Refused on
+ * a row whose result the league wrote and on a finished league book
+ * (`leagueGameControlRefusal`).
  */
 export async function resetGame(
   db: SupabaseClient,
@@ -23,6 +25,8 @@ export async function resetGame(
   const game = auth.data;
 
   if (game.status === 'scheduled') return serviceError('conflict', 'Game is already in scheduled state.');
+  const refusal = leagueGameControlRefusal('reset', game);
+  if (refusal) return serviceError('conflict', refusal);
 
   const now = new Date().toISOString();
 

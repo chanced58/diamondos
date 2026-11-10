@@ -6,6 +6,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getMaxBattingOrder } from '@baseball/shared';
 import type { Database } from '@baseball/database';
 import { getScoringSettingsForGame } from '@/lib/game-scoring-settings';
+import { authorizeLeagueGameScorer } from '@/lib/services/games/authorize';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
@@ -41,7 +42,8 @@ async function getCoachContext(gameId: string): Promise<CoachContext | { error: 
     .eq('team_id', game.team_id)
     .eq('user_id', user.id)
     .maybeSingle();
-  if (!membership || !COACH_ROLES.includes(membership.role)) {
+  const isTeamCoach = !!membership && COACH_ROLES.includes(membership.role);
+  if (!isTeamCoach && !(await authorizeLeagueGameScorer(db, user.id, gameId))) {
     return { error: 'Only coaches can edit the lineup.' };
   }
 

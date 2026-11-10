@@ -2,6 +2,7 @@ import { Q } from '@nozbe/watermelondb';
 import { synchronize, type SyncPullArgs, type SyncPushArgs } from '@nozbe/watermelondb/sync';
 import {
   computeLineupDeletes,
+  isFinishedBook,
   PlayerPosition,
   TOURNAMENT_SCORING_RULES_VERSION,
 } from '@baseball/shared';
@@ -23,6 +24,7 @@ import { getSupabaseClient } from '../lib/supabase';
 import type { Database as RemoteDatabase, Json } from '@baseball/database';
 import { pushTournamentEventQueue, reconcilePendingSequences, type TournamentSyncRejection } from './tournament-event-sync';
 import { deletedMessagesSince, splitDeletedMessages } from './message-deletions';
+import { pushOpponentPlayers } from './opponent-player-push';
 import {
   EMPTY_TEAM_BACKFILL,
   fetchAllByParentIds,
@@ -784,7 +786,11 @@ export async function syncWithSupabase(): Promise<void> {
       const lineupsSince = migratedTables.has('game_lineups') ? epoch : since;
       const leaguePlayersSince = migratedTables.has('league_players') ? epoch : since;
       const playersSince = migratedColumnTables.has('players') ? epoch : since;
-      const oppPlayersSince = migratedTables.has('opponent_players') ? epoch : since;
+      // opponent_players gained league roster links and placeholders in v6.
+      const oppPlayersSince =
+        migratedTables.has('opponent_players') || migratedColumnTables.has('opponent_players')
+          ? epoch
+          : since;
       // games gained opponent_team_id in schema v3; backfill it from epoch on
       // the first sync after that migration or existing rows keep a null
       // column and the opponent roster stays unreachable.
@@ -943,6 +949,12 @@ export async function syncWithSupabase(): Promise<void> {
 
       dirtyLineupState = pulledDirtyState;
 
+      // A league game's result written onto this team's row must not end a
+      // game this phone is still scoring (see keepLocalPlayOverWrittenResult).
+      const localPlayByGame = await loadLocalPlayState(
+        pulledGameRows.filter((g) => g.result_source != null).map((g) => g.id as string),
+      );
+
       // Merge the RLS-scoped players pull with the league-identity RPC,
       // preferring the full table row when a player appears in both (the
       // coach's own roster is registered in the league too).
@@ -1052,7 +1064,10 @@ export async function syncWithSupabase(): Promise<void> {
           games: {
             created: [],
             updated: pulledGameRows.map((game) =>
-              mapGame(game, tournamentSettingsById),
+              keepLocalPlayOverWrittenResult(
+                mapGame(game, tournamentSettingsById),
+                localPlayByGame.get(game.id as string),
+              ),
             ),
             deleted: deletions.games,
           },
@@ -1233,25 +1248,17 @@ export async function syncWithSupabase(): Promise<void> {
       // 3b. Opponent players added at the field. RLS lets a coach on the
       // game's team insert these directly, so there is no server action in
       // the path and the whole flow works offline. Client UUID becomes the
-      // server PK, like game_events. Upsert without ignoreDuplicates so a
-      // name or jersey corrected after a partial push still merges.
+      // server PK, like game_events. A placeholder the server has since
+      // matched is refused by RLS; pushOpponentPlayers drops it rather than
+      // letting it fail every row with it (see opponent-player-push.ts).
       const createdOppPlayers = tableChanges.opponent_players?.created ?? [];
       const updatedOppPlayers = tableChanges.opponent_players?.updated ?? [];
-      const oppPlayerWrites = [...createdOppPlayers, ...updatedOppPlayers];
-      if (oppPlayerWrites.length > 0) {
-        const { error } = await supabase.from('opponent_players').upsert(
-          oppPlayerWrites.map((p) => ({
-            id: p.remote_id as string,
-            opponent_team_id: p.opponent_team_id as string,
-            first_name: p.first_name as string,
-            last_name: p.last_name as string,
-            jersey_number: (p.jersey_number as string | null) || null,
-            primary_position: ((p.primary_position as string | null) || null) as PlayerPosition | null,
-            is_active: (p.is_active as boolean | undefined) ?? true,
-          })),
-          { onConflict: 'id' },
+      const oppPlayerRows = [...createdOppPlayers, ...updatedOppPlayers];
+      if (oppPlayerRows.length > 0) {
+        const oppPlayerPush = await pushOpponentPlayers(oppPlayerRows, (writes) =>
+          supabase.from('opponent_players').upsert(writes, { onConflict: 'id' }),
         );
-        if (error) deferredErrors.push(`opponent_players upsert: ${error.message}`);
+        deferredErrors.push(...oppPlayerPush.errors);
       }
 
       // 3c. Opponent batting order. Must follow 3b — opponent_player_id is a
@@ -1511,8 +1518,9 @@ export function isFinalizeConfigured(
  * The mobile app cannot write the games table (RLS) nor run the web's
  * TypeScript finalization, which is why both transitions go server-side.
  */
-async function reconcileGameLifecycle(
+export async function reconcileGameLifecycle(
   supabase: ReturnType<typeof getSupabaseClient>,
+  apiBaseUrl: string | undefined = process.env.EXPO_PUBLIC_API_BASE_URL,
 ): Promise<void> {
   const lifecycleEvents = await database
     .get<GameEvent>('game_events')
@@ -1544,22 +1552,24 @@ async function reconcileGameLifecycle(
 
   const { data: serverGames, error } = await supabase
     .from('games')
-    .select('id, status')
+    .select('id, status, result_source')
     .in('id', candidates);
   if (error) {
     console.warn('sync: lifecycle status query failed', error);
     return;
   }
 
-  const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
   let accessToken: string | null = null;
 
   for (const g of serverGames ?? []) {
     if (blockedGames.has(g.id)) continue;
     const status = g.status as string;
 
-    // Terminal on the server — nothing left to reconcile this session.
-    if (status === 'completed' || status === 'cancelled') {
+    // Terminal on the server — nothing left to reconcile this session. A
+    // league game's row completed from the other team's book or by hand
+    // (result_source set) is not: this team's own book still has to finalize
+    // so the two books are compared.
+    if (isServerGameSettled(status, g.result_source ?? null)) {
       lifecycleReconciledGames.add(g.id as string);
       continue;
     }
@@ -1648,6 +1658,101 @@ async function reconcileGameLifecycle(
 }
 
 /**
+ * Whether the server holds a game as done with, so the lifecycle scan has
+ * nothing left to send: cancelled, or completed as the team's own finished
+ * book. A league game row completed by a written result (`result_source`
+ * 'paired' / 'manual') still needs this team's book finalized.
+ */
+function isServerGameSettled(status: string, resultSource: string | null): boolean {
+  if (resultSource !== null) return false;
+  return status === 'cancelled' || isFinishedBook({ status, result_source: resultSource });
+}
+
+/** What this phone knows about a game it may be scoring. */
+export interface LocalPlayState {
+  status: string;
+  homeScore: number;
+  awayScore: number;
+  currentInning: number;
+  isTopOfInning: boolean;
+  outs: number;
+  /**
+   * Any event for this game on the device, synced or not. A written result
+   * lands only on a row with no events, so these are this team's own book.
+   */
+  hasEvents: boolean;
+}
+
+type PulledGameRow = {
+  status: unknown;
+  home_score: unknown;
+  away_score: unknown;
+  current_inning: unknown;
+  is_top_of_inning: unknown;
+  outs: unknown;
+  result_source: unknown;
+};
+
+/**
+ * A league game's result written onto this team's row (from the other team's
+ * book, or by hand) lands only while the server row has no events, but this
+ * phone may already be scoring the game offline. While the local game is in
+ * progress or has any events of its own (unsynced, or synced but not yet
+ * finalized), keep its status, score and inning state; the result clears once
+ * this book is finalized.
+ */
+export function keepLocalPlayOverWrittenResult<T extends PulledGameRow>(
+  pulled: T,
+  local: LocalPlayState | undefined,
+): T {
+  if (pulled.result_source == null || !local) return pulled;
+  if (local.status !== 'in_progress' && !local.hasEvents) return pulled;
+  return {
+    ...pulled,
+    status: local.status,
+    home_score: local.homeScore,
+    away_score: local.awayScore,
+    current_inning: local.currentInning,
+    is_top_of_inning: local.isTopOfInning,
+    outs: local.outs,
+  };
+}
+
+/** Local play state of the given games, for keepLocalPlayOverWrittenResult. */
+export async function loadLocalPlayState(
+  gameRemoteIds: string[],
+): Promise<Map<string, LocalPlayState>> {
+  const states = new Map<string, LocalPlayState>();
+  if (gameRemoteIds.length === 0) return states;
+  const games = await database
+    .get<Game>('games')
+    .query(Q.where('remote_id', Q.oneOf(gameRemoteIds)))
+    .fetch();
+  // A count per game rather than the events themselves: a finished book is
+  // hundreds of rows, and only whether any exist matters.
+  const eventCounts = await Promise.all(
+    games.map((game) =>
+      database
+        .get<GameEvent>('game_events')
+        .query(Q.where('game_remote_id', game.remoteId))
+        .fetchCount(),
+    ),
+  );
+  games.forEach((game, index) => {
+    states.set(game.remoteId, {
+      status: game.status,
+      homeScore: game.homeScore,
+      awayScore: game.awayScore,
+      currentInning: game.currentInning,
+      isTopOfInning: game.isTopOfInning,
+      outs: game.outs,
+      hasEvents: eventCounts[index] > 0,
+    });
+  });
+  return states;
+}
+
+/**
  * Mark a game's synced local lineup rows as locally modified so a failed
  * server-snapshot convergence is retried on future cycles even across app
  * restarts (the in-memory retry set alone would be lost).
@@ -1674,7 +1779,7 @@ async function redirtyLineupRows(gameRemoteId: string): Promise<void> {
 
 // ─── mapping helpers ─────────────────────────────────────────────────────────
 
-function mapGame(
+export function mapGame(
   r: Record<string, unknown>,
   tournamentSettingsById: ReadonlyMap<string, unknown>,
 ) {
@@ -1709,6 +1814,8 @@ function mapGame(
       tournamentSettings == null ? null : JSON.stringify(tournamentSettings),
     tournament_rules_version:
       tournamentSettings == null ? null : TOURNAMENT_SCORING_RULES_VERSION,
+    league_game_id: r.league_game_id ?? null,
+    result_source: r.result_source ?? null,
     synced_at: Date.now(),
   };
 }
@@ -1777,7 +1884,7 @@ function mapLeaguePlayer(r: Record<string, unknown>) {
   };
 }
 
-function mapOpponentPlayer(r: Record<string, unknown>) {
+export function mapOpponentPlayer(r: Record<string, unknown>) {
   return {
     id: r.id,
     remote_id: r.id,
@@ -1789,6 +1896,9 @@ function mapOpponentPlayer(r: Record<string, unknown>) {
     jersey_number: r.jersey_number == null ? null : String(r.jersey_number),
     primary_position: r.primary_position ?? null,
     is_active: r.is_active ?? true,
+    linked_player_id: r.linked_player_id ?? null,
+    placeholder_game_id: r.placeholder_game_id ?? null,
+    is_fill_in: r.is_fill_in ?? false,
     updated_at: r.updated_at ? new Date(r.updated_at as string).getTime() : Date.now(),
     synced_at: Date.now(),
   };

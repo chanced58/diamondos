@@ -8,6 +8,15 @@ type GameLike = {
   neutral_home_team: string | null;
 };
 
+/** The `game_lineups` columns the lineup context needs. */
+export interface LineupRow {
+  game_id: string;
+  player_id: string | null;
+  batting_order: number | null;
+  is_guest: boolean | null;
+  count_toward_stats: boolean | null;
+}
+
 /**
  * Build the per-game lineup context used by deriveBattingStats to recover
  * stub batter IDs during our team's half-inning. Reads game_lineups for the
@@ -41,15 +50,22 @@ export async function buildLineupsByGameId(
     return lineupsByGameId;
   }
 
+  return lineupContextsFromRows(games, (lineupRows ?? []) as LineupRow[]);
+}
+
+/**
+ * The per-game lineup context from `game_lineups` rows already read (every
+ * row of each game): our batting order, home/away, and the guests whose
+ * appearances don't count toward stats. Games with neither are left out.
+ */
+export function lineupContextsFromRows(
+  games: GameLike[],
+  lineupRows: readonly LineupRow[],
+): Map<string, BattingLineupContext> {
+  const lineupsByGameId = new Map<string, BattingLineupContext>();
   const byGame = new Map<string, { playerId: string; battingOrder: number }[]>();
   const excludedByGame = new Map<string, Set<string>>();
-  for (const row of (lineupRows ?? []) as Array<{
-    game_id: string;
-    player_id: string | null;
-    batting_order: number | null;
-    is_guest: boolean | null;
-    count_toward_stats: boolean | null;
-  }>) {
+  for (const row of lineupRows) {
     // Guest appearances flagged count_toward_stats=false should be silently
     // dropped from the home team's batting stats per the league's stat-
     // attribution policy.

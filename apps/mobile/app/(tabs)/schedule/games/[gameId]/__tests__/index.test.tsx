@@ -58,6 +58,8 @@ function detail(overrides: Partial<GameDetailResponse['game']> = {}, isCoach = f
       latitude: null,
       longitude: null,
       tournamentId: null,
+      leagueGameId: null,
+      resultSource: null,
       ...overrides,
     },
     viewer: { isCoach },
@@ -228,6 +230,53 @@ it('should let the home coach accept the away value for a conflict', () => {
     { reconciliationId: 'recon-1', conflictKey: 'final_score:home', useAwayValue: true },
     expect.any(Object),
   );
+});
+
+function givenConflict(conflict: { overridden: boolean; settled?: boolean }) {
+  givenDetail(
+    {
+      ...detail({ status: 'completed' }, true),
+      reconciliation: {
+        reconciliationId: 'recon-1',
+        homeTeamLabel: 'Huskies',
+        awayTeamLabel: 'Eagles',
+        canOverride: true,
+        conflicts: [{ key: 'final_score:home', label: 'Final score — home runs', homeLog: 2, awayLog: 3, ...conflict }],
+      },
+    },
+    'head_coach',
+  );
+}
+
+it('should let the home coach keep the home value as a decision', () => {
+  givenConflict({ overridden: false, settled: false });
+
+  render(<GameDetailScreen />);
+  expect(screen.getByText('Not settled')).toBeTruthy();
+  fireEvent.press(screen.getByText('Keep Huskies value'));
+
+  expect(mockActions.override.mutate).toHaveBeenCalledWith(
+    { reconciliationId: 'recon-1', conflictKey: 'final_score:home', useAwayValue: false },
+    expect.any(Object),
+  );
+});
+
+it('should offer only the other side once a conflict is settled', () => {
+  givenConflict({ overridden: false, settled: true });
+
+  render(<GameDetailScreen />);
+  expect(screen.queryByText('Not settled')).toBeNull();
+  expect(screen.queryByText('Keep Huskies value')).toBeNull();
+  expect(screen.getByText('Use Eagles value')).toBeTruthy();
+});
+
+it('should treat an accepted away value as settled when an older web sends no settled flag', () => {
+  givenConflict({ overridden: true });
+
+  render(<GameDetailScreen />);
+  expect(screen.queryByText('Not settled')).toBeNull();
+  expect(screen.getByText('Use Huskies value')).toBeTruthy();
+  expect(screen.queryByText('Use Eagles value')).toBeNull();
 });
 
 it('should open the game pages in the app, not on the web', () => {

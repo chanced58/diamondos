@@ -143,6 +143,19 @@ export default async function DashboardPage({
         )}
       </div>
 
+      {dashboard.pendingSettlements.length > 0 && (
+        <section className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 mb-5 text-sm text-amber-800">
+          {dashboard.pendingSettlements.map((p) => (
+            <div key={p.gameId} className="between" style={{ gap: 8 }}>
+              <span>Both teams scored {p.label} and the scorebooks differ.</span>
+              <Link href={`/games/${p.gameId}`} className="font-semibold underline">
+                Settle
+              </Link>
+            </div>
+          ))}
+        </section>
+      )}
+
       {liveCards.length > 0 && (
         <section
           style={{

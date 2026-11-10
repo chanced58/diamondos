@@ -71,7 +71,7 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
   // league settings with the platform defaults.
   const { data: scoringRow, error: scoringErr } = await db
     .from('leagues')
-    .select('scoring_settings, slug, visibility, home_theme, leader_config')
+    .select('scoring_settings, slug, visibility, home_theme, leader_config, schedules_games')
     .eq('id', league.id)
     .maybeSingle();
   if (scoringErr) {
@@ -104,6 +104,8 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
 
       <LeagueAdminClient
         leagueId={league.id}
+        leagueName={league.name}
+        leagueDescription={league.description}
         teams={teams.map((t) => ({
           id: t.id,
           teamId: t.team_id ?? t.opponent_team_id ?? '',
@@ -127,6 +129,7 @@ export default async function LeagueAdminPage(): Promise<JSX.Element | null> {
         })}
         isAdmin={access.isLeagueAdmin}
         scoringSettings={scoringSettings}
+        schedulesGames={scoringRow?.schedules_games ?? false}
         pitchRuleOptions={pitchRuleOptions}
         availableOpponentTeams={(availableOpponentTeams ?? []).map((t) => ({
           id: t.id,

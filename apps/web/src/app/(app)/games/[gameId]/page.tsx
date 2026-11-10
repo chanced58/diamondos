@@ -6,7 +6,14 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveLeague } from '@/lib/active-league';
 import { getUserAccess } from '@/lib/user-access';
-import { formatDate, formatTime, utcToZonedDateTime, weAreHome, type GameRsvpStatus } from '@baseball/shared';
+import {
+  formatDate,
+  formatTime,
+  utcToZonedDateTime,
+  weAreHome,
+  leagueGameControlRefusal,
+  type GameRsvpStatus,
+} from '@baseball/shared';
 import { CancelGameForm } from './CancelGameForm';
 import { StartGameForm } from './StartGameForm';
 import { LocationMap } from '@/components/maps/LocationMap';
@@ -14,6 +21,9 @@ import { EditGameButton, ResetGameForm, RecalculateScoresForm } from './GameDeta
 import { GameTakeaways } from './GameTakeaways';
 import { ReconciliationPanel } from './ReconciliationPanel';
 import { RsvpButtons } from './RsvpButtons';
+import { UnmatchedPlayersPanel } from '@/components/league-games/UnmatchedPlayersPanel';
+import { loadRosterOptions } from '@/lib/league-games/placeholder-rosters';
+import { listUnmatchedPlaceholders } from '@/lib/services/league-games/placeholders';
 import { AttendancePanel } from './AttendancePanel';
 import { loadReconciliationForGame } from '@/lib/dual-scorekeeper/load';
 import { getGameWeaknesses, listGameRsvpsForPlayers } from '@baseball/database';
@@ -174,6 +184,14 @@ export default async function GameDetailPage({
     : `Neutral site (${game.neutral_home_team === 'opponent' ? 'away' : 'home'})`;
   const vsAt = isHome ? 'vs' : '@';
   const isCompleted = game.status === 'completed';
+  // The same rules the services enforce: a league game is edited and
+  // cancelled from League Games, and a row whose result the league wrote has
+  // no book to recalculate or reset.
+  const canEditGame = isCoach && !leagueGameControlRefusal('edit', game);
+  const canRecalculate =
+    isCoach && (isCompleted || game.status === 'in_progress') && !leagueGameControlRefusal('recalculate', game);
+  const canReset = isCoach && game.status !== 'scheduled' && !leagueGameControlRefusal('reset', game);
+  const canCancel = isCoach && !leagueGameControlRefusal('cancel', game);
   // Treat NULL, empty, and whitespace-only opponent names as TBD. opponentForChild
   // is the empty-string normalisation passed to client components that key TBD
   // off `!opponentName`.
@@ -209,7 +227,15 @@ export default async function GameDetailPage({
   const { date: scheduledDate, time: scheduledTime } = utcToZonedDateTime(game.scheduled_at, game.time_zone);
 
   // Dual scorekeeper: surface the reconciliation panel once the game is done.
-  const reconciliation = isCompleted ? await loadReconciliationForGame(db, params.gameId) : null;
+  const reconciliation = isCompleted ? await loadReconciliationForGame(db, params.gameId, user.id) : null;
+
+  // League games: unknown players still to be matched, for those who may match them.
+  const unmatched =
+    isCompleted && game.league_game_id
+      ? await listUnmatchedPlaceholders(db, user.id, { leagueGameId: game.league_game_id as string })
+      : null;
+  const unmatchedPlaceholders = unmatched?.ok ? unmatched.data.placeholders.filter((p) => p.canResolve) : [];
+  const placeholderRosters = await loadRosterOptions(db, unmatchedPlaceholders.map((p) => p.teamId));
 
   return (
     <div className="p-8 max-w-2xl">
@@ -288,8 +314,8 @@ export default async function GameDetailPage({
         </div>
       )}
 
-      {/* ── Edit game (coaches only) ────────────────────────────── */}
-      {isCoach && (
+      {/* ── Edit game (coaches only; a league game is edited from League Games) ── */}
+      {canEditGame && (
         <div className="mb-6">
           <EditGameButton
             gameId={game.id}
@@ -332,14 +358,25 @@ export default async function GameDetailPage({
         </div>
       )}
 
+      {unmatchedPlaceholders.length > 0 && (
+        <UnmatchedPlayersPanel placeholders={unmatchedPlaceholders} rosters={placeholderRosters} />
+      )}
+
+      {reconciliation && reconciliation.unsettledCount > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 mb-4 text-sm text-amber-800">
+          Both teams scored this game and the scorebooks differ.
+        </div>
+      )}
+
       {reconciliation && (
         <ReconciliationPanel
           reconciliationId={reconciliation.reconciliationId}
           conflicts={reconciliation.conflicts}
           overrides={reconciliation.overrides}
-          canOverride={isCoach && reconciliation.viewerOnHomeSide}
+          canOverride={reconciliation.canSettle}
           homeTeamLabel={reconciliation.homeTeamLabel}
           awayTeamLabel={reconciliation.awayTeamLabel}
+          playerNames={reconciliation.playerNames}
         />
       )}
 
@@ -468,32 +505,30 @@ export default async function GameDetailPage({
         </div>
       )}
 
-      {/* ── Danger zone (coaches only) ──────────────────────────── */}
-      {isCoach && (
+      {/* ── Danger zone (coaches only; league games keep only what applies) ── */}
+      {(canRecalculate || canReset || canCancel) && (
         <div className="mt-4 pt-6 border-t border-gray-200">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
             Danger Zone
           </p>
           <div className="space-y-3">
-            {(game.status === 'completed' || game.status === 'in_progress') && (
-              <RecalculateScoresForm gameId={game.id} />
-            )}
-            {game.status !== 'scheduled' && (
-              <ResetGameForm gameId={game.id} />
-            )}
-            <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-red-900">Cancel this game</p>
-                <p className="text-xs text-red-600 mt-0.5">
-                  Marks the game as cancelled. The record is preserved.
-                </p>
+            {canRecalculate && <RecalculateScoresForm gameId={game.id} />}
+            {canReset && <ResetGameForm gameId={game.id} />}
+            {canCancel && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-red-900">Cancel this game</p>
+                  <p className="text-xs text-red-600 mt-0.5">
+                    Marks the game as cancelled. The record is preserved.
+                  </p>
+                </div>
+                <CancelGameForm
+                  gameId={game.id}
+                  opponentName={opponentForChild}
+                  currentStatus={game.status}
+                />
               </div>
-              <CancelGameForm
-                gameId={game.id}
-                opponentName={opponentForChild}
-                currentStatus={game.status}
-              />
-            </div>
+            )}
           </div>
         </div>
       )}

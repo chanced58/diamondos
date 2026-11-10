@@ -12,10 +12,9 @@ import {
 import { upsertGameRsvp } from '@baseball/database';
 // Game finalization + coach authorization live in @/lib/games/finalize so the
 // mobile finalize API route shares the exact same logic as endGameAction.
-import {
-  getAuthorizedCoach,
-  finalizeGame,
-} from '@/lib/games/finalize';
+import { finalizeGame } from '@/lib/games/finalize';
+import { ensureDefaultOpponentLineup } from '@/lib/games/default-opponent-lineup';
+import { authorizeGameScorer, authorizeGameStart } from '@/lib/services/games/authorize';
 import { cancelGame } from '@/lib/services/games/cancel-game';
 import { updateGame } from '@/lib/services/games/update-game';
 import { gameFormFieldsFromFormData } from '@/lib/services/games/game-form-data';
@@ -63,9 +62,10 @@ export async function startGameAction(_prevState: string | null | undefined, for
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error ?? null;
-  const { game } = result;
+  // Coaches of the game, or league staff on a league game's home row.
+  const result = await authorizeGameStart(supabase, user.id, gameId);
+  if (!result.ok) return result.error;
+  const game = result.data;
 
   if (game.status !== 'scheduled' && game.status !== 'in_progress') {
     return 'Game is not in a schedulable state.';
@@ -111,76 +111,10 @@ export async function startGameAction(_prevState: string | null | undefined, for
     return 'Set the lineup before starting the game.';
   }
 
-  // ── Auto-generate default opponent lineup if none exists ──────────────
-  // This allows coaches to start a game without pre-entering the opponent roster.
-  // Default players ("Player 1" through "Player 15") can be edited during or after the game.
-  const { count: oppLineupCount } = await supabase
-    .from('opponent_game_lineups')
-    .select('id', { count: 'exact', head: true })
-    .eq('game_id', gameId);
-
-  if (!oppLineupCount || oppLineupCount === 0) {
-    let opponentTeamId = game.opponent_team_id;
-
-    // Create opponent team if it doesn't exist
-    if (!opponentTeamId) {
-      const { data: newTeam, error: teamErr } = await supabase
-        .from('opponent_teams')
-        .insert({ team_id: game.team_id, name: game.opponent_name, created_by: user.id })
-        .select('id')
-        .single();
-      if (teamErr || !newTeam) return `Failed to create opponent team: ${teamErr?.message}`;
-
-      const { error: linkErr } = await supabase
-        .from('games')
-        .update({ opponent_team_id: newTeam.id })
-        .eq('id', gameId);
-      if (linkErr) {
-        // Rollback: remove the orphaned opponent team
-        await supabase.from('opponent_teams').delete().eq('id', newTeam.id);
-        return `Failed to link opponent team to game: ${linkErr.message}`;
-      }
-      opponentTeamId = newTeam.id;
-    }
-
-    // Check if the team already has players
-    const { data: existingPlayers } = await supabase
-      .from('opponent_players')
-      .select('id')
-      .eq('opponent_team_id', opponentTeamId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: true });
-
-    let playerIds: string[] = (existingPlayers ?? []).map((p) => p.id);
-
-    // Backfill to 15 default players if fewer exist
-    const needed = 15 - playerIds.length;
-    if (needed > 0) {
-      const startIdx = playerIds.length + 1;
-      const defaultPlayers = Array.from({ length: needed }, (_, i) => ({
-        opponent_team_id: opponentTeamId!,
-        first_name: 'Player',
-        last_name: String(startIdx + i),
-      }));
-      const { data: inserted, error: playersErr } = await supabase
-        .from('opponent_players')
-        .insert(defaultPlayers)
-        .select('id');
-      if (playersErr || !inserted) return `Failed to create default opponent players: ${playersErr?.message}`;
-      playerIds = [...playerIds, ...inserted.map((p) => p.id)];
-    }
-
-    // Create lineup entries for up to 9 players
-    const lineupEntries = playerIds.slice(0, 9).map((id, i) => ({
-      game_id: gameId,
-      opponent_player_id: id,
-      batting_order: i + 1,
-      is_starter: true,
-      starting_position: i === 0 ? 'pitcher' : null,
-    }));
-    const { error: lineupErr } = await supabase.from('opponent_game_lineups').insert(lineupEntries);
-    if (lineupErr) return `Failed to create default opponent lineup: ${lineupErr.message}`;
-  }
+  // A normal game with no opponent order gets a default one; a league game
+  // never does (its opponent roster belongs to the league).
+  const defaultLineupError = await ensureDefaultOpponentLineup(supabase, { gameId, game, userId: user.id });
+  if (defaultLineupError) return defaultLineupError;
 
   // Get starting pitcher — prefer the player with position 'pitcher'; fall back to first in order.
   // NOTE: starting_position stores the DB enum value ('pitcher'), not the UI abbreviation ('P').
@@ -440,8 +374,10 @@ export async function endGameAction(_prevState: string | null | undefined, formD
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const result = await getAuthorizedCoach(supabase, user.id, gameId);
-  if ('error' in result) return result.error ?? null;
+  // Coaches of the game, or league staff on a league game's home row (the
+  // book they may start, so they must be able to end it).
+  const result = await authorizeGameScorer(supabase, user.id, gameId);
+  if (!result.ok) return result.error;
 
   const finalized = await finalizeGame(supabase, {
     gameId,
@@ -457,7 +393,8 @@ export async function endGameAction(_prevState: string | null | undefined, formD
   if ('error' in finalized) return finalized.error;
 
   revalidatePath(`/dashboard`);
-  redirect(`/games/${gameId}`);
+  // League staff have no seat on the team, so the game page is closed to them.
+  redirect(result.data.asLeagueStaff ? '/league/admin/games' : `/games/${gameId}`);
 }
 
 export async function recalculateScoresAction(
@@ -596,9 +533,9 @@ export async function replayAtBatAction(
 }
 
 /**
- * Dual scorekeeper: the home team's coach overrides one reconciliation
- * conflict to accept the away log's value (or reverts to the canonical home
- * value). Overrides are recorded on the reconciliation row — they annotate the
+ * Dual scorekeeper: the settler decides one reconciliation conflict — the
+ * away log's value or the canonical home value, both recorded as a decision.
+ * Overrides are recorded on the reconciliation row — they annotate the
  * record and the displayed final line; they do not mutate the immutable
  * game_events log. Returns null on success or an error string.
  */

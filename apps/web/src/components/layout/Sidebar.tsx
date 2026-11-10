@@ -25,6 +25,8 @@ interface SidebarProps {
   subscriptionTier?: SubscriptionTier;
   hasPlayerProfile?: boolean;
   isLeagueAdmin?: boolean;
+  /** The league schedules its own games (`leagues.schedules_games`). */
+  leagueSchedulesGames?: boolean;
   userInitials?: string;
   userName?: string;
   userRole?: string;
@@ -54,6 +56,7 @@ export function Sidebar({
   subscriptionTier = SubscriptionTier.FREE,
   hasPlayerProfile,
   isLeagueAdmin,
+  leagueSchedulesGames = false,
   userInitials,
   userName = 'Coach',
   userRole,
@@ -99,6 +102,9 @@ export function Sidebar({
       ? [
           { href: '/league/admin', label: 'League Admin', icon: <Icon.admin /> },
           { href: '/league/admin/players', label: 'League Players', icon: <Icon.team /> },
+          ...(leagueSchedulesGames
+            ? [{ href: '/league/admin/games', label: 'League Games', icon: <Icon.admin /> }]
+            : []),
           { href: '/league/admin/import', label: 'Import Data', icon: <Icon.plus /> },
         ]
       : []),

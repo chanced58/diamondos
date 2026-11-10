@@ -1,9 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { gameIdInputSchema, type OpponentLineupResponse } from '@baseball/shared';
+import { gameIdInputSchema, isPickableOpponentPlayer, type OpponentLineupResponse } from '@baseball/shared';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import { authorizeOpponentLineupEdit, loadMaxBatters } from './context';
 
-/** The game's opponent team, active roster and batting order, for the coach editing them. */
+/**
+ * The game's opponent team, active roster and batting order, for the coach
+ * editing them. The roster is what a scorer may pick for this game: other
+ * league games' unknown players and fill-ins are left out.
+ */
 export async function loadOpponentLineup(
   db: SupabaseClient,
   actorUserId: string,
@@ -27,7 +31,7 @@ export async function loadOpponentLineup(
     game.opponentTeamId
       ? db
           .from('opponent_players')
-          .select('id, first_name, last_name, jersey_number, primary_position')
+          .select('id, first_name, last_name, jersey_number, primary_position, placeholder_game_id, is_fill_in')
           .eq('opponent_team_id', game.opponentTeamId)
           .eq('is_active', true)
           .order('last_name')
@@ -46,7 +50,14 @@ export async function loadOpponentLineup(
     opponentName: game.opponentName,
     opponentTeam: team ? { id: team.id, name: team.name } : null,
     maxBatters: maxBatters.data,
-    players: ((playersResult.data ?? []) as Record<string, unknown>[]).map((p) => ({
+    players: ((playersResult.data ?? []) as Record<string, unknown>[])
+      .filter((p) =>
+        isPickableOpponentPlayer(
+          { placeholderGameId: p.placeholder_game_id as string | null, isFillIn: p.is_fill_in as boolean | null },
+          game.leagueGameId,
+        ),
+      )
+      .map((p) => ({
       id: p.id as string,
       firstName: p.first_name as string,
       lastName: p.last_name as string,

@@ -7,13 +7,17 @@ import {
   weAreHome,
   type DashboardAnnouncement,
   type DashboardLiveGame,
+  type DashboardPendingSettlement,
   type DashboardRecentGame,
   type DashboardResponse,
   type DashboardUpcomingItem,
   type EventType,
   type GameEvent,
+  type ReconciliationOverride,
+  type ScoreConflict,
 } from '@baseball/shared';
 import { getLeagueForTeam, getLeagueTeamIds } from '@baseball/database';
+import { countUnsettledConflicts } from '@/lib/dual-scorekeeper/unsettled';
 import { fetchGameEventLog } from '@/lib/games/fetch-game-event-log';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import { resolveGameViewer } from '../games/authorize';
@@ -78,11 +82,12 @@ export async function loadDashboard(
     const teamNames: Record<string, string> = { [teamId]: team.name as string };
     const scopeTeamIds = view === 'league' ? await leagueScope(db, league!.id, teamId, teamNames) : [teamId];
 
-    const [schedule, liveGames, recentGames, announcements] = await Promise.all([
+    const [schedule, liveGames, recentGames, announcements, pendingSettlements] = await Promise.all([
       loadUpcoming(db, teamId, scopeTeamIds, view, teamNames),
       loadLiveGames(db, scopeTeamIds, teamNames),
       loadRecentGames(db, teamId, scopeTeamIds, view, teamNames),
       loadAnnouncements(db, teamId),
+      loadPendingSettlements(db, teamId),
     ]);
 
     const canPost = viewer.role !== null && (COACH_ROLES as readonly string[]).includes(viewer.role);
@@ -98,6 +103,7 @@ export async function loadDashboard(
       record: recordOf(recentGames),
       announcements: announcements.items,
       announcementChannelId: canPost ? announcements.firstChannelId : null,
+      pendingSettlements,
     });
   } catch (error) {
     console.error(`[loadDashboard] team=${teamId} actor=${actorUserId} failed:`, error);
@@ -306,6 +312,60 @@ async function loadAnnouncements(db: SupabaseClient, teamId: string): Promise<{ 
       channelName: channelNames.get(m.channel_id) ?? null,
     })),
   };
+}
+
+/**
+ * The team's completed league games whose scorebooks differ with a difference
+ * still unsettled: a reconciliation on the league game's home row with a
+ * conflict that has no override, and not marked resolved.
+ */
+async function loadPendingSettlements(db: SupabaseClient, teamId: string): Promise<DashboardPendingSettlement[]> {
+  const { data, error } = await db
+    .from('games')
+    .select('id, league_game_id, opponent_name')
+    .eq('team_id', teamId)
+    .eq('status', 'completed')
+    .not('league_game_id', 'is', null);
+  if (error) throw error;
+  const games = ((data ?? []) as Array<{ id: string; league_game_id?: string | null; opponent_name: string | null }>).filter(
+    (g): g is { id: string; league_game_id: string; opponent_name: string | null } => Boolean(g.league_game_id),
+  );
+  if (games.length === 0) return [];
+
+  const { data: leagueGames, error: leagueError } = await db
+    .from('league_games')
+    .select('id, home_game_id')
+    .in('id', games.map((g) => g.league_game_id));
+  if (leagueError) throw leagueError;
+  const homeByLeagueGame = new Map(
+    ((leagueGames ?? []) as Array<{ id: string; home_game_id: string | null }>).map((row) => [row.id, row.home_game_id]),
+  );
+  const homeGameIds = [...homeByLeagueGame.values()].filter((id): id is string => id !== null);
+  if (homeGameIds.length === 0) return [];
+
+  const { data: recons, error: reconError } = await db
+    .from('game_reconciliations')
+    .select('home_game_id, conflicts, resolved_overrides, resolved_at')
+    .in('home_game_id', homeGameIds);
+  if (reconError) throw reconError;
+  const unsettledHomeGames = new Set<string>();
+  for (const recon of (recons ?? []) as Array<{
+    home_game_id: string;
+    conflicts: ScoreConflict[] | null;
+    resolved_overrides: ReconciliationOverride[] | null;
+    resolved_at: string | null;
+  }>) {
+    if (countUnsettledConflicts(recon.conflicts, recon.resolved_overrides, recon.resolved_at) > 0) {
+      unsettledHomeGames.add(recon.home_game_id);
+    }
+  }
+
+  return games
+    .filter((g) => {
+      const homeGameId = homeByLeagueGame.get(g.league_game_id);
+      return homeGameId != null && unsettledHomeGames.has(homeGameId);
+    })
+    .map((g) => ({ gameId: g.id, label: `vs ${g.opponent_name ?? 'opponent'}` }));
 }
 
 /** Wins, losses and runs over the recent games, as the web's Recent record and Run diff tiles show. */

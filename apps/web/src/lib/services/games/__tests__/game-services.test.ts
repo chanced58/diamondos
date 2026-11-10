@@ -24,6 +24,10 @@ jest.mock('@baseball/database', () => ({
 jest.mock('@/lib/dual-scorekeeper/load', () => ({
   loadReconciliationForGame: (...args: unknown[]) => mockLoadReconciliation(...args),
 }));
+const mockRefreshLeagueGame = jest.fn();
+jest.mock('@/lib/league-games/refresh', () => ({
+  refreshLeagueGame: (...args: unknown[]) => mockRefreshLeagueGame(...args),
+}));
 
 const GAME_ID = '11111111-1111-4111-8111-111111111111';
 const RECON_ID = '22222222-2222-4222-8222-222222222222';
@@ -46,6 +50,7 @@ function fakeDb(results: Record<string, Result>, rpcResult: Result = { error: nu
         insert: (payload: unknown) => { call.op = 'insert'; call.payload = payload; return builder; },
         update: (payload: unknown) => { call.op = 'update'; call.payload = payload; return builder; },
         eq: (col: string, val: unknown) => { call.filters[col] = val; return builder; },
+        in: (col: string, val: unknown) => { call.filters[col] = val; return builder; },
         order: () => builder,
         limit: () => builder,
         maybeSingle: resolve,
@@ -172,6 +177,7 @@ describe('loadGameDetail', () => {
       homeTeamLabel: 'Huskies',
       awayTeamLabel: 'Eagles',
       viewerOnHomeSide: true,
+      canSettle: true,
     });
     const coach = fakeDb({ 'games.select': { data: gameRow }, 'team_members.select': { data: { role: 'head_coach' } } });
     const coachResult = await loadGameDetail(coach.db, 'coach-1', { gameId: GAME_ID });
@@ -182,15 +188,64 @@ describe('loadGameDetail', () => {
       awayTeamLabel: 'Eagles',
       canOverride: true,
       conflicts: [
-        { key: 'final_score:home', label: 'Final score — home runs', homeLog: 2, awayLog: 3, overridden: false },
-        { key: 'team_hits:away', label: 'Team hits — away', homeLog: 6, awayLog: 7, overridden: true },
+        { key: 'final_score:home', label: 'Final score — home runs', homeLog: 2, awayLog: 3, overridden: false, settled: false },
+        { key: 'team_hits:away', label: 'Team hits — away', homeLog: 6, awayLog: 7, overridden: true, settled: true },
       ],
     });
 
+    mockLoadReconciliation.mockResolvedValue({ ...(await mockLoadReconciliation()), canSettle: false });
     const parent = fakeDb({ 'games.select': { data: gameRow }, 'team_members.select': { data: { role: 'parent' } } });
     const parentResult = await loadGameDetail(parent.db, 'parent-1', { gameId: GAME_ID });
     if (!parentResult.ok) throw new Error(parentResult.error);
     expect(parentResult.data.reconciliation?.canOverride).toBe(false);
+  });
+
+  it("should name players and show a player's whole line on the away value once any of it is accepted", async () => {
+    mockLoadReconciliation.mockResolvedValue({
+      reconciliationId: RECON_ID,
+      homeGameId: GAME_ID,
+      awayGameId: 'away-game',
+      conflicts: [
+        { kind: 'player_batting', playerId: 'p-ada', stat: 'hits', homeLog: 1, awayLog: 2 },
+        { kind: 'player_batting', playerId: 'p-ada', stat: 'rbi', homeLog: 0, awayLog: 1 },
+        { kind: 'player_pitching', playerId: 'p-unknown-123', stat: 'strikeouts', homeLog: 4, awayLog: 5 },
+      ],
+      overrides: [{ key: 'player_batting:p-ada:rbi', useAwayValue: true }],
+      homeTeamLabel: 'Huskies',
+      awayTeamLabel: 'Eagles',
+      viewerOnHomeSide: true,
+      canSettle: true,
+      playerNames: { 'p-ada': 'Ada Abbott' },
+    });
+    const coach = fakeDb({ 'games.select': { data: gameRow }, 'team_members.select': { data: { role: 'head_coach' } } });
+    const result = await loadGameDetail(coach.db, 'coach-1', { gameId: GAME_ID });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.data.reconciliation?.conflicts.map((c) => [c.label, c.overridden, c.settled])).toEqual([
+      ['Batting · hits (Ada Abbott)', true, true],
+      ['Batting · rbi (Ada Abbott)', true, true],
+      ['Pitching · strikeouts (player p-unknow)', false, false],
+    ]);
+  });
+
+  it('should show a conflict kept at the home value as settled', async () => {
+    mockLoadReconciliation.mockResolvedValue({
+      reconciliationId: RECON_ID,
+      homeGameId: GAME_ID,
+      awayGameId: 'away-game',
+      conflicts: [{ kind: 'final_score', side: 'home', homeLog: 2, awayLog: 3 }],
+      overrides: [{ key: 'final_score:home', useAwayValue: false }],
+      homeTeamLabel: 'Huskies',
+      awayTeamLabel: 'Eagles',
+      viewerOnHomeSide: true,
+      canSettle: true,
+      playerNames: {},
+    });
+    const coach = fakeDb({ 'games.select': { data: gameRow }, 'team_members.select': { data: { role: 'head_coach' } } });
+    const result = await loadGameDetail(coach.db, 'coach-1', { gameId: GAME_ID });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.data.reconciliation?.conflicts).toEqual([
+      expect.objectContaining({ key: 'final_score:home', overridden: false, settled: true }),
+    ]);
   });
 });
 
@@ -213,6 +268,15 @@ describe('cancelGame', () => {
     expect(mockPostEventAlert).toHaveBeenCalledWith(db, 'team-1', 'coach-1', expect.stringContaining('Eagles'));
   });
 
+  it('should leave cancelling a league game to League Games', async () => {
+    mockGetAuthorizedCoach.mockResolvedValue({ game: { ...authorizedGame, status: 'scheduled', league_game_id: 'lg-1' } });
+    const { db, calls } = fakeDb({});
+    expect(await cancelGame(db, 'coach-1', { gameId: GAME_ID, notifyTeam: true }))
+      .toEqual({ ok: false, code: 'conflict', error: 'League admins cancel league games from League Games.' });
+    expect(calls.filter((c) => c.op === 'update')).toHaveLength(0);
+    expect(mockPostEventAlert).not.toHaveBeenCalled();
+  });
+
   it('should not announce a cancelled game against a TBD opponent', async () => {
     mockGetAuthorizedCoach.mockResolvedValue({ game: { ...authorizedGame, opponent_name: '  ' } });
     const { db } = fakeDb({});
@@ -228,6 +292,25 @@ describe('resetGame', () => {
     expect(await resetGame(db, 'coach-1', { gameId: GAME_ID }, 'mobile'))
       .toEqual({ ok: false, code: 'conflict', error: 'Game is already in scheduled state.' });
     expect(calls.filter((c) => c.op !== 'select')).toHaveLength(0);
+  });
+
+  it('should refuse a row whose result the league wrote and a finished league book', async () => {
+    for (const game of [
+      { ...authorizedGame, status: 'completed', league_game_id: 'lg-1', result_source: 'manual' },
+      { ...authorizedGame, status: 'completed', league_game_id: 'lg-1', result_source: null },
+    ]) {
+      mockGetAuthorizedCoach.mockResolvedValue({ game });
+      const { db, calls } = fakeDb({});
+      expect(await resetGame(db, 'coach-1', { gameId: GAME_ID }, 'web')).toMatchObject({ ok: false, code: 'conflict' });
+      expect(calls.filter((c) => c.op !== 'select')).toHaveLength(0);
+    }
+  });
+
+  it('should still reset a league book that is in progress', async () => {
+    mockGetAuthorizedCoach.mockResolvedValue({ game: { ...authorizedGame, status: 'in_progress', league_game_id: 'lg-1', result_source: null } });
+    const { db, calls } = fakeDb({ 'game_events.select': { data: { sequence_number: 3 } } });
+    expect(await resetGame(db, 'coach-1', { gameId: GAME_ID }, 'web')).toMatchObject({ ok: true });
+    expect(calls.some((c) => c.table === 'game_events' && c.op === 'insert')).toBe(true);
   });
 
   it('should append a game_reset event after the last one and reschedule the game', async () => {
@@ -252,6 +335,23 @@ describe('recalculateScores', () => {
       .toEqual({ ok: true, data: { gameId: GAME_ID, homeScore: 7, awayScore: 4 } });
     const update = calls.find((c) => c.table === 'games' && c.op === 'update');
     expect(update?.payload).toMatchObject({ home_score: 7, away_score: 4 });
+    expect(mockRefreshLeagueGame).not.toHaveBeenCalled();
+  });
+
+  it('should refuse a row whose result the league wrote', async () => {
+    mockGetAuthorizedCoach.mockResolvedValue({ game: { ...authorizedGame, league_game_id: 'lg-1', result_source: 'paired' } });
+    const { db, calls } = fakeDb({});
+    expect(await recalculateScores(db, 'coach-1', { gameId: GAME_ID })).toMatchObject({ ok: false, code: 'conflict' });
+    expect(calls.filter((c) => c.op === 'update')).toHaveLength(0);
+    expect(mockDeriveScores).not.toHaveBeenCalled();
+  });
+
+  it("should refresh the league game after recalculating a team's finished league book", async () => {
+    mockGetAuthorizedCoach.mockResolvedValue({ game: { ...authorizedGame, league_game_id: 'lg-1', result_source: null } });
+    mockDeriveScores.mockResolvedValue({ homeScore: 2, awayScore: 1 });
+    const { db } = fakeDb({});
+    expect(await recalculateScores(db, 'coach-1', { gameId: GAME_ID })).toMatchObject({ ok: true });
+    expect(mockRefreshLeagueGame).toHaveBeenCalledWith(db, 'lg-1', 'coach-1');
   });
 });
 
@@ -269,28 +369,70 @@ describe('resolveReconciliationConflict', () => {
       .toEqual({ ok: false, code: 'not_found', error: 'Reconciliation not found.' });
   });
 
+  // The home game of a paired game outside a league, and the actor's seats on its team.
+  const settler = (role: string | null): Record<string, Result> => ({
+    'games.select': { data: { team_id: 'team-1', league_game_id: null } },
+    'user_profiles.select': { data: { is_platform_admin: false } },
+    'team_members.select': { data: role ? [{ team_id: 'team-1', role }] : [] },
+  });
+
   it('should only let the home coach override', async () => {
-    mockGetAuthorizedCoach.mockResolvedValue({ error: 'Only coaches can perform this action.', code: 'forbidden' });
-    const { db, rpcCalls } = fakeDb({ 'game_reconciliations.select': { data: recon } });
+    const { db, rpcCalls } = fakeDb({ ...settler(null), 'game_reconciliations.select': { data: recon } });
     expect(await resolveReconciliationConflict(db, 'away-coach', input))
       .toEqual({ ok: false, code: 'forbidden', error: 'Only the home team coach can resolve conflicts.' });
-    expect(mockGetAuthorizedCoach).toHaveBeenCalledWith(db, 'away-coach', GAME_ID);
     expect(rpcCalls).toHaveLength(0);
   });
 
   it('should reject a key that is no longer a current conflict', async () => {
-    const { db, rpcCalls } = fakeDb({ 'game_reconciliations.select': { data: recon } });
+    const { db, rpcCalls } = fakeDb({ ...settler('head_coach'), 'game_reconciliations.select': { data: recon } });
     const result = await resolveReconciliationConflict(db, 'coach-1', { ...input, conflictKey: 'team_hits:home' });
     expect(result).toEqual({ ok: false, code: 'conflict', error: 'That conflict no longer exists — reload the game.' });
     expect(rpcCalls).toHaveLength(0);
   });
 
   it('should save the override through the atomic RPC', async () => {
-    const { db, rpcCalls } = fakeDb({ 'game_reconciliations.select': { data: recon } });
+    const { db, rpcCalls } = fakeDb({ ...settler('head_coach'), 'game_reconciliations.select': { data: recon } });
     expect(await resolveReconciliationConflict(db, 'coach-1', input))
       .toEqual({ ok: true, data: { homeGameId: GAME_ID } });
     expect(rpcCalls).toEqual([['set_reconciliation_override', {
       p_reconciliation_id: RECON_ID, p_key: 'final_score:home', p_use_away: true, p_resolved_by: 'coach-1',
     }]]);
+  });
+
+  describe('per player', () => {
+    const playerRecon = {
+      ...recon,
+      conflicts: [
+        { kind: 'player_batting', playerId: 'a1', stat: 'hits', homeLog: 1, awayLog: 2 },
+        { kind: 'player_pitching', playerId: 'a1', stat: 'strikeouts', homeLog: 3, awayLog: 4 },
+        { kind: 'player_batting', playerId: 'b2', stat: 'hits', homeLog: 0, awayLog: 1 },
+      ],
+    };
+    const keysWritten = (rpcCalls: [string, unknown][]) =>
+      rpcCalls.map(([, args]) => [(args as { p_key: string }).p_key, (args as { p_use_away: boolean }).p_use_away]);
+
+    it("should accept a player's whole line on every one of their conflicts", async () => {
+      const { db, rpcCalls } = fakeDb({ ...settler('head_coach'), 'game_reconciliations.select': { data: playerRecon } });
+      const result = await resolveReconciliationConflict(db, 'coach-1', {
+        reconciliationId: RECON_ID, conflictKey: 'player_batting:a1:hits', useAwayValue: true,
+      });
+      expect(result.ok).toBe(true);
+      expect(keysWritten(rpcCalls)).toEqual([
+        ['player_batting:a1:hits', true],
+        ['player_pitching:a1:strikeouts', true],
+      ]);
+    });
+
+    it("should record the home line on every conflict of that player and no one else's", async () => {
+      const { db, rpcCalls } = fakeDb({ ...settler('head_coach'), 'game_reconciliations.select': { data: playerRecon } });
+      const result = await resolveReconciliationConflict(db, 'coach-1', {
+        reconciliationId: RECON_ID, conflictKey: 'player_batting:a1:hits', useAwayValue: false,
+      });
+      expect(result.ok).toBe(true);
+      expect(keysWritten(rpcCalls)).toEqual([
+        ['player_batting:a1:hits', false],
+        ['player_pitching:a1:strikeouts', false],
+      ]);
+    });
   });
 });

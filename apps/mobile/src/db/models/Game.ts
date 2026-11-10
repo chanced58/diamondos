@@ -32,6 +32,14 @@ export class Game extends Model {
   @field('tournament_id') tournamentId!: string | undefined;
   @field('tournament_scoring_settings') tournamentScoringSettings!: string | undefined;
   @field('tournament_rules_version') tournamentRulesVersion!: number | undefined;
+  /** league_games.id when this is one team's row of a league game. */
+  @field('league_game_id') leagueGameId!: string | undefined;
+  /**
+   * 'paired' or 'manual' when the row's result was written from the other
+   * team's book or by hand rather than scored by this team; undefined for a
+   * team's own book and for every game outside a league that schedules games.
+   */
+  @field('result_source') resultSource!: string | undefined;
 
   @children('game_events') events!: import('@nozbe/watermelondb').Query<InstanceType<typeof GameEvent>>;
 }

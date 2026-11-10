@@ -11,7 +11,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
  * next launch.
  */
 export const schema = appSchema({
-  version: 5,
+  version: 6,
   tables: [
     tableSchema({
       name: 'games',
@@ -36,6 +36,8 @@ export const schema = appSchema({
         { name: 'tournament_id', type: 'string', isOptional: true },
         { name: 'tournament_scoring_settings', type: 'string', isOptional: true },
         { name: 'tournament_rules_version', type: 'number', isOptional: true },
+        { name: 'league_game_id', type: 'string', isOptional: true }, // set on both teams' rows of a league game
+        { name: 'result_source', type: 'string', isOptional: true },  // 'paired' | 'manual' = result written from elsewhere
       ],
     }),
     tableSchema({
@@ -140,6 +142,9 @@ export const schema = appSchema({
         { name: 'is_active', type: 'boolean' },
         { name: 'updated_at', type: 'number' },
         { name: 'synced_at', type: 'number', isOptional: true },
+        { name: 'linked_player_id', type: 'string', isOptional: true },     // league roster record → players.id
+        { name: 'placeholder_game_id', type: 'string', isOptional: true, isIndexed: true }, // unknown player of one league game
+        { name: 'is_fill_in', type: 'boolean' },
       ],
     }),
     // The opponent's batting order for one game. Server-side this table has

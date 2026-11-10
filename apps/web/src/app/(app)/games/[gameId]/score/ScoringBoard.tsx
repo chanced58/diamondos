@@ -571,6 +571,7 @@ function ScoringBoardContent({
   currentUserId,
   isCoach,
   isDemo = false,
+  backHref,
   seasonSprayPoints,
   scoringConfig: initialScoringConfig,
   leagueSettings,
@@ -589,6 +590,8 @@ function ScoringBoardContent({
   currentUserId: string;
   isCoach: boolean;
   isDemo?: boolean;
+  /** Where Back goes; the game page by default (league staff, who can't open it, go to League Games). */
+  backHref?: string;
   seasonSprayPoints?: Record<string, SprayPt[]>;
   scoringConfig?: ScoringConfig;
   leagueSettings?: LeagueScoringSettings;
@@ -1952,7 +1955,7 @@ function ScoringBoardContent({
       {/* ── Header ──────────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
         <Link
-          href={isDemo ? '/games' : `/games/${game.id}`}
+          href={isDemo ? '/games' : backHref ?? `/games/${game.id}`}
           className="text-sm text-brand-700 hover:underline"
         >
           ← {isDemo ? 'Exit Demo' : 'Back'}

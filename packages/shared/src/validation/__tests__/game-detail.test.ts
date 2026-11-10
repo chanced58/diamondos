@@ -57,8 +57,21 @@ describe('resolveReconciliationConflictInputSchema', () => {
 describe('gameDetailResponseSchema', () => {
   it('should accept a full payload and strip unknown keys', () => {
     const parsed = gameDetailResponseSchema.parse({ ...detail, extra: 'ignored' });
-    // Older servers omit the venue address and place id; they parse as null.
-    expect(parsed).toEqual({ ...detail, game: { ...detail.game, venueAddress: null, placeId: null } });
+    // Older servers omit the venue address, place id and league fields; they parse as null.
+    expect(parsed).toEqual({
+      ...detail,
+      game: { ...detail.game, venueAddress: null, placeId: null, leagueGameId: null, resultSource: null },
+    });
+  });
+
+  it('should carry whether a conflict is settled, and accept an older server that omits it', () => {
+    const conflict = { key: 'final_score:home', label: 'Final score', homeLog: 2, awayLog: 3, overridden: false };
+    const withReconciliation = (conflicts: unknown[]) => ({
+      ...detail,
+      reconciliation: { reconciliationId: 'r', homeTeamLabel: 'H', awayTeamLabel: 'A', canOverride: true, conflicts },
+    });
+    const parsed = gameDetailResponseSchema.parse(withReconciliation([{ ...conflict, settled: true }, conflict]));
+    expect(parsed.reconciliation?.conflicts.map((c) => c.settled)).toEqual([true, undefined]);
   });
 
   it('should reject an unknown game status', () => {

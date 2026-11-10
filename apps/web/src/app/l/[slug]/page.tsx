@@ -159,7 +159,13 @@ export default async function LeagueHomePage({
         return (
           <section key="recent">
             <h2 className="display mb-3 text-xl font-bold">Around the League</h2>
-            <RecentUpcoming recent={data.recent} upcoming={data.upcoming} slug={params.slug} season={data.season} />
+            <RecentUpcoming
+              recent={data.recent}
+              upcoming={data.upcoming}
+              leagueGames={data.leagueGames}
+              slug={params.slug}
+              season={data.season}
+            />
           </section>
         );
       default:

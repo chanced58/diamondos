@@ -7,7 +7,7 @@ import {
   voidGameEventInputSchema,
 } from '@baseball/shared';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
-import { authorizeGameCoach } from '../games/authorize';
+import { authorizeGameStart } from '../games/authorize';
 import { appendGameEvents } from './append-events';
 
 /**
@@ -15,6 +15,8 @@ import { appendGameEvents } from './append-events';
  * each correction appends: a void marker hides an event from replay, and a
  * new event with `insertAfterSequence` slots into its place in the log.
  * `deviceId` records where the correction came from ('web' or the phone).
+ * The game's coaches correct it, and so do league staff on a league game's
+ * home row, the book they may start and end (`authorizeGameStart`).
  */
 
 type Corrected = ServiceResult<{ gameId: string }>;
@@ -76,7 +78,7 @@ export async function voidGameEvent(
   if (!parsed.success) return invalidInput(parsed.error);
   const { gameId, eventId } = parsed.data;
 
-  const auth = await authorizeGameCoach(db, actorUserId, gameId);
+  const auth = await authorizeGameStart(db, actorUserId, gameId);
   if (!auth.ok) return auth;
 
   const target = await findEvents(db, gameId, [eventId]);
@@ -97,7 +99,7 @@ export async function insertCorrectionEvents(
   if (!parsed.success) return invalidInput(parsed.error);
   const { gameId, events } = parsed.data;
 
-  const auth = await authorizeGameCoach(db, actorUserId, gameId);
+  const auth = await authorizeGameStart(db, actorUserId, gameId);
   if (!auth.ok) return auth;
 
   const appended = await appendGameEvents(db, {
@@ -125,7 +127,7 @@ export async function replaceGameEvent(
   if (!parsed.success) return invalidInput(parsed.error);
   const { gameId, eventId, eventType, payload } = parsed.data;
 
-  const auth = await authorizeGameCoach(db, actorUserId, gameId);
+  const auth = await authorizeGameStart(db, actorUserId, gameId);
   if (!auth.ok) return auth;
 
   const target = await findEvents(db, gameId, [eventId]);
@@ -160,7 +162,7 @@ export async function replayAtBat(
   if (!parsed.success) return invalidInput(parsed.error);
   const { gameId, voidEventIds, newEvents, inning, isTopOfInning, insertAfterSequence } = parsed.data;
 
-  const auth = await authorizeGameCoach(db, actorUserId, gameId);
+  const auth = await authorizeGameStart(db, actorUserId, gameId);
   if (!auth.ok) return auth;
 
   let voids: ReturnType<typeof voidMarker>[] = [];

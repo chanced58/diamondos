@@ -53,6 +53,10 @@ export const gameDetailGameSchema = z.object({
   latitude: z.number().nullable(),
   longitude: z.number().nullable(),
   tournamentId: z.string().nullable(),
+  /** The league game this row is a team's book of; absent from older servers. */
+  leagueGameId: z.string().nullish().transform((value) => value ?? null),
+  /** 'paired' / 'manual' when the league wrote this row's result; absent from older servers. */
+  resultSource: z.string().nullish().transform((value) => value ?? null),
 });
 
 export const gameTakeawaySchema = z.object({
@@ -71,6 +75,12 @@ export const gameReconciliationConflictSchema = z.object({
   awayLog: z.number().nullable(),
   /** The away value has been accepted in place of the home value. */
   overridden: z.boolean(),
+  /**
+   * The settler has made a choice here (the home value or the away one). A
+   * player's conflicts are decided together. Missing from an older web
+   * deploy, where only an accepted away value was recorded.
+   */
+  settled: z.boolean().optional(),
 });
 
 export const gameDetailResponseSchema = z.object({

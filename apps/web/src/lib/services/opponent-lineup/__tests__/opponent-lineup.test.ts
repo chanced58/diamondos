@@ -6,6 +6,10 @@ import { autoFillOpponentLineup, saveOpponentLineup } from '../opponent-batting-
 
 const mockGetAuthorizedCoach = jest.fn();
 const mockGetScoringSettings = jest.fn();
+const mockAuthorizeLeagueStaff = jest.fn();
+jest.mock('../../league-admin/authorize', () => ({
+  authorizeLeagueStaff: (...args: unknown[]) => mockAuthorizeLeagueStaff(...args),
+}));
 jest.mock('@/lib/games/finalize', () => ({
   getAuthorizedCoach: (...args: unknown[]) => mockGetAuthorizedCoach(...args),
 }));
@@ -21,6 +25,9 @@ const GAME_ID = '11111111-1111-4111-8111-111111111111';
 const P1 = '22222222-2222-4222-8222-222222222222';
 const P2 = '33333333-3333-4333-8333-333333333333';
 const OPP_TEAM = 'opp-team-1';
+const LEAGUE_GAME = '99999999-9999-4999-8999-999999999999';
+/** A league-owned mirror of a real team's roster. */
+const ROSTER_RECORD = { league_id: 'league-1', linked_team_id: 'team-2' };
 
 const coachGame = (over: Record<string, unknown> = {}) =>
   mockGetAuthorizedCoach.mockResolvedValue({
@@ -30,6 +37,7 @@ const coachGame = (over: Record<string, unknown> = {}) =>
 beforeEach(() => {
   mockGetAuthorizedCoach.mockReset();
   mockGetScoringSettings.mockReset().mockResolvedValue({});
+  mockAuthorizeLeagueStaff.mockReset();
   jest.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -38,7 +46,22 @@ describe('authorization', () => {
     mockGetAuthorizedCoach.mockResolvedValue({ error: 'Only coaches can perform this action.' });
     const { db, calls } = fakeDb();
     expect(await loadOpponentLineup(db, 'parent', { gameId: GAME_ID })).toMatchObject({ ok: false, code: 'forbidden' });
-    expect(calls).toHaveLength(0);
+    expect(calls.every((c) => c.table === 'league_games' && c.op === 'select')).toBe(true);
+  });
+
+  it('should let league staff edit the home row of a league game', async () => {
+    mockGetAuthorizedCoach.mockResolvedValue({ error: 'Only coaches can perform this action.' });
+    mockAuthorizeLeagueStaff.mockResolvedValue({ ok: true, data: {} });
+    const { db } = fakeDb({
+      'league_games.select': { data: { league_id: 'league-1' } },
+      'games.select': {
+        data: { team_id: 'team-1', opponent_name: 'Eagles', opponent_team_id: OPP_TEAM, status: 'scheduled', tournament_id: null },
+      },
+      'opponent_teams.select': { data: { id: OPP_TEAM, name: 'Eagles' } },
+      'opponent_players.select': { data: [] },
+      'opponent_game_lineups.select': { data: [] },
+    });
+    expect(await loadOpponentLineup(db, 'staff', { gameId: GAME_ID })).toMatchObject({ ok: true });
   });
 
   it('should refuse edits to a started tournament game', async () => {
@@ -82,7 +105,7 @@ describe('saveOpponentTeam', () => {
     const { db, calls } = fakeDb();
     const result = await saveOpponentTeam(db, 'coach', { gameId: GAME_ID, name: ' Lincoln Eagles ' });
     expect(result).toEqual({ ok: true, data: { opponentTeamId: OPP_TEAM } });
-    const update = calls.find((c) => c.table === 'opponent_teams');
+    const update = calls.find((c) => c.table === 'opponent_teams' && c.op === 'update');
     expect(update).toMatchObject({ op: 'update', filters: { id: OPP_TEAM, team_id: 'team-1' } });
     expect(update?.payload).toMatchObject({ name: 'Lincoln Eagles' });
   });
@@ -108,9 +131,51 @@ describe('opponent roster', () => {
       gameId: GAME_ID, firstName: 'Ty', lastName: 'Cobb', jerseyNumber: ' ', primaryPosition: 'center_field',
     });
     expect(result).toEqual({ ok: true, data: { playerId: P1 } });
-    expect(calls[0].payload).toEqual({
+    expect(calls.find((c) => c.op === 'insert')?.payload).toEqual({
       opponent_team_id: OPP_TEAM, first_name: 'Ty', last_name: 'Cobb', jersey_number: null, primary_position: 'center_field',
     });
+  });
+
+  it("should tie an unknown player to the game's league game", async () => {
+    coachGame({ league_game_id: LEAGUE_GAME });
+    const { db, calls } = fakeDb({
+      'opponent_teams.select': { data: ROSTER_RECORD },
+      'opponent_players.insert': { data: { id: P1 } },
+    });
+    const result = await addOpponentPlayer(db, 'coach', { gameId: GAME_ID, firstName: 'Unknown', lastName: '#7', placeholder: true });
+    expect(result).toEqual({ ok: true, data: { playerId: P1 } });
+    expect(calls.find((c) => c.table === 'opponent_players')?.payload).toMatchObject({
+      opponent_team_id: OPP_TEAM, placeholder_game_id: LEAGUE_GAME,
+    });
+  });
+
+  it('should make every player added in a league game a placeholder, even unasked', async () => {
+    coachGame({ league_game_id: LEAGUE_GAME });
+    const { db, calls } = fakeDb({
+      'opponent_teams.select': { data: ROSTER_RECORD },
+      'opponent_players.insert': { data: { id: P1 } },
+    });
+    const result = await addOpponentPlayer(db, 'coach', { gameId: GAME_ID, firstName: 'Ty', lastName: 'Cobb' });
+    expect(result).toEqual({ ok: true, data: { playerId: P1 } });
+    expect(calls.find((c) => c.table === 'opponent_players' && c.op === 'insert')?.payload).toMatchObject({
+      placeholder_game_id: LEAGUE_GAME, first_name: 'Ty',
+    });
+  });
+
+  it('should refuse a regular player on a league roster record outside a league game', async () => {
+    coachGame();
+    const { db, calls } = fakeDb({ 'opponent_teams.select': { data: ROSTER_RECORD } });
+    const result = await addOpponentPlayer(db, 'coach', { gameId: GAME_ID, firstName: 'Ty', lastName: 'Cobb' });
+    expect(result).toMatchObject({ ok: false, code: 'conflict' });
+    expect(calls.some((c) => c.table === 'opponent_players')).toBe(false);
+  });
+
+  it('should refuse an unknown player outside a league game', async () => {
+    coachGame();
+    const { db, calls } = fakeDb();
+    const result = await addOpponentPlayer(db, 'coach', { gameId: GAME_ID, firstName: 'Unknown', lastName: '#7', placeholder: true });
+    expect(result).toMatchObject({ ok: false, code: 'invalid' });
+    expect(calls.some((c) => c.table === 'opponent_players')).toBe(false);
   });
 
   it('should need an opponent team before adding players', async () => {
@@ -124,8 +189,9 @@ describe('opponent roster', () => {
     coachGame();
     const { db, calls } = fakeDb({ 'opponent_players.update': { data: [] } });
     expect(await removeOpponentPlayer(db, 'coach', { gameId: GAME_ID, playerId: P1 })).toMatchObject({ ok: false, code: 'not_found' });
-    expect(calls[0].filters).toEqual({ id: P1, opponent_team_id: OPP_TEAM });
-    expect(calls[0].payload).toMatchObject({ is_active: false, updated_at: expect.any(String) });
+    const update = calls.find((c) => c.table === 'opponent_players' && c.op === 'update');
+    expect(update?.filters).toEqual({ id: P1, opponent_team_id: OPP_TEAM });
+    expect(update?.payload).toMatchObject({ is_active: false, updated_at: expect.any(String) });
   });
 
   it('should stamp updated_at on edits so phones pull them', async () => {
@@ -135,7 +201,101 @@ describe('opponent roster', () => {
       gameId: GAME_ID, playerId: P1, firstName: 'Ty', lastName: 'Cobb', jerseyNumber: '07', primaryPosition: null,
     });
     expect(result).toEqual({ ok: true, data: { playerId: P1 } });
-    expect(calls[0].payload).toMatchObject({ jersey_number: '07', primary_position: null, updated_at: expect.any(String) });
+    expect(calls.find((c) => c.op === 'update')?.payload).toMatchObject({
+      jersey_number: '07', primary_position: null, updated_at: expect.any(String),
+    });
+  });
+});
+
+describe('opponent roster on a league roster record', () => {
+  const edit = { gameId: GAME_ID, playerId: P1, firstName: 'Ty', lastName: 'Cobb', jerseyNumber: '07', primaryPosition: null };
+  const recordDb = (player: Record<string, unknown> | null) =>
+    fakeDb({
+      'opponent_teams.select': { data: ROSTER_RECORD },
+      'opponent_players.select': { data: player },
+      'opponent_players.update': { data: [{ id: P1 }] },
+    });
+  const updates = (calls: { table: string; op: string }[]) =>
+    calls.filter((c) => c.table === 'opponent_players' && c.op === 'update');
+
+  it("should let a scorer edit and remove this league game's unknown player", async () => {
+    coachGame({ league_game_id: LEAGUE_GAME });
+    const placeholder = { placeholder_game_id: LEAGUE_GAME, linked_player_id: null, is_fill_in: false };
+    const edited = recordDb(placeholder);
+    expect(await updateOpponentPlayer(edited.db, 'coach', edit)).toEqual({ ok: true, data: { playerId: P1 } });
+    expect(updates(edited.calls)).toHaveLength(1);
+    const removed = recordDb(placeholder);
+    expect(await removeOpponentPlayer(removed.db, 'coach', { gameId: GAME_ID, playerId: P1 })).toMatchObject({ ok: true });
+    expect(updates(removed.calls)).toHaveLength(1);
+  });
+
+  it('should refuse changes to a real roster player, another game\'s placeholder, a matched one or a fill-in', async () => {
+    coachGame({ league_game_id: LEAGUE_GAME });
+    const refused = [
+      { placeholder_game_id: null, linked_player_id: 'real-player', is_fill_in: false },
+      { placeholder_game_id: 'other-league-game', linked_player_id: null, is_fill_in: false },
+      { placeholder_game_id: LEAGUE_GAME, linked_player_id: 'real-player', is_fill_in: false },
+      { placeholder_game_id: LEAGUE_GAME, linked_player_id: null, is_fill_in: true },
+    ];
+    for (const player of refused) {
+      const updated = recordDb(player);
+      expect(await updateOpponentPlayer(updated.db, 'coach', edit)).toMatchObject({ ok: false, code: 'conflict' });
+      const removed = recordDb(player);
+      expect(await removeOpponentPlayer(removed.db, 'coach', { gameId: GAME_ID, playerId: P1 })).toMatchObject({ ok: false, code: 'conflict' });
+      expect([...updates(updated.calls), ...updates(removed.calls)]).toHaveLength(0);
+    }
+  });
+
+  it('should refuse roster record changes from a game that is not a league game', async () => {
+    coachGame();
+    const { db, calls } = recordDb({ placeholder_game_id: LEAGUE_GAME, linked_player_id: null, is_fill_in: false });
+    expect(await updateOpponentPlayer(db, 'coach', edit)).toMatchObject({ ok: false, code: 'conflict' });
+    expect(updates(calls)).toHaveLength(0);
+  });
+});
+
+describe('saveOpponentTeam on league rosters', () => {
+  it("should never re-point or rename a league game's opponent", async () => {
+    coachGame({ league_game_id: LEAGUE_GAME });
+    const { db, calls } = fakeDb({ 'opponent_teams.select': { data: ROSTER_RECORD } });
+    expect(await saveOpponentTeam(db, 'coach', { gameId: GAME_ID, name: 'Other' })).toMatchObject({ ok: false, code: 'conflict' });
+    expect(calls.some((c) => c.op !== 'select')).toBe(false);
+  });
+
+  it('should never rename a league roster record', async () => {
+    coachGame();
+    const { db, calls } = fakeDb({ 'opponent_teams.select': { data: ROSTER_RECORD } });
+    expect(await saveOpponentTeam(db, 'coach', { gameId: GAME_ID, name: 'Other' })).toMatchObject({ ok: false, code: 'conflict' });
+    expect(calls.some((c) => c.op !== 'select')).toBe(false);
+  });
+});
+
+describe('pickable opponent players', () => {
+  const roster = [
+    { id: P1, first_name: 'Ty', last_name: 'Cobb', jersey_number: '07', primary_position: 'shortstop', placeholder_game_id: null, is_fill_in: false },
+    { id: P2, first_name: 'Here', last_name: 'Today', jersey_number: null, primary_position: null, placeholder_game_id: LEAGUE_GAME, is_fill_in: false },
+    { id: 'other', first_name: 'Other', last_name: 'Game', jersey_number: null, primary_position: null, placeholder_game_id: 'lg-2', is_fill_in: false },
+    { id: 'fill', first_name: 'Fill', last_name: 'In', jersey_number: null, primary_position: null, placeholder_game_id: LEAGUE_GAME, is_fill_in: true },
+  ];
+
+  it("should load only roster players and this league game's unknown players", async () => {
+    coachGame({ league_game_id: LEAGUE_GAME });
+    const { db } = fakeDb({
+      'games.select': { data: { scoring_settings_snapshot: null } },
+      'opponent_teams.select': { data: { id: OPP_TEAM, name: 'Eagles' } },
+      'opponent_players.select': { data: roster },
+      'opponent_game_lineups.select': { data: [] },
+    });
+    const result = await loadOpponentLineup(db, 'coach', { gameId: GAME_ID });
+    expect(result.ok && result.data.players.map((p) => p.id)).toEqual([P1, P2]);
+  });
+
+  it("should auto-fill from those players only", async () => {
+    coachGame({ league_game_id: LEAGUE_GAME });
+    const { db, calls } = fakeDb({ 'opponent_players.select': { data: roster } });
+    expect(await autoFillOpponentLineup(db, 'coach', { gameId: GAME_ID })).toMatchObject({ ok: true });
+    const inserted = calls.find((c) => c.table === 'opponent_game_lineups' && c.op === 'insert')?.payload as { opponent_player_id: string }[];
+    expect(inserted.map((row) => row.opponent_player_id)).toEqual([P1, P2]);
   });
 });
 

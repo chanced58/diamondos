@@ -69,4 +69,10 @@ export interface BattingStats {
   qab: number;
   /** qab / plateAppearances; NaN when plateAppearances === 0. */
   qabPct: number;
+  /**
+   * Plate appearances that carried QAB data. Unset on reducer-derived lines
+   * (their `plateAppearances` is the denominator); merges that include
+   * hand-entered lines set it so those lines stay out of `qabPct`.
+   */
+  qabPlateAppearances?: number;
 }

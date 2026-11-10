@@ -15,6 +15,23 @@ interface CreatedGame {
   paired_game_id?: string | null;
 }
 
+async function teamLeagueSchedulesGames(db: SupabaseClient, teamId: string): Promise<boolean> {
+  const { data, error } = await db
+    .from('league_members')
+    .select('leagues(schedules_games)')
+    .eq('team_id', teamId)
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error(`[dual-scorekeeper] schedules_games lookup failed team=${teamId}: ${error.message}`);
+    return false;
+  }
+  const leagues = (data as { leagues: { schedules_games: boolean } | { schedules_games: boolean }[] | null } | null)?.leagues;
+  const league = Array.isArray(leagues) ? leagues[0] : leagues;
+  return league?.schedules_games === true;
+}
+
 /**
  * When a league has dual scorekeeper enabled and the new game's opponent is a
  * linked DiamondOS team, auto-create the opponent's parallel ("mirror") game
@@ -38,6 +55,10 @@ export async function provisionMirrorGame(
     // Already paired (e.g. re-run) — nothing to do.
     if (game.paired_game_id) return null;
     if (!game.opponent_team_id) return null;
+
+    // A league that schedules its own games pairs them itself (league games),
+    // so a team-created game there never gets an auto mirror.
+    if (await teamLeagueSchedulesGames(db, game.team_id)) return null;
 
     const resolved = settings ?? (await getLeagueSettingsForTeam(db, game.team_id));
     if (!isDualScorekeeperEnabled(resolved)) return null;

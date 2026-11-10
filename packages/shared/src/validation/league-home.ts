@@ -61,6 +61,18 @@ export type LeaderTab = (typeof LEADER_TABS)[number];
 
 export const LEAGUE_HOME_SECTIONS = ['hero', 'standings', 'spotlights', 'leaders', 'recent'] as const;
 
+const leagueGameItemSchema = z.object({
+  id: z.string(),
+  homeTeamId: z.string(),
+  homeName: z.string(),
+  awayTeamId: z.string(),
+  awayName: z.string(),
+  homeRuns: z.number().optional(),
+  awayRuns: z.number().optional(),
+  scheduledAt: z.string(),
+  timeZone: z.string().nullable(),
+});
+
 export const leagueHomeResponseSchema = z.object({
   slug: z.string(),
   league: z.object({ id: z.string(), name: z.string(), logoUrl: z.string().nullable() }),
@@ -106,6 +118,13 @@ export const leagueHomeResponseSchema = z.object({
     }),
   ),
   upcoming: z.array(z.object({ id: z.string(), label: z.string() })),
+  /**
+   * For leagues that schedule their own games: one entry per game with both
+   * teams. `recent` / `upcoming` above carry the same games in the older shape.
+   */
+  leagueGames: z
+    .object({ recent: z.array(leagueGameItemSchema), upcoming: z.array(leagueGameItemSchema) })
+    .optional(),
 });
 export type LeagueHomeResponse = z.infer<typeof leagueHomeResponseSchema>;
 

@@ -44,7 +44,7 @@ export function formatSeasonStat(value: StatValue, format: StatFormat): string {
 
 // ── Batting ─────────────────────────────────────────────────────────────────
 
-export type SeasonBattingStatKey = keyof Omit<BattingStats, 'playerId' | 'playerName'>;
+export type SeasonBattingStatKey = keyof Omit<BattingStats, 'playerId' | 'playerName' | 'qabPlateAppearances'>;
 
 export const BATTING_SEASON_COLUMNS: SeasonStatColumn<SeasonBattingStatKey>[] = [
   { key: 'gamesAppeared',    label: 'G',     title: 'Games appeared',           format: 'int' },

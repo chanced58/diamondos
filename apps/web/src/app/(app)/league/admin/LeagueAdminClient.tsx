@@ -8,10 +8,12 @@ import { createBrowserClient } from '@/lib/supabase/client';
 import { LeagueScoringSettingsForm } from './LeagueScoringSettingsForm';
 import {
   addLeagueDivisionAction,
+  createLeagueManagedTeamAction,
   removeLeagueDivisionAction,
   removeLeagueStaffAction,
   removeLeagueTeamAction,
   setLeagueTeamActiveAction,
+  setLeagueSchedulesGamesAction,
   setLeagueTeamDivisionAction,
 } from './actions';
 
@@ -61,6 +63,7 @@ interface LeagueAdminClientProps {
   staff: StaffEntry[];
   isAdmin: boolean;
   scoringSettings?: unknown;
+  schedulesGames?: boolean;
   pitchRuleOptions?: Array<{ id: string; label: string }>;
   availableTeams?: AvailableTeam[];
   availableOpponentTeams?: AvailableOpponentTeam[];
@@ -75,6 +78,7 @@ export function LeagueAdminClient({
   staff,
   isAdmin,
   scoringSettings,
+  schedulesGames = false,
   pitchRuleOptions,
   availableTeams,
   availableOpponentTeams,
@@ -89,6 +93,8 @@ export function LeagueAdminClient({
   const [newOpponentAbbreviation, setNewOpponentAbbreviation] = useState('');
   const [newOpponentCity, setNewOpponentCity] = useState('');
   const [newOpponentState, setNewOpponentState] = useState('');
+  const [newManagedTeamName, setNewManagedTeamName] = useState('');
+  const [newManagedTeamDivision, setNewManagedTeamDivision] = useState('');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [editName, setEditName] = useState(initialName ?? '');
@@ -223,6 +229,34 @@ export function LeagueAdminClient({
       setNewOpponentAbbreviation('');
       setNewOpponentCity('');
       setNewOpponentState('');
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCreateManagedTeam(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newManagedTeamName.trim()) return;
+    setSaving(true);
+    setErrorMsg(null);
+    try {
+      const error = await createLeagueManagedTeamAction(leagueId, newManagedTeamName.trim(), newManagedTeamDivision || undefined);
+      if (error) { setErrorMsg(error); return; }
+      setNewManagedTeamName('');
+      setNewManagedTeamDivision('');
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleToggleSchedulesGames(next: boolean) {
+    setSaving(true);
+    setErrorMsg(null);
+    try {
+      const error = await setLeagueSchedulesGamesAction(leagueId, next);
+      if (error) { setErrorMsg(error); return; }
       router.refresh();
     } finally {
       setSaving(false);
@@ -383,6 +417,24 @@ export function LeagueAdminClient({
               Save Changes
             </button>
           </form>
+          <div className="px-6 pb-6">
+            <label className="flex items-start gap-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={schedulesGames}
+                disabled={saving}
+                onChange={(e) => handleToggleSchedulesGames(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-700 focus:ring-brand-500"
+              />
+              <span>
+                <span className="font-medium text-gray-900">League schedules games</span>
+                <span className="block text-xs text-gray-500">
+                  The league creates and scores games between its teams; both teams share one game.
+                </span>
+              </span>
+            </label>
+          </div>
         </div>
       )}
 
@@ -604,8 +656,49 @@ export function LeagueAdminClient({
             </>
           )}
 
+          {/* Create a league-managed team (admin only, when the league schedules games) */}
+          {isAdmin && schedulesGames && (
+            <>
+              <div className="border-t border-gray-100 pt-4 mt-4">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Create team</p>
+                <p className="text-xs text-gray-500 mb-2">Teams created here are run by the league until a coach joins.</p>
+              </div>
+              <form onSubmit={handleCreateManagedTeam} className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={newManagedTeamName}
+                    onChange={(e) => setNewManagedTeamName(e.target.value)}
+                    placeholder="Team name *"
+                    required
+                    maxLength={100}
+                    className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <select
+                    value={newManagedTeamDivision}
+                    onChange={(e) => setNewManagedTeamDivision(e.target.value)}
+                    aria-label="Division"
+                    className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  >
+                    <option value="">No division</option>
+                    {divisions.map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="submit"
+                  disabled={saving || !newManagedTeamName.trim()}
+                  className="text-sm font-medium bg-brand-700 text-white px-4 py-2 rounded-lg hover:bg-brand-800 disabled:opacity-50 transition-colors"
+                >
+                  Create team
+                </button>
+              </form>
+            </>
+          )}
+
           {/* Create new opponent team (admin only) */}
-          {isAdmin && (
+          {isAdmin && !schedulesGames && (
             <>
               <div className="border-t border-gray-100 pt-4 mt-4">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Create Opponent Team</p>

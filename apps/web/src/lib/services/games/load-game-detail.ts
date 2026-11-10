@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  awayValueConflictKeys,
   conflictKey,
+  settledConflictKeys,
   describeScoreConflict,
   gameIdInputSchema,
   weAreHome,
@@ -39,8 +41,15 @@ export async function loadGameDetail(
     countRows(db, 'game_lineups', gameId),
     countRows(db, 'opponent_game_lineups', gameId),
     isCompleted && viewer.isCoach ? loadTakeaways(db, game) : Promise.resolve(null),
-    isCompleted ? loadReconciliationForGame(db, gameId) : Promise.resolve(null),
+    isCompleted ? loadReconciliationForGame(db, gameId, actorUserId) : Promise.resolve(null),
   ]);
+
+  const awayKeys = reconciliation
+    ? awayValueConflictKeys(reconciliation.conflicts, reconciliation.overrides)
+    : new Set<string>();
+  const settledKeys = reconciliation
+    ? settledConflictKeys(reconciliation.conflicts, reconciliation.overrides)
+    : new Set<string>();
 
   return serviceOk({
     game: {
@@ -63,6 +72,8 @@ export async function loadGameDetail(
       latitude: game.latitude ?? null,
       longitude: game.longitude ?? null,
       tournamentId: game.tournament_id ?? null,
+      leagueGameId: game.league_game_id ?? null,
+      resultSource: game.result_source ?? null,
     },
     viewer: { isCoach: viewer.isCoach },
     hasLineup: lineupCount > 0,
@@ -73,15 +84,19 @@ export async function loadGameDetail(
           reconciliationId: reconciliation.reconciliationId,
           homeTeamLabel: reconciliation.homeTeamLabel,
           awayTeamLabel: reconciliation.awayTeamLabel,
-          canOverride: viewer.isCoach && reconciliation.viewerOnHomeSide,
+          canOverride: reconciliation.canSettle,
+          // A player's conflicts are settled together: the away value of
+          // one is the away value of all (awayValueConflictKeys), and a
+          // choice on one decides all (settledConflictKeys).
           conflicts: reconciliation.conflicts.map((conflict) => {
             const key = conflictKey(conflict);
             return {
               key,
-              label: describeScoreConflict(conflict),
+              label: describeScoreConflict(conflict, reconciliation.playerNames),
               homeLog: conflict.homeLog,
               awayLog: conflict.awayLog,
-              overridden: reconciliation.overrides.some((o) => o.key === key && o.useAwayValue),
+              overridden: awayKeys.has(key),
+              settled: settledKeys.has(key),
             };
           }),
         }

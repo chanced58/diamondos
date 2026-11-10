@@ -186,6 +186,7 @@ async function fetchAllPlayerSnapshots(
       .select('*')
       .eq('league_id', leagueId)
       .eq('season', season)
+      .eq('scope', 'season') // one whole-season line per player
       .order('player_id') // stable across pages: no row skipped or repeated
       .range(from, from + PLAYER_SNAPSHOT_PAGE - 1);
     if (error) return { data: rows, error };

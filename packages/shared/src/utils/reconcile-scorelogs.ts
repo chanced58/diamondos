@@ -78,7 +78,11 @@ export function conflictKey(c: ScoreConflict): string {
   }
 }
 
-/** A coach's decision on one conflict, stored in `game_reconciliations.resolved_overrides`. */
+/**
+ * A settler's decision on one conflict, stored in
+ * `game_reconciliations.resolved_overrides`: the away book's value (true) or
+ * the home book's (false).
+ */
 export interface ReconciliationOverride {
   /** Stable conflict identity (see `conflictKey`). */
   key: string;
@@ -87,8 +91,24 @@ export interface ReconciliationOverride {
 
 const HALF_LABEL: Record<'top' | 'bottom', string> = { top: 'Top', bottom: 'Bottom' };
 
-/** Human-readable label for one conflict, shared by the web and mobile panels. */
-export function describeScoreConflict(c: ScoreConflict): string {
+/** The player a conflict is about, or null for a line-score conflict. */
+export function conflictPlayerId(c: ScoreConflict): string | null {
+  return c.kind === 'player_batting' || c.kind === 'player_pitching' ? c.playerId : null;
+}
+
+/** Player names by player id, for labels; a missing id falls back to a short id. */
+export type ConflictPlayerNames = Readonly<Record<string, string>>;
+
+/** The player's name, or a short id when it isn't known. */
+export function conflictPlayerLabel(playerId: string, playerNames?: ConflictPlayerNames): string {
+  return playerNames?.[playerId] ?? `player ${playerId.slice(0, 8)}`;
+}
+
+/**
+ * Human-readable label for one conflict, shared by the web and mobile panels.
+ * Player conflicts name the player when `playerNames` has them.
+ */
+export function describeScoreConflict(c: ScoreConflict, playerNames?: ConflictPlayerNames): string {
   switch (c.kind) {
     case 'final_score':
       return `Final score — ${c.side === 'home' ? 'home' : 'away'} runs`;
@@ -99,12 +119,84 @@ export function describeScoreConflict(c: ScoreConflict): string {
     case 'team_errors':
       return `Team errors — ${c.side}`;
     case 'player_batting':
-      return `Batting · ${c.stat} (player ${c.playerId.slice(0, 8)})`;
+      return `Batting · ${c.stat} (${conflictPlayerLabel(c.playerId, playerNames)})`;
     case 'player_pitching':
-      return `Pitching · ${c.stat} (player ${c.playerId.slice(0, 8)})`;
+      return `Pitching · ${c.stat} (${conflictPlayerLabel(c.playerId, playerNames)})`;
     default:
       return 'Conflict';
   }
+}
+
+/**
+ * The conflict keys whose away value is in effect. A line-score conflict
+ * follows its own override; a player is settled as a whole — the result takes
+ * a player's entire line from one book (`selectResultSource`) — so an away
+ * override on any of a player's conflicts puts all of them on the away value.
+ */
+export function awayValueConflictKeys(
+  conflicts: readonly ScoreConflict[],
+  overrides: readonly ReconciliationOverride[],
+): Set<string> {
+  const awayKeys = new Set(overrides.filter((o) => o.useAwayValue).map((o) => o.key));
+  const awayPlayers = new Set(
+    conflicts.filter((c) => awayKeys.has(conflictKey(c))).map(conflictPlayerId).filter((id): id is string => id !== null),
+  );
+  return new Set(
+    conflicts
+      .filter((c) => awayKeys.has(conflictKey(c)) || awayPlayers.has(conflictPlayerId(c) ?? ''))
+      .map(conflictKey),
+  );
+}
+
+/**
+ * The conflict keys someone has decided: a line-score conflict with its own
+ * override, and every conflict of a player with an override on any of them
+ * (one choice per player settles the player's whole line). An override either
+ * way is a decision: keeping the home value is saved as `useAwayValue: false`.
+ */
+export function settledConflictKeys(
+  conflicts: readonly ScoreConflict[],
+  overrides: readonly ReconciliationOverride[],
+): Set<string> {
+  const decided = new Set(overrides.map((o) => o.key));
+  const decidedPlayers = new Set(
+    conflicts.filter((c) => decided.has(conflictKey(c))).map(conflictPlayerId).filter((id): id is string => id !== null),
+  );
+  return new Set(
+    conflicts
+      .filter((c) => decided.has(conflictKey(c)) || decidedPlayers.has(conflictPlayerId(c) ?? ''))
+      .map(conflictKey),
+  );
+}
+
+/** One choice to settle: a line-score conflict, or every conflict of one player. */
+export interface ConflictGroup {
+  /** The key a choice is saved under: the conflict's, or the player's first conflict's. */
+  key: string;
+  /** The player the group is about; null for a line-score conflict. */
+  playerId: string | null;
+  conflicts: ScoreConflict[];
+}
+
+/**
+ * Groups conflicts into the choices a settler makes, in first-seen order:
+ * each line-score conflict alone, and one group per player.
+ */
+export function groupConflictsForSettling(conflicts: readonly ScoreConflict[]): ConflictGroup[] {
+  const groups: ConflictGroup[] = [];
+  const byPlayer = new Map<string, ConflictGroup>();
+  for (const conflict of conflicts) {
+    const playerId = conflictPlayerId(conflict);
+    const existing = playerId ? byPlayer.get(playerId) : undefined;
+    if (existing) {
+      existing.conflicts.push(conflict);
+      continue;
+    }
+    const group: ConflictGroup = { key: conflictKey(conflict), playerId, conflicts: [conflict] };
+    groups.push(group);
+    if (playerId) byPlayer.set(playerId, group);
+  }
+  return groups;
 }
 
 export interface ScoreReconciliation {

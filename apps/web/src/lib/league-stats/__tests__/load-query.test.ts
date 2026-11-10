@@ -44,8 +44,8 @@ const standing = (season: string, team_id: string, team_name: string) => ({
   wins: 5, losses: 5, ties: 0, win_pct: 0.5, runs_for: 0, runs_against: 0,
 });
 
-const snap = (season: string, player_id: string) => ({
-  league_id: 'L1', season, player_id, first_name: 'Alex', last_name: player_id, public_opt_out: false,
+const snap = (season: string, player_id: string, scope = 'season') => ({
+  league_id: 'L1', season, scope, player_id, first_name: 'Alex', last_name: player_id, public_opt_out: false,
   team_id: 'reds', team_name: 'Reds', stats: { avg: 0.3 }, plate_appearances: 30, innings_pitched_outs: 0,
 });
 
@@ -77,7 +77,16 @@ describe('getLeagueStatsData season handling', () => {
       'league_standings_snapshot',
       'league_team_stat_snapshot',
     ]);
-    for (const c of seasonReads) expect(c.eq).toEqual({ league_id: 'L1', season: '2025' });
+    for (const c of seasonReads) expect(c.eq).toMatchObject({ league_id: 'L1', season: '2025' });
+  });
+
+  it("should list each player's whole-season line, not their per-team lines", async () => {
+    mockTables.league_player_stat_snapshot = [snap('2026', 'p1'), snap('2026', 'p1', 'team'), snap('2026', 'p3', 'team')];
+    const result = await getLeagueStatsData('lg', viewer, '2026');
+    if (!('ok' in result)) throw new Error('expected data');
+    expect(result.players.map((p) => p.playerId)).toEqual(['p1']);
+    const playerRead = mockCalls.find((c) => c.table === 'league_player_stat_snapshot');
+    expect(playerRead?.eq).toEqual({ league_id: 'L1', season: '2026', scope: 'season' });
   });
 
   it('an unknown season returns empty players and teams', async () => {
