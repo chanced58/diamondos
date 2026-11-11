@@ -3026,6 +3026,44 @@ export type Database = {
           },
         ]
       }
+      player_highlight_videos: {
+        Row: {
+          created_at: string
+          id: string
+          provider: Database["public"]["Enums"]["highlight_video_provider"]
+          sort_order: number
+          title: string
+          url: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          provider?: Database["public"]["Enums"]["highlight_video_provider"]
+          sort_order?: number
+          title: string
+          url: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          provider?: Database["public"]["Enums"]["highlight_video_provider"]
+          sort_order?: number
+          title?: string
+          url?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_highlight_videos_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "player_profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       player_injury_flags: {
         Row: {
           created_at: string
@@ -3076,6 +3114,113 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      player_profile_photos: {
+        Row: {
+          caption: string | null
+          created_at: string
+          id: string
+          sort_order: number
+          storage_path: string
+          user_id: string
+        }
+        Insert: {
+          caption?: string | null
+          created_at?: string
+          id?: string
+          sort_order?: number
+          storage_path: string
+          user_id: string
+        }
+        Update: {
+          caption?: string | null
+          created_at?: string
+          id?: string
+          sort_order?: number
+          storage_path?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_profile_photos_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "player_profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      player_profiles: {
+        Row: {
+          achievements: string[]
+          act_score: number | null
+          bio: string | null
+          created_at: string
+          exit_velocity_mph: number | null
+          field_visibility: Json
+          gpa: number | null
+          handle: string
+          headline: string | null
+          height_inches: number | null
+          is_public: boolean
+          pitch_velocity_mph: number | null
+          pop_time_seconds: number | null
+          profile_photo_url: string | null
+          sat_score: number | null
+          sixty_yard_dash_seconds: number | null
+          target_majors: string[]
+          updated_at: string
+          user_id: string
+          visibility: string
+          weight_lbs: number | null
+        }
+        Insert: {
+          achievements?: string[]
+          act_score?: number | null
+          bio?: string | null
+          created_at?: string
+          exit_velocity_mph?: number | null
+          field_visibility?: Json
+          gpa?: number | null
+          handle: string
+          headline?: string | null
+          height_inches?: number | null
+          is_public?: boolean
+          pitch_velocity_mph?: number | null
+          pop_time_seconds?: number | null
+          profile_photo_url?: string | null
+          sat_score?: number | null
+          sixty_yard_dash_seconds?: number | null
+          target_majors?: string[]
+          updated_at?: string
+          user_id: string
+          visibility?: string
+          weight_lbs?: number | null
+        }
+        Update: {
+          achievements?: string[]
+          act_score?: number | null
+          bio?: string | null
+          created_at?: string
+          exit_velocity_mph?: number | null
+          field_visibility?: Json
+          gpa?: number | null
+          handle?: string
+          headline?: string | null
+          height_inches?: number | null
+          is_public?: boolean
+          pitch_velocity_mph?: number | null
+          pop_time_seconds?: number | null
+          profile_photo_url?: string | null
+          sat_score?: number | null
+          sixty_yard_dash_seconds?: number | null
+          target_majors?: string[]
+          updated_at?: string
+          user_id?: string
+          visibility?: string
+          weight_lbs?: number | null
+        }
+        Relationships: []
       }
       player_team_memberships: {
         Row: {
@@ -4552,6 +4697,7 @@ export type Database = {
           trial_ends_at: string | null
           trial_starts_at: string | null
           updated_at: string
+          user_id: string | null
           zoho_account_id: string | null
           zoho_contact_id: string | null
           zoho_deal_id: string | null
@@ -4573,6 +4719,7 @@ export type Database = {
           trial_ends_at?: string | null
           trial_starts_at?: string | null
           updated_at?: string
+          user_id?: string | null
           zoho_account_id?: string | null
           zoho_contact_id?: string | null
           zoho_deal_id?: string | null
@@ -4594,6 +4741,7 @@ export type Database = {
           trial_ends_at?: string | null
           trial_starts_at?: string | null
           updated_at?: string
+          user_id?: string | null
           zoho_account_id?: string | null
           zoho_contact_id?: string | null
           zoho_deal_id?: string | null
@@ -5533,6 +5681,7 @@ export type Database = {
         Returns: boolean
       }
       is_platform_admin: { Args: never; Returns: boolean }
+      is_player_pro: { Args: { uid: string }; Returns: boolean }
       is_player_owner: {
         Args: { p_player_id: string; p_user_id: string }
         Returns: boolean
@@ -5611,7 +5760,7 @@ export type Database = {
         | "drill_recommendation"
       ai_generation_status: "success" | "error"
       bats_throws: "right" | "left" | "switch"
-      billable_entity_type: "team" | "league"
+      billable_entity_type: "team" | "league" | "player"
       channel_type: "announcement" | "topic" | "direct"
       drill_focus_visibility: "system" | "team"
       drill_injury_severity: "hard" | "caution"
@@ -5630,6 +5779,7 @@ export type Database = {
         | "completed"
         | "cancelled"
         | "postponed"
+      highlight_video_provider: "youtube" | "hudl" | "vimeo" | "other"
       import_category: "rosters" | "player_stats" | "team_stats"
       import_source_platform: "home_team"
       import_status:
@@ -5899,7 +6049,7 @@ export const Constants = {
       ],
       ai_generation_status: ["success", "error"],
       bats_throws: ["right", "left", "switch"],
-      billable_entity_type: ["team", "league"],
+      billable_entity_type: ["team", "league", "player"],
       channel_type: ["announcement", "topic", "direct"],
       drill_focus_visibility: ["system", "team"],
       drill_injury_severity: ["hard", "caution"],
@@ -5920,6 +6070,7 @@ export const Constants = {
         "cancelled",
         "postponed",
       ],
+      highlight_video_provider: ["youtube", "hudl", "vimeo", "other"],
       import_category: ["rosters", "player_stats", "team_stats"],
       import_source_platform: ["home_team"],
       import_status: [
