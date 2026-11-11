@@ -2,7 +2,8 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { Q } from '@nozbe/watermelondb';
-import { syncWithSupabase, getTournamentSyncRejections } from '../sync/sync-engine';
+import { syncWithSupabase, getTournamentSyncRejections, getClockHeldEvents } from '../sync/sync-engine';
+import type { ClockHeldEvent } from '../sync/clock-hold';
 import type { TournamentSyncRejection } from '../sync/tournament-event-sync';
 import { getSupabaseClient } from '../lib/supabase';
 import { database } from '../db';
@@ -18,6 +19,8 @@ interface SyncContextValue {
   pendingEventsCount: number;
   tournamentRejections: TournamentSyncRejection[];
   tournamentRejectionsLoaded: boolean;
+  /** Events the server refused for a fast phone clock, waiting on the device. */
+  clockHeldEvents: ClockHeldEvent[];
   triggerSync: () => Promise<void>;
 }
 
@@ -29,6 +32,7 @@ const SyncContext = createContext<SyncContextValue>({
   pendingEventsCount: 0,
   tournamentRejections: [],
   tournamentRejectionsLoaded: false,
+  clockHeldEvents: [],
   triggerSync: async () => {},
 });
 
@@ -72,6 +76,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [pendingEventsCount, setPendingEventsCount] = useState(0);
   const [tournamentRejections, setTournamentRejections] = useState<TournamentSyncRejection[]>([]);
   const [tournamentRejectionsLoaded, setTournamentRejectionsLoaded] = useState(false);
+  const [clockHeldEvents, setClockHeldEvents] = useState<ClockHeldEvent[]>([]);
   const wasOfflineRef = useRef(false);
   const syncLockRef = useRef(false);
 
@@ -120,6 +125,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         console.warn('Could not load tournament sync rejections:', error);
       }
+      setClockHeldEvents(await getClockHeldEvents());
       setIsSyncing(false);
       syncLockRef.current = false;
     }
@@ -135,6 +141,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     }).catch((error) => {
       console.warn('Could not restore tournament sync rejections:', error);
       if (mounted) setLastSyncError(error instanceof Error ? error : new Error(String(error)));
+    });
+    getClockHeldEvents().then((held) => {
+      if (mounted) setClockHeldEvents(held);
     });
     return () => { mounted = false; };
   }, []);
@@ -242,7 +251,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SyncContext.Provider
-      value={{ isSyncing, lastSyncedAt, lastSyncError, isOffline, pendingEventsCount, tournamentRejections, tournamentRejectionsLoaded, triggerSync }}
+      value={{ isSyncing, lastSyncedAt, lastSyncError, isOffline, pendingEventsCount, tournamentRejections, tournamentRejectionsLoaded, clockHeldEvents, triggerSync }}
     >
       {children}
     </SyncContext.Provider>

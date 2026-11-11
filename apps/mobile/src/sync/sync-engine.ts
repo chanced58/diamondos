@@ -23,6 +23,7 @@ import type { Player } from '../db/models/Player';
 import { getSupabaseClient } from '../lib/supabase';
 import type { Database as RemoteDatabase, Json } from '@baseball/database';
 import { pushTournamentEventQueue, reconcilePendingSequences, type TournamentSyncRejection } from './tournament-event-sync';
+import { pushEventsHoldingClockAhead, type ClockHeldEvent } from './clock-hold';
 import { deletedMessagesSince, splitDeletedMessages } from './message-deletions';
 import { pushOpponentPlayers } from './opponent-player-push';
 import {
@@ -39,6 +40,28 @@ import {
 
 type GameEventInsert = RemoteDatabase['public']['Tables']['game_events']['Insert'];
 const TOURNAMENT_REJECTIONS_KEY = 'sync.tournamentRejections';
+const CLOCK_HELD_EVENTS_KEY = 'sync.clockHeldEvents';
+
+/**
+ * Events the last push held back because the server refused them for a fast
+ * device clock (see clock-hold.ts). Rewritten by every push that reaches the
+ * event upload, so it lists exactly what is still waiting.
+ */
+export async function getClockHeldEvents(): Promise<ClockHeldEvent[]> {
+  try {
+    const raw = await database.localStorage.get<string>(CLOCK_HELD_EVENTS_KEY);
+    if (!raw) return [];
+    const records: unknown = JSON.parse(raw);
+    if (!Array.isArray(records) || !records.every((record) => record &&
+      typeof record.gameId === 'string' && typeof record.eventId === 'string')) {
+      throw new Error('Invalid clock-held event register');
+    }
+    return records as ClockHeldEvent[];
+  } catch (error) {
+    console.warn('sync: clock-held event register is unreadable; the next push rebuilds it', error);
+    return [];
+  }
+}
 
 export async function getTournamentSyncRejections(): Promise<TournamentSyncRejection[]> {
   try {
@@ -127,6 +150,17 @@ async function quarantineEventIds(ids: string[]): Promise<void> {
     await database.localStorage.set(QUARANTINED_EVENTS_KEY, JSON.stringify(merged));
   } catch (err) {
     console.warn('sync: could not persist quarantined event ids', err);
+  }
+}
+
+async function recordClockHeldEvents(held: readonly ClockHeldEvent[]): Promise<void> {
+  if (held.length > 0) {
+    console.warn(`sync: holding ${held.length} event(s) the server refused for a fast device clock`);
+  }
+  try {
+    await database.localStorage.set(CLOCK_HELD_EVENTS_KEY, JSON.stringify(held));
+  } catch (err) {
+    console.warn('sync: could not record clock-held events', err);
   }
 }
 
@@ -1167,9 +1201,14 @@ export async function syncWithSupabase(): Promise<void> {
           created_by: String(event.created_by), device_id: String(event.device_id) }];
       });
       // Regular games keep the existing bulk upload before other mutable data.
+      // Events the server refuses for a fast device clock are held on the
+      // device (rejected back to WatermelonDB below) while the rest push.
+      const clockHeld: ClockHeldEvent[] = [];
       const regularEvents = eventWrites.filter((event) => !tournamentGameIds.has(event.game_id));
       if (regularEvents.length > 0) {
-        const { error } = await supabase.from('game_events').upsert(regularEvents, { onConflict: 'id', ignoreDuplicates: true });
+        const { held, error } = await pushEventsHoldingClockAhead(regularEvents, async (rows) =>
+          (await supabase.from('game_events').upsert(rows, { onConflict: 'id', ignoreDuplicates: true })).error);
+        clockHeld.push(...held);
         if (error) {
           if (error.code === '23505' || error.code === '40001') {
             await reconcileSequenceNumbers(orderedCreatedEvents.filter((event) => !tournamentGameIds.has(String(event.game_remote_id))), supabase);
@@ -1334,6 +1373,8 @@ export async function syncWithSupabase(): Promise<void> {
           ...tournamentResult.rejections,
         ]));
       }
+      clockHeld.push(...tournamentResult.held);
+      await recordClockHeldEvents(clockHeld);
       for (const rejection of tournamentResult.rejections) {
         deferredErrors.push(`Tournament event ${rejection.sequenceNumber}: ${rejection.reason}`);
       }
@@ -1386,6 +1427,12 @@ export async function syncWithSupabase(): Promise<void> {
       if (deferredErrors.length > 0) {
         throw new Error(`sync: deferred push failures — ${deferredErrors.join('; ')}`);
       }
+      // Keep held events unsynced so the next cycle offers them again.
+      if (clockHeld.length === 0) return;
+      const heldIds = new Set(clockHeld.map((event) => event.eventId));
+      return { experimentalRejectedIds: { game_events: orderedCreatedEvents
+        .filter((event) => heldIds.has(String(event.remote_id)))
+        .map((event) => String(event.id)) } };
     },
 
     // Runs after the pulled rows are applied and before push, so a push
@@ -1547,7 +1594,12 @@ export async function reconcileGameLifecycle(
   const candidates = [...new Set([...startedGames, ...endEventByGame.keys()])].filter(
     (id) => !lifecycleReconciledGames.has(id),
   );
-  const blockedGames = new Set((await getTournamentSyncRejections()).map((rejection) => rejection.gameId));
+  // A game with events still held for a fast clock must not go final
+  // without them.
+  const blockedGames = new Set([
+    ...(await getTournamentSyncRejections()).map((rejection) => rejection.gameId),
+    ...(await getClockHeldEvents()).map((held) => held.gameId),
+  ]);
   if (candidates.length === 0) return;
 
   const { data: serverGames, error } = await supabase

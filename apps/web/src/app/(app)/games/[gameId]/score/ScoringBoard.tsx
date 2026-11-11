@@ -39,6 +39,7 @@ import { endGameAction } from '../actions';
 import { DefensiveDiamond } from './DefensiveDiamond';
 import { BattingOrderPanel, type BattingOrderPlayer } from './BattingOrderPanel';
 import { canRecordPlay } from './can-record';
+import { eventSaveErrorMessage } from './save-error-message';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1307,7 +1308,7 @@ function ScoringBoardContent({
         console.error('[ScoringBoard] Failed to persist event:', eventType, upsertError);
         // Roll back the optimistic insert so local state matches what is actually persisted.
         setEventRows((prev) => prev.filter((r) => r.id !== newRow.id));
-        setSaveError('Failed to save last action. Please try again.');
+        setSaveError(eventSaveErrorMessage(upsertError));
         // Throw rather than return the rolled-back id. Plays are multi-event —
         // a pitch then its result, a hit then its linked runner outcomes and
         // runs — and callers chain on this; returning the id let them append
