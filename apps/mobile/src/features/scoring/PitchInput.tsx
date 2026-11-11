@@ -695,7 +695,10 @@ export function PitchInput({
   }
 
   return (
-    <View className="flex-1 bg-slate-50">
+    // Fills its pane from its content size (basis auto), not `flex-1` (basis
+    // 0): on phones the pane is sized by its content, and a basis of 0 gave it
+    // none, squeezing the outcome buttons on top of each other.
+    <View testID="pitch-input-root" className="bg-slate-50" style={{ flexGrow: 1, flexShrink: 1, flexBasis: 'auto' }}>
       {/* Modifiers — only rendered when the scorer opted in at game start.
           Placed directly above the outcome buttons so the thumb travels
           modifier → outcome in the order a pitch is actually observed.
