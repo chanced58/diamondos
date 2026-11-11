@@ -1,3 +1,6 @@
+import { isEventClockAheadRejection } from '@baseball/shared';
+import type { ClockHeldEvent } from './clock-hold';
+
 export interface TournamentSyncEvent {
   id: string;
   game_id: string;
@@ -37,9 +40,12 @@ export function reconcilePendingSequences(events: readonly { id: string; sequenc
 export async function pushTournamentEventQueue(events: readonly TournamentSyncEvent[], deps: TournamentEventSyncDeps): Promise<{
   rejections: TournamentSyncRejection[];
   retryGameIds: string[];
+  /** Refused for a fast device clock: the event and the rest of its game wait. */
+  held: ClockHeldEvent[];
 }> {
   const rejections: TournamentSyncRejection[] = [];
   const retryGameIds: string[] = [];
+  const held: ClockHeldEvent[] = [];
   const byGame = new Map<string, TournamentSyncEvent[]>();
   for (const event of events) {
     const group = byGame.get(event.game_id) ?? [];
@@ -70,7 +76,12 @@ export async function pushTournamentEventQueue(events: readonly TournamentSyncEv
       }
     } catch (error) {
       const failure = error as { code?: string; message?: string } | null;
-      if (failure?.code === '40001' || failure?.code === '23505') {
+      if (isEventClockAheadRejection(failure)) {
+        // Order matters in a tournament game, so nothing after the refused
+        // event goes either; all of it is retried once the clock allows.
+        const from = group.indexOf(current);
+        held.push(...group.slice(from).map((event) => ({ gameId, eventId: event.id })));
+      } else if (failure?.code === '40001' || failure?.code === '23505') {
         retryGameIds.push(gameId);
       } else if (failure?.code && ['23514', '42501', '22023'].includes(failure.code)) {
         rejections.push({ gameId, eventId: current.id, eventType: current.event_type,
@@ -81,5 +92,5 @@ export async function pushTournamentEventQueue(events: readonly TournamentSyncEv
       }
     }
   }
-  return { rejections, retryGameIds };
+  return { rejections, retryGameIds, held };
 }

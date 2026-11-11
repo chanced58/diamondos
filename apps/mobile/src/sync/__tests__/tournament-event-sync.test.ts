@@ -93,3 +93,18 @@ it('retries a partially uploaded queue idempotently after permissions are correc
   expect(result.rejections).toEqual([]);
   expect(io.accepted).toEqual(['first', 'change']);
 });
+
+it('holds a clock-refused tournament event and the rest of its game while other games still upload', async () => {
+  const io = deps();
+  io.send = async (row) => {
+    if (row.id === 'fast') throw { code: 'P0001', hint: 'device_clock_ahead', details: '0', message: 'game_events.occurred_at (...) is more than 24h ahead' };
+    io.accepted.push(row.id);
+  };
+  const result = await pushTournamentEventQueue([
+    event('early', 'one', 'out', 2), event('fast', 'one', 'out', 3), event('after', 'one', 'out', 4), event('healthy', 'two', 'out', 1),
+  ], io);
+  expect(io.accepted).toEqual(['early', 'healthy']);
+  expect(result.held).toEqual([{ gameId: 'one', eventId: 'fast' }, { gameId: 'one', eventId: 'after' }]);
+  expect(result.rejections).toEqual([]);
+  expect(result.retryGameIds).toEqual([]);
+});

@@ -44,6 +44,7 @@ import type { BattedOutType, RosterPlayer, RunnerOutcome } from '../../../../../
 import { useSyncContext } from '../../../../../src/providers/SyncProvider';
 import { isFinalizeConfigured, getFinalizeFailureCount } from '../../../../../src/sync/sync-engine';
 import { describeFinalizeStatus } from '../../../../../src/sync/finalize-status';
+import { describeClockHold } from '../../../../../src/sync/clock-hold';
 import { addLineupRow, createLocalGuest, prepareLineupRow } from '../../../../../src/features/lineup/local-guest';
 import { withLineupChangeLock } from '../../../../../src/features/lineup/lineup-change-lock';
 import { useGameLineups } from '../../../../../src/features/lineup/use-game-lineups';
@@ -103,8 +104,9 @@ function ScoringScreenContent() {
 
   const { gameState, lineScore, events, rawEvents, loading } = useGameState(gameId, teamId);
   const { recordEvent } = useRecordEvent(gameId);
-  const { isSyncing, lastSyncError, isOffline, pendingEventsCount, tournamentRejections = [], tournamentRejectionsLoaded, triggerSync } = useSyncContext();
+  const { isSyncing, lastSyncError, isOffline, pendingEventsCount, tournamentRejections = [], tournamentRejectionsLoaded, clockHeldEvents = [], triggerSync } = useSyncContext();
   const rejectedChange = tournamentRejections.find((rejection) => rejection.gameId === gameId);
+  const clockHold = describeClockHold(clockHeldEvents.filter((held) => held.gameId === gameId).length);
   // Recomputed on every render, which — via `isSyncing` above, which flips
   // true→false on every ~30s sync cycle — includes right after each cycle
   // that may have changed the finalize failure count read below. Cheap pure
@@ -2185,6 +2187,13 @@ function ScoringScreenContent() {
           <Text className="text-score-xs text-slate-500">
             Offline{pendingEventsCount > 0 ? ` · ${pendingEventsCount} saved` : ' · saved on device'}
           </Text>
+        ) : clockHold ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={() => Alert.alert('Plays waiting to upload', clockHold.explanation)}
+          >
+            <Text className="text-score-xs text-red-600">{clockHold.label}</Text>
+          </TouchableOpacity>
         ) : lastSyncError ? (
           <Text className="text-score-xs text-red-600">⚠ Sync failed</Text>
         ) : pendingEventsCount > 0 ? (
