@@ -190,7 +190,8 @@ export async function togglePublicAction(
   }
 
   try {
-    await upsertProfile(db, user.id, { isPublic: makePublic });
+    // /p/[handle] gates on visibility; toRow keeps is_public in step with it.
+    await upsertProfile(db, user.id, { visibility: makePublic ? 'public' : 'private' });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to update visibility.';
     return { error: message };
