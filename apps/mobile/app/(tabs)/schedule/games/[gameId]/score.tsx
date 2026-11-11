@@ -65,6 +65,17 @@ import {
 } from '../../../../../src/features/lineup/lineup-wizard';
 import type { GameLineup } from '../../../../../src/db/models/GameLineup';
 
+/** On phones the book (count, bases, order) never shrinks below this, in points. */
+const BOOK_MIN_HEIGHT_PHONE = 200;
+
+/**
+ * How an action surface (the pad, the lineup gate, the 3-outs and who's-up
+ * prompts) fills its pane: from its content size, not `flex: 1`. `flex: 1` is
+ * a basis of 0, so it gave the phone's pane no height to keep and the pad's
+ * rows were squeezed on top of each other.
+ */
+const ACTION_SURFACE_FILL = { flexGrow: 1, flexShrink: 1, flexBasis: 'auto' } as const;
+
 /**
  * Live game scoring screen — the core feature of the mobile app.
  * Works completely offline. All events written to WatermelonDB first,
@@ -2550,7 +2561,7 @@ function ScoringScreenContent() {
           pitcher and a non-empty batting order, so gating on it enforces both
           without duplicating the wizard's rules here. */}
       {!gameStarted ? (
-        <View className="flex-1 items-center justify-center px-6">
+        <View className="items-center justify-center px-6" style={ACTION_SURFACE_FILL}>
           <Text className="text-score-2xl font-bold text-gray-900 mb-1">Lineup required</Text>
           <Text className="text-score-sm text-gray-500 text-center mb-5">
             Set your batting order and starting pitcher before scoring. Pitches
@@ -2564,7 +2575,7 @@ function ScoringScreenContent() {
           </TouchableOpacity>
         </View>
       ) : gameState.outs >= OUTS_PER_INNING ? (
-        <View className="flex-1 items-center justify-center px-6">
+        <View className="items-center justify-center px-6" style={ACTION_SURFACE_FILL}>
           <Text className="text-score-2xl font-bold text-gray-900 mb-1">3 outs</Text>
           <Text className="text-score-sm text-gray-500 mb-5">
             {gameState.isTopOfInning ? 'Top' : 'Bottom'} {gameState.inning} is over.
@@ -2605,7 +2616,7 @@ function ScoringScreenContent() {
           </TouchableOpacity>
         </View>
       ) : sideNeedsBatter ? (
-        <View className="flex-1 items-center justify-center px-6">
+        <View className="items-center justify-center px-6" style={ACTION_SURFACE_FILL}>
           <Text className="text-score-2xl font-bold text-gray-900 mb-1">Who&apos;s up?</Text>
           <Text className="text-score-sm text-gray-500 mb-5 text-center">
             {weBat ? teamName : opponentName} — pick the batter coming up, or add a new one.
@@ -2763,7 +2774,17 @@ function PaneRow({ isWide, children }: { isWide: boolean; children: ReactNode })
  * content — which is why earlier splits only ever worked at 1:1.
  */
 function BookPane({ isWide, children }: { isWide: boolean; children: ReactNode }) {
-  if (!isWide) return <>{children}</>;
+  if (!isWide) {
+    // Phones stack the book above the action pane. Unscrolled, a full batting
+    // order pushed the pad off the bottom and squeezed its rows on top of each
+    // other. The book takes what the pad leaves (basis 0) and scrolls; the
+    // floor keeps the count and bases, which sit at its top, in view.
+    return (
+      <View testID="book-pane-phone" style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, minHeight: BOOK_MIN_HEIGHT_PHONE }}>
+        <ScrollView indicatorStyle="black" style={{ flex: 1 }}>{children}</ScrollView>
+      </View>
+    );
+  }
   return (
     <View className="border-r border-gray-200 bg-white" style={{ flex: 5 }}>
       <ScrollView indicatorStyle="black" style={{ flex: 1 }}>{children}</ScrollView>
@@ -2777,7 +2798,17 @@ function BookPane({ isWide, children }: { isWide: boolean; children: ReactNode }
  * it is touched dozens of times an inning, the book is read.
  */
 function ActionPane({ isWide, children }: { isWide: boolean; children: ReactNode }) {
-  if (!isWide) return <>{children}</>;
+  if (!isWide) {
+    // Sized to its content on phones, so every button keeps its full height.
+    // It may still shrink when the screen truly runs out, which PitchInput
+    // absorbs in its own scrollable modifiers section, never the outcome
+    // buttons.
+    return (
+      <View testID="action-pane-phone" style={{ flexGrow: 0, flexShrink: 1, flexBasis: 'auto' }}>
+        {children}
+      </View>
+    );
+  }
   return <View style={{ flex: 7 }}>{children}</View>;
 }
 
