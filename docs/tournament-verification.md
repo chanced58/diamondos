@@ -27,7 +27,7 @@ This is a team-centered first release. Contraction removes an occupied slot betw
 
 Physical iOS lineup-extension acceptance passed on 2026-10-16 (see [iPad acceptance](#ipad-acceptance--2026-10-16)). Airplane-mode → lineup changes → reload → reconnect on iOS, and all Android device checks, remain pending. Automated cache, queue, transport and replay tests passed; these do not replace native device acceptance.
 
-Normal local Supabase startup is blocked by two pre-existing migrations sharing `20260523000001`. Deployed history was preserved. The isolated test harness copies every SQL file unchanged and adjusts only local version labels. Resolve the historical version collision against the target environment's migration history before deployment.
+Two migrations once shared version `20260523000001`; `user_training_certification` is now `20260523000003`, so local Supabase startup no longer collides. The isolated test harness copies every SQL file unchanged and adjusts only local version labels.
 
 ## Reproduce database checks
 
@@ -60,7 +60,7 @@ Regression tests reproduced the cache/history and SQL failures before the fixes.
 The six tournament migrations were applied to `diamondos-prod` through the Supabase MCP `apply_migration` tool, one transaction per file, in filename order. Each recorded version was then reset to its repository timestamp (`20261013000001`–`20261014000002`). Do not use `supabase db push` against prod: most historical prod versions were recorded under apply-time timestamps rather than repository filenames.
 
 - Pre-flight: no tournament objects existed; every referenced function, column, enum value and unique key was present; no file uses `CONCURRENTLY` or enum additions.
-- The `20260523000001` version collision is local-only. Prod recorded those two files as `20260523142822` and `20260523201608`, so it did not block deployment.
+- The `20260523000001` version collision (since resolved by renaming `user_training_certification` to `20260523000003`) was local-only. Prod recorded those two files as `20260523142822` and `20260523201608`, so it did not block deployment.
 - Verification: all 16 deployed function bodies match the repository byte-for-byte (`md5(prosrc)`), along with the 3 RLS-enabled tables, 3 policies, 10 triggers, 6 constraints and the RPC `EXECUTE` grants. All 29 existing games remain non-tournament.
 - Advisors: no blocking findings. The trigger functions are reported as RPC-callable, but Postgres rejects direct calls to trigger functions. Explicit `REVOKE`s remain a hygiene follow-up, along with `(select auth.uid())` in the two read policies.
 - Not deployed by this change: `20260420000001`, `20260730000001` and `20260801000001`–`04` are still missing from prod and are tracked separately.
