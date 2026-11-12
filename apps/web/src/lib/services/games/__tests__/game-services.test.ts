@@ -13,6 +13,9 @@ const mockLoadReconciliation = jest.fn();
 
 jest.mock('@/lib/games/finalize', () => ({
   getAuthorizedCoach: (...args: unknown[]) => mockGetAuthorizedCoach(...args),
+  // Starting, correcting and ending a game admit scorekeepers too; these
+  // tests stand the same mock in for both role checks.
+  getAuthorizedFinalizer: (...args: unknown[]) => mockGetAuthorizedCoach(...args),
   deriveScoresFromEvents: (...args: unknown[]) => mockDeriveScores(...args),
 }));
 jest.mock('@/app/(app)/messages/notify', () => ({

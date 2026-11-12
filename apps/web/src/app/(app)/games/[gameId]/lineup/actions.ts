@@ -6,7 +6,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import {
   DB_TO_POSITION,
   getMaxBattingOrder,
-  isCoachRole,
+  isScorerRole,
   POSITION_TO_DB,
   validateFieldingPositions,
   type PlayerPosition,
@@ -43,11 +43,12 @@ export async function saveLineupAction(
     .select('role')
     .eq('team_id', game.team_id)
     .eq('user_id', user.id)
-    .single();
+    .eq('is_active', true)
+    .maybeSingle();
 
-  const isTeamCoach = !!membership && isCoachRole(membership.role);
-  if (!isTeamCoach && !(await authorizeLeagueGameScorer(supabase, user.id, gameId))) {
-    return 'Only coaches can set the lineup.';
+  const isTeamScorer = !!membership && isScorerRole(membership.role);
+  if (!isTeamScorer && !(await authorizeLeagueGameScorer(supabase, user.id, gameId))) {
+    return 'Only coaches and scorekeepers can set the lineup.';
   }
 
   const leagueSettings = await getScoringSettingsForGame(supabase, {

@@ -71,6 +71,12 @@ export async function getDirtyLineupState(database: Database): Promise<DirtyLine
  *    their slot and move to the end of the order (see
  *    resolveBattingOrderCollisions).
  *
+ *  - Withheld guests: rows for a guest player the server still lacks (its
+ *    push failed this cycle) are left out, so one guest can't fail the
+ *    whole lineup on its foreign key. They stay dirty and are re-stamped as
+ *    edited now, so the next cycle's last-write-wins check still sees them
+ *    as newer than the lineup just written and pushes them with the rest.
+ *
  * Returns 'pushed' or 'skipped'.
  */
 export async function pushLineupsForGame(
@@ -78,6 +84,7 @@ export async function pushLineupsForGame(
   database: Database,
   gameRemoteId: string,
   localEditedAtMs: number,
+  withheldPlayerIds: ReadonlySet<string> = new Set(),
 ): Promise<'pushed' | 'skipped'> {
   const [gameResult, serverMaxResult] = await Promise.all([
     supabase.from('games').select('status, tournament_id').eq('id', gameRemoteId).maybeSingle(),
@@ -162,9 +169,14 @@ export async function pushLineupsForGame(
 
   // Atomic replace: fn_replace_game_lineup deletes and inserts in one
   // transaction server-side, so a failure can never strand an empty lineup.
+  const { pushed: rowsToPush, withheld } = lineupRowsToPush(localRows, withheldPlayerIds);
+  // Never replace a lineup with nothing because every player in it is waiting.
+  if (rowsToPush.length === 0 && withheld.length > 0) {
+    throw new Error('every player in this lineup is a guest not yet on the server');
+  }
   const { error: replaceError } = await supabase.rpc('fn_replace_game_lineup', {
     p_game_id: gameRemoteId,
-    p_rows: localRows.map((row) => {
+    p_rows: rowsToPush.map((row) => {
       const battingOrder = adjustments.has(row.id)
         ? adjustments.get(row.id)
         : row.battingOrder ?? null;
@@ -181,7 +193,34 @@ export async function pushLineupsForGame(
     }),
   });
   if (replaceError) throw replaceError;
+  if (withheld.length > 0) {
+    const editedAt = Date.now();
+    await database.write(async () => {
+      for (const row of withheld) {
+        await row.update((r) => {
+          r.updatedAt = editedAt;
+        });
+      }
+    });
+  }
   return 'pushed';
+}
+
+/**
+ * Split a game's local lineup into the rows to send and the rows withheld
+ * because their player is a guest the server doesn't have yet.
+ */
+export function lineupRowsToPush<T extends { playerRemoteId: string }>(
+  rows: readonly T[],
+  withheldPlayerIds: ReadonlySet<string>,
+): { pushed: T[]; withheld: T[] } {
+  const pushed: T[] = [];
+  const withheld: T[] = [];
+  for (const row of rows) {
+    if (withheldPlayerIds.has(row.playerRemoteId)) withheld.push(row);
+    else pushed.push(row);
+  }
+  return { pushed, withheld };
 }
 
 /**

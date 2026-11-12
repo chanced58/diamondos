@@ -1,10 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { authorizeGameScorer, authorizeGameStart } from '../authorize';
 
-const mockGetAuthorizedCoach = jest.fn();
+const mockGetAuthorizedFinalizer = jest.fn();
 const mockAuthorizeLeagueStaff = jest.fn();
 jest.mock('@/lib/games/finalize', () => ({
-  getAuthorizedCoach: (...args: unknown[]) => mockGetAuthorizedCoach(...args),
+  getAuthorizedFinalizer: (...args: unknown[]) => mockGetAuthorizedFinalizer(...args),
 }));
 jest.mock('../../league-admin/authorize', () => ({
   authorizeLeagueStaff: (...args: unknown[]) => mockAuthorizeLeagueStaff(...args),
@@ -36,7 +36,7 @@ function fakeDb(homeGameIds: string[]): SupabaseClient {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockGetAuthorizedCoach.mockResolvedValue({ error: 'Only coaches can perform this action.', code: 'forbidden' });
+  mockGetAuthorizedFinalizer.mockResolvedValue({ error: 'Only coaches and scorekeepers can finalize a game.', code: 'forbidden' });
   mockAuthorizeLeagueStaff.mockResolvedValue({ ok: true, data: {} });
 });
 
@@ -58,8 +58,21 @@ describe('authorizeGameStart', () => {
     expect(await authorizeGameStart(fakeDb(['home-game']), 'stranger', 'home-game')).toMatchObject({ ok: false });
   });
 
+  it('should let the team\'s scorekeeper start the game (the coach-or-scorekeeper role check passes)', async () => {
+    mockGetAuthorizedFinalizer.mockResolvedValue({ game: GAME });
+    expect(await authorizeGameStart(fakeDb([]), 'scorekeeper', 'g')).toEqual({ ok: true, data: GAME });
+    expect(mockGetAuthorizedFinalizer).toHaveBeenCalledWith(expect.anything(), 'scorekeeper', 'g');
+  });
+
+  it('should answer not_found for a game that does not exist', async () => {
+    mockGetAuthorizedFinalizer.mockResolvedValue({ error: 'Game not found.', code: 'not_found' });
+    expect(await authorizeGameStart(fakeDb([]), 'coach', 'missing')).toEqual({
+      ok: false, code: 'not_found', error: 'Game not found.',
+    });
+  });
+
   it('should keep coach authorization as is', async () => {
-    mockGetAuthorizedCoach.mockResolvedValue({ game: GAME });
+    mockGetAuthorizedFinalizer.mockResolvedValue({ game: GAME });
     expect(await authorizeGameStart(fakeDb([]), 'coach', 'g')).toEqual({ ok: true, data: GAME });
     expect(mockAuthorizeLeagueStaff).not.toHaveBeenCalled();
   });
@@ -74,7 +87,7 @@ describe('authorizeGameScorer', () => {
   });
 
   it('should say a coach got in as a coach', async () => {
-    mockGetAuthorizedCoach.mockResolvedValue({ game: GAME });
+    mockGetAuthorizedFinalizer.mockResolvedValue({ game: GAME });
     expect(await authorizeGameScorer(fakeDb(['home-game']), 'coach', 'home-game')).toEqual({
       ok: true,
       data: { game: GAME, asLeagueStaff: false },

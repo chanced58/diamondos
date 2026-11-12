@@ -2,7 +2,7 @@ import type { JSX } from 'react';
 import { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
-import { visibleOpponentRoster } from '@baseball/shared';
+import { isScorerRole, visibleOpponentRoster } from '@baseball/shared';
 import { createServerClient } from '@/lib/supabase/server';
 import { getUserAccess } from '@/lib/user-access';
 import { getScoringSettingsForGame } from '@/lib/game-scoring-settings';
@@ -37,7 +37,10 @@ export default async function ScorePage({ params }: { params: { gameId: string }
 
   if (!game) notFound();
 
-  const { isCoach, isPlatformAdmin } = await getUserAccess(game.team_id, user.id);
+  const { isCoach, isPlatformAdmin, role } = await getUserAccess(game.team_id, user.id);
+  // A scorekeeper records the plays (RLS lets them insert game_events), so
+  // they get the scoring controls, as coaches do.
+  const isTeamScorer = isCoach || isScorerRole(role);
 
   // League staff score a league game's home row without a team seat.
   const isLeagueScorer = !isCoach && (await authorizeLeagueGameScorer(db, user.id, params.gameId));
@@ -306,7 +309,7 @@ export default async function ScorePage({ params }: { params: { gameId: string }
       initialEvents={allEvents}
       minNextSequenceNumber={allEventsMaxSeq + 1}
       currentUserId={user.id}
-      isCoach={isCoach || isLeagueScorer}
+      isCoach={isTeamScorer || isLeagueScorer}
       backHref={isLeagueScorer ? '/league/admin/games' : undefined}
       seasonSprayPoints={seasonSprayPoints}
       scoringConfig={scoringConfig}

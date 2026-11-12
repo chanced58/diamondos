@@ -3,12 +3,10 @@
 import { revalidatePath } from 'next/cache';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { getMaxBattingOrder } from '@baseball/shared';
+import { getMaxBattingOrder, isScorerRole } from '@baseball/shared';
 import type { Database } from '@baseball/database';
 import { getScoringSettingsForGame } from '@/lib/game-scoring-settings';
 import { authorizeLeagueGameScorer } from '@/lib/services/games/authorize';
-
-const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
 interface CoachContext {
   userId: string;
@@ -41,10 +39,12 @@ async function getCoachContext(gameId: string): Promise<CoachContext | { error: 
     .select('role')
     .eq('team_id', game.team_id)
     .eq('user_id', user.id)
+    .eq('is_active', true)
     .maybeSingle();
-  const isTeamCoach = !!membership && COACH_ROLES.includes(membership.role);
-  if (!isTeamCoach && !(await authorizeLeagueGameScorer(db, user.id, gameId))) {
-    return { error: 'Only coaches can edit the lineup.' };
+  // Coaches and scorekeepers add guests; league staff on the home row.
+  const isTeamScorer = !!membership && isScorerRole(membership.role);
+  if (!isTeamScorer && !(await authorizeLeagueGameScorer(db, user.id, gameId))) {
+    return { error: 'Only coaches and scorekeepers can edit the lineup.' };
   }
 
   const { data: leagueRow } = await db

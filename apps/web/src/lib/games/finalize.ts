@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { applyPitchReverted, computeLineScore } from '@baseball/shared';
+import { applyPitchReverted, computeLineScore, SCORER_ROLES } from '@baseball/shared';
 import { recomputeLeagueSnapshot } from '@/lib/league-snapshot/recompute';
 import { runReconciliationForGame } from '@/lib/dual-scorekeeper/reconcile';
 import { refreshLeagueGame } from '@/lib/league-games/refresh';
@@ -7,11 +7,12 @@ import { refreshLeagueGame } from '@/lib/league-games/refresh';
 export const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
 /**
- * Roles that may finalize a game the mobile app ended offline: coaches plus
- * scorekeepers, who record the game's events (RLS lets them insert
- * `game_events`, game_end included) and so must be able to complete it.
+ * Roles that run a game's book — start it, set its lineups, correct and
+ * finalize it: coaches plus scorekeepers, who record the game's events (RLS
+ * lets them insert `game_events`, game_end included). `SCORER_ROLES` in
+ * `@baseball/shared`; the database's `is_game_scorer` admits the same roles.
  */
-export const FINALIZE_ROLES = [...COACH_ROLES, 'scorekeeper'];
+export const FINALIZE_ROLES: readonly string[] = SCORER_ROLES;
 
 /**
  * Authorize a user as a coach (or platform admin) for a game's team.
@@ -22,7 +23,10 @@ export async function getAuthorizedCoach(supabase: SupabaseClient, userId: strin
   return authorizeGameRole(supabase, userId, gameId, COACH_ROLES, 'Only coaches can perform this action.');
 }
 
-/** Authorize a coach, scorekeeper (or platform admin) to finalize a game. */
+/**
+ * Authorize a coach, scorekeeper (or platform admin) to run a game's book:
+ * start, correct and finalize it.
+ */
 export async function getAuthorizedFinalizer(supabase: SupabaseClient, userId: string, gameId: string) {
   return authorizeGameRole(
     supabase, userId, gameId, FINALIZE_ROLES, 'Only coaches and scorekeepers can finalize a game.',
