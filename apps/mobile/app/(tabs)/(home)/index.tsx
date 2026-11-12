@@ -20,6 +20,7 @@ import {
   UpcomingList,
 } from '../../../src/features/home/DashboardSections';
 import { describeApiError } from '../../../src/lib/api-client';
+import { channelScreen, useOpenInTab } from '../../../src/navigation/open-in-tab';
 
 /**
  * Home (the web dashboard): live games, the next game, the recent record and
@@ -33,6 +34,7 @@ export default function HomeScreen() {
   const { activeTeam, loading: roleLoading } = useRole();
   const [view, setView] = useState<DashboardView>('team');
   const query = useDashboard(activeTeam?.teamId, view);
+  const openInTab = useOpenInTab();
 
   if (!activeTeam) {
     return (
@@ -138,7 +140,7 @@ export default function HomeScreen() {
               title="Announcements"
               action={
                 channelId ? (
-                  <CardAction label="Post" onPress={() => router.push({ pathname: '/(tabs)/messages/[channelId]', params: { channelId } })} />
+                  <CardAction label="Post" onPress={() => openInTab(channelScreen(channelId))} />
                 ) : (
                   <CardAction label="Messages" onPress={() => router.push('/(tabs)/messages')} />
                 )

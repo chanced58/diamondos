@@ -1,17 +1,19 @@
 import { Text, TouchableOpacity, View } from 'react-native';
-import { router } from 'expo-router';
 import { Badge, Button } from '@baseball/ui';
 import { formatDate, type DashboardAnnouncement, type DashboardLiveGame, type DashboardNextGame, type DashboardRecentGame, type DashboardUpcomingItem } from '@baseball/shared';
 import { useScopeTheme } from '../../theme/ThemeScope';
+import { eventScreen, gameScreen, practiceScreen, useOpenInTab, type TabScreen } from '../../navigation/open-in-tab';
 import { dayParts, liveSituation, matchup, nextGameWhen, result, upcomingDetail } from './dashboard-format';
 
 /**
  * The Home tab's dashboard sections, mirroring the web dashboard's cards. Items
  * of another league team (in the league view) are shown but not opened: their
  * game pages belong to that team.
+ *
+ * Everything here opens in another tab's stack, so it goes through
+ * `useOpenInTab` (see open-in-tab.ts), which leaves that tab's list beneath
+ * the screen instead of making the screen the stack's only route.
  */
-
-const openGame = (gameId: string) => router.push({ pathname: '/(tabs)/schedule/games/[gameId]', params: { gameId } });
 
 /** A white card with a title row and an optional action on the right. */
 export function DashboardCard({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
@@ -28,6 +30,7 @@ export function DashboardCard({ title, action, children }: { title: string; acti
 
 /** A live game from the server: the score and situation, opening the live viewer for the team's own games. */
 export function LiveGameRow({ game, activeTeamId }: { game: DashboardLiveGame; activeTeamId: string }) {
+  const openInTab = useOpenInTab();
   const own = game.teamId === activeTeamId;
   const body = (
     <>
@@ -52,7 +55,7 @@ export function LiveGameRow({ game, activeTeamId }: { game: DashboardLiveGame; a
       accessibilityRole="button"
       accessibilityLabel={`Live: ${matchup(game.isHome, game.opponentName)}, ${game.ourScore} to ${game.theirScore}. Follow live.`}
       className={className}
-      onPress={() => router.push({ pathname: '/(tabs)/schedule/games/[gameId]/live', params: { gameId: game.id } })}
+      onPress={() => openInTab(gameScreen(game.id, 'live'))}
     >
       {body}
     </TouchableOpacity>
@@ -64,6 +67,7 @@ export function NextUpCard({ game, activeTeamId, isCoach }: { game: DashboardNex
   // Translucent white on the Light navy card is 6:1+; on the brighter Dark and
   // Dugout brand blue it drops to ~3:1, so the secondary lines go opaque there.
   const light = useScopeTheme() === 'light';
+  const openInTab = useOpenInTab();
   const eyebrow = light ? 'text-white/70' : 'text-white';
   const detail = light ? 'text-white/75' : 'text-white';
   if (!game) {
@@ -87,14 +91,14 @@ export function NextUpCard({ game, activeTeamId, isCoach }: { game: DashboardNex
       {own && (
         <View className="flex-row gap-2 mt-4">
           <View className="flex-1">
-            <Button label="Open game" variant="secondary" onPress={() => openGame(game.id)} />
+            <Button label="Open game" variant="secondary" onPress={() => openInTab(gameScreen(game.id))} />
           </View>
           {isCoach && (
             <View className="flex-1">
               <Button
                 label="Set lineup"
                 variant="secondary"
-                onPress={() => router.push({ pathname: '/(tabs)/schedule/games/[gameId]/lineup', params: { gameId: game.id } })}
+                onPress={() => openInTab(gameScreen(game.id, 'lineup'))}
               />
             </View>
           )}
@@ -119,11 +123,11 @@ export function StatTile({ label, value, detail, tone }: { label: string; value:
 const KIND_BADGES = { game: { label: 'Game', variant: 'default' }, practice: { label: 'Practice', variant: 'safe' }, event: { label: 'Event', variant: 'warning' } } as const;
 
 /** Where an upcoming item opens, or null for another team's game. */
-function openUpcoming(item: DashboardUpcomingItem, activeTeamId: string): (() => void) | null {
+export function upcomingScreen(item: DashboardUpcomingItem, activeTeamId: string): TabScreen | null {
   if (item.teamId !== activeTeamId) return null;
-  if (item.kind === 'game') return () => openGame(item.id);
-  if (item.kind === 'practice') return () => router.push({ pathname: '/(tabs)/more/practices/[practiceId]', params: { practiceId: item.id } });
-  return () => router.push({ pathname: '/(tabs)/schedule/events/[eventId]', params: { eventId: item.id } });
+  if (item.kind === 'game') return gameScreen(item.id);
+  if (item.kind === 'practice') return practiceScreen(item.id);
+  return eventScreen(item.id);
 }
 
 /** A dated row: the month and day in a column, then the text, then a trailing element. */
@@ -167,11 +171,13 @@ function DatedRow({
 
 /** Upcoming items in the next four weeks, or a line saying there are none. */
 export function UpcomingList({ items, activeTeamId, emptyText }: { items: DashboardUpcomingItem[]; activeTeamId: string; emptyText: string }) {
+  const openInTab = useOpenInTab();
   if (items.length === 0) return <Text className="px-4 py-3 text-sm text-gray-500">{emptyText}</Text>;
   return (
     <>
       {items.map((item) => {
         const badge = KIND_BADGES[item.kind];
+        const target = upcomingScreen(item, activeTeamId);
         return (
           <DatedRow
             key={`${item.kind}-${item.id}`}
@@ -180,7 +186,7 @@ export function UpcomingList({ items, activeTeamId, emptyText }: { items: Dashbo
             title={item.label}
             detail={upcomingDetail(item.date, item.timeZone, item.kind === 'event' ? null : item.sublabel)}
             right={<Badge label={item.kind === 'event' ? (item.sublabel ?? badge.label) : badge.label} variant={badge.variant} />}
-            onPress={openUpcoming(item, activeTeamId)}
+            onPress={target ? () => openInTab(target) : null}
           />
         );
       })}
@@ -192,6 +198,7 @@ const RESULT_VARIANTS = { W: 'safe', L: 'danger', T: 'default' } as const;
 
 /** Completed games, newest first, with the score from our side. */
 export function RecentGamesList({ games, activeTeamId }: { games: DashboardRecentGame[]; activeTeamId: string }) {
+  const openInTab = useOpenInTab();
   if (games.length === 0) return <Text className="px-4 py-3 text-sm text-gray-500">No completed games yet.</Text>;
   return (
     <>
@@ -212,7 +219,7 @@ export function RecentGamesList({ games, activeTeamId }: { games: DashboardRecen
                 <Badge label={outcome} variant={RESULT_VARIANTS[outcome]} />
               </View>
             }
-            onPress={game.teamId === activeTeamId ? () => openGame(game.id) : null}
+            onPress={game.teamId === activeTeamId ? () => openInTab(gameScreen(game.id)) : null}
           />
         );
       })}
