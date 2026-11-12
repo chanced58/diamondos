@@ -5,6 +5,7 @@ import {
   derivePitchingStats,
   deriveBattingStats,
   filterResetAndReverted,
+  perGameRate,
   weAreHome,
   winPct,
   type GameEvent,
@@ -13,6 +14,7 @@ import { RELEVANT_EVENT_TYPES } from '@/app/(app)/compliance/constants';
 import { buildLineupsByGameId } from './lineups';
 import { fetchAllEventsForGames } from './fetch-events';
 import { rowsOf } from './rows-of';
+import { loadLeagueStatInnings } from './stat-innings';
 
 export interface TeamComparisonRow {
   teamId: string;
@@ -27,7 +29,7 @@ export interface TeamComparisonRow {
   runsAllowed: number;
   /** H / AB; 0 with no at-bats (the web table's convention). */
   teamAvg: number;
-  /** Earned runs per 7 innings, like each pitcher's ERA; 0 with no outs. */
+  /** Earned runs per the league's stat innings (`getStatInnings`), like each pitcher's ERA; 0 with no outs. */
   teamEra: number;
   totalHits: number;
   totalStrikeouts: number;
@@ -52,7 +54,10 @@ type TeamRecord = { wins: number; losses: number; ties: number; runsScored: numb
  * against them. Sorted by winning percentage. Throws when any read fails.
  */
 export async function loadTeamComparison(db: SupabaseClient, leagueId: string): Promise<TeamComparisonRow[]> {
-  const leagueTeams = await getLeagueTeams(db as never, leagueId);
+  const [leagueTeams, statInnings] = await Promise.all([
+    getLeagueTeams(db as never, leagueId),
+    loadLeagueStatInnings(db, leagueId),
+  ]);
   if (leagueTeams.length === 0) return [];
   const platformMembers = leagueTeams.filter((t) => t.team_id);
   const opponentMembers = leagueTeams.filter((t) => t.opponent_team_id);
@@ -102,7 +107,7 @@ export async function loadTeamComparison(db: SupabaseClient, leagueId: string): 
       hits += s.hits;
       atBats += s.atBats;
     }
-    const pitching = sumPitching(derivePitchingStats(teamEvents, roster).values(), rosterIds);
+    const pitching = sumPitching(derivePitchingStats(teamEvents, roster, statInnings).values(), rosterIds);
 
     rows.push({
       teamId,
@@ -110,7 +115,7 @@ export async function loadTeamComparison(db: SupabaseClient, leagueId: string): 
       isOpponentTeam: false,
       gamesPlayed: teamGames.length,
       ...record(teamGames, true),
-      ...rates(hits, atBats, pitching),
+      ...rates(hits, atBats, pitching, statInnings),
     });
   }
 
@@ -132,6 +137,7 @@ export async function loadTeamComparison(db: SupabaseClient, leagueId: string): 
       derivePitchingStats(
         oppEvents as unknown as GameEvent[],
         roster.map((p) => ({ id: p.id as string, firstName: p.first_name as string, lastName: p.last_name as string })),
+        statInnings,
       ).values(),
       rosterIds,
     );
@@ -142,7 +148,7 @@ export async function loadTeamComparison(db: SupabaseClient, leagueId: string): 
       isOpponentTeam: true,
       gamesPlayed: oppGames.length,
       ...record(oppGames, false),
-      ...rates(hits, atBats, pitching),
+      ...rates(hits, atBats, pitching, statInnings),
     });
   }
 
@@ -181,11 +187,15 @@ function sumPitching(
   return totals;
 }
 
-function rates(hits: number, atBats: number, pitching: { outs: number; earnedRuns: number; strikeouts: number }) {
-  const innings = pitching.outs / 3;
+function rates(
+  hits: number,
+  atBats: number,
+  pitching: { outs: number; earnedRuns: number; strikeouts: number },
+  statInnings: number,
+) {
   return {
     teamAvg: atBats > 0 ? hits / atBats : 0,
-    teamEra: innings > 0 ? (pitching.earnedRuns * 7) / innings : 0,
+    teamEra: pitching.outs > 0 ? perGameRate(pitching.earnedRuns, pitching.outs, statInnings) : 0,
     totalHits: hits,
     totalStrikeouts: pitching.strikeouts,
   };

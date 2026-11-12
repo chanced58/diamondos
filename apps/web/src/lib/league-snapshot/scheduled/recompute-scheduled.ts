@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   computeLeagueGameStandings,
+  computeLeagueGameStreaks,
   manualLinesToBattingStats,
   mergeBattingStats,
   mergePitchingStats,
@@ -58,12 +59,29 @@ function bookState(book: LeagueGameBook | null) {
 }
 
 /** Both teams' lines from one team's book: its own side read with its lineup, the other side through the roster record. */
-function bookLines(game: ScheduledLeagueGame, bookSide: Side, players: PlayerNames): Record<Side, SideStats> {
+function bookLines(
+  game: ScheduledLeagueGame,
+  bookSide: Side,
+  players: PlayerNames,
+  statInnings: number,
+): Record<Side, SideStats> {
   const book = game[bookSide];
   if (!book) return { home: emptyLines(), away: emptyLines() };
   const maps = bookSide === 'home' ? game.sideMaps.homeBook : game.sideMaps.awayBook;
-  const scoring = deriveSideStats({ events: book.events, sideMap: maps.scoringSide, sidePlayers: players, lineup: book.lineup });
-  const other = deriveSideStats({ events: book.events, sideMap: maps.otherSide, sidePlayers: players, lineup: undefined });
+  const scoring = deriveSideStats({
+    events: book.events,
+    sideMap: maps.scoringSide,
+    sidePlayers: players,
+    lineup: book.lineup,
+    statInnings,
+  });
+  const other = deriveSideStats({
+    events: book.events,
+    sideMap: maps.otherSide,
+    sidePlayers: players,
+    lineup: undefined,
+    statInnings,
+  });
   return bookSide === 'home' ? { home: scoring, away: other } : { home: other, away: scoring };
 }
 
@@ -120,9 +138,13 @@ function manualContribution(game: ScheduledLeagueGame): GameContribution {
  * The result and both teams' lines for one league game, from whichever source
  * counts (`selectResultSource`): one book, two books (the home book except
  * where the home coach took the away value), or the hand-entered result.
- * Null when nothing counts yet.
+ * Null when nothing counts yet. Pitching rates are per `statInnings` innings.
  */
-export function resolveGameContribution(game: ScheduledLeagueGame, players: PlayerNames): GameContribution | null {
+export function resolveGameContribution(
+  game: ScheduledLeagueGame,
+  players: PlayerNames,
+  statInnings: number,
+): GameContribution | null {
   const source = selectResultSource({
     home: bookState(game.home),
     away: bookState(game.away),
@@ -135,12 +157,12 @@ export function resolveGameContribution(game: ScheduledLeagueGame, players: Play
     case 'manual':
       return manualContribution(game);
     case 'single': {
-      const lines = bookLines(game, source.side, players);
+      const lines = bookLines(game, source.side, players, statInnings);
       return { result: bookRuns(game, source.side), teamLines: lines, playerLines: lines };
     }
     case 'dual': {
-      const fromHome = bookLines(game, 'home', players);
-      const fromAway = bookLines(game, 'away', players);
+      const fromHome = bookLines(game, 'home', players, statInnings);
+      const fromAway = bookLines(game, 'away', players, statInnings);
       return {
         result: bookRuns(game, source.scoreFrom),
         teamLines: source.scoreFrom === 'home' ? fromHome : fromAway,
@@ -160,10 +182,10 @@ function mergeInto<T>(target: Map<string, T>, lines: Map<string, T>, merge: (a: 
   }
 }
 
-function addLines(byTeam: Map<string, SideStats>, teamId: string, lines: SideStats): void {
+function addLines(byTeam: Map<string, SideStats>, teamId: string, lines: SideStats, statInnings: number): void {
   const teamLines = byTeam.get(teamId) ?? emptyLines();
   mergeInto(teamLines.batting, lines.batting, mergeBattingStats);
-  mergeInto(teamLines.pitching, lines.pitching, mergePitchingStats);
+  mergeInto(teamLines.pitching, lines.pitching, (a, b) => mergePitchingStats(a, b, statInnings));
   byTeam.set(teamId, teamLines);
 }
 
@@ -176,12 +198,15 @@ function realPlayersOnly<T>(lines: Map<string, T>): Map<string, T> {
  * from one result per game, `team` player rows per (player, team they played
  * for), `season` player rows merging each player's team lines under the team
  * of their latest league game, team stats over every line of the source each
- * result came from (placeholders included) and spotlights.
+ * result came from (placeholders included) and spotlights. ERA is per
+ * `statInnings` innings (the league's `getStatInnings`), and each team's
+ * streak follows its games in the order played.
  */
 export function buildScheduledSnapshot(
   inputs: ScheduledLeagueInputs,
   leagueId: string,
   season: string,
+  statInnings: number,
 ): LeagueSeasonSnapshot {
   const names = new Map(inputs.players.map((player) => [player.id, player]));
   const teamName = (teamId: string) => inputs.teamNames.get(teamId) ?? '';
@@ -192,14 +217,14 @@ export function buildScheduledSnapshot(
 
   // Games are oldest first, so a player's last write here is their latest team.
   for (const game of inputs.games) {
-    const contribution = resolveGameContribution(game, inputs.players);
+    const contribution = resolveGameContribution(game, inputs.players, statInnings);
     if (!contribution) continue;
     results.push(contribution.result);
     for (const side of ['home', 'away'] as const) {
       const teamId = side === 'home' ? game.homeTeamId : game.awayTeamId;
-      addLines(totalsByTeam, teamId, contribution.teamLines[side]);
+      addLines(totalsByTeam, teamId, contribution.teamLines[side], statInnings);
       const lines = contribution.playerLines[side];
-      addLines(linesByTeam, teamId, lines);
+      addLines(linesByTeam, teamId, lines, statInnings);
       for (const id of [...lines.batting.keys(), ...lines.pitching.keys()]) {
         if (!isPlaceholder(id)) latestTeamOf.set(id, teamId);
       }
@@ -222,7 +247,7 @@ export function buildScheduledSnapshot(
     const teamOf = new Map([...new Set([...batting.keys(), ...pitching.keys()])].map((id) => [id, playerInfo(id, teamId)]));
     players.push(...combinePlayerStats({ batting, pitching, fielding: new Map(), teamOf, leagueId, season, scope: 'team' }));
     mergeInto(seasonLines.batting, batting, mergeBattingStats);
-    mergeInto(seasonLines.pitching, pitching, mergePitchingStats);
+    mergeInto(seasonLines.pitching, pitching, (a, b) => mergePitchingStats(a, b, statInnings));
   }
   const seasonTeamOf = new Map([...latestTeamOf].map(([id, teamId]) => [id, playerInfo(id, teamId)]));
   const seasonPlayers = combinePlayerStats({
@@ -237,6 +262,8 @@ export function buildScheduledSnapshot(
   players.push(...seasonPlayers);
 
   const records = computeLeagueGameStandings(results, inputs.memberTeamIds);
+  // Results are in game order (oldest first), as the streaks need.
+  const streaks = computeLeagueGameStreaks(results);
   const standings = [...records].map(([teamId, record]) =>
     standingRow({
       leagueId,
@@ -246,6 +273,7 @@ export function buildScheduledSnapshot(
       divisionId: inputs.divisionOf.get(teamId) ?? null,
       teamName: teamName(teamId),
       record,
+      streak: streaks.get(teamId),
     }),
   );
   const teamStats = [...records].map(([teamId, record]) =>
@@ -257,6 +285,7 @@ export function buildScheduledSnapshot(
       record,
       batting: totalsByTeam.get(teamId)?.batting.values() ?? [],
       pitching: totalsByTeam.get(teamId)?.pitching.values() ?? [],
+      statInnings,
     }),
   );
 
@@ -265,14 +294,16 @@ export function buildScheduledSnapshot(
 
 /**
  * Rebuild the league snapshot of a league that schedules its own games, from
- * its league games only (team-created games never count). Throws with the
- * league and season on any failed read or write.
+ * its league games only (team-created games never count), with ERA per
+ * `statInnings` innings. Throws with the league and season on any failed
+ * read or write.
  */
 export async function recomputeScheduledLeagueSnapshot(
   db: SupabaseClient,
   leagueId: string,
   season: string,
+  statInnings: number,
 ): Promise<void> {
   const inputs = await loadScheduledLeagueInputs(db, leagueId, season);
-  await replaceLeagueSeasonSnapshot(db, leagueId, season, buildScheduledSnapshot(inputs, leagueId, season));
+  await replaceLeagueSeasonSnapshot(db, leagueId, season, buildScheduledSnapshot(inputs, leagueId, season, statInnings));
 }

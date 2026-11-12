@@ -3,6 +3,8 @@ import {
   formatSeasonStat,
   pitcherRestStatus,
   pitcherRestStatusAt,
+  PITCHING_SEASON_COLUMNS,
+  pitchingSeasonColumns,
   pitchingTotals,
   visibleBattingColumns,
   visiblePitchingColumns,
@@ -68,6 +70,37 @@ describe('totals', () => {
     expect(totals.whip).toBeCloseTo(8 / 7);
     expect(totals.strikePercentage).toBeCloseTo(0.6);
     expect(Number.isNaN(pitchingTotals([{ ...pitcher, inningsPitchedOuts: 0 }]).era)).toBe(true);
+  });
+
+  it('should recompute the totals per 9 innings for an adult league', () => {
+    const pitcher = { inningsPitchedOuts: 3, totalPitches: 20, strikes: 12, firstPitchStrikes: 2, totalPAs: 6,
+      threeBallCountPAs: 1, threeZeroCountPAs: 0, hitsAllowed: 2, runsAllowed: 2, earnedRunsAllowed: 2, walksAllowed: 1,
+      strikeouts: 3, hitBatters: 0, wildPitches: 0 };
+    expect(pitchingTotals([pitcher]).era).toBeCloseTo(14);
+    const totals = pitchingTotals([pitcher], 9);
+    expect(totals.era).toBeCloseTo(18);
+    expect(totals.strikeoutsPerSeven).toBeCloseTo(27);
+    expect(totals.walksPerSeven).toBeCloseTo(9);
+    expect(totals.whip).toBeCloseTo(3);
+  });
+});
+
+describe('pitching column labels', () => {
+  const label = (cols: { key: string; label: string }[], key: string) => cols.find((c) => c.key === key)?.label;
+
+  it('should label the per-game rates K/7 and BB/7 by default, as for high school', () => {
+    const cols = visiblePitchingColumns('college', true);
+    expect(label(cols, 'strikeoutsPerSeven')).toBe('K/7');
+    expect(label(cols, 'walksPerSeven')).toBe('BB/7');
+    expect(cols).toEqual(PITCHING_SEASON_COLUMNS);
+  });
+
+  it('should label them K/9 and BB/9 in a league that plays nine innings', () => {
+    const cols = visiblePitchingColumns('college', true, 9);
+    expect(label(cols, 'strikeoutsPerSeven')).toBe('K/9');
+    expect(label(cols, 'walksPerSeven')).toBe('BB/9');
+    expect(cols.find((c) => c.key === 'era')?.title).toBe('Earned run average (per 9 innings)');
+    expect(keys(cols)).toEqual(keys(pitchingSeasonColumns(7)));
   });
 });
 

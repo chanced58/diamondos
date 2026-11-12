@@ -217,8 +217,8 @@ function SeasonStats({
               rows={sortStatRows(stats.pitching, sorts.pitching, (r) => r.playerName, (r, key) => pitcherSortValue(r, key, now))}
               rowKey={(r) => r.playerId}
               rowLabel={(r) => r.playerName}
-              columns={seasonPitchingColumns(tier, stats.features.advancedPitching, now)}
-              totals={seasonPitchingTotals(stats.pitching, tier, stats.features.advancedPitching)}
+              columns={seasonPitchingColumns(tier, stats.features.advancedPitching, now, stats.statInnings)}
+              totals={seasonPitchingTotals(stats.pitching, tier, stats.features.advancedPitching, stats.statInnings)}
               emptyText={stats.season ? `No pitching data for ${stats.season.name} yet.` : 'No pitching data yet.'}
               labelHeader="Pitcher"
               sort={sorts.pitching}

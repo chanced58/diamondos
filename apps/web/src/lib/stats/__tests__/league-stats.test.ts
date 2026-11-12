@@ -18,7 +18,9 @@ jest.mock('@baseball/shared', () => {
     new Map(players.map((p) => [p.id, { playerId: p.id, playerName: `${p.firstName} ${p.lastName}`, ...extra }]));
   return {
     ...actual,
-    derivePitchingStats: (_e: unknown, players: never[]) => lines(players, { inningsPitchedOuts: 3, totalPitches: 15 }),
+    // `era` echoes the innings per game the loader passed, so tests can see it.
+    derivePitchingStats: (_e: unknown, players: never[], inningsPerGame: number) =>
+      lines(players, { inningsPitchedOuts: 3, totalPitches: 15, era: inningsPerGame }),
     deriveBattingStats: (_e: unknown, players: never[]) => lines(players, { plateAppearances: 4 }),
     computeOpponentBatting: () => [
       { playerId: 'o1', playerName: 'Opp Hitter', pa: 6, ab: 5, r: 0, h: 2, doubles: 0, triples: 0, hr: 0, rbi: 1,
@@ -39,7 +41,13 @@ beforeEach(() => {
 describe('loadLeaguePlayerStats', () => {
   it('should be empty for a league with no teams', async () => {
     mockGetLeagueTeamIds.mockResolvedValue([]);
-    expect(await loadLeaguePlayerStats(fakeDb().db, 'l1')).toEqual({ teamCount: 0, gameCount: 0, pitching: [], batting: [] });
+    expect(await loadLeaguePlayerStats(fakeDb().db, 'l1')).toEqual({
+      teamCount: 0,
+      gameCount: 0,
+      pitching: [],
+      batting: [],
+      statInnings: 7,
+    });
   });
 
   it('should label every player with their team and add only the league opponents', async () => {
@@ -60,6 +68,24 @@ describe('loadLeaguePlayerStats', () => {
     expect(stats.pitching.map((s) => s.playerName)).toEqual(['Luke Fox (Huskies)', 'Opp Hitter (Eagles)']);
     // Only the opponent game not already read with the platform teams is fetched again.
     expect(mockFetchEvents).toHaveBeenLastCalledWith(db, ['g9'], expect.any(Array));
+  });
+
+  it("should derive every pitcher's rates over the league's innings per game", async () => {
+    mockGetLeagueTeamIds.mockResolvedValue(['t1']);
+    mockGetLeagueOpponentTeamIds.mockResolvedValue(['ot1']);
+    const { db } = fakeDb({
+      'leagues.select': { data: { scoring_settings: { gameLength: { statInnings: 9 } } } },
+      'games.select': [{ data: [{ id: 'g1', team_id: 't1' }] }, { data: [{ id: 'g1' }] }],
+      'players.select': { data: [{ id: 'p1', team_id: 't1', first_name: 'Luke', last_name: 'Fox' }] },
+      'teams.select': { data: [{ id: 't1', name: 'Huskies' }] },
+      'opponent_players.select': { data: [{ id: 'o1', opponent_team_id: 'ot1', first_name: 'Opp', last_name: 'Hitter' }] },
+      'opponent_teams.select': { data: [{ id: 'ot1', name: 'Eagles' }] },
+    });
+
+    const stats = await loadLeaguePlayerStats(db, 'l1');
+
+    expect(stats.statInnings).toBe(9);
+    expect(stats.pitching.map((s) => s.era)).toEqual([9, 9]);
   });
 
   it('should throw rather than show part of the league when a read fails', async () => {

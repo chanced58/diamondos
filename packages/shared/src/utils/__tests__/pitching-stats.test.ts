@@ -1,4 +1,4 @@
-import { derivePitchingStats } from '../pitching-stats';
+import { derivePitchingStats, perGameRate } from '../pitching-stats';
 import { EventType, PitchOutcome, HitType } from '../../types/game-event';
 
 type Evt = {
@@ -322,5 +322,61 @@ describe('derivePitchingStats — DROPPED_THIRD_STRIKE', () => {
     const s = stats.get('home-p')!;
     expect(s.runsAllowed).toBe(2);
     expect(s.earnedRunsAllowed).toBe(1);
+  });
+});
+
+describe('derivePitchingStats — innings per game for ERA, K/N and BB/N', () => {
+  beforeEach(resetSeq);
+
+  /** One inning: two solo home runs, a walk and three strikeouts. */
+  function oneInningTwoEarnedRuns(): Evt[] {
+    const strikeout = (batterId: string) => [
+      e(EventType.PITCH_THROWN, { pitcherId: 'home-p', batterId, outcome: PitchOutcome.SWINGING_STRIKE }),
+      e(EventType.STRIKEOUT, { pitcherId: 'home-p', batterId }),
+    ];
+    return [
+      e(EventType.GAME_START, { homeLineupPitcherId: 'home-p', awayLineupPitcherId: 'away-p' }),
+      e(EventType.PITCH_THROWN, { pitcherId: 'home-p', batterId: 'b1', outcome: PitchOutcome.IN_PLAY }),
+      e(EventType.HIT, { pitcherId: 'home-p', batterId: 'b1', hitType: HitType.HOME_RUN, rbis: 1 }),
+      e(EventType.PITCH_THROWN, { pitcherId: 'home-p', batterId: 'b2', outcome: PitchOutcome.IN_PLAY }),
+      e(EventType.HIT, { pitcherId: 'home-p', batterId: 'b2', hitType: HitType.HOME_RUN, rbis: 1 }),
+      e(EventType.PITCH_THROWN, { pitcherId: 'home-p', batterId: 'b3', outcome: PitchOutcome.BALL }),
+      e(EventType.WALK, { pitcherId: 'home-p', batterId: 'b3' }),
+      ...strikeout('b1'),
+      ...strikeout('b2'),
+      ...strikeout('b3'),
+    ];
+  }
+
+  it('should calculate ERA over 7 innings by default, as for high school', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const s = derivePitchingStats(oneInningTwoEarnedRuns() as any, players).get('home-p')!;
+    expect(s.inningsPitchedOuts).toBe(3);
+    expect(s.earnedRunsAllowed).toBe(2);
+    expect(s.era).toBe(14);
+    expect(s.strikeoutsPerSeven).toBe(21);
+    expect(s.walksPerSeven).toBe(7);
+  });
+
+  it('should calculate ERA over 9 innings for an adult league', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const s = derivePitchingStats(oneInningTwoEarnedRuns() as any, players, 9).get('home-p')!;
+    expect(s.era).toBe(18);
+    expect(s.strikeoutsPerSeven).toBe(27);
+    expect(s.walksPerSeven).toBe(9);
+    // WHIP has no innings-per-game base.
+    expect(s.whip).toBe(3);
+  });
+});
+
+describe('perGameRate', () => {
+  it('should scale a count to the innings per game from outs recorded', () => {
+    expect(perGameRate(2, 3)).toBe(14);
+    expect(perGameRate(2, 3, 9)).toBe(18);
+    expect(perGameRate(1, 4, 9)).toBeCloseTo(6.75);
+  });
+
+  it('should be Infinity with no outs recorded', () => {
+    expect(perGameRate(1, 0, 9)).toBe(Infinity);
   });
 });

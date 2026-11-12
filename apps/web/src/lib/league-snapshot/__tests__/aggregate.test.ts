@@ -1,4 +1,4 @@
-import { combinePlayerStats } from '../aggregate';
+import { combinePlayerStats, standingRow, teamStatRow } from '../aggregate';
 
 describe('combinePlayerStats', () => {
   it('merges batting, pitching, fielding maps into one row per player keyed by stat-catalog fields', () => {
@@ -36,5 +36,38 @@ describe('combinePlayerStats', () => {
       batting, pitching: new Map(), fielding: new Map(), teamOf: new Map(), leagueId: 'L', season: 'S',
     });
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe('teamStatRow', () => {
+  const record = { wins: 1, losses: 0, ties: 0, runsFor: 5, runsAgainst: 2, winPct: 1 };
+  const input = {
+    leagueId: 'L', season: 'S', teamId: 't1', teamName: 'Hawks', record,
+    batting: [{ hits: 3, atBats: 9 }],
+    // 2 earned runs over one inning, split between two pitchers.
+    pitching: [{ earnedRunsAllowed: 2, inningsPitchedOuts: 1 }, { earnedRunsAllowed: 0, inningsPitchedOuts: 2 }],
+  };
+
+  it('should calculate team ERA over 7 innings for a high-school league', () => {
+    expect(teamStatRow({ ...input, statInnings: 7 }).stats.teamEra).toBe(14);
+  });
+
+  it('should calculate team ERA over 9 innings for an adult league', () => {
+    expect(teamStatRow({ ...input, statInnings: 9 }).stats.teamEra).toBe(18);
+  });
+});
+
+describe('standingRow', () => {
+  const base = {
+    leagueId: 'L', season: 'S', teamId: 't1', opponentTeamId: null, divisionId: null, teamName: 'Hawks',
+    record: { wins: 2, losses: 0, ties: 0, runsFor: 9, runsAgainst: 3, winPct: 1 },
+  };
+
+  it('should carry the current streak', () => {
+    expect(standingRow({ ...base, streak: 'W2' }).streak).toBe('W2');
+  });
+
+  it('should write an empty streak for a team without one', () => {
+    expect(standingRow(base).streak).toBe('');
   });
 });

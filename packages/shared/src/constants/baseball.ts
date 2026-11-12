@@ -1,6 +1,13 @@
 export const MAX_ROSTER_SIZE = 25;
 export const MAX_INNINGS = 9;
 export const OUTS_PER_INNING = 3;
+
+/**
+ * Innings per game that rate stats (ERA, K/7, BB/7) are normalized to when no
+ * league says otherwise: the high-school and youth regulation game. A league
+ * sets its own with `gameLength.statInnings` (9 for adult leagues).
+ */
+export const DEFAULT_STAT_INNINGS = 7;
 export const BALLS_FOR_WALK = 4;
 export const STRIKES_FOR_STRIKEOUT = 3;
 

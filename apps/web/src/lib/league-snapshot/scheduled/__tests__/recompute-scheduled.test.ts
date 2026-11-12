@@ -168,7 +168,7 @@ describe('recomputeScheduledLeagueSnapshot', () => {
   it("should credit both teams' players from a book only the home team scored", async () => {
     const { db, calls } = scheduledLeague({ games: [LG1], events: { 'lg-1-home': HAWKS_BOOK } });
 
-    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON);
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 7);
 
     expect(playerRow(calls, 'team', 'o1', OWLS)).toMatchObject({ team_name: 'Owls', first_name: 'Oli', plate_appearances: 1 });
     expect(playerRow(calls, 'team', 'o1', OWLS)?.stats).toMatchObject({ hits: 1, homeRuns: 1 });
@@ -208,7 +208,7 @@ describe('recomputeScheduledLeagueSnapshot', () => {
       },
     });
 
-    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON);
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 7);
 
     expect(playerRow(calls, 'team', 't1', OWLS)).toMatchObject({ team_name: 'Owls' });
     expect(playerRow(calls, 'team', 't1', OWLS)?.stats).toMatchObject({ hits: 1, homeRuns: 0 });
@@ -235,7 +235,7 @@ describe('recomputeScheduledLeagueSnapshot', () => {
       },
     });
 
-    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON);
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 7);
 
     const owlsRows = inserted(calls, 'league_player_stat_snapshot').filter((row) => row.team_id === OWLS);
     expect(owlsRows.map((row) => row.player_id)).toEqual(['o1', 'o1']);
@@ -255,7 +255,7 @@ describe('recomputeScheduledLeagueSnapshot', () => {
       },
     });
 
-    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON);
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 7);
 
     const leagueGamesRead = calls.find((call) => call.table === 'league_games');
     expect(leagueGamesRead?.filters).toEqual({ league_id: LEAGUE, season: SEASON, 'status!=': 'cancelled' });
@@ -273,7 +273,7 @@ describe('recomputeScheduledLeagueSnapshot', () => {
       manual: [{ league_game_id: 'lg-1', kind: 'forfeit', home_runs: null, away_runs: null, forfeit_winner_team_id: OWLS }],
     });
 
-    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON);
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 7);
 
     expect(standing(calls, OWLS)).toMatchObject({ wins: 1, losses: 0, runs_for: 0, runs_against: 0 });
     expect(standing(calls, HAWKS)).toMatchObject({ wins: 0, losses: 1, runs_for: 0, runs_against: 0 });
@@ -289,7 +289,7 @@ describe('recomputeScheduledLeagueSnapshot', () => {
       ],
     });
 
-    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON);
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 7);
 
     expect(playerRow(calls, 'team', 'h1', HAWKS)?.stats).toMatchObject({ hits: 2, doubles: 1, avg: 0.5 });
     expect(standing(calls, HAWKS)).toMatchObject({ wins: 1, runs_for: 5, runs_against: 2 });
@@ -316,7 +316,7 @@ describe('recomputeScheduledLeagueSnapshot', () => {
       ],
     });
 
-    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON);
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 7);
 
     expect(playerRow(calls, 'team', 'o1', OWLS)?.stats).toMatchObject({ hits: 1, homeRuns: 0 });
     // Everyone else keeps the home book's line.
@@ -352,7 +352,7 @@ describe('recomputeScheduledLeagueSnapshot', () => {
       ],
     });
 
-    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON);
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 7);
 
     expect(playerRow(calls, 'team', 'o1', OWLS)?.stats).toMatchObject({ hits: 1 });
     // Team totals come from the home book alone: one at-bat, no hits — not two at-bats.
@@ -381,7 +381,7 @@ describe('recomputeScheduledLeagueSnapshot', () => {
       },
     });
 
-    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON);
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 7);
 
     const pages = calls.filter((call) => call.table === 'opponent_players').map((call) => call.range);
     expect(pages).toEqual([
@@ -399,7 +399,7 @@ describe('recomputeScheduledLeagueSnapshot', () => {
       overrides: { 'league_standings_snapshot.insert': { error: { message: 'permission denied' } } },
     });
 
-    await expect(recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON)).rejects.toThrow(
+    await expect(recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 7)).rejects.toThrow(
       `league_standings_snapshot insert failed (league=${LEAGUE} season=${SEASON}): permission denied`,
     );
   });
@@ -410,10 +410,67 @@ describe('recomputeScheduledLeagueSnapshot', () => {
       overrides: { 'league_player_stat_snapshot.delete': { error: { message: 'timeout' } } },
     });
 
-    await expect(recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON)).rejects.toThrow(
+    await expect(recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 7)).rejects.toThrow(
       `league_player_stat_snapshot delete failed (league=${LEAGUE} season=${SEASON}): timeout`,
     );
     expect(calls.some((call) => call.op === 'insert')).toBe(false);
+  });
+});
+
+describe('recomputeScheduledLeagueSnapshot — standings streaks', () => {
+  it("should give each team its current streak from the league games in the order played", async () => {
+    // Listed newest first; the Owls won on April 1 and April 8, the Hawks lost both.
+    const lg2: LeagueGameSpec = { ...LG1, id: 'lg-2', scheduledAt: '2027-04-08T23:00:00Z', homeScore: 2, awayScore: 6 };
+    const { db, calls } = scheduledLeague({
+      games: [lg2, LG1],
+      events: {
+        'lg-1-home': HAWKS_BOOK,
+        'lg-2-home': [event('lg-2-home', 1, 'game_start', true), event('lg-2-home', 2, 'game_end', false)],
+      },
+    });
+
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 7);
+
+    expect(standing(calls, OWLS)).toMatchObject({ wins: 2, streak: 'W2' });
+    expect(standing(calls, HAWKS)).toMatchObject({ losses: 2, streak: 'L2' });
+  });
+
+  it("should leave the streak empty for a team that hasn't played", async () => {
+    const { db, calls } = scheduledLeague({ games: [{ id: 'lg-1', home: HAWKS, away: OWLS, scheduledAt: '2027-04-01T23:00:00Z' }] });
+
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 7);
+
+    expect(standing(calls, HAWKS)).toMatchObject({ wins: 0, losses: 0, streak: '' });
+  });
+});
+
+/** Hawks (home) book: hp gives up o1's solo home run, then strikes out the side. */
+const ONE_INNING_ONE_EARNED_RUN = [
+  event('lg-1-home', 1, 'game_start', true, { homeLineupPitcherId: 'hp', awayLineupPitcherId: 'rec-op' }),
+  event('lg-1-home', 2, 'hit', true, { opponentBatterId: 'rec-o1', pitcherId: 'hp', hitType: 'home_run' }),
+  event('lg-1-home', 3, 'strikeout', true, { opponentBatterId: 'rec-o1', pitcherId: 'hp' }),
+  event('lg-1-home', 4, 'strikeout', true, { opponentBatterId: 'rec-o1', pitcherId: 'hp' }),
+  event('lg-1-home', 5, 'strikeout', true, { opponentBatterId: 'rec-o1', pitcherId: 'hp' }),
+];
+
+describe('recomputeScheduledLeagueSnapshot — innings per game', () => {
+  it('should calculate player and team ERA over 7 innings by default', async () => {
+    const { db, calls } = scheduledLeague({ games: [LG1], events: { 'lg-1-home': ONE_INNING_ONE_EARNED_RUN } });
+
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 7);
+
+    expect(playerRow(calls, 'team', 'hp', HAWKS)?.stats).toMatchObject({ era: 7 });
+    expect(inserted(calls, 'league_team_stat_snapshot').find((row) => row.team_id === HAWKS)?.stats).toMatchObject({ teamEra: 7 });
+  });
+
+  it('should calculate player and team ERA over 9 innings for an adult league', async () => {
+    const { db, calls } = scheduledLeague({ games: [LG1], events: { 'lg-1-home': ONE_INNING_ONE_EARNED_RUN } });
+
+    await recomputeScheduledLeagueSnapshot(db, LEAGUE, SEASON, 9);
+
+    expect(playerRow(calls, 'team', 'hp', HAWKS)?.stats).toMatchObject({ era: 9 });
+    expect(playerRow(calls, 'season', 'hp', HAWKS)?.stats).toMatchObject({ era: 9 });
+    expect(inserted(calls, 'league_team_stat_snapshot').find((row) => row.team_id === HAWKS)?.stats).toMatchObject({ teamEra: 9 });
   });
 });
 
@@ -426,6 +483,20 @@ describe('recomputeLeagueSnapshot', () => {
     expect(calls.some((call) => call.table === 'league_games')).toBe(true);
     expect(calls.some((call) => call.table === 'seasons')).toBe(false);
     expect(standing(calls, OWLS)).toMatchObject({ wins: 1 });
+  });
+
+  it("should take the innings per game from the league's scoring settings", async () => {
+    const { db, calls } = scheduledLeague({
+      games: [LG1],
+      events: { 'lg-1-home': ONE_INNING_ONE_EARNED_RUN },
+      overrides: {
+        'leagues.select': { data: { schedules_games: true, scoring_settings: { gameLength: { statInnings: 9 } } } },
+      },
+    });
+
+    await recomputeLeagueSnapshot(db as never, LEAGUE, SEASON);
+
+    expect(playerRow(calls, 'team', 'hp', HAWKS)?.stats).toMatchObject({ era: 9 });
   });
 
   it("should write every player's line under both scopes for a league whose teams create games", async () => {

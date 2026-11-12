@@ -25,6 +25,8 @@ export interface DeriveSideStatsInput {
   sidePlayers: { id: string; firstName: string; lastName: string }[];
   /** The scoring team's lineup for the book, when deriving the scoring team's own side. */
   lineup: BattingLineupContext | undefined;
+  /** Innings per game for ERA, K/N and BB/N (the league's `getStatInnings`); 7 when omitted. */
+  statInnings?: number;
 }
 
 function keepWhere<T>(lines: Map<string, T>, keep: (id: string) => boolean): Map<string, T> {
@@ -55,6 +57,6 @@ export function deriveSideStats(input: DeriveSideStatsInput): SideStats {
   const isSideId = (id: string) => sideIds.has(id) || id.startsWith(PLACEHOLDER_PREFIX);
   return {
     batting: keepWhere(deriveBattingStats(translated, input.sidePlayers, lineupsFor(input.events, input.lineup)), isSideId),
-    pitching: keepWhere(derivePitchingStats(translated, input.sidePlayers), isSideId),
+    pitching: keepWhere(derivePitchingStats(translated, input.sidePlayers, input.statInnings), isSideId),
   };
 }

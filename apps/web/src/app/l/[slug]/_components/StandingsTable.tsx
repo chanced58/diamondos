@@ -10,6 +10,7 @@ interface StandingRow {
   win_pct: number;
   runs_for: number;
   runs_against: number;
+  streak?: string | null;
 }
 
 export function StandingsTable({
@@ -39,6 +40,7 @@ export function StandingsTable({
             <th className="px-2 py-2.5 text-center">RF</th>
             <th className="px-2 py-2.5 text-center">RA</th>
             <th className="px-2 py-2.5 text-center">DIFF</th>
+            <th className="px-2 py-2.5 text-center" title="Current streak">STRK</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-app-border">
@@ -76,6 +78,7 @@ export function StandingsTable({
                 >
                   {diff > 0 ? `+${diff}` : diff}
                 </td>
+                <td className="mono px-2 py-2.5 text-center">{r.streak || '—'}</td>
               </tr>
             );
           })}

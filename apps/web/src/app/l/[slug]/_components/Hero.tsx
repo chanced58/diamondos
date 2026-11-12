@@ -52,10 +52,10 @@ export function Hero({
       <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
         <div className="mono flex gap-6 text-sm opacity-90">
           <span>
-            <strong className="font-semibold">{counters.teams}</strong> teams
+            <strong className="font-semibold">{counters.teams}</strong> {counters.teams === 1 ? 'team' : 'teams'}
           </span>
           <span>
-            <strong className="font-semibold">{counters.games}</strong> games
+            <strong className="font-semibold">{counters.games}</strong> {counters.games === 1 ? 'game' : 'games'}
           </span>
           <span>{counters.season || '—'} season</span>
         </div>

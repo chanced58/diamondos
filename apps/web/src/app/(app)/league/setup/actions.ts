@@ -3,6 +3,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { createLeagueManagedTeam } from '@/lib/services/league-admin/league-managed-teams';
+import { adultLeagueScoringSettings } from '@/lib/league-setup/adult-settings';
 
 type SetupInput = {
   leagueId: string;
@@ -43,7 +44,7 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
   // Verify setup hasn't already been completed
   const { data: league } = await db
     .from('leagues')
-    .select('setup_completed_at')
+    .select('setup_completed_at, scoring_settings')
     .eq('id', input.leagueId)
     .single();
 
@@ -66,7 +67,10 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
       state_code: input.stateCode || null,
       current_season: input.currentSeason,
       logo_url: input.logoUrl,
-      ...(isAdultLeague ? { schedules_games: true } : {}),
+      // Adult leagues play nine innings: ERA, K/9 and BB/9 are per nine.
+      ...(isAdultLeague
+        ? { schedules_games: true, scoring_settings: adultLeagueScoringSettings(league?.scoring_settings) }
+        : {}),
     })
     .eq('id', input.leagueId);
 

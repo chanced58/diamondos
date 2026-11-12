@@ -44,6 +44,13 @@ describe('pitchingStatsFromCounts', () => {
     expect(stats.strikePercentage).toBeCloseTo(52 / 80, 5);
   });
 
+  it('should derive ERA, K/9 and BB/9 over 9 innings for an adult league', () => {
+    const stats = pitchingStatsFromCounts('p1', 'x', 1, [{ ipOuts: 27, er: 3, so: 9, bb: 2 }], 9);
+    expect(stats.era).toBeCloseTo(3, 6);
+    expect(stats.strikeoutsPerSeven).toBeCloseTo(9, 6);
+    expect(stats.walksPerSeven).toBeCloseTo(2, 6);
+  });
+
   it('uses Infinity ERA with zero innings', () => {
     const stats = pitchingStatsFromCounts('p1', 'x', 1, [{ er: 1 }]);
     expect(stats.era).toBe(Infinity);

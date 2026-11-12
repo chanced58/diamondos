@@ -37,6 +37,7 @@ const stats: LeagueStatsResponse = {
   gameCount: 12,
   pitching: [],
   batting: [batter('a', 'Luke Fox (Huskies)', 8), batter('b', 'Opp Hitter (Eagles)', 20)],
+  statInnings: 7,
 };
 
 const comparison: LeagueComparisonResponse = {

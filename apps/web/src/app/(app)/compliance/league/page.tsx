@@ -44,10 +44,13 @@ export default async function LeagueStatsPage({
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const { teamCount, gameCount, pitching: allPitchingStats, batting: allBattingStats } = await loadLeaguePlayerStats(
-    db,
-    league.id,
-  );
+  const {
+    teamCount,
+    gameCount,
+    pitching: allPitchingStats,
+    batting: allBattingStats,
+    statInnings,
+  } = await loadLeaguePlayerStats(db, league.id);
   if (teamCount === 0) {
     return (
       <div className="p-8">
@@ -120,6 +123,7 @@ export default async function LeagueStatsPage({
             complianceMap={{}}
             now={new Date().toISOString()}
             tier={tier}
+            statInnings={statInnings}
           />
         )
       )}

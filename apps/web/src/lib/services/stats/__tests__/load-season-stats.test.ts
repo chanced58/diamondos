@@ -55,6 +55,7 @@ const stats: TeamSeasonStats = {
     pitching: [pitcher],
   }],
   missingWaiverCount: 2,
+  statInnings: 9,
 };
 
 const member = (role: string) => ({ 'team_members.select': { data: { role } } });
@@ -115,6 +116,12 @@ describe('loadSeasonStats', () => {
     const { db } = fakeDb(member('player'));
     const result = await loadSeasonStats(db, 'player-1', { teamId: TEAM });
     expect(result.ok && result.data.hasLeague).toBe(true);
+  });
+
+  it("should pass on the innings per game of the team's league for the column labels", async () => {
+    const { db } = fakeDb(member('player'));
+    const result = await loadSeasonStats(db, 'player-1', { teamId: TEAM });
+    expect(result.ok && result.data.statInnings).toBe(9);
   });
 
   it('should fail cleanly when the season cannot be read in full', async () => {

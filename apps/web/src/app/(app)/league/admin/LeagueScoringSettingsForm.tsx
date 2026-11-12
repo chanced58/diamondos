@@ -137,7 +137,7 @@ export function LeagueScoringSettingsForm({
 
         <Section
           title="Game Length"
-          description="Innings, mercy rule, per-half run cap, and ghost-runner tiebreakers."
+          description="Innings, the innings rate stats are per (7 for high school, 9 for adult), mercy rule, per-half run cap, and ghost-runner tiebreakers."
         >
           <NumberField
             label="Regulation innings"
@@ -148,6 +148,18 @@ export function LeagueScoringSettingsForm({
               setSettings({
                 ...settings,
                 gameLength: { ...settings.gameLength, maxInnings: v },
+              })
+            }
+          />
+          <NumberField
+            label="Innings per game for stats (ERA, K/9, BB/9 when 9)"
+            min={MIN_INNINGS}
+            max={MAX_INNINGS_CAP}
+            value={settings.gameLength.statInnings}
+            onChange={(v) =>
+              setSettings({
+                ...settings,
+                gameLength: { ...settings.gameLength, statInnings: v },
               })
             }
           />
