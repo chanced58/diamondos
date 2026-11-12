@@ -5623,8 +5623,16 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: boolean
       }
+      is_any_league_scorer: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
       is_coach: {
         Args: { p_team_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      is_game_scorer: {
+        Args: { p_game_id: string; p_user_id: string }
         Returns: boolean
       }
       is_guest_only_player: {
@@ -5656,6 +5664,14 @@ export type Database = {
         Returns: boolean
       }
       is_league_game_row: { Args: { p_game_id: string }; Returns: boolean }
+      is_league_scorer: {
+        Args: { p_league_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      is_league_scorer_for_player: {
+        Args: { p_player_id: string; p_user_id: string }
+        Returns: boolean
+      }
       league_game_staff: {
         Args: { p_game_id: string; p_user_id: string }
         Returns: boolean
