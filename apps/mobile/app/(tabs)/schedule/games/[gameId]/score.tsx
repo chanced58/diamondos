@@ -791,8 +791,13 @@ function ScoringScreenContent() {
   const gameDateIso = game
     ? `${utcToZonedDateTime(new Date(game.scheduledAt), isValidTimeZone(game.timeZone) ? game.timeZone : 'UTC').date}T12:00:00.000Z`
     : new Date().toISOString();
+  // Phones only: the book's "Change their pitcher" row scrolls out of sight
+  // under the pad, so while we bat the always-visible pitch strip names their
+  // pitcher, counts their pitches and opens their pitching change. Tablets
+  // keep the book in view and the strip as it was.
+  const stripShowsTheirPitcher = !isWide && weBat && !!game?.opponentTeamId;
   const displayPitcherId = weBat
-    ? (gameState?.currentPitcherId ?? null)
+    ? ((stripShowsTheirPitcher ? opponentPitcherId : null) ?? gameState?.currentPitcherId ?? null)
     : (ourPitcherId ?? gameState?.currentPitcherId ?? null);
   const currentPitchTotal =
     gameState && displayPitcherId
@@ -822,15 +827,9 @@ function ScoringScreenContent() {
     return { pitches, strikes };
   }, [gameState, displayPitcherId, ourPlayerIds, weBat]);
 
-  // Phones only: the book's "Change their pitcher" row scrolls out of sight
-  // under the pad, so while we bat the always-visible pitch strip names their
-  // pitcher and opens their pitching change. Tablets keep the book in view.
-  const theirPitcherInStrip =
-    !isWide && weBat && game?.opponentTeamId
-      ? theirPitcherStripLabel(
-          opponentPitcherId ? opponentNameById.get(opponentPitcherId) ?? 'Unknown player' : null,
-        )
-      : null;
+  const theirPitcherInStrip = stripShowsTheirPitcher
+    ? theirPitcherStripLabel(opponentPitcherId ? opponentNameById.get(opponentPitcherId) ?? 'Unknown player' : null)
+    : null;
 
   // Per-roster-player pitch totals + compliance level for the pitching-change
   // picker, so the coach sees who is near/over their limit before choosing.
