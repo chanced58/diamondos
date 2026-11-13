@@ -12,6 +12,7 @@ import {
   utcToZonedDateTime,
   weAreHome,
   leagueGameControlRefusal,
+  isScorerRole,
   type GameRsvpStatus,
 } from '@baseball/shared';
 import { CancelGameForm } from './CancelGameForm';
@@ -60,7 +61,9 @@ export default async function GameDetailPage({
 
   if (!game) notFound();
 
-  const { isCoach, isPlatformAdmin } = await getUserAccess(game.team_id, user.id);
+  const { isCoach, isPlatformAdmin, role } = await getUserAccess(game.team_id, user.id);
+  // Coaches and scorekeepers run the book: set the lineup and start the game.
+  const canScore = isCoach || isScorerRole(role);
 
   // Non-admin users must be team members to view
   if (!isCoach && !isPlatformAdmin) {
@@ -446,8 +449,8 @@ export default async function GameDetailPage({
         <AttendancePanel gameId={game.id} teamId={game.team_id} />
       )}
 
-      {/* ── Scoring controls (scheduled — coaches only) ─────────── */}
-      {game.status === 'scheduled' && isCoach && (
+      {/* ── Scoring controls (scheduled — coaches and scorekeepers) ─ */}
+      {game.status === 'scheduled' && canScore && (
         <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
           <p className="font-semibold text-gray-900 mb-1">Ready to score this game?</p>
           <p className="text-sm text-gray-500 mb-4">
@@ -469,12 +472,14 @@ export default async function GameDetailPage({
                 >
                   {hasLineup ? 'Edit Lineup' : 'Set Lineup'}
                 </Link>
-                <Link
-                  href={`/games/${game.id}/opponent-lineup`}
-                  className="inline-block text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium transition-colors"
-                >
-                  {hasOpponentLineup ? 'Edit Opponent Lineup' : 'Set Opponent Lineup'}
-                </Link>
+                {isCoach && (
+                  <Link
+                    href={`/games/${game.id}/opponent-lineup`}
+                    className="inline-block text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium transition-colors"
+                  >
+                    {hasOpponentLineup ? 'Edit Opponent Lineup' : 'Set Opponent Lineup'}
+                  </Link>
+                )}
               </div>
               {hasLineup && <StartGameForm gameId={game.id} />}
             </>

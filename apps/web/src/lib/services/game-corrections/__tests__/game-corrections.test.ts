@@ -6,6 +6,9 @@ const mockGetAuthorizedCoach = jest.fn();
 const mockAuthorizeLeagueStaff = jest.fn();
 jest.mock('@/lib/games/finalize', () => ({
   getAuthorizedCoach: (...args: unknown[]) => mockGetAuthorizedCoach(...args),
+  // Starting, correcting and ending a game admit scorekeepers too; these
+  // tests stand the same mock in for both role checks.
+  getAuthorizedFinalizer: (...args: unknown[]) => mockGetAuthorizedCoach(...args),
 }));
 jest.mock('../../league-admin/authorize', () => ({
   authorizeLeagueStaff: (...args: unknown[]) => mockAuthorizeLeagueStaff(...args),

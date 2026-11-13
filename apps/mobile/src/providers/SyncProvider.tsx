@@ -5,6 +5,7 @@ import { Q } from '@nozbe/watermelondb';
 import { syncWithSupabase, getTournamentSyncRejections, getClockHeldEvents } from '../sync/sync-engine';
 import type { ClockHeldEvent } from '../sync/clock-hold';
 import type { TournamentSyncRejection } from '../sync/tournament-event-sync';
+import { describeSyncError, toSyncError } from '../sync/sync-error';
 import { getSupabaseClient } from '../lib/supabase';
 import { database } from '../db';
 import type { GameEvent } from '../db/models/GameEvent';
@@ -115,8 +116,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         setIsOffline(true);
         setLastSyncError(null);
       } else {
-        console.warn('Sync failed:', error);
-        setLastSyncError(error instanceof Error ? error : new Error(String(error)));
+        console.warn('Sync failed:', describeSyncError(error));
+        setLastSyncError(toSyncError(error));
       }
     } finally {
       try {
@@ -140,7 +141,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       setTournamentRejectionsLoaded(true);
     }).catch((error) => {
       console.warn('Could not restore tournament sync rejections:', error);
-      if (mounted) setLastSyncError(error instanceof Error ? error : new Error(String(error)));
+      if (mounted) setLastSyncError(toSyncError(error));
     });
     getClockHeldEvents().then((held) => {
       if (mounted) setClockHeldEvents(held);

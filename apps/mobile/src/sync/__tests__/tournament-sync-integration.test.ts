@@ -7,6 +7,8 @@ const mockChanges: Record<string, unknown> = {};
 const mockRpc = jest.fn();
 const mockUpsert = jest.fn();
 const mockLineupPush = jest.fn();
+const mockInsert = jest.fn();
+const mockWaiting = jest.fn();
 const mockDb = {
   localStorage: { get: async (key: string) => mockStorage.get(key), set: async (key: string, value: string) => { mockStorage.set(key, value); } },
   get: (table: string) => ({ query: () => ({ fetch: async () => table === 'games' ? [{ tournamentId: 'cup' }] : [] }) }),
@@ -19,11 +21,12 @@ jest.mock('../lineup-sync', () => ({
   getDirtyLineupState: async () => ({ dirtyGameIds: new Set(['one']), localEditedAtMsByGame: new Map() }),
   pushLineupsForGame: (...args: unknown[]) => mockLineupPush(...args),
   applyServerLineupSnapshot: jest.fn(),
+  gamesWaitingOnGuests: (...args: unknown[]) => mockWaiting(...args),
 }));
 jest.mock('@nozbe/watermelondb/sync', () => ({ synchronize: async (options: { pushChanges: (args: unknown) => Promise<void> }) => options.pushChanges({ changes: mockChanges }) }));
 jest.mock('../../lib/supabase', () => ({ getSupabaseClient: () => ({
   rpc: (...args: unknown[]) => mockRpc(...args),
-  from: () => ({ upsert: (...args: unknown[]) => mockUpsert(...args) }),
+  from: () => ({ upsert: (...args: unknown[]) => mockUpsert(...args), insert: (...args: unknown[]) => mockInsert(...args) }),
   auth: { getUser: async () => ({ data: { user: { id: 'coach' } } }) },
 }) }));
 
@@ -39,6 +42,18 @@ beforeEach(() => {
   mockLineupPush.mockImplementation(async (_client, _db, id) => { mockOrder.push(`lineup:${id}`); return 'pushed'; });
   mockRpc.mockImplementation(async (name) => { mockOrder.push(name); return { data: [], error: null }; });
   mockUpsert.mockImplementation(async (rows: Array<{ id: string }>) => { mockSent.push(...rows.map((event) => event.id)); return { error: null }; });
+  mockInsert.mockImplementation(async () => ({ error: null }));
+  mockWaiting.mockImplementation(async () => new Set());
+});
+
+it('should not start a tournament game while a guest in its lineup is still waiting to reach the server', async () => {
+  mockChanges.game_events = { created: [row('start', 'one', 'game_start', 1), row('change')] };
+  mockChanges.players = { created: [{ remote_id: 'late', first_name: 'Sam', last_name: 'Late', is_guest_only: true }] };
+  mockInsert.mockImplementation(async () => ({ error: { code: '42501', message: 'new row violates row-level security policy for table "players"' } }));
+  mockWaiting.mockImplementation(async (_db, _games, withheld: Set<string>) => (withheld.has('late') ? new Set(['one']) : new Set()));
+  await expect(syncWithSupabase()).rejects.toThrow('plays wait until its guest players reach the server');
+  expect(mockOrder).not.toContain('start_tournament_game_for_user');
+  expect(mockSent).toEqual([]);
 });
 
 it('prepares dirty starting rows before starting and extending an offline tournament game', async () => {

@@ -26,6 +26,8 @@ import { pushTournamentEventQueue, reconcilePendingSequences, type TournamentSyn
 import { pushEventsHoldingClockAhead, type ClockHeldEvent } from './clock-hold';
 import { deletedMessagesSince, splitDeletedMessages } from './message-deletions';
 import { pushOpponentPlayers } from './opponent-player-push';
+import { guestRows, pushGuestPlayers } from './guest-player-push';
+import { describeSyncError } from './sync-error';
 import {
   EMPTY_TEAM_BACKFILL,
   fetchAllByParentIds,
@@ -82,6 +84,7 @@ export async function getTournamentSyncRejections(): Promise<TournamentSyncRejec
 }
 import {
   applyServerLineupSnapshot,
+  gamesWaitingOnGuests,
   getDirtyLineupState,
   pushLineupsForGame,
 } from './lineup-sync';
@@ -1226,63 +1229,34 @@ export async function syncWithSupabase(): Promise<void> {
       // the cycle so WDB leaves everything unsynced and retries.
       const deferredErrors: string[] = [];
 
-      // 2. Guest players created offline. Mobile only ever creates guest-only
+      // 2-3. Guest players created or edited offline, and their league
+      // guest-pool registrations. Mobile only ever creates guest-only
       // identities; filter defensively so a pulled roster row can never leak
-      // into an insert. Client UUID becomes the server PK, like game_events.
-      // No ignoreDuplicates: a retried cycle may carry newer name/jersey
-      // values on a still-'created' row (e.g. the coach edited the guest
-      // after an earlier push inserted it but the cycle later failed) — the
-      // conflict path must merge, not no-op, or the edit is silently lost.
-      const createdGuests = (tableChanges.players?.created ?? []).filter(
-        (p) => p.is_guest_only === true,
+      // into a write. Client UUID becomes the server PK, like game_events.
+      // Plain inserts (a duplicate key counts as done) and edits through
+      // fn_update_guest_player, because scorers have no SELECT on guest rows;
+      // a refused guest is retried alone and reported, and its lineup rows
+      // are withheld below (see guest-player-push.ts).
+      const guestPush = await pushGuestPlayers(
+        guestRows(tableChanges.players?.created),
+        guestRows(tableChanges.players?.updated),
+        tableChanges.league_players?.created ?? [],
+        {
+          insertPlayers: (writes) => supabase.from('players').insert(writes),
+          registerInLeague: (writes) => supabase.from('league_players').insert(writes),
+          updatePlayer: async (id, fields) => {
+            const { data, error } = await supabase.rpc('fn_update_guest_player', {
+              p_player_id: id,
+              p_first_name: fields.first_name,
+              p_last_name: fields.last_name,
+              p_jersey_number: fields.jersey_number as number,
+            });
+            return { changed: data === true, error };
+          },
+        },
       );
-      if (createdGuests.length > 0) {
-        const { error } = await supabase.from('players').upsert(
-          createdGuests.map((p) => ({
-            id: p.remote_id as string,
-            team_id: null,
-            first_name: p.first_name as string,
-            last_name: p.last_name as string,
-            jersey_number: (p.jersey_number as number | null) ?? null,
-            is_guest_only: true,
-            is_active: true,
-          })),
-          { onConflict: 'id' },
-        );
-        if (error) deferredErrors.push(`guest players upsert: ${error.message}`);
-      }
-
-      // Guest identity edits (e.g. jersey fixes) — allowed by RLS only for
-      // guest-only rows, so filter to those.
-      const updatedGuests = (tableChanges.players?.updated ?? []).filter(
-        (p) => p.is_guest_only === true,
-      );
-      for (const p of updatedGuests) {
-        const { error } = await supabase
-          .from('players')
-          .update({
-            first_name: p.first_name as string,
-            last_name: p.last_name as string,
-            jersey_number: (p.jersey_number as number | null) ?? null,
-          })
-          .eq('id', p.remote_id as string);
-        if (error) {
-          deferredErrors.push(`guest player update ${p.remote_id}: ${error.message}`);
-        }
-      }
-
-      // 3. League guest-pool registrations created offline.
-      const createdLeaguePlayers = tableChanges.league_players?.created ?? [];
-      if (createdLeaguePlayers.length > 0) {
-        const { error } = await supabase.from('league_players').upsert(
-          createdLeaguePlayers.map((lp) => ({
-            league_id: lp.league_id as string,
-            player_id: lp.player_remote_id as string,
-          })),
-          { onConflict: 'league_id,player_id', ignoreDuplicates: true },
-        );
-        if (error) deferredErrors.push(`league_players upsert: ${error.message}`);
-      }
+      deferredErrors.push(...guestPush.errors);
+      const withheldGuestIds = guestPush.failedIds;
 
       // 3b. Opponent players added at the field. RLS lets a coach on the
       // game's team insert these directly, so there is no server action in
@@ -1335,12 +1309,24 @@ export async function syncWithSupabase(): Promise<void> {
       // Tournament starts/changes need their roster identities and starting
       // lineup on the server first. A rejected game holds its own later events;
       // other games still upload before we fail the cycle to preserve retry data.
-      const tournamentEvents = eventWrites.filter((event) => tournamentGameIds.has(event.game_id));
+      // A tournament game whose lineup has a guest the server doesn't have
+      // yet must not start: its lineup freezes at the start, without that
+      // guest. Its plays wait on the device (the guest error fails this
+      // cycle, so WatermelonDB keeps them unsynced) until the guest is up.
+      const tournamentGamesWaiting = await gamesWaitingOnGuests(database, tournamentGameIds, withheldGuestIds);
+      for (const gameId of tournamentGamesWaiting) {
+        deferredErrors.push(`tournament game=${gameId}: plays wait until its guest players reach the server`);
+      }
+      const tournamentEvents = eventWrites.filter(
+        (event) => tournamentGameIds.has(event.game_id) && !tournamentGamesWaiting.has(event.game_id),
+      );
       const tournamentResult = await pushTournamentEventQueue(tournamentEvents, {
         prepare: async (gameId) => {
           const dirty = await getDirtyLineupState(database);
           if (!dirty.dirtyGameIds.has(gameId)) return;
-          const result = await pushLineupsForGame(supabase, database, gameId, dirty.localEditedAtMsByGame.get(gameId) ?? 0);
+          const result = await pushLineupsForGame(
+            supabase, database, gameId, dirty.localEditedAtMsByGame.get(gameId) ?? 0, withheldGuestIds,
+          );
           preparedTournamentLineups.add(gameId);
           if (result === 'skipped') skippedLineupGames.push(gameId);
         },
@@ -1398,12 +1384,11 @@ export async function syncWithSupabase(): Promise<void> {
             database,
             gameRemoteId,
             localEditedAtMsByGame.get(gameRemoteId) ?? 0,
+            withheldGuestIds,
           );
           if (result === 'skipped') skippedLineupGames.push(gameRemoteId);
         } catch (err) {
-          deferredErrors.push(
-            `lineup push game=${gameRemoteId}: ${err instanceof Error ? err.message : String(err)}`,
-          );
+          deferredErrors.push(`lineup push game=${gameRemoteId}: ${describeSyncError(err)}`);
         }
       }
 
@@ -1631,7 +1616,7 @@ export async function reconcileGameLifecycle(
         p_game_id: g.id as string,
       });
       if (startErr) {
-        console.warn('sync: fn_start_game failed', g.id, startErr.message);
+        console.warn('sync: fn_start_game failed', g.id, describeSyncError(startErr));
         continue; // retry next cycle
       }
     }

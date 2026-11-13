@@ -3,12 +3,11 @@
 import { revalidatePath } from 'next/cache';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
-import { getMaxBattingOrder } from '@baseball/shared';
+import { getMaxBattingOrder, isCoachRole } from '@baseball/shared';
 import type { Database } from '@baseball/database';
 import { getScoringSettingsForGame } from '@/lib/game-scoring-settings';
 import { authorizeLeagueGameScorer } from '@/lib/services/games/authorize';
-
-const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
+import { guestAccessFor } from './guest-access';
 
 interface CoachContext {
   userId: string;
@@ -16,6 +15,8 @@ interface CoachContext {
   leagueId: string | null;
   tournamentId: string | null;
   scoringSettingsSnapshot: unknown | null;
+  /** Whether the guest search may look through other teams' rosters. */
+  searchesOtherTeams: boolean;
   db: SupabaseClient<Database>;
 }
 
@@ -41,10 +42,15 @@ async function getCoachContext(gameId: string): Promise<CoachContext | { error: 
     .select('role')
     .eq('team_id', game.team_id)
     .eq('user_id', user.id)
+    .eq('is_active', true)
     .maybeSingle();
-  const isTeamCoach = !!membership && COACH_ROLES.includes(membership.role);
-  if (!isTeamCoach && !(await authorizeLeagueGameScorer(db, user.id, gameId))) {
-    return { error: 'Only coaches can edit the lineup.' };
+  // Coaches and scorekeepers add guests; league staff on the home row.
+  const teamRole = membership?.role ?? null;
+  const isLeagueGameStaff =
+    !(teamRole && isCoachRole(teamRole)) && (await authorizeLeagueGameScorer(db, user.id, gameId));
+  const access = guestAccessFor(teamRole, isLeagueGameStaff);
+  if (access === 'none') {
+    return { error: 'Only coaches and scorekeepers can edit the lineup.' };
   }
 
   const { data: leagueRow } = await db
@@ -61,6 +67,7 @@ async function getCoachContext(gameId: string): Promise<CoachContext | { error: 
     leagueId: leagueRow?.league_id ?? null,
     tournamentId: game.tournament_id,
     scoringSettingsSnapshot: game.scoring_settings_snapshot,
+    searchesOtherTeams: access === 'all_teams',
     db,
   };
 }
@@ -288,8 +295,9 @@ export async function removeGuestFromLineupAction(input: {
 
 /**
  * Search the league's all-time guest-player pool (everyone who has appeared
- * in any league game) plus any other-team rostered players the coach knows
- * about. Used by the GuestPlayerPicker.
+ * in any league game) plus, for coaches and league staff, other teams'
+ * rostered players. A scorekeeper gets the league pool only (see
+ * `guestAccessFor`). Used by the GuestPlayerPicker.
  */
 export async function searchGuestCandidatesAction(input: {
   gameId: string;
@@ -349,7 +357,7 @@ export async function searchGuestCandidatesAction(input: {
   // parentheses are delimiters, so strip anything that isn't a letter,
   // digit, space, hyphen, or apostrophe.
   const safeQuery = query.replace(/[^a-z0-9 '-]/gi, '');
-  if (candidates.length < limit && safeQuery.length >= 2) {
+  if (ctx.searchesOtherTeams && candidates.length < limit && safeQuery.length >= 2) {
     const remaining = limit - candidates.length;
     const { data: systemPlayers } = await ctx.db
       .from('players')

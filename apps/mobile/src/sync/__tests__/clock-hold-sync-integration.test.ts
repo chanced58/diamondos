@@ -18,6 +18,7 @@ jest.mock('../lineup-sync', () => ({
   getDirtyLineupState: async () => ({ dirtyGameIds: new Set(), localEditedAtMsByGame: new Map() }),
   pushLineupsForGame: jest.fn(),
   applyServerLineupSnapshot: jest.fn(),
+  gamesWaitingOnGuests: async () => new Set(),
 }));
 jest.mock('@nozbe/watermelondb/sync', () => ({
   synchronize: async (options: { pushChanges: (args: unknown) => Promise<unknown> }) => {

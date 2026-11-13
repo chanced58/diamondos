@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isCoachRole } from '@baseball/shared';
-import { getAuthorizedCoach } from '@/lib/games/finalize';
+import { getAuthorizedCoach, getAuthorizedFinalizer } from '@/lib/games/finalize';
 import { authorizeLeagueStaff } from '../league-admin/authorize';
 import { serviceError, type ServiceResult } from '../result';
 
@@ -92,7 +92,8 @@ export interface AuthorizedScorer {
 
 /**
  * Who may run a game's book — start it, correct its play-by-play and end it:
- * its coaches (as `authorizeGameCoach`), and league staff on the HOME row of a
+ * its coaches and scorekeepers (`getAuthorizedFinalizer`, the roles the
+ * database's `is_game_scorer` admits), and league staff on the HOME row of a
  * league game, so a game neither team scores can still be run from the League
  * Games page. The game row comes back with the same columns either way;
  * `asLeagueStaff` says which way the actor got in (league staff have no seat
@@ -103,9 +104,11 @@ export async function authorizeGameScorer(
   actorUserId: string,
   gameId: string,
 ): Promise<ServiceResult<AuthorizedScorer>> {
-  const coach = await authorizeGameCoach(db, actorUserId, gameId);
-  if (coach.ok) return { ok: true, data: { game: coach.data, asLeagueStaff: false } };
-  if (!(await authorizeLeagueGameScorer(db, actorUserId, gameId))) return coach;
+  const scorer = await getAuthorizedFinalizer(db, actorUserId, gameId);
+  if (scorer.game) return { ok: true, data: { game: scorer.game, asLeagueStaff: false } };
+  if (!(await authorizeLeagueGameScorer(db, actorUserId, gameId))) {
+    return serviceError(scorer.code ?? 'forbidden', scorer.error ?? 'Only coaches and scorekeepers can perform this action.');
+  }
 
   const { data, error } = await db
     .from('games')
