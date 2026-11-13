@@ -3,7 +3,7 @@ import type { JSX } from 'react';
 
 import { useState } from 'react';
 import type { PitchingStats, OppBattingRow } from '@baseball/shared';
-import { formatBattingRate, formatInningsPitched } from '@baseball/shared';
+import { DEFAULT_STAT_INNINGS, formatBattingRate, formatInningsPitched } from '@baseball/shared';
 
 export type OpponentTeamStats = {
   teamId: string;
@@ -135,7 +135,7 @@ function OppBattingTable({ rows }: { rows: OppBattingRow[] }) {
   );
 }
 
-function OppPitchingTable({ rows }: { rows: PitchingStats[] }) {
+function OppPitchingTable({ rows, statInnings }: { rows: PitchingStats[]; statInnings: number }) {
   const sorted = [...rows].sort((a, b) => b.inningsPitchedOuts - a.inningsPitchedOuts);
   if (sorted.length === 0) return <p className="text-sm text-gray-400 px-5 py-3">No pitching data.</p>;
 
@@ -197,7 +197,7 @@ function OppPitchingTable({ rows }: { rows: PitchingStats[] }) {
                     <td className="px-3 py-2 text-center tabular-nums">{t.wp}</td>
                     <td className="px-3 py-2 text-center tabular-nums">{t.pc}</td>
                     <td className="px-3 py-2 text-center tabular-nums">{fmtPct(t.pc > 0 ? t.str / t.pc : NaN)}</td>
-                    <td className="px-3 py-2 text-center tabular-nums font-mono">{fmtDec(ipDec > 0 ? (t.r * 7) / ipDec : NaN)}</td>
+                    <td className="px-3 py-2 text-center tabular-nums font-mono">{fmtDec(ipDec > 0 ? (t.r * statInnings) / ipDec : NaN)}</td>
                   </>
                 );
               })()}
@@ -209,7 +209,14 @@ function OppPitchingTable({ rows }: { rows: PitchingStats[] }) {
   );
 }
 
-export function OpponentsStatsTable({ teams }: { teams: OpponentTeamStats[] }): JSX.Element {
+export function OpponentsStatsTable({
+  teams,
+  statInnings = DEFAULT_STAT_INNINGS,
+}: {
+  teams: OpponentTeamStats[];
+  /** Innings per game for the totals row's runs-per-game rate (the team's league's stat innings). */
+  statInnings?: number;
+}): JSX.Element {
   const [expandedId, setExpandedId] = useState<string | null>(teams.length === 1 ? teams[0]?.teamId ?? null : null);
 
   if (teams.length === 0) {
@@ -258,7 +265,7 @@ export function OpponentsStatsTable({ teams }: { teams: OpponentTeamStats[] }): 
                   <div className="px-5 pt-3 pb-1">
                     <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Pitching</h4>
                   </div>
-                  <OppPitchingTable rows={team.pitching} />
+                  <OppPitchingTable rows={team.pitching} statInnings={statInnings} />
                 </div>
               </div>
             )}

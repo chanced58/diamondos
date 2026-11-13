@@ -14,6 +14,7 @@ const MOBILE_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const SCORER_FILES = [
   'app/(tabs)/schedule/games/[gameId]/score.tsx',
   'src/features/scoring/BaserunnerDisplay.tsx',
+  'src/features/scoring/PhoneBookPane.tsx',
   'src/features/scoring/PitchInput.tsx',
   'src/features/scoring/PlayFeed.tsx',
 ];

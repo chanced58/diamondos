@@ -7,7 +7,7 @@ import {
   type OutPayload,
   type PitchingChangePayload,
 } from '../types/game-event';
-import { OUTS_PER_INNING } from '../constants/baseball';
+import { DEFAULT_STAT_INNINGS, OUTS_PER_INNING } from '../constants/baseball';
 import type { CountStat, PitchingStats } from '../types/pitching';
 import {
   applyLinkedAdvance,
@@ -87,8 +87,22 @@ function inningsPitched(outs: number): number {
   return outs / 3;
 }
 
-/** Recompute every rate stat on `s` from its counting stats, in place. */
-export function finalizePitchingRates(s: PitchingStats): void {
+/**
+ * A count per `inningsPerGame` innings (ERA, K/7, BB/7), from outs recorded.
+ * Infinity with no outs, the reducer's convention; callers that show 0 or
+ * '---' instead check the outs first.
+ */
+export function perGameRate(count: number, outs: number, inningsPerGame: number = DEFAULT_STAT_INNINGS): number {
+  const ip = inningsPitched(outs);
+  return ip > 0 ? (count * inningsPerGame) / ip : Infinity;
+}
+
+/**
+ * Recompute every rate stat on `s` from its counting stats, in place. ERA,
+ * `strikeoutsPerSeven` and `walksPerSeven` are per `inningsPerGame` innings:
+ * the league's regulation game (`getStatInnings`), 7 by default.
+ */
+export function finalizePitchingRates(s: PitchingStats, inningsPerGame: number = DEFAULT_STAT_INNINGS): void {
   const ip = inningsPitched(s.inningsPitchedOuts);
 
   s.strikePercentage = s.totalPitches > 0 ? s.strikes / s.totalPitches : 0;
@@ -97,10 +111,10 @@ export function finalizePitchingRates(s: PitchingStats): void {
   s.threeZeroCountPercentage = s.totalPAs > 0 ? s.threeZeroCountPAs / s.totalPAs : 0;
 
   if (ip > 0) {
-    s.era = (s.earnedRunsAllowed * 7) / ip;
+    s.era = perGameRate(s.earnedRunsAllowed, s.inningsPitchedOuts, inningsPerGame);
     s.whip = (s.walksAllowed + s.hitsAllowed) / ip;
-    s.strikeoutsPerSeven = (s.strikeouts * 7) / ip;
-    s.walksPerSeven = (s.walksAllowed * 7) / ip;
+    s.strikeoutsPerSeven = perGameRate(s.strikeouts, s.inningsPitchedOuts, inningsPerGame);
+    s.walksPerSeven = perGameRate(s.walksAllowed, s.inningsPitchedOuts, inningsPerGame);
   } else {
     s.era = Infinity;
     s.whip = Infinity;
@@ -131,11 +145,14 @@ export function formatAverage(avg: number): string {
  *
  * @param events  All game events for the season (filtered to relevant types).
  * @param players Name lookup map for player IDs.
+ * @param inningsPerGame Innings the per-game rates (ERA, K/7, BB/7) use: the
+ *   league's `getStatInnings`, else 7.
  * @returns A map from playerId → PitchingStats.
  */
 export function derivePitchingStats(
   events: GameEvent[],
   players: { id: string; firstName: string; lastName: string }[],
+  inningsPerGame: number = DEFAULT_STAT_INNINGS,
 ): Map<string, PitchingStats> {
   const nameMap = new Map<string, string>(
     players.map((p) => [p.id, `${p.firstName} ${p.lastName}`]),
@@ -819,7 +836,7 @@ export function derivePitchingStats(
   }
 
   // ── Compute derived rates for all pitchers ─────────────────────────────
-  for (const s of statsMap.values()) finalizePitchingRates(s);
+  for (const s of statsMap.values()) finalizePitchingRates(s, inningsPerGame);
 
   return statsMap;
 }

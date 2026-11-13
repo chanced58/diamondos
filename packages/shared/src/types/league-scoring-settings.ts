@@ -19,6 +19,13 @@ export interface LeagueScoringSettings {
   };
   gameLength: {
     maxInnings: number;
+    /**
+     * Innings in the league's regulation game for rate stats: ERA, K/N and
+     * BB/N are per this many innings (7 for high school and youth, 9 for
+     * adult). Separate from `maxInnings` so existing leagues, whose
+     * `maxInnings` defaults to 9, keep their per-7 numbers.
+     */
+    statInnings: number;
     mercy: {
       enabled: boolean;
       runDiff: number;

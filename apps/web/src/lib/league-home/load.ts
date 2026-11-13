@@ -36,6 +36,8 @@ export interface StandingRow {
   win_pct: number;
   runs_for: number;
   runs_against: number;
+  /** Current streak, "W3" / "L1" / "T1"; '' (or null on old rows) before the first game. */
+  streak?: string | null;
 }
 
 /** A completed league game summarized from the home team's perspective. */

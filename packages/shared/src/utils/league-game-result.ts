@@ -149,6 +149,52 @@ export function computeLeagueGameStandings(
   return records;
 }
 
+/** One game's result for one team. */
+export type TeamGameOutcome = 'W' | 'L' | 'T';
+
+/**
+ * A team's current streak from its results in the order played: "W3" after
+ * three straight wins, "L1", "T2"; '' before its first game. A tie is its own
+ * streak, as on the web /league standings.
+ */
+export function formatCurrentStreak(outcomes: readonly TeamGameOutcome[]): string {
+  const last = outcomes[outcomes.length - 1];
+  if (!last) return '';
+  let count = 0;
+  for (let i = outcomes.length - 1; i >= 0 && outcomes[i] === last; i--) count++;
+  return `${last}${count}`;
+}
+
+/** Each team's outcome in one league game: a forfeit is a win and a loss, whatever the runs. */
+function leagueGameOutcomes(game: LeagueGameResult): [TeamGameOutcome, TeamGameOutcome] {
+  if (game.forfeitWinnerTeamId) {
+    return game.forfeitWinnerTeamId === game.homeTeamId ? ['W', 'L'] : ['L', 'W'];
+  }
+  if (game.homeRuns > game.awayRuns) return ['W', 'L'];
+  if (game.homeRuns < game.awayRuns) return ['L', 'W'];
+  return ['T', 'T'];
+}
+
+/**
+ * Each team's current streak ({@link formatCurrentStreak}) from league game
+ * results in the order they were played, oldest first. Teams without a game
+ * are absent (their streak is '').
+ */
+export function computeLeagueGameStreaks(results: readonly LeagueGameResult[]): Map<string, string> {
+  const outcomes = new Map<string, TeamGameOutcome[]>();
+  const push = (teamId: string, outcome: TeamGameOutcome) => {
+    const list = outcomes.get(teamId) ?? [];
+    list.push(outcome);
+    outcomes.set(teamId, list);
+  };
+  for (const game of results) {
+    const [home, away] = leagueGameOutcomes(game);
+    push(game.homeTeamId, home);
+    push(game.awayTeamId, away);
+  }
+  return new Map([...outcomes].map(([teamId, list]) => [teamId, formatCurrentStreak(list)]));
+}
+
 /** A batting line typed in by hand for a game nobody scored pitch by pitch. */
 export interface ManualBattingLine {
   playerId: string;
@@ -265,8 +311,11 @@ const PITCHING_COUNT_KEYS = [
   'wildPitches',
 ] as const satisfies readonly (keyof PitchingStats)[];
 
-/** Sum two pitching lines' counts and recompute the rates the way the reducer does. */
-export function mergePitchingStats(a: PitchingStats, b: PitchingStats): PitchingStats {
+/**
+ * Sum two pitching lines' counts and recompute the rates the way the reducer
+ * does, per `inningsPerGame` innings (the league's `getStatInnings`, else 7).
+ */
+export function mergePitchingStats(a: PitchingStats, b: PitchingStats, inningsPerGame?: number): PitchingStats {
   const merged: PitchingStats = { ...a, playerName: a.playerName || b.playerName, baByCount: {} };
   for (const key of PITCHING_COUNT_KEYS) merged[key] = a[key] + b[key];
   const noCount = { atBats: 0, hits: 0, average: NaN };
@@ -279,6 +328,6 @@ export function mergePitchingStats(a: PitchingStats, b: PitchingStats): Pitching
       average: NaN,
     };
   }
-  finalizePitchingRates(merged);
+  finalizePitchingRates(merged, inningsPerGame);
   return merged;
 }

@@ -33,6 +33,7 @@ export function loadLeagueStats(
       gameCount: stats.gameCount,
       pitching: stats.pitching.map(toPitchingRow),
       batting: stats.batting.map(toBattingRow),
+      statInnings: stats.statInnings,
     };
   });
 }

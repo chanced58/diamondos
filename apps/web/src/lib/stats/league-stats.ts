@@ -14,6 +14,7 @@ import { RELEVANT_EVENT_TYPES } from '@/app/(app)/compliance/constants';
 import { buildLineupsByGameId } from './lineups';
 import { fetchAllEventsForGames } from './fetch-events';
 import { rowsOf } from './rows-of';
+import { loadLeagueStatInnings } from './stat-innings';
 
 export interface LeaguePlayerStats {
   /** Platform (DiamondOS) teams in the league. */
@@ -23,6 +24,8 @@ export interface LeaguePlayerStats {
   /** Every league player, "Last (Team)" — opponent-team players included. */
   pitching: PitchingStats[];
   batting: BattingStats[];
+  /** Innings per game the pitching rates are per: the league's `getStatInnings`. */
+  statInnings: number;
 }
 
 const EVENT_TYPES = RELEVANT_EVENT_TYPES as unknown as readonly string[];
@@ -35,8 +38,11 @@ const EVENT_TYPES = RELEVANT_EVENT_TYPES as unknown as readonly string[];
  * than show part of a league.
  */
 export async function loadLeaguePlayerStats(db: SupabaseClient, leagueId: string): Promise<LeaguePlayerStats> {
-  const teamIds = await getLeagueTeamIds(db as never, leagueId);
-  if (teamIds.length === 0) return { teamCount: 0, gameCount: 0, pitching: [], batting: [] };
+  const [teamIds, statInnings] = await Promise.all([
+    getLeagueTeamIds(db as never, leagueId),
+    loadLeagueStatInnings(db, leagueId),
+  ]);
+  if (teamIds.length === 0) return { teamCount: 0, gameCount: 0, pitching: [], batting: [], statInnings };
 
   // In-progress games too, so live player stats update during games.
   const games = rowsOf(
@@ -64,12 +70,14 @@ export async function loadLeaguePlayerStats(db: SupabaseClient, leagueId: string
   const playerIds = new Set(playerList.map((p) => p.id));
 
   const events = filterResetAndReverted(rawEvents) as unknown as GameEvent[];
-  const pitching = Array.from(derivePitchingStats(events, playerList).values()).filter((s) => playerIds.has(s.playerId));
+  const pitching = Array.from(derivePitchingStats(events, playerList, statInnings).values()).filter((s) =>
+    playerIds.has(s.playerId),
+  );
   const batting = Array.from(deriveBattingStats(events, playerList, lineupsByGameId).values()).filter((s) =>
     playerIds.has(s.playerId),
   );
 
-  const opponents = await loadLeagueOpponentStats(db, leagueId, gameIds, rawEvents);
+  const opponents = await loadLeagueOpponentStats(db, leagueId, gameIds, rawEvents, statInnings);
   pitching.push(...opponents.pitching);
   batting.push(...opponents.batting);
 
@@ -78,6 +86,7 @@ export async function loadLeaguePlayerStats(db: SupabaseClient, leagueId: string
     gameCount: gameIds.length,
     pitching: pitching.sort((a, b) => b.inningsPitchedOuts - a.inningsPitchedOuts),
     batting: batting.sort((a, b) => b.plateAppearances - a.plateAppearances),
+    statInnings,
   };
 }
 
@@ -87,6 +96,7 @@ async function loadLeagueOpponentStats(
   leagueId: string,
   platformGameIds: string[],
   platformEvents: Record<string, unknown>[],
+  statInnings: number,
 ): Promise<{ pitching: PitchingStats[]; batting: BattingStats[] }> {
   const opponentTeamIds = await getLeagueOpponentTeamIds(db as never, leagueId);
   if (opponentTeamIds.length === 0) return { pitching: [], batting: [] };
@@ -126,6 +136,7 @@ async function loadLeagueOpponentStats(
     derivePitchingStats(
       filtered as unknown as GameEvent[],
       oppPlayers.map((p) => ({ id: p.id, firstName: p.first_name, lastName: `${p.last_name} (${teamLabel(p.id)})` })),
+      statInnings,
     ).values(),
   ).filter((s) => oppPlayerIds.has(s.playerId) && s.totalPitches > 0);
 

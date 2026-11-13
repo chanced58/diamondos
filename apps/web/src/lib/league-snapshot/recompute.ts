@@ -10,7 +10,7 @@ import {
 import { fetchAllEventsForGames } from '@/lib/stats/fetch-events';
 import { buildLineupsByGameId } from '@/lib/stats/lineups';
 import { resolveLeagueSeasonGameIds } from './season';
-import { computeStandings, computeOpponentStandings } from './standings';
+import { computeStandings, computeOpponentStandings, computeStreaks } from './standings';
 import {
   combinePlayerStats,
   spotlightRows,
@@ -20,6 +20,7 @@ import {
 } from './aggregate';
 import { clearLeagueSeasonSnapshots, replaceLeagueSeasonSnapshot } from './write';
 import { recomputeScheduledLeagueSnapshot } from './scheduled/recompute-scheduled';
+import { statInningsFromSettings } from '@/lib/stats/stat-innings';
 
 const NIL = '00000000-0000-0000-0000-000000000000';
 
@@ -45,15 +46,18 @@ export async function recomputeLeagueSnapshot(
 ): Promise<void> {
   const { data: league, error: leagueErr } = await db
     .from('leagues')
-    .select('schedules_games')
+    .select('schedules_games, scoring_settings')
     .eq('id', leagueId)
     .maybeSingle();
   assertOk(leagueErr, 'leagues', leagueId, season);
+  // ERA (player and team) per the league's regulation game: 9 innings in an
+  // adult league, 7 by default.
+  const statInnings = statInningsFromSettings(league?.scoring_settings);
   if (league?.schedules_games) {
-    await recomputeScheduledLeagueSnapshot(db, leagueId, season);
+    await recomputeScheduledLeagueSnapshot(db, leagueId, season, statInnings);
     return;
   }
-  await recomputeTeamGameSnapshot(db, leagueId, season);
+  await recomputeTeamGameSnapshot(db, leagueId, season, statInnings);
 }
 
 /**
@@ -70,6 +74,7 @@ async function recomputeTeamGameSnapshot(
   db: SupabaseClient<Database>,
   leagueId: string,
   season: string,
+  statInnings: number,
 ): Promise<void> {
   // 1) league member ids — platform teams (team_id) and opponent teams
   //    (opponent_team_id). A row has exactly one of the two set.
@@ -117,7 +122,7 @@ async function recomputeTeamGameSnapshot(
   ] = await Promise.all([
     db
       .from('games')
-      .select('id, team_id, opponent_team_id, home_score, away_score, location_type, neutral_home_team, status')
+      .select('id, team_id, opponent_team_id, home_score, away_score, location_type, neutral_home_team, status, scheduled_at')
       .in('id', gameIdList),
     db.from('teams').select('id, name').in('id', teamIds),
     db.from('opponent_teams').select('id, name').in('id', opponentTeamIds.length ? opponentTeamIds : [NIL]),
@@ -174,7 +179,7 @@ async function recomputeTeamGameSnapshot(
   // Reducers accept persisted snake_case event rows as well as domain events.
   const evts = events as unknown as GameEvent[];
   const batting = deriveBattingStats(evts, players, battingCtx);
-  const pitching = derivePitchingStats(evts, players);
+  const pitching = derivePitchingStats(evts, players, statInnings);
 
   const seasonPlayerRows = combinePlayerStats({
     batting,
@@ -194,6 +199,7 @@ async function recomputeTeamGameSnapshot(
   //    from the inverse of games recorded against them.
   const standings = computeStandings(games ?? [], teamIds);
   const opponentStandings = computeOpponentStandings(games ?? [], opponentTeamIds);
+  const streaks = computeStreaks(games ?? [], opponentTeamIds);
 
   // 9) team stats — team AVG and ERA over the lines of the team's roster
   const teamStatRows = Array.from(standings.entries()).map(([teamId, record]) => {
@@ -206,6 +212,7 @@ async function recomputeTeamGameSnapshot(
       record,
       batting: rosterIds.map((pid) => batting.get(pid)).filter((line) => line !== undefined),
       pitching: rosterIds.map((pid) => pitching.get(pid)).filter((line) => line !== undefined),
+      statInnings,
     });
   });
 
@@ -219,6 +226,7 @@ async function recomputeTeamGameSnapshot(
         divisionId: divisionOf.get(teamId) ?? null,
         teamName: teamName.get(teamId) ?? '',
         record,
+        streak: streaks.get(teamId),
       }),
     ),
     ...Array.from(opponentStandings.entries()).map(([opponentTeamId, record]) =>
@@ -230,6 +238,7 @@ async function recomputeTeamGameSnapshot(
         divisionId: divisionOf.get(opponentTeamId) ?? null,
         teamName: opponentName.get(opponentTeamId) ?? '',
         record,
+        streak: streaks.get(opponentTeamId),
       }),
     ),
   ];

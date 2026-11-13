@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { seasonBattingRowSchema, seasonPitchingRowSchema } from './season-stats';
+import { seasonBattingRowSchema, seasonPitchingRowSchema, statInningsSchema } from './season-stats';
 
 /**
  * Contracts for the league pages a team member reaches from the Stats tab:
@@ -28,6 +28,11 @@ export const leagueStatsResponseSchema = z.object({
   /** Every league player; names read "First Last (Team)". */
   pitching: z.array(seasonPitchingRowSchema),
   batting: z.array(seasonBattingRowSchema),
+  /**
+   * Innings per game the league's ERA, K/N and BB/N use (its
+   * `gameLength.statInnings`); labels the columns. 7 from an older server.
+   */
+  statInnings: statInningsSchema,
 });
 export type LeagueStatsResponse = z.infer<typeof leagueStatsResponseSchema>;
 
@@ -44,7 +49,7 @@ export const teamComparisonRowSchema = z.object({
   runsAllowed: count,
   /** H / AB; 0 with no at-bats. */
   teamAvg: z.number(),
-  /** Earned runs per 7 innings; 0 with no outs. */
+  /** Earned runs per the league's `statInnings` innings (7 unless it says); 0 with no outs. */
   teamEra: z.number(),
   totalHits: count,
   totalStrikeouts: count,

@@ -26,7 +26,7 @@ const batter = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockGetLeagueForTeam.mockResolvedValue({ id: 'l1', name: 'Metro', slug: 'metro' });
-  mockLoadLeaguePlayerStats.mockResolvedValue({ teamCount: 4, gameCount: 30, pitching: [], batting: [batter] });
+  mockLoadLeaguePlayerStats.mockResolvedValue({ teamCount: 4, gameCount: 30, pitching: [], batting: [batter], statInnings: 9 });
   mockLoadTeamComparison.mockResolvedValue([
     { teamId: 't1', teamName: 'Huskies', isOpponentTeam: false, gamesPlayed: 2, wins: 2, losses: 0, ties: 0,
       runsScored: 9, runsAllowed: 3, teamAvg: 0.3, teamEra: 1.5, totalHits: 12, totalStrikeouts: 14 },
@@ -54,7 +54,7 @@ describe('loadLeagueStats', () => {
 
     expect(leagueStatsResponseSchema.parse(result.data)).toEqual(result.data);
     expect(mockLoadLeaguePlayerStats).toHaveBeenCalledWith(db, 'l1');
-    expect(result.data).toMatchObject({ league: { id: 'l1', name: 'Metro' }, teamCount: 4, gameCount: 30 });
+    expect(result.data).toMatchObject({ league: { id: 'l1', name: 'Metro' }, teamCount: 4, gameCount: 30, statInnings: 9 });
     expect(result.data.batting[0]).toMatchObject({ avg: null, obp: 1 });
   });
 

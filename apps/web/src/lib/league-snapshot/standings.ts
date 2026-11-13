@@ -1,4 +1,4 @@
-import { weAreHome, type TeamRecord } from '@baseball/shared';
+import { formatCurrentStreak, weAreHome, type TeamGameOutcome, type TeamRecord } from '@baseball/shared';
 
 export type { TeamRecord };
 
@@ -10,6 +10,8 @@ export interface GameRow {
   location_type: 'home' | 'away' | 'neutral';
   neutral_home_team: string | null;
   status: string;
+  /** When the game was played; orders the games for streaks (unknown dates count as oldest). */
+  scheduled_at?: string | null;
 }
 
 function emptyRecord(): TeamRecord {
@@ -89,4 +91,33 @@ export function computeOpponentStandings(games: GameRow[], opponentTeamIds: stri
   }
   finalizeWinPct(rec);
   return rec;
+}
+
+function outcome(runsFor: number, runsAgainst: number): TeamGameOutcome {
+  if (runsFor > runsAgainst) return 'W';
+  if (runsFor < runsAgainst) return 'L';
+  return 'T';
+}
+
+/**
+ * Each team's current streak ("W3", "L1", "T1") from completed games in the
+ * order played: recording teams from their own side, and the opponent teams
+ * in `opponentTeamIds` from the inverse side, as in the standings above.
+ * Teams without a completed game are absent (their streak is '').
+ */
+export function computeStreaks(games: GameRow[], opponentTeamIds: string[] = []): Map<string, string> {
+  const opponents = new Set(opponentTeamIds);
+  const ordered = games
+    .filter((g) => g.status === 'completed')
+    .map((g, index) => ({ g, index }))
+    .sort((a, b) => (a.g.scheduled_at ?? '').localeCompare(b.g.scheduled_at ?? '') || a.index - b.index)
+    .map(({ g }) => g);
+  const outcomes = new Map<string, TeamGameOutcome[]>();
+  const push = (teamId: string, result: TeamGameOutcome) => outcomes.set(teamId, [...(outcomes.get(teamId) ?? []), result]);
+  for (const g of ordered) {
+    const { our, their } = scoresForRecorder(g);
+    push(g.team_id, outcome(our, their));
+    if (g.opponent_team_id && opponents.has(g.opponent_team_id)) push(g.opponent_team_id, outcome(their, our));
+  }
+  return new Map([...outcomes].map(([teamId, list]) => [teamId, formatCurrentStreak(list)]));
 }

@@ -55,6 +55,7 @@ export async function loadSeasonStats(
       defaultTier: stats.defaultTier,
       features,
       hasLeague: league != null,
+      statInnings: stats.statInnings,
       pitching: stats.pitching.map((s) => ({
         ...toPitchingRow(s),
         compliance: stats.complianceMap[s.playerId] ?? null,

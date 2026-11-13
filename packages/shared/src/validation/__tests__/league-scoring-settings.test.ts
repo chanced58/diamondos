@@ -67,6 +67,17 @@ describe('mergeWithDefaults', () => {
     expect(merged.gameLength.maxInnings).toBe(9);
   });
 
+  it('should read 7 stat innings for a league saved before the setting existed, even with 9 regulation innings', () => {
+    const merged = mergeWithDefaults({ gameLength: { maxInnings: 9 } });
+    expect(merged.gameLength.maxInnings).toBe(9);
+    expect(merged.gameLength.statInnings).toBe(7);
+  });
+
+  it('should keep a league\'s own stat innings and reject out-of-range ones', () => {
+    expect(mergeWithDefaults({ gameLength: { statInnings: 9 } }).gameLength.statInnings).toBe(9);
+    expect(mergeWithDefaults({ gameLength: { statInnings: 0 } }).gameLength.statInnings).toBe(7);
+  });
+
   it('falls back to the default for out-of-range maxBatters', () => {
     const merged = mergeWithDefaults({ lineup: { maxBatters: 5 } });
     expect(merged.lineup.maxBatters).toBe(30);

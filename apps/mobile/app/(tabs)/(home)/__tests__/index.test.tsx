@@ -4,6 +4,14 @@ import { renderWithQuery } from '../../../../src/__tests__/render-with-query';
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ __esModule: true, router: { push: (...args: unknown[]) => mockPush(...args) } }));
+// Links into another tab's stack go through the tab navigator (open-in-tab.ts).
+const mockNavigate = jest.fn();
+jest.mock('@react-navigation/native', () => {
+  const tabs = { getState: () => ({ type: 'tab' }), getParent: () => undefined, navigate: (...args: unknown[]) => mockNavigate(...args) };
+  const homeStack = { getState: () => ({ type: 'stack' }), getParent: () => tabs };
+  return { __esModule: true, useNavigation: () => homeStack };
+});
+const inTab = (tab: string, screenName: string, params: Record<string, string>) => [tab, { screen: screenName, params, initial: false }];
 const mockRole = jest.fn();
 jest.mock('../../../../src/providers/RoleProvider', () => ({ useRole: () => mockRole() }));
 jest.mock('../../../../src/providers/SyncProvider', () => ({ useSyncContext: () => ({ isSyncing: false }) }));
@@ -51,7 +59,7 @@ describe('HomeScreen', () => {
     // A parent follows the live game; only scorers get the resume card.
     expect(screen.queryByText('Resume scoring card')).toBeNull();
     fireEvent.press(screen.getByLabelText('Live: vs Eagles, 3 to 1. Follow live.'));
-    expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/schedule/games/[gameId]/live', params: { gameId: 'live-ours' } });
+    expect(mockNavigate).toHaveBeenCalledWith(...inTab('schedule', 'games/[gameId]/live', { gameId: 'live-ours' }));
 
     // In the Next up card and the upcoming list.
     expect(screen.getAllByText('Rams Park', { exact: false })).toHaveLength(2);
@@ -62,10 +70,10 @@ describe('HomeScreen', () => {
     expect(screen.queryByText('Post')).toBeNull();
 
     fireEvent.press(screen.getByText('vs Owls'));
-    expect(mockPush).toHaveBeenLastCalledWith({ pathname: '/(tabs)/schedule/games/[gameId]', params: { gameId: 'g-old' } });
+    expect(mockNavigate).toHaveBeenLastCalledWith(...inTab('schedule', 'games/[gameId]/index', { gameId: 'g-old' }));
     // The row's title (its badge also reads Practice).
     fireEvent.press(screen.getAllByText('Practice')[0]);
-    expect(mockPush).toHaveBeenLastCalledWith({ pathname: '/(tabs)/more/practices/[practiceId]', params: { practiceId: 'p1' } });
+    expect(mockNavigate).toHaveBeenLastCalledWith(...inTab('more', 'practices/[practiceId]/index', { practiceId: 'p1' }));
   });
 
   it('should give a coach the resume card, Set lineup and Post, and switch to the league view', () => {
@@ -77,10 +85,13 @@ describe('HomeScreen', () => {
     // The coach's own live game is the resume card, not a second card.
     expect(screen.queryByLabelText('Live: vs Eagles, 3 to 1. Follow live.')).toBeNull();
 
+    fireEvent.press(screen.getByText('Open game'));
+    expect(mockNavigate).toHaveBeenLastCalledWith(...inTab('schedule', 'games/[gameId]/index', { gameId: 'g-next' }));
     fireEvent.press(screen.getByText('Set lineup'));
-    expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/schedule/games/[gameId]/lineup', params: { gameId: 'g-next' } });
+    expect(mockNavigate).toHaveBeenLastCalledWith(...inTab('schedule', 'games/[gameId]/lineup', { gameId: 'g-next' }));
     fireEvent.press(screen.getByText('Post'));
-    expect(mockPush).toHaveBeenLastCalledWith({ pathname: '/(tabs)/messages/[channelId]', params: { channelId: 'ann' } });
+    expect(mockNavigate).toHaveBeenLastCalledWith(...inTab('messages', '[channelId]', { channelId: 'ann' }));
+    expect(mockPush).not.toHaveBeenCalled();
 
     fireEvent.press(screen.getByText('Valley League'));
     expect(mockUseDashboard).toHaveBeenLastCalledWith(TEAM, 'league');

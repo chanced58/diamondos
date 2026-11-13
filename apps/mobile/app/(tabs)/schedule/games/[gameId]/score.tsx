@@ -49,6 +49,9 @@ import { addLineupRow, createLocalGuest, prepareLineupRow } from '../../../../..
 import { withLineupChangeLock } from '../../../../../src/features/lineup/lineup-change-lock';
 import { useGameLineups } from '../../../../../src/features/lineup/use-game-lineups';
 import { currentOpponentPitcherId } from '../../../../../src/features/scoring/opponent-pitcher';
+import { addPlayerSheetCopy, theirPitcherStripLabel } from '../../../../../src/features/scoring/scorer-copy';
+import { PhoneBookPane } from '../../../../../src/features/scoring/PhoneBookPane';
+import { PitchCountStrip } from '../../../../../src/features/scoring/PitchCountStrip';
 import { useOpponentLineup, type OpponentBatter } from '../../../../../src/features/lineup/use-opponent-lineup';
 import {
   addNewOpponentBatter,
@@ -64,9 +67,6 @@ import {
   type ExistingLineupRow,
 } from '../../../../../src/features/lineup/lineup-wizard';
 import type { GameLineup } from '../../../../../src/db/models/GameLineup';
-
-/** On phones the book (count, bases, order) never shrinks below this, in points. */
-const BOOK_MIN_HEIGHT_PHONE = 200;
 
 /**
  * How an action surface (the pad, the lineup gate, the 3-outs and who's-up
@@ -791,8 +791,13 @@ function ScoringScreenContent() {
   const gameDateIso = game
     ? `${utcToZonedDateTime(new Date(game.scheduledAt), isValidTimeZone(game.timeZone) ? game.timeZone : 'UTC').date}T12:00:00.000Z`
     : new Date().toISOString();
+  // Phones only: the book's "Change their pitcher" row scrolls out of sight
+  // under the pad, so while we bat the always-visible pitch strip names their
+  // pitcher, counts their pitches and opens their pitching change. Tablets
+  // keep the book in view and the strip as it was.
+  const stripShowsTheirPitcher = !isWide && weBat && !!game?.opponentTeamId;
   const displayPitcherId = weBat
-    ? (gameState?.currentPitcherId ?? null)
+    ? ((stripShowsTheirPitcher ? opponentPitcherId : null) ?? gameState?.currentPitcherId ?? null)
     : (ourPitcherId ?? gameState?.currentPitcherId ?? null);
   const currentPitchTotal =
     gameState && displayPitcherId
@@ -821,6 +826,10 @@ function ScoringScreenContent() {
     }
     return { pitches, strikes };
   }, [gameState, displayPitcherId, ourPlayerIds, weBat]);
+
+  const theirPitcherInStrip = stripShowsTheirPitcher
+    ? theirPitcherStripLabel(opponentPitcherId ? opponentNameById.get(opponentPitcherId) ?? 'Unknown player' : null)
+    : null;
 
   // Per-roster-player pitch totals + compliance level for the pitching-change
   // picker, so the coach sees who is near/over their limit before choosing.
@@ -2094,7 +2103,10 @@ function ScoringScreenContent() {
       />
 
       <PaneRow isWide={isWide}>
-      <BookPane isWide={isWide}>
+      <BookPane
+        isWide={isWide}
+        moreLabel={!gameStarted ? 'More' : game?.opponentTeamId ? 'Their pitcher & batting order' : 'Batting order'}
+      >
 
       {/* Book toolbar. These were floating over the pane on absolute
           positioning, which put them on top of the count once this column
@@ -2445,6 +2457,7 @@ function ScoringScreenContent() {
       <AddBatterModal
         visible={showAddOpponentBatter}
         title={opponentNeedsBatter ? `Who's up for ${opponentName}?` : `Add ${opponentName} batter`}
+        teamName={opponentName}
         topOfOrder={
           opponentNeedsBatter && opponentResolution.kind === 'ask' && opponentResolution.topOfOrder
             ? {
@@ -2467,6 +2480,7 @@ function ScoringScreenContent() {
       <AddBatterModal
         visible={showChangeOpponentPitcher}
         title={`${opponentName} pitching change`}
+        teamName={opponentName}
         rosterLabel="ON THEIR ROSTER"
         roster={opponentRoster
           .filter((p) => p.remoteId !== opponentPitcherId)
@@ -2493,7 +2507,8 @@ function ScoringScreenContent() {
 
       <AddBatterModal
         visible={showAddOurBatter}
-        title={ourNeedsBatter ? "Who's up?" : 'Add batter'}
+        title={ourNeedsBatter ? `Who's up for ${teamName}?` : `Add ${teamName} batter`}
+        teamName={teamName}
         topOfOrder={
           ourNeedsBatter && ourResolution.kind === 'ask' && ourResolution.topOfOrder
             ? {
@@ -2533,11 +2548,22 @@ function ScoringScreenContent() {
       {gameStarted && (
         <PitchCountStrip
           pitcherLabel={
-            displayPitcherId
-              ? ourPlayerIds.has(displayPitcherId)
-                ? batterName(displayPitcherId)
-                : 'Opponent pitcher'
-              : 'No pitcher set'
+            theirPitcherInStrip
+              ? theirPitcherInStrip.label
+              : displayPitcherId
+                ? ourPlayerIds.has(displayPitcherId)
+                  ? batterName(displayPitcherId)
+                  : 'Opponent pitcher'
+                : 'No pitcher set'
+          }
+          pitcherNeeded={theirPitcherInStrip?.needsPitcher ?? false}
+          onPressPitcher={theirPitcherInStrip ? () => setShowChangeOpponentPitcher(true) : undefined}
+          pitcherAccessibilityLabel={
+            theirPitcherInStrip
+              ? theirPitcherInStrip.needsPitcher
+                ? `${opponentName} pitcher not set. Set their pitcher.`
+                : `${opponentName} pitcher ${opponentNameById.get(opponentPitcherId ?? '') ?? ''}. Change their pitcher.`
+              : undefined
           }
           pitches={currentPitchTotal}
           strikes={currentStrikeTotal}
@@ -2773,17 +2799,13 @@ function PaneRow({ isWide, children }: { isWide: boolean; children: ReactNode })
  * set directly on a ScrollView is not honoured — it collapses towards its
  * content — which is why earlier splits only ever worked at 1:1.
  */
-function BookPane({ isWide, children }: { isWide: boolean; children: ReactNode }) {
+function BookPane({ isWide, moreLabel, children }: { isWide: boolean; moreLabel: string; children: ReactNode }) {
   if (!isWide) {
     // Phones stack the book above the action pane. Unscrolled, a full batting
     // order pushed the pad off the bottom and squeezed its rows on top of each
     // other. The book takes what the pad leaves (basis 0) and scrolls; the
     // floor keeps the count and bases, which sit at its top, in view.
-    return (
-      <View testID="book-pane-phone" style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, minHeight: BOOK_MIN_HEIGHT_PHONE }}>
-        <ScrollView indicatorStyle="black" style={{ flex: 1 }}>{children}</ScrollView>
-      </View>
-    );
+    return <PhoneBookPane moreLabel={moreLabel}>{children}</PhoneBookPane>;
   }
   return (
     <View className="border-r border-gray-200 bg-white" style={{ flex: 5 }}>
@@ -2810,89 +2832,6 @@ function ActionPane({ isWide, children }: { isWide: boolean; children: ReactNode
     );
   }
   return <View style={{ flex: 7 }}>{children}</View>;
-}
-
-/** Pitches / strikes / strike% for one line of the strip. */
-function CountGroup({
-  label,
-  pitches,
-  strikes,
-  emphasis,
-}: {
-  label: string;
-  pitches: number;
-  strikes: number;
-  emphasis?: boolean;
-}) {
-  // Percentage of nothing is nothing to report — an em dash beats "0%" or NaN
-  // before the first pitch.
-  const pct = pitches > 0 ? Math.round((strikes / pitches) * 100) : null;
-  return (
-    <View className="flex-1">
-      <Text className="text-score-11px text-gray-500" numberOfLines={1}>
-        {label}
-      </Text>
-      <View className="flex-row items-baseline gap-1.5 mt-0.5">
-        <Text className={emphasis ? 'text-score-2xl font-bold text-gray-900' : 'text-score-lg font-semibold text-gray-700'}>
-          {pitches}
-        </Text>
-        <Text className="text-score-11px text-gray-500">P</Text>
-        <Text className={emphasis ? 'text-score-lg font-semibold text-gray-700' : 'text-score-base font-semibold text-gray-600'}>
-          {strikes}
-        </Text>
-        <Text className="text-score-11px text-gray-500">S</Text>
-        <Text className="text-score-11px text-gray-400">{pct === null ? '—' : `${pct}%`}</Text>
-      </View>
-    </View>
-  );
-}
-
-/**
- * Pitch and strike totals, sitting above the action surface: the pitcher on
- * the mound and the staff behind them. This is the number a coach acts on
- * mid-inning — whether to warm someone up — so it lives where the eye already
- * is between pitches rather than across the screen in the context pane.
- */
-function PitchCountStrip({
-  pitcherLabel,
-  pitches,
-  strikes,
-  staffPitches,
-  staffStrikes,
-  status,
-}: {
-  pitcherLabel: string;
-  pitches: number;
-  strikes: number;
-  staffPitches: number;
-  staffStrikes: number;
-  status: { isOverLimit: boolean; isAtLimit: boolean; isAtWarning: boolean; maxAllowed: number } | null;
-}) {
-  const flagged = status !== null && (status.isOverLimit || status.isAtLimit || status.isAtWarning);
-  return (
-    <View className="flex-row items-center gap-3 px-4 py-2.5 border-b border-gray-200 bg-gray-50">
-      <CountGroup label={pitcherLabel} pitches={pitches} strikes={strikes} emphasis />
-      <View className="w-px self-stretch bg-gray-200" />
-      <CountGroup label="All pitchers · game" pitches={staffPitches} strikes={staffStrikes} />
-      {flagged && status && (
-        <View
-          className={`px-2.5 py-1 rounded-full ${
-            status.isOverLimit ? 'bg-red-600' : status.isAtLimit ? 'bg-red-100' : 'bg-amber-100'
-          }`}
-        >
-          <Text
-            className={`text-score-xs font-semibold ${
-              status.isOverLimit ? 'text-white' : status.isAtLimit ? 'text-red-700' : 'text-amber-700'
-            }`}
-          >
-            {status.isOverLimit
-              ? `Over limit (${status.maxAllowed})`
-              : `${pitches}/${status.maxAllowed}`}
-          </Text>
-        </View>
-      )}
-    </View>
-  );
 }
 
 /**
@@ -3557,6 +3496,7 @@ function RemoveBatterModal({
 function AddBatterModal({
   visible,
   title,
+  teamName,
   rosterLabel,
   roster,
   topOfOrder = null,
@@ -3567,6 +3507,9 @@ function AddBatterModal({
 }: {
   visible: boolean;
   title: string;
+  /** Whose order (or mound) this adds to. "+ Batter" follows the batting
+   *  side, so the sheet names the team rather than saying "their order". */
+  teamName: string;
   rosterLabel: string;
   roster: Array<{ id: string; name: string }>;
   /** League games: offer adding a batter nobody can name, jersey optional. */
@@ -3589,6 +3532,7 @@ function AddBatterModal({
   const [jersey, setJersey] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const copy = addPlayerSheetCopy(noun, teamName);
   const scrollRef = useRef<ScrollView>(null);
   const newBatterOffsetY = useRef(0);
   const isTypingNewBatter = useRef(false);
@@ -3663,9 +3607,7 @@ function AddBatterModal({
         <View className="bg-white rounded-t-2xl px-5 pb-8 pt-5" style={{ maxHeight: '85%' }}>
           <Text className="text-score-lg font-bold text-gray-900 mb-1">{title}</Text>
           <Text className="text-score-sm text-gray-500 mb-4">
-            {noun === 'pitcher'
-              ? 'Takes the mound now.'
-              : 'Goes to the end of their order.'}{' '}
+            {copy.lead}{' '}
             Saves on the device — it reaches the server whenever you have signal.
           </Text>
 
@@ -3736,9 +3678,7 @@ function AddBatterModal({
                 onPress={() => run({ kind: 'new', firstName, lastName, jerseyNumber: jersey })}
                 className={`mt-3 rounded-xl py-3 items-center ${busy ? 'bg-slate-300' : 'bg-slate-700'}`}
               >
-                <Text className="text-white font-semibold">
-                  {noun === 'pitcher' ? 'Put in to pitch' : 'Add to order'}
-                </Text>
+                <Text className="text-white font-semibold">{copy.submit}</Text>
               </TouchableOpacity>
               <Text className="text-score-xs text-gray-400 mt-2">
                 A jersey number on its own is enough — you can add the name later.

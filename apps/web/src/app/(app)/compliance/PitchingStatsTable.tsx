@@ -4,6 +4,7 @@ import type { JSX } from 'react';
 import { useState, useMemo } from 'react';
 import type { PitchingStats, SeasonPitchingStatKey, StatFormat, StatTier } from '@baseball/shared';
 import {
+  DEFAULT_STAT_INNINGS,
   formatAverage,
   formatSeasonStat,
   pitcherRestStatusAt,
@@ -31,6 +32,8 @@ type Props = {
   now?: string;
   tier?: StatTier;
   subscriptionTier?: SubscriptionTier;
+  /** Innings per game for ERA, K/N and BB/N (the league's stat innings); labels "K/9" when 9. Default 7. */
+  statInnings?: number;
 };
 
 type SortKey = SeasonPitchingStatKey | 'playerName';
@@ -45,10 +48,10 @@ function pct(value: number): string {
 // from @baseball/shared (season-stat-columns), shared with the mobile Stats tab.
 const NAME_COLUMN: ColDef = { key: 'playerName', label: 'Pitcher', title: 'Pitcher name', fmt: (s) => s.playerName };
 
-function statColumns(tier: StatTier, advanced: boolean): ColDef[] {
+function statColumns(tier: StatTier, advanced: boolean, statInnings: number): ColDef[] {
   return [
     NAME_COLUMN,
-    ...visiblePitchingColumns(tier, advanced).map((col) => ({
+    ...visiblePitchingColumns(tier, advanced, statInnings).map((col) => ({
       key: col.key,
       label: col.label,
       title: col.title,
@@ -67,7 +70,14 @@ function getValue(s: PitchingStats, key: SortKey): number | string {
   return s[key];
 }
 
-export function PitchingStatsTable({ stats, complianceMap, now, tier = 'high_school', subscriptionTier = SubscriptionTier.FREE }: Props): JSX.Element | null {
+export function PitchingStatsTable({
+  stats,
+  complianceMap,
+  now,
+  tier = 'high_school',
+  subscriptionTier = SubscriptionTier.FREE,
+  statInnings = DEFAULT_STAT_INNINGS,
+}: Props): JSX.Element | null {
   const [sortKey, setSortKey] = useState<SortKey>('inningsPitchedOuts');
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -75,7 +85,7 @@ export function PitchingStatsTable({ stats, complianceMap, now, tier = 'high_sch
   const isAdvanced = hasFeature(subscriptionTier, Feature.ADVANCED_PITCHING_STATS);
   const rest = complianceMap && now ? { complianceMap, now: new Date(now) } : null;
 
-  const columns = useMemo(() => statColumns(tier, isAdvanced), [tier, isAdvanced]);
+  const columns = useMemo(() => statColumns(tier, isAdvanced, statInnings), [tier, isAdvanced, statInnings]);
 
   function handleSort(key: SortKey) {
     if (key === sortKey) {
@@ -98,7 +108,7 @@ export function PitchingStatsTable({ stats, complianceMap, now, tier = 'high_sch
     const bf = isFinite(bn) ? bn : 1e10;
     return sortAsc ? af - bf : bf - af;
   });
-  const totals = pitchingTotals(sorted);
+  const totals = pitchingTotals(sorted, statInnings);
 
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-200">

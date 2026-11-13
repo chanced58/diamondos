@@ -1,5 +1,5 @@
-import type { LeagueTeamPlayerTable } from '@baseball/shared';
-import { defaultPlayerSort, formatRecord, formatWinPct, nextPlayerSort, sortPlayerRows } from '../league-home-model';
+import type { LeagueHomeStandingRow, LeagueTeamPlayerTable } from '@baseball/shared';
+import { HOME_STANDINGS_COLUMNS, defaultPlayerSort, formatRecord, formatWinPct, nextPlayerSort, sortPlayerRows } from '../league-home-model';
 
 const table: LeagueTeamPlayerTable = {
   columns: [
@@ -40,5 +40,21 @@ describe('league home model', () => {
 
     // Names sort every row, hidden ones included.
     expect(names(sortPlayerRows(table.rows, nextPlayerSort(table, era, 'name')))).toEqual(['Ann', 'Bo', 'Cy', 'Hal']);
+  });
+});
+
+describe('league home standings columns', () => {
+  const row = (streak: string): LeagueHomeStandingRow => ({
+    teamId: 't1', name: 'Hawks', wins: 3, losses: 1, ties: 0, winPct: 0.75, runsFor: 20, runsAgainst: 9, streak,
+  });
+  const streakColumn = HOME_STANDINGS_COLUMNS.find((col) => col.key === 'strk')!;
+
+  it("should show a team's current streak", () => {
+    expect(streakColumn.label).toBe('STRK');
+    expect(streakColumn.value(row('W3'))).toBe('W3');
+  });
+
+  it('should show a dash before the first game', () => {
+    expect(streakColumn.value(row(''))).toBe('—');
   });
 });

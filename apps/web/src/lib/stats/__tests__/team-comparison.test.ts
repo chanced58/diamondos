@@ -70,6 +70,21 @@ describe('loadTeamComparison', () => {
     expect(mockBuildLineups).toHaveBeenCalledWith(db, expect.any(Array), { strict: true });
   });
 
+  it('should calculate team ERA over 9 innings for an adult league', async () => {
+    mockGetLeagueTeams.mockResolvedValue([HUSKIES]);
+    mockPitching.set('h1', { inningsPitchedOuts: 21, runsAllowed: 5, earnedRunsAllowed: 2, strikeouts: 9 });
+    const { db } = fakeDb({
+      'leagues.select': { data: { scoring_settings: { gameLength: { statInnings: 9 } } } },
+      'games.select': { data: [game('g1', 't1', 5, 2)] },
+      'players.select': { data: [{ id: 'h1', team_id: 't1', first_name: 'Luke', last_name: 'Fox' }] },
+    });
+
+    const rows = await loadTeamComparison(db, 'l1');
+
+    // 2 earned runs in 7 innings: 2.00 per seven, 2.57 per nine.
+    expect(rows[0].teamEra).toBeCloseTo((2 * 9) / 7);
+  });
+
   it('should see an opponent team from the other side of the games against it', async () => {
     mockGetLeagueTeams.mockResolvedValue([HUSKIES, EAGLES]);
     const { db } = fakeDb({
