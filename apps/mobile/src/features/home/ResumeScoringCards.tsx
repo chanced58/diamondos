@@ -1,5 +1,4 @@
 import { View, Text, TouchableOpacity } from 'react-native';
-import { router } from 'expo-router';
 import { Q } from '@nozbe/watermelondb';
 import withObservables from '@nozbe/with-observables';
 import { weAreHome } from '@baseball/shared';
@@ -8,6 +7,7 @@ import { useGameState } from '../scoring/use-game-state';
 import { database } from '../../db';
 import type { Game } from '../../db/models/Game';
 import { liveSituation } from './dashboard-format';
+import { gameScreen, useOpenInTab } from '../../navigation/open-in-tab';
 
 /**
  * Resume control for a game being scored right now.
@@ -24,6 +24,7 @@ import { liveSituation } from './dashboard-format';
  */
 function ResumeScoringCard({ game }: { game: Game }) {
   const { activeTeam } = useRole();
+  const openInTab = useOpenInTab();
   const { gameState } = useGameState(game.remoteId, game.teamId);
 
   const isHome = weAreHome(game.locationType, game.neutralHomeTeam ?? null);
@@ -38,14 +39,9 @@ function ResumeScoringCard({ game }: { game: Game }) {
       accessibilityLabel={`Game in progress against ${opponentName}. Resume scoring.`}
       className="bg-white rounded-xl border-2 border-red-200 p-5 mb-3"
       onPress={() =>
-        router.push({
-          pathname: '/(tabs)/schedule/games/[gameId]/score',
-          params: {
-            gameId: game.remoteId,
-            teamId: game.teamId,
-            opponentName,
-            teamName,
-          },
+        openInTab({
+          ...gameScreen(game.remoteId, 'score'),
+          params: { gameId: game.remoteId, teamId: game.teamId, opponentName, teamName },
         })
       }
     >
