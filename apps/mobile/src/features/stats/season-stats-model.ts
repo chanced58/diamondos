@@ -12,6 +12,7 @@ import {
   type SeasonBattingRow,
   type SeasonPitcher,
   type SeasonPitchingRow,
+  type SeasonPitchingStatKey,
   type SeasonStatColumn,
   type StatFormat,
   type StatTier,
@@ -87,7 +88,19 @@ export function pitchingStatColumns(
   advanced: boolean,
   statInnings: number = DEFAULT_STAT_INNINGS,
 ): StatColumn<SeasonPitchingRow>[] {
-  return toStatColumns(visiblePitchingColumns(tier, advanced, statInnings), (row: SeasonPitchingRow, key) => row[key]);
+  return toStatColumns(visiblePitchingColumns(tier, advanced, statInnings), pitchingRowValue);
+}
+
+/**
+ * A pitching row's value for a column. K/N and BB/N read the per-`statInnings`
+ * fields (`strikeoutsPerGame` / `walksPerGame`); the `…PerSeven` fields stay
+ * per 7 on the wire for older builds, and are the fallback from an older
+ * server, which also sends `statInnings` 7.
+ */
+export function pitchingRowValue(row: SeasonPitchingRow, key: SeasonPitchingStatKey): number | null {
+  if (key === 'strikeoutsPerSeven') return row.strikeoutsPerGame ?? row.strikeoutsPerSeven;
+  if (key === 'walksPerSeven') return row.walksPerGame ?? row.walksPerSeven;
+  return row[key];
 }
 
 export function seasonPitchingColumns(

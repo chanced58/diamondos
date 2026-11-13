@@ -98,8 +98,14 @@ export const seasonPitchingRowSchema = z.object({
   wildPitches: count,
   era: rate,
   whip: rate,
+  /** Per 7 innings whatever the league plays: builds before per-league innings label it K/7. */
   strikeoutsPerSeven: rate,
+  /** Per 7 innings, as `strikeoutsPerSeven`. */
   walksPerSeven: rate,
+  /** Strikeouts per `statInnings` innings (the K/N column); absent from an older server, which sent per 7. */
+  strikeoutsPerGame: rate.optional(),
+  /** Walks per `statInnings` innings (the BB/N column); absent from an older server. */
+  walksPerGame: rate.optional(),
   /** Batting average against by "balls-strikes" count, e.g. "1-2". */
   baByCount: z.record(z.string(), countStatSchema),
 });

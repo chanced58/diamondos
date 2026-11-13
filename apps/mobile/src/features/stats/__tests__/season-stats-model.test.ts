@@ -7,6 +7,7 @@ import {
   nextSort,
   opponentBattingTotals,
   pitcherSortValue,
+  pitchingRowValue,
   restLabel,
   seasonBattingColumns,
   seasonBattingTotals,
@@ -126,5 +127,23 @@ describe('plan dates', () => {
     expect(addDays('2026-10-31', 1)).toBe('2026-11-01');
     expect(addDays('2026-11-01', -1)).toBe('2026-10-31');
     expect(formatPlanDate('2026-10-24')).toBe('Sat, Oct 24');
+  });
+});
+
+describe('pitchingRowValue', () => {
+  it('should show K/N and BB/N from the per-game fields the server sends', () => {
+    const row = pitcher('p1', { strikeoutsPerSeven: 21, walksPerSeven: 7, strikeoutsPerGame: 27, walksPerGame: 9 });
+    expect(pitchingRowValue(row, 'strikeoutsPerSeven')).toBe(27);
+    expect(pitchingRowValue(row, 'walksPerSeven')).toBe(9);
+  });
+
+  it('should fall back to the per-7 fields from an older server', () => {
+    const row = pitcher('p1', { strikeoutsPerSeven: 21, walksPerSeven: 7 });
+    expect(pitchingRowValue(row, 'strikeoutsPerSeven')).toBe(21);
+    expect(pitchingRowValue(row, 'walksPerSeven')).toBe(7);
+  });
+
+  it('should read every other column as it is', () => {
+    expect(pitchingRowValue(pitcher('p1', { era: 3.5 }), 'era')).toBe(3.5);
   });
 });

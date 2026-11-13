@@ -42,13 +42,20 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
   }
 
   // Verify setup hasn't already been completed
-  const { data: league } = await db
+  const { data: league, error: leagueError } = await db
     .from('leagues')
     .select('setup_completed_at, scoring_settings')
     .eq('id', input.leagueId)
-    .single();
+    .maybeSingle();
 
-  if (league?.setup_completed_at) return { error: 'League setup has already been completed' };
+  // Stop here rather than build the update from a missing row: an adult
+  // league's scoring settings would otherwise be replaced with the defaults.
+  if (leagueError) {
+    console.error(`[league-setup] league read failed league=${input.leagueId}:`, leagueError);
+    return { error: 'Failed to load the league. Please try again.' };
+  }
+  if (!league) return { error: 'League not found' };
+  if (league.setup_completed_at) return { error: 'League setup has already been completed' };
 
   // Validate team names are all provided
   const cleanTeamNames = input.teamNames.map((n) => n.trim()).filter(Boolean);
@@ -69,7 +76,7 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
       logo_url: input.logoUrl,
       // Adult leagues play nine innings: ERA, K/9 and BB/9 are per nine.
       ...(isAdultLeague
-        ? { schedules_games: true, scoring_settings: adultLeagueScoringSettings(league?.scoring_settings) }
+        ? { schedules_games: true, scoring_settings: adultLeagueScoringSettings(league.scoring_settings) }
         : {}),
     })
     .eq('id', input.leagueId);
