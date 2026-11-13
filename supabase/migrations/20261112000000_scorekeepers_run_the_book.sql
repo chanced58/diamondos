@@ -35,7 +35,8 @@ as $$
 $$;
 
 -- TRUE if the user scores for a team that belongs to the league: an active
--- head/assistant coach or scorekeeper of an active member team. The guest
+-- head/assistant coach, athletic director or scorekeeper of an active member
+-- team (the same roles as is_game_scorer). The guest
 -- policies use it in place of is_league_coach so a scorekeeper can add a late
 -- arrival at the field.
 create or replace function public.is_league_scorer(p_league_id uuid, p_user_id uuid)
@@ -52,7 +53,7 @@ as $$
       on lm.team_id = tm.team_id and lm.is_active = true
     where lm.league_id = p_league_id
       and tm.user_id = p_user_id
-      and tm.role in ('head_coach', 'assistant_coach', 'scorekeeper')
+      and tm.role in ('head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper')
       and tm.is_active = true
   );
 $$;
@@ -71,7 +72,7 @@ as $$
     join public.league_members lm
       on lm.team_id = tm.team_id and lm.is_active = true
     where tm.user_id = p_user_id
-      and tm.role in ('head_coach', 'assistant_coach', 'scorekeeper')
+      and tm.role in ('head_coach', 'assistant_coach', 'athletic_director', 'scorekeeper')
       and tm.is_active = true
   );
 $$;
@@ -184,9 +185,10 @@ create policy "scorers_manage_opponent_game_lineups"
 -- Same guest shape as before (no team, guest flag, no account, no PII
 -- columns); only who may write it changes. Still no SELECT policy: other
 -- scorers see guest identities only through league_player_identities().
--- The phone pushes new guests as insert-and-ignore-duplicates, which needs
--- INSERT rights alone (an ON CONFLICT DO UPDATE upsert would also need SELECT
--- and UPDATE on the existing row).
+-- The phone pushes a new guest as a plain INSERT and reads a duplicate key
+-- (23505) as "already there". Any ON CONFLICT with an arbiter, DO NOTHING
+-- included, also checks the new row against the SELECT policies, which no
+-- scorer passes on a guest row, so it is refused.
 drop policy if exists "coaches_insert_guest_only_players" on public.players;
 create policy "league_scorers_insert_guest_only_players"
   on public.players for insert
@@ -202,6 +204,9 @@ create policy "league_scorers_insert_guest_only_players"
     and public.is_any_league_scorer(auth.uid())
   );
 
+-- Kept for direct writers, but an UPDATE … WHERE id = … also needs the row to
+-- pass a SELECT policy, so for scorers it matches nothing; the phone edits
+-- guests through fn_update_guest_player below instead.
 drop policy if exists "coaches_update_guest_only_players" on public.players;
 create policy "league_scorers_update_guest_only_players"
   on public.players for update
@@ -228,3 +233,40 @@ create policy "league_scorers_insert_guest_league_players"
     public.is_guest_only_player(player_id)
     and public.is_league_scorer(league_id, auth.uid())
   );
+
+-- ── Editing a guest from the phone ─────────────────────────────────────────
+
+-- A name or jersey fix made at the field. SECURITY DEFINER because an UPDATE
+-- needs the row to pass a SELECT policy and scorers have none on guests (on
+-- purpose, see above). Changes only the name and jersey of a guest-only
+-- identity registered in one of the caller's leagues, and says whether it
+-- changed a row, so the phone keeps an edit it could not store and retries.
+create or replace function public.fn_update_guest_player(
+  p_player_id uuid,
+  p_first_name text,
+  p_last_name text,
+  p_jersey_number smallint
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if not public.is_league_scorer_for_player(p_player_id, auth.uid()) then
+    return false;
+  end if;
+
+  update public.players
+     set first_name = p_first_name,
+         last_name = p_last_name,
+         jersey_number = p_jersey_number
+   where id = p_player_id
+     and is_guest_only = true
+     and team_id is null;
+  return found;
+end;
+$$;
+
+revoke all on function public.fn_update_guest_player(uuid, text, text, smallint) from public, anon;
+grant execute on function public.fn_update_guest_player(uuid, text, text, smallint) to authenticated;

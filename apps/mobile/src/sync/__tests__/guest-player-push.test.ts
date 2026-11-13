@@ -1,5 +1,6 @@
 import {
   guestRows,
+  isDuplicateKey,
   pushGuestPlayers,
   toGuestPlayerWrite,
   type GuestLeagueRegistration,
@@ -11,6 +12,10 @@ import {
 const RLS_REFUSAL: PushError = {
   code: '42501',
   message: 'new row violates row-level security policy for table "players"',
+};
+const DUPLICATE: PushError = {
+  code: '23505',
+  message: 'duplicate key value violates unique constraint "players_pkey"',
 };
 
 function guest(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
@@ -24,8 +29,13 @@ function registration(playerId: string, leagueId = 'league-1'): Record<string, u
   return { league_id: leagueId, player_remote_id: playerId };
 }
 
-/** A fake server: refuses any statement that contains one of `refusedIds`. */
-function fakeServer(refusedPlayerIds: string[] = []) {
+type Result = { error: PushError | null };
+
+/**
+ * A fake server: plain inserts that refuse `refusedIds` under RLS and answer
+ * a duplicate key for ids already in `existingIds`.
+ */
+function fakeServer(refusedIds: string[] = [], existingIds: string[] = []) {
   const insertedPlayers: string[] = [];
   const registered: string[] = [];
   const updates: Array<[string, GuestPlayerFields]> = [];
@@ -33,19 +43,20 @@ function fakeServer(refusedPlayerIds: string[] = []) {
   return {
     insertedPlayers, registered, updates, playerCalls,
     writers: {
-      insertPlayers: jest.fn(async (writes: GuestPlayerWrite[]): Promise<{ error: PushError | null }> => {
+      insertPlayers: jest.fn(async (writes: GuestPlayerWrite[]): Promise<Result> => {
         playerCalls.push(writes.map((w) => w.id));
-        if (writes.some((w) => refusedPlayerIds.includes(w.id))) return { error: RLS_REFUSAL };
+        if (writes.some((w) => refusedIds.includes(w.id))) return { error: RLS_REFUSAL };
+        if (writes.some((w) => existingIds.includes(w.id))) return { error: DUPLICATE };
         insertedPlayers.push(...writes.map((w) => w.id));
         return { error: null };
       }),
-      registerInLeague: jest.fn(async (writes: GuestLeagueRegistration[]): Promise<{ error: PushError | null }> => {
+      registerInLeague: jest.fn(async (writes: GuestLeagueRegistration[]): Promise<Result> => {
         registered.push(...writes.map((w) => w.player_id));
         return { error: null };
       }),
-      updatePlayer: jest.fn(async (id: string, fields: GuestPlayerFields): Promise<{ error: PushError | null }> => {
+      updatePlayer: jest.fn(async (id: string, fields: GuestPlayerFields): Promise<{ changed: boolean } & Result> => {
         updates.push([id, fields]);
-        return { error: null };
+        return { changed: true, error: null };
       }),
     },
   };
@@ -75,21 +86,51 @@ describe('toGuestPlayerWrite', () => {
   });
 });
 
+describe('isDuplicateKey', () => {
+  it('should recognize Postgres 23505 and nothing else', () => {
+    expect(isDuplicateKey(DUPLICATE)).toBe(true);
+    expect(isDuplicateKey(RLS_REFUSAL)).toBe(false);
+  });
+});
+
 describe('pushGuestPlayers', () => {
-  it('should insert a new guest, register it in the league and send its name', async () => {
+  it('should insert a new guest and register it in the league without a redundant edit', async () => {
     const server = fakeServer();
     const result = await pushGuestPlayers([guest('g-1')], [], [registration('g-1')], server.writers);
     expect(result).toEqual({ errors: [], failedIds: new Set() });
     expect(server.insertedPlayers).toEqual(['g-1']);
     expect(server.registered).toEqual(['g-1']);
-    expect(server.updates).toEqual([['g-1', { first_name: 'Sam', last_name: 'Late', jersey_number: 44 }]]);
+    expect(server.updates).toEqual([]);
   });
 
-  it('should send an edited guest as an update only', async () => {
+  it('should treat a guest an earlier half-failed cycle already inserted as done and send its latest name', async () => {
+    const server = fakeServer([], ['g-1']);
+    const result = await pushGuestPlayers([guest('g-1', { jersey_number: 9 })], [], [], server.writers);
+    expect(result).toEqual({ errors: [], failedIds: new Set() });
+    expect(server.updates).toEqual([['g-1', { first_name: 'Sam', last_name: 'Late', jersey_number: 9 }]]);
+  });
+
+  it('should still insert the new guests when one in the batch already exists', async () => {
+    const server = fakeServer([], ['g-old']);
+    const result = await pushGuestPlayers([guest('g-old'), guest('g-new')], [], [], server.writers);
+    expect(result.errors).toEqual([]);
+    expect(server.insertedPlayers).toEqual(['g-new']);
+    expect(server.updates.map(([id]) => id)).toEqual(['g-old']);
+  });
+
+  it('should send an edited guest through the edit call only', async () => {
     const server = fakeServer();
     await pushGuestPlayers([], [guest('g-1', { jersey_number: 7 })], [], server.writers);
     expect(server.writers.insertPlayers).not.toHaveBeenCalled();
     expect(server.updates).toEqual([['g-1', { first_name: 'Sam', last_name: 'Late', jersey_number: 7 }]]);
+  });
+
+  it('should report an edit the server did not store so it stays unsynced', async () => {
+    const server = fakeServer();
+    server.writers.updatePlayer.mockImplementation(async () => ({ changed: false, error: null }));
+    const result = await pushGuestPlayers([], [guest('g-1')], [], server.writers);
+    expect(result.errors).toEqual(['guest player update g-1: not stored (not a guest in one of your leagues)']);
+    expect(result.failedIds).toEqual(new Set());
   });
 
   it('should retry a refused batch row by row so one bad guest does not hold back the others', async () => {
@@ -101,15 +142,16 @@ describe('pushGuestPlayers', () => {
       server.writers,
     );
     expect(server.insertedPlayers).toEqual(['g-1', 'g-2']);
+    expect(server.registered).toEqual(['g-1', 'g-2']);
     expect(result.failedIds).toEqual(new Set(['g-bad']));
     expect(result.errors).toEqual([
       'guest player insert g-bad: new row violates row-level security policy for table "players" (code 42501)',
     ]);
   });
 
-  it('should not register or update a guest the server refused', async () => {
+  it('should not register or edit a guest the server refused', async () => {
     const server = fakeServer(['g-bad']);
-    await pushGuestPlayers([guest('g-bad')], [], [registration('g-bad')], server.writers);
+    await pushGuestPlayers([guest('g-bad')], [guest('g-bad')], [registration('g-bad')], server.writers);
     expect(server.writers.registerInLeague).not.toHaveBeenCalled();
     expect(server.updates).toEqual([]);
   });
@@ -121,6 +163,13 @@ describe('pushGuestPlayers', () => {
     expect(result.failedIds).toEqual(new Set(['g-bad']));
   });
 
+  it('should treat a league registration that already exists as done', async () => {
+    const server = fakeServer();
+    server.writers.registerInLeague.mockImplementation(async () => ({ error: DUPLICATE }));
+    const result = await pushGuestPlayers([guest('g-1')], [], [registration('g-1')], server.writers);
+    expect(result.errors).toEqual([]);
+  });
+
   it('should report a refused league registration without failing the guest itself', async () => {
     const server = fakeServer();
     server.writers.registerInLeague.mockImplementation(async () => ({ error: { code: '42501', message: 'refused' } }));
@@ -129,9 +178,9 @@ describe('pushGuestPlayers', () => {
     expect(result.errors).toEqual(['league_players insert league-1/g-1: refused (code 42501)']);
   });
 
-  it('should report a failed update as an error without marking the guest missing', async () => {
+  it('should report a failed edit call as an error without marking the guest missing', async () => {
     const server = fakeServer();
-    server.writers.updatePlayer.mockImplementation(async () => ({ error: { message: 'timeout' } }));
+    server.writers.updatePlayer.mockImplementation(async () => ({ changed: false, error: { message: 'timeout' } }));
     const result = await pushGuestPlayers([], [guest('g-1')], [], server.writers);
     expect(result.failedIds).toEqual(new Set());
     expect(result.errors).toEqual(['guest player update g-1: timeout']);

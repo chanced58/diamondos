@@ -73,9 +73,11 @@ export async function getDirtyLineupState(database: Database): Promise<DirtyLine
  *
  *  - Withheld guests: rows for a guest player the server still lacks (its
  *    push failed this cycle) are left out, so one guest can't fail the
- *    whole lineup on its foreign key. They stay dirty and are re-stamped as
- *    edited now, so the next cycle's last-write-wins check still sees them
- *    as newer than the lineup just written and pushes them with the rest.
+ *    whole lineup on its foreign key. They stay dirty and are re-stamped
+ *    just after the lineup the server now holds (its own updated_at, not
+ *    the device clock, which may run behind), so the next cycle's
+ *    last-write-wins check still sends them with the rest. A tournament
+ *    lineup is never sent short a guest: it freezes when the game starts.
  *
  * Returns 'pushed' or 'skipped'.
  */
@@ -170,6 +172,9 @@ export async function pushLineupsForGame(
   // Atomic replace: fn_replace_game_lineup deletes and inserts in one
   // transaction server-side, so a failure can never strand an empty lineup.
   const { pushed: rowsToPush, withheld } = lineupRowsToPush(localRows, withheldPlayerIds);
+  if (withheld.length > 0 && gameResult.data.tournament_id) {
+    throw new Error('tournament lineup waits until its guest players reach the server');
+  }
   // Never replace a lineup with nothing because every player in it is waiting.
   if (rowsToPush.length === 0 && withheld.length > 0) {
     throw new Error('every player in this lineup is a guest not yet on the server');
@@ -194,7 +199,15 @@ export async function pushLineupsForGame(
   });
   if (replaceError) throw replaceError;
   if (withheld.length > 0) {
-    const editedAt = Date.now();
+    const { data: written, error: writtenError } = await supabase
+      .from('game_lineups')
+      .select('updated_at')
+      .eq('game_id', gameRemoteId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (writtenError) throw writtenError;
+    const editedAt = stampAfterServer(written ? new Date(written.updated_at).getTime() : null, Date.now());
     await database.write(async () => {
       for (const row of withheld) {
         await row.update((r) => {
@@ -204,6 +217,47 @@ export async function pushLineupsForGame(
     });
   }
   return 'pushed';
+}
+
+/**
+ * When to stamp withheld rows so they read as edited after the lineup the
+ * server holds: the device clock, unless it is not past the server's write.
+ */
+export function stampAfterServer(serverWrittenAtMs: number | null, deviceNowMs: number): number {
+  if (serverWrittenAtMs === null || Number.isNaN(serverWrittenAtMs)) return deviceNowMs;
+  return Math.max(deviceNowMs, serverWrittenAtMs + 1);
+}
+
+/** Games among `gameIds` whose local lineup has a player in `withheldPlayerIds`. */
+export function gamesWithWithheldPlayers(
+  rows: readonly { gameRemoteId: string; playerRemoteId: string }[],
+  gameIds: ReadonlySet<string>,
+  withheldPlayerIds: ReadonlySet<string>,
+): Set<string> {
+  const waiting = new Set<string>();
+  for (const row of rows) {
+    if (gameIds.has(row.gameRemoteId) && withheldPlayerIds.has(row.playerRemoteId)) {
+      waiting.add(row.gameRemoteId);
+    }
+  }
+  return waiting;
+}
+
+/** {@link gamesWithWithheldPlayers} over the device's lineup rows. */
+export async function gamesWaitingOnGuests(
+  database: Database,
+  gameIds: ReadonlySet<string>,
+  withheldPlayerIds: ReadonlySet<string>,
+): Promise<Set<string>> {
+  if (gameIds.size === 0 || withheldPlayerIds.size === 0) return new Set();
+  const rows = await database
+    .get<GameLineup>('game_lineups')
+    .query(
+      Q.where('game_remote_id', Q.oneOf([...gameIds])),
+      Q.where('player_remote_id', Q.oneOf([...withheldPlayerIds])),
+    )
+    .fetch();
+  return gamesWithWithheldPlayers(rows, gameIds, withheldPlayerIds);
 }
 
 /**

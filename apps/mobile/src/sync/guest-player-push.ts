@@ -5,24 +5,25 @@ import { describeSyncError } from './sync-error';
  *
  * A guest added at the field ("Add batter" → new batter, `createLocalGuest`)
  * is a guest-only `players` row plus, in a league, a `league_players` row.
+ * Scorers have INSERT rights on these and no SELECT on guest rows — on
+ * purpose: other teams see guests only through `league_player_identities()`,
+ * which leaves out every PII column. So:
  *
- * - New guests go up as insert-and-ignore-duplicates. An upsert that merges
- *   (`ON CONFLICT DO UPDATE`) also needs SELECT and UPDATE rights on the
- *   existing row, and a scorer has neither on a guest identity — on purpose:
- *   other teams see guests only through `league_player_identities()`, which
- *   leaves out every PII column. Insert rights alone admit a do-nothing
- *   conflict, so a row an earlier half-failed cycle already inserted is
- *   simply skipped.
- * - Names and jerseys then go up as a plain UPDATE, for edited guests and for
- *   created ones too: a created row re-pushed after a half-failed cycle may
- *   carry an edit made since, which the do-nothing insert would lose. RLS
- *   lets the update through once the guest is registered in one of the
- *   scorer's leagues; otherwise it matches no row and changes nothing.
+ * - New rows go up as plain INSERTs, and a duplicate key (23505: an earlier
+ *   half-failed cycle already inserted it) counts as done. An upsert can't be
+ *   used: any ON CONFLICT with an arbiter, DO NOTHING included, also checks
+ *   the new row against the SELECT policies and is refused.
+ * - An edited guest's name and jersey go up through `fn_update_guest_player`
+ *   (a plain UPDATE … WHERE id would need SELECT too, and silently match
+ *   nothing). A created guest that turned out to exist already is sent the
+ *   same way, since the device may hold an edit made after the first insert.
+ *   The RPC says whether it changed a row; when it didn't, the edit is
+ *   reported as a failure so it stays unsynced and is retried.
  * - A refused statement is retried row by row, so one bad guest can't hold
  *   back the others. The guests still refused are returned as `failedIds`:
- *   their league registration isn't attempted (it would fail on them), and
- *   the lineup push leaves their rows out rather than failing the whole
- *   game's lineup on the missing player (see `lineupRowsToPush`).
+ *   their league registration and edit aren't attempted, and the lineup push
+ *   leaves their rows out rather than failing the whole game's lineup on the
+ *   missing player (see `lineupRowsToPush`).
  */
 
 export interface PushError {
@@ -31,6 +32,11 @@ export interface PushError {
 }
 
 export type PushResult = PromiseLike<{ error: PushError | null }>;
+
+/** Postgres 23505: the row is already on the server. */
+export function isDuplicateKey(error: PushError): boolean {
+  return error.code === '23505';
+}
 
 export interface GuestPlayerWrite {
   id: string;
@@ -54,12 +60,12 @@ export interface GuestPlayerFields {
 }
 
 export interface GuestPushWriters {
-  /** Insert players rows, ignoring ones that already exist. */
+  /** Plain INSERT of players rows. */
   insertPlayers: (writes: GuestPlayerWrite[]) => PushResult;
-  /** Insert league_players rows, ignoring ones that already exist. */
+  /** Plain INSERT of league_players rows. */
   registerInLeague: (writes: GuestLeagueRegistration[]) => PushResult;
-  /** Update one guest's name and jersey. */
-  updatePlayer: (id: string, fields: GuestPlayerFields) => PushResult;
+  /** Set one guest's name and jersey; `changed` false when no row was written. */
+  updatePlayer: (id: string, fields: GuestPlayerFields) => PromiseLike<{ changed: boolean; error: PushError | null }>;
 }
 
 export interface GuestPushResult {
@@ -95,30 +101,31 @@ function toGuestFields(p: Record<string, unknown>): GuestPlayerFields {
 }
 
 /**
- * Write `writes` in one statement; if it is refused, write them one at a time
- * and report the ones still refused.
+ * Insert `writes` in one statement; if it is refused, insert them one at a
+ * time. A row whose key is already on the server is done (`existing`); the
+ * rest still refused are `failed`.
  */
-async function writeEachOnFailure<T>(
+async function insertEachOnFailure<T>(
   writes: T[],
-  write: (batch: T[]) => PushResult,
+  insert: (batch: T[]) => PushResult,
   describe: (row: T) => string,
   label: string,
-): Promise<{ errors: string[]; failed: T[] }> {
-  if (writes.length === 0) return { errors: [], failed: [] };
-  const { error } = await write(writes);
-  if (!error) return { errors: [], failed: [] };
-  if (writes.length === 1) {
-    return { errors: [`${label} ${describe(writes[0])}: ${describeSyncError(error)}`], failed: writes };
-  }
-  const errors: string[] = [];
-  const failed: T[] = [];
+): Promise<{ errors: string[]; failed: T[]; existing: T[] }> {
+  const done = { errors: [] as string[], failed: [] as T[], existing: [] as T[] };
+  if (writes.length === 0) return done;
+  const { error } = await insert(writes);
+  if (!error) return done;
   for (const row of writes) {
-    const { error: rowError } = await write([row]);
+    const { error: rowError } = writes.length === 1 ? { error } : await insert([row]);
     if (!rowError) continue;
-    failed.push(row);
-    errors.push(`${label} ${describe(row)}: ${describeSyncError(rowError)}`);
+    if (isDuplicateKey(rowError)) {
+      done.existing.push(row);
+      continue;
+    }
+    done.failed.push(row);
+    done.errors.push(`${label} ${describe(row)}: ${describeSyncError(rowError)}`);
   }
-  return { errors, failed };
+  return done;
 }
 
 export async function pushGuestPlayers(
@@ -127,19 +134,20 @@ export async function pushGuestPlayers(
   createdLeagueRegistrations: readonly Record<string, unknown>[],
   writers: GuestPushWriters,
 ): Promise<GuestPushResult> {
-  const playerInsert = await writeEachOnFailure(
+  const playerInsert = await insertEachOnFailure(
     created.map(toGuestPlayerWrite),
     writers.insertPlayers,
     (row) => row.id,
     'guest player insert',
   );
   const failedIds = new Set(playerInsert.failed.map((row) => row.id));
+  const alreadyThere = new Set(playerInsert.existing.map((row) => row.id));
   const errors = [...playerInsert.errors];
 
   const registrations = createdLeagueRegistrations
     .map((lp) => ({ league_id: lp.league_id as string, player_id: lp.player_remote_id as string }))
     .filter((lp) => !failedIds.has(lp.player_id));
-  const registration = await writeEachOnFailure(
+  const registration = await insertEachOnFailure(
     registrations,
     writers.registerInLeague,
     (row) => `${row.league_id}/${row.player_id}`,
@@ -147,11 +155,14 @@ export async function pushGuestPlayers(
   );
   errors.push(...registration.errors);
 
-  for (const p of [...created, ...updated]) {
+  // A guest this cycle just inserted already carries the device's values.
+  const edits = [...created.filter((p) => alreadyThere.has(p.remote_id as string)), ...updated];
+  for (const p of edits) {
     const id = p.remote_id as string;
     if (failedIds.has(id)) continue;
-    const { error } = await writers.updatePlayer(id, toGuestFields(p));
+    const { changed, error } = await writers.updatePlayer(id, toGuestFields(p));
     if (error) errors.push(`guest player update ${id}: ${describeSyncError(error)}`);
+    else if (!changed) errors.push(`guest player update ${id}: not stored (not a guest in one of your leagues)`);
   }
 
   return { errors, failedIds };
