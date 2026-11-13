@@ -3,6 +3,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 import { createLeagueManagedTeam } from '@/lib/services/league-admin/league-managed-teams';
+import { adultLeagueScoringSettings } from '@/lib/league-setup/adult-settings';
 
 type SetupInput = {
   leagueId: string;
@@ -41,13 +42,20 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
   }
 
   // Verify setup hasn't already been completed
-  const { data: league } = await db
+  const { data: league, error: leagueError } = await db
     .from('leagues')
-    .select('setup_completed_at')
+    .select('setup_completed_at, scoring_settings')
     .eq('id', input.leagueId)
-    .single();
+    .maybeSingle();
 
-  if (league?.setup_completed_at) return { error: 'League setup has already been completed' };
+  // Stop here rather than build the update from a missing row: an adult
+  // league's scoring settings would otherwise be replaced with the defaults.
+  if (leagueError) {
+    console.error(`[league-setup] league read failed league=${input.leagueId}:`, leagueError);
+    return { error: 'Failed to load the league. Please try again.' };
+  }
+  if (!league) return { error: 'League not found' };
+  if (league.setup_completed_at) return { error: 'League setup has already been completed' };
 
   // Validate team names are all provided
   const cleanTeamNames = input.teamNames.map((n) => n.trim()).filter(Boolean);
@@ -66,7 +74,10 @@ export async function completeLeagueSetupAction(input: SetupInput): Promise<{ er
       state_code: input.stateCode || null,
       current_season: input.currentSeason,
       logo_url: input.logoUrl,
-      ...(isAdultLeague ? { schedules_games: true } : {}),
+      // Adult leagues play nine innings: ERA, K/9 and BB/9 are per nine.
+      ...(isAdultLeague
+        ? { schedules_games: true, scoring_settings: adultLeagueScoringSettings(league.scoring_settings) }
+        : {}),
     })
     .eq('id', input.leagueId);
 

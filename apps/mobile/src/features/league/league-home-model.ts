@@ -26,6 +26,7 @@ export const HOME_STANDINGS_COLUMNS: StatColumn<LeagueHomeStandingRow>[] = [
   { key: 'pct', label: 'PCT', value: formatWinPct },
   { key: 'rf', label: 'RF', value: (r) => r.runsFor },
   { key: 'ra', label: 'RA', value: (r) => r.runsAgainst },
+  { key: 'strk', label: 'STRK', value: (r) => r.streak || '—' },
 ];
 
 /** "Updated Oct 25", or null when the league has no snapshot yet. */

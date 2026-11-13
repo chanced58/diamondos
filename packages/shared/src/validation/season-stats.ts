@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_STAT_INNINGS } from '../constants/baseball';
 
 /**
  * Contract for `GET /api/m/v1/teams/:teamId/stats?season=` — the web Stats
@@ -12,6 +13,13 @@ import { z } from 'zod';
 
 const count = z.number().int().nonnegative();
 const rate = z.number().nullable();
+
+/**
+ * Innings per game that ERA, K/N and BB/N are per (the league's
+ * `gameLength.statInnings`, else 7), so the app labels "K/9" in a nine-inning
+ * league. Defaults to 7 so a newer app still reads an older server.
+ */
+export const statInningsSchema = z.number().int().positive().default(DEFAULT_STAT_INNINGS);
 
 export const STAT_TIERS = ['youth', 'high_school', 'college'] as const;
 
@@ -90,8 +98,14 @@ export const seasonPitchingRowSchema = z.object({
   wildPitches: count,
   era: rate,
   whip: rate,
+  /** Per 7 innings whatever the league plays: builds before per-league innings label it K/7. */
   strikeoutsPerSeven: rate,
+  /** Per 7 innings, as `strikeoutsPerSeven`. */
   walksPerSeven: rate,
+  /** Strikeouts per `statInnings` innings (the K/N column); absent from an older server, which sent per 7. */
+  strikeoutsPerGame: rate.optional(),
+  /** Walks per `statInnings` innings (the BB/N column); absent from an older server. */
+  walksPerGame: rate.optional(),
   /** Batting average against by "balls-strikes" count, e.g. "1-2". */
   baByCount: z.record(z.string(), countStatSchema),
 });
@@ -177,6 +191,8 @@ export const seasonStatsResponseSchema = z.object({
   }),
   /** The team is in a league (League Stats). */
   hasLeague: z.boolean(),
+  /** Innings per game for ERA, K/N and BB/N: the team's league's, else 7. */
+  statInnings: statInningsSchema,
   pitching: z.array(seasonPitcherSchema),
   batting: z.array(seasonBattingRowSchema),
   catcher: z.array(catcherInningsRowSchema),

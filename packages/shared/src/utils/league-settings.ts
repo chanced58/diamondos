@@ -50,6 +50,11 @@ export function getRegulationInnings(settings: LeagueScoringSettings): number {
   return settings.gameLength.maxInnings;
 }
 
+/** Innings per game the league's rate stats (ERA, K/N, BB/N) are normalized to. */
+export function getStatInnings(settings: LeagueScoringSettings): number {
+  return settings.gameLength.statInnings;
+}
+
 export function getTiebreakerExtras(
   settings: LeagueScoringSettings,
 ): { startBase: 1 | 2 | 3; fromInning: number } | null {

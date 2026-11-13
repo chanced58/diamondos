@@ -37,6 +37,8 @@ const standingRowSchema = z.object({
   winPct: z.number(),
   runsFor: z.number(),
   runsAgainst: z.number(),
+  /** Current streak, "W3" / "L1" / "T1"; '' before the first game (and from an older server). */
+  streak: z.string().default(''),
 });
 export type LeagueHomeStandingRow = z.infer<typeof standingRowSchema>;
 

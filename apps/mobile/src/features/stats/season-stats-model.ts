@@ -1,4 +1,5 @@
 import {
+  DEFAULT_STAT_INNINGS,
   battingTotals,
   formatSeasonStat,
   pitcherRestStatusAt,
@@ -11,6 +12,7 @@ import {
   type SeasonBattingRow,
   type SeasonPitcher,
   type SeasonPitchingRow,
+  type SeasonPitchingStatKey,
   type SeasonStatColumn,
   type StatFormat,
   type StatTier,
@@ -77,14 +79,38 @@ export function restLabel(compliance: PitcherCompliance | null, now: Date): Rest
   return { short: `${days}d`, long: `${days} more rest ${days === 1 ? 'day' : 'days'} required`, resting: true };
 }
 
-/** The pitching stat columns alone — the league table, where rest is per team and not shown. */
-export function pitchingStatColumns(tier: StatTier, advanced: boolean): StatColumn<SeasonPitchingRow>[] {
-  return toStatColumns(visiblePitchingColumns(tier, advanced), (row: SeasonPitchingRow, key) => row[key]);
+/**
+ * The pitching stat columns alone — the league table, where rest is per team
+ * and not shown. `statInnings` (the response's) labels K/N and BB/N.
+ */
+export function pitchingStatColumns(
+  tier: StatTier,
+  advanced: boolean,
+  statInnings: number = DEFAULT_STAT_INNINGS,
+): StatColumn<SeasonPitchingRow>[] {
+  return toStatColumns(visiblePitchingColumns(tier, advanced, statInnings), pitchingRowValue);
 }
 
-export function seasonPitchingColumns(tier: StatTier, advanced: boolean, now: Date): StatColumn<SeasonPitcher>[] {
+/**
+ * A pitching row's value for a column. K/N and BB/N read the per-`statInnings`
+ * fields (`strikeoutsPerGame` / `walksPerGame`); the `…PerSeven` fields stay
+ * per 7 on the wire for older builds, and are the fallback from an older
+ * server, which also sends `statInnings` 7.
+ */
+export function pitchingRowValue(row: SeasonPitchingRow, key: SeasonPitchingStatKey): number | null {
+  if (key === 'strikeoutsPerSeven') return row.strikeoutsPerGame ?? row.strikeoutsPerSeven;
+  if (key === 'walksPerSeven') return row.walksPerGame ?? row.walksPerSeven;
+  return row[key];
+}
+
+export function seasonPitchingColumns(
+  tier: StatTier,
+  advanced: boolean,
+  now: Date,
+  statInnings: number = DEFAULT_STAT_INNINGS,
+): StatColumn<SeasonPitcher>[] {
   return [
-    ...pitchingStatColumns(tier, advanced),
+    ...pitchingStatColumns(tier, advanced, statInnings),
     {
       key: 'rest',
       label: 'Rest',
@@ -95,8 +121,14 @@ export function seasonPitchingColumns(tier: StatTier, advanced: boolean, now: Da
   ];
 }
 
-export function seasonPitchingTotals(rows: SeasonPitchingRow[], tier: StatTier, advanced: boolean): Totals {
-  return formatTotals(visiblePitchingColumns(tier, advanced), pitchingTotals(rows));
+/** The totals row, its ERA, K/N and BB/N per `statInnings` innings like the rows. */
+export function seasonPitchingTotals(
+  rows: SeasonPitchingRow[],
+  tier: StatTier,
+  advanced: boolean,
+  statInnings: number = DEFAULT_STAT_INNINGS,
+): Totals {
+  return formatTotals(visiblePitchingColumns(tier, advanced, statInnings), pitchingTotals(rows, statInnings));
 }
 
 /** What a pitching column sorts by, including the rest and 7-day columns. */
@@ -196,8 +228,8 @@ export const OPPONENT_PITCHING_COLUMNS: StatColumn<SeasonPitchingRow>[] = OPPONE
   value: (row) => formatSeasonStat(row[col.key] as number | null, col.format),
 }));
 
-export function opponentPitchingTotals(rows: SeasonPitchingRow[]): Totals {
-  const totals = pitchingTotals(rows);
+export function opponentPitchingTotals(rows: SeasonPitchingRow[], statInnings: number = DEFAULT_STAT_INNINGS): Totals {
+  const totals = pitchingTotals(rows, statInnings);
   const runs = rows.reduce((sum, row) => sum + row.runsAllowed, 0);
   return Object.fromEntries(
     OPPONENT_PITCHING.map((col) => [

@@ -16,6 +16,7 @@ import { RELEVANT_EVENT_TYPES } from '@/app/(app)/compliance/constants';
 import { buildLineupsByGameId } from './lineups';
 import { loadEventsForTeamGames } from '@/lib/league-games/paired-book';
 import { rowsOf } from './rows-of';
+import { loadTeamStatInnings } from './stat-innings';
 
 export interface PitcherComplianceInfo {
   pitchCount: number;
@@ -57,6 +58,8 @@ export interface TeamSeasonStats {
   catcher: CatcherInningsSummary[];
   opponents: OpponentTeamSeasonStats[];
   missingWaiverCount: number;
+  /** Innings per game ERA, K/N and BB/N are per: the team's league's (`getStatInnings`), else 7. */
+  statInnings: number;
 }
 
 export interface LoadSeasonStatsOptions {
@@ -98,13 +101,14 @@ export async function loadTeamSeasonStats(
   teamId: string,
   options: LoadSeasonStatsOptions,
 ): Promise<TeamSeasonStats> {
-  const [teamResult, seasonsResult] = await Promise.all([
+  const [teamResult, seasonsResult, statInnings] = await Promise.all([
     db.from('teams').select('level').eq('id', teamId).maybeSingle(),
     db
       .from('seasons')
       .select('id, name, is_active')
       .eq('team_id', teamId)
       .order('start_date', { ascending: false }),
+    loadTeamStatInnings(db, teamId),
   ]);
   const teamData = rowsOf(teamResult, 'teams');
   const allSeasons = rowsOf(seasonsResult, 'seasons');
@@ -152,7 +156,7 @@ export async function loadTeamSeasonStats(
   // The derivers are typed GameEvent[] but read both snake_case and camelCase.
   const derivableEvents = filteredEvents as unknown as GameEvent[];
 
-  const pitching = Array.from(derivePitchingStats(derivableEvents, playerList).values())
+  const pitching = Array.from(derivePitchingStats(derivableEvents, playerList, statInnings).values())
     .filter((s) => teamPlayerIds.has(s.playerId))
     .sort((a, b) => b.inningsPitchedOuts - a.inningsPitchedOuts);
 
@@ -164,7 +168,9 @@ export async function loadTeamSeasonStats(
     loadPitcherCompliance(db, pitching.map((s) => s.playerId)),
     countMissingWaivers(db, activePlayerIds),
     options.includeCatcher ? loadCatcherInnings(db, playerList, season?.id ?? null) : Promise.resolve([]),
-    options.includeOpponents ? loadOpponentStats(db, games, filteredEvents, derivableEvents) : Promise.resolve([]),
+    options.includeOpponents
+      ? loadOpponentStats(db, games, filteredEvents, derivableEvents, statInnings)
+      : Promise.resolve([]),
   ]);
 
   return {
@@ -178,6 +184,7 @@ export async function loadTeamSeasonStats(
     catcher,
     opponents,
     missingWaiverCount,
+    statInnings,
   };
 }
 
@@ -304,6 +311,7 @@ async function loadOpponentStats(
   games: GameRow[],
   filteredEvents: Record<string, unknown>[],
   derivableEvents: GameEvent[],
+  statInnings: number,
 ): Promise<OpponentTeamSeasonStats[]> {
   const oppTeamIds = [...new Set(games.map((g) => g.opponent_team_id).filter((id): id is string => id != null))];
   if (oppTeamIds.length === 0) return [];
@@ -324,6 +332,7 @@ async function loadOpponentStats(
     derivePitchingStats(
       derivableEvents,
       oppPlayers.map((p) => ({ id: p.id, firstName: p.first_name, lastName: p.last_name })),
+      statInnings,
     ).values(),
   ).filter((s) => oppPlayerIds.has(s.playerId) && s.totalPitches > 0);
 

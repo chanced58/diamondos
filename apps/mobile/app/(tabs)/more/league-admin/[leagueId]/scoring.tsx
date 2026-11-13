@@ -111,8 +111,9 @@ export default function LeagueScoringSettingsScreen() {
         <SettingSwitch label="Continuous batting order (every rostered player bats)" value={lineup.continuousBattingOrder} disabled={locked} onChange={(continuousBattingOrder) => patch('lineup', { continuousBattingOrder })} />
       </SettingSection>
 
-      <SettingSection title="Game length" description="Innings, mercy rule, per-half run cap and the ghost-runner tiebreaker.">
+      <SettingSection title="Game length" description="Innings, the innings rate stats are per (7 for high school, 9 for adult), mercy rule, per-half run cap and the ghost-runner tiebreaker.">
         <SettingStepper label="Regulation innings" value={gameLength.maxInnings} min={MIN_INNINGS} max={MAX_INNINGS_CAP} disabled={locked} onChange={(maxInnings) => patch('gameLength', { maxInnings })} />
+        <SettingStepper label="Innings per game for stats (ERA, K/N, BB/N)" value={gameLength.statInnings} min={MIN_INNINGS} max={MAX_INNINGS_CAP} disabled={locked} onChange={(statInnings) => patch('gameLength', { statInnings })} />
         <SettingSwitch label="Mercy rule" value={gameLength.mercy.enabled} disabled={locked} onChange={(enabled) => patchGameLength('mercy', { enabled })} />
         {gameLength.mercy.enabled && (
           <>

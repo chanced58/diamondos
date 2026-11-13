@@ -12,6 +12,7 @@
 import type { BattingStats } from '../types/batting';
 import type { PitchingStats, CountStat } from '../types/pitching';
 import type { FieldingStats } from '../types/fielding';
+import { DEFAULT_STAT_INNINGS } from '../constants/baseball';
 import type {
   BattingCounts,
   PitchingCounts,
@@ -120,12 +121,16 @@ export function battingStatsFromCounts(
 
 const EMPTY_BA_BY_COUNT: Record<string, CountStat> = {};
 
-/** Aggregate per-game PitchingCounts into a single PitchingStats line. */
+/**
+ * Aggregate per-game PitchingCounts into a single PitchingStats line; ERA,
+ * K/7 and BB/7 are per `inningsPerGame` innings (7 unless a league says).
+ */
 export function pitchingStatsFromCounts(
   playerId: string,
   playerName: string,
   gamesAppeared: number,
   rows: PitchingCounts[],
+  inningsPerGame: number = DEFAULT_STAT_INNINGS,
 ): PitchingStats {
   const inningsPitchedOuts = sumKey(rows, 'ipOuts');
   const totalPitches = sumKey(rows, 'pitches');
@@ -147,10 +152,10 @@ export function pitchingStatsFromCounts(
   let strikeoutsPerSeven: number;
   let walksPerSeven: number;
   if (ip > 0) {
-    era = (earnedRunsAllowed * 7) / ip;
+    era = (earnedRunsAllowed * inningsPerGame) / ip;
     whip = (walksAllowed + hitsAllowed) / ip;
-    strikeoutsPerSeven = (strikeouts * 7) / ip;
-    walksPerSeven = (walksAllowed * 7) / ip;
+    strikeoutsPerSeven = (strikeouts * inningsPerGame) / ip;
+    walksPerSeven = (walksAllowed * inningsPerGame) / ip;
   } else {
     era = Infinity;
     whip = Infinity;

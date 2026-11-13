@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { LeagueScoringSettings } from '../types/league-scoring-settings';
+import { DEFAULT_STAT_INNINGS } from '../constants/baseball';
 
 export const MAX_BATTERS_CAP = 30;
 export const MIN_BATTERS_CAP = 9;
@@ -50,6 +51,7 @@ const tiebreakerExtrasSchema = z
 const gameLengthSchema = z
   .object({
     maxInnings: z.number().int().min(MIN_INNINGS).max(MAX_INNINGS_CAP),
+    statInnings: z.number().int().min(MIN_INNINGS).max(MAX_INNINGS_CAP),
     mercy: mercySchema,
     runCap: runCapSchema,
     tiebreakerExtras: tiebreakerExtrasSchema,
@@ -109,6 +111,7 @@ export function defaultLeagueScoringSettings(): LeagueScoringSettings {
     },
     gameLength: {
       maxInnings: STANDARD_INNINGS,
+      statInnings: DEFAULT_STAT_INNINGS,
       mercy: { enabled: false, runDiff: 10, afterInning: 5 },
       runCap: { enabled: false, value: 5 },
       tiebreakerExtras: { enabled: false, startBase: 2, fromInning: STANDARD_INNINGS + 1 },
@@ -214,6 +217,12 @@ function tolerantSchema(defaults: LeagueScoringSettings) {
         .min(MIN_INNINGS)
         .max(MAX_INNINGS_CAP)
         .catch(defaults.gameLength.maxInnings),
+      statInnings: z
+        .number()
+        .int()
+        .min(MIN_INNINGS)
+        .max(MAX_INNINGS_CAP)
+        .catch(defaults.gameLength.statInnings),
       mercy,
       runCap,
       tiebreakerExtras,

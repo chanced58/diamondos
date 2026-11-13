@@ -1,4 +1,4 @@
-import { selectSpotlights, type BattingStats, type PitchingStats, type FieldingStats, type TeamRecord } from '@baseball/shared';
+import { perGameRate, selectSpotlights, type BattingStats, type PitchingStats, type FieldingStats, type TeamRecord } from '@baseball/shared';
 
 /**
  * `season`: a player's whole-season line across the league (leaderboards, the
@@ -113,6 +113,7 @@ export interface StandingSnapshotRow {
   runs_for: number;
   runs_against: number;
   win_pct: number;
+  /** Current streak, "W3" / "L1" / "T1"; '' before the team's first game. */
   streak: string;
 }
 
@@ -125,6 +126,8 @@ export function standingRow(input: {
   divisionId: string | null;
   teamName: string;
   record: TeamRecord;
+  /** The team's current streak (`formatCurrentStreak`); '' when it has none. */
+  streak?: string;
 }): StandingSnapshotRow {
   const { record } = input;
   return {
@@ -140,7 +143,7 @@ export function standingRow(input: {
     runs_for: record.runsFor,
     runs_against: record.runsAgainst,
     win_pct: record.winPct,
-    streak: '',
+    streak: input.streak ?? '',
   };
 }
 
@@ -153,9 +156,9 @@ export interface TeamStatSnapshotRow {
 }
 
 /**
- * A team's stat row: team AVG (hits/AB) and team ERA (ER*7 / IP) summed over
- * every batting and pitching line credited to the team, with runs from its
- * standings record.
+ * A team's stat row: team AVG (hits/AB) and team ERA (ER * statInnings / IP)
+ * summed over every batting and pitching line credited to the team, with runs
+ * from its standings record.
  */
 export function teamStatRow(input: {
   leagueId: string;
@@ -165,6 +168,8 @@ export function teamStatRow(input: {
   record: TeamRecord;
   batting: Iterable<Partial<BattingStats>>;
   pitching: Iterable<Partial<PitchingStats>>;
+  /** Innings per game for team ERA: the league's `getStatInnings`. */
+  statInnings: number;
 }): TeamStatSnapshotRow {
   let hits = 0;
   let atBats = 0;
@@ -185,7 +190,7 @@ export function teamStatRow(input: {
     team_name: input.teamName,
     stats: {
       teamAvg: atBats > 0 ? Number((hits / atBats).toFixed(3)) : 0,
-      teamEra: outs > 0 ? Number(((earnedRuns * 7) / (outs / 3)).toFixed(2)) : 0,
+      teamEra: outs > 0 ? Number(perGameRate(earnedRuns, outs, input.statInnings).toFixed(2)) : 0,
       runsScored: input.record.runsFor,
       runDiff: input.record.runsFor - input.record.runsAgainst,
     },

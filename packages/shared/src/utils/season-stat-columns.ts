@@ -3,6 +3,7 @@ import type { PitchingStats } from '../types/pitching';
 import type { StatTier } from '../types/team';
 import { formatBattingPct, formatBattingRate } from './batting-stats';
 import { formatInningsPitched } from './pitching-stats';
+import { DEFAULT_STAT_INNINGS } from '../constants/baseball';
 import { utcToZonedDateTime } from './date';
 
 /**
@@ -160,23 +161,35 @@ export type SeasonPitchingStatKey =
   | 'threeBallCountPercentage' | 'threeZeroCountPercentage' | 'era' | 'whip' | 'strikeoutsPerSeven'
   | 'walksPerSeven' | 'hitsAllowed' | 'walksAllowed' | 'strikeouts' | 'hitBatters' | 'wildPitches';
 
-export const PITCHING_SEASON_COLUMNS: SeasonStatColumn<SeasonPitchingStatKey>[] = [
-  { key: 'inningsPitchedOuts',         label: 'IP',    title: 'Innings pitched',                  format: 'ip' },
-  { key: 'totalPitches',               label: 'PC',    title: 'Pitch count',                      format: 'int' },
-  { key: 'strikePercentage',           label: 'STR%',  title: 'Strike percentage',                format: 'pct' },
-  { key: 'firstPitchStrikePercentage', label: 'FPS%',  title: 'First-pitch strike percentage',    format: 'pct' },
-  { key: 'threeBallCountPercentage',   label: '3B%',   title: '% of PAs with a 3-ball count',     format: 'pct' },
-  { key: 'threeZeroCountPercentage',   label: '30CNT', title: '% of PAs starting with 3 straight balls (3-0 count)', format: 'pct' },
-  { key: 'era',                        label: 'ERA',   title: 'Earned run average (per 7 innings)', format: 'dec' },
-  { key: 'whip',                       label: 'WHIP',  title: 'Walks + hits per inning pitched',  format: 'dec' },
-  { key: 'strikeoutsPerSeven',         label: 'K/7',   title: 'Strikeouts per 7 innings',         format: 'dec' },
-  { key: 'walksPerSeven',              label: 'BB/7',  title: 'Walks per 7 innings',              format: 'dec' },
-  { key: 'hitsAllowed',                label: 'H',     title: 'Hits allowed',                     format: 'int' },
-  { key: 'walksAllowed',               label: 'BB',    title: 'Walks',                            format: 'int' },
-  { key: 'strikeouts',                 label: 'K',     title: 'Strikeouts',                       format: 'int' },
-  { key: 'hitBatters',                 label: 'HBP',   title: 'Hit batters',                      format: 'int' },
-  { key: 'wildPitches',                label: 'WP',    title: 'Wild pitches',                     format: 'int' },
-];
+/**
+ * The pitching columns with ERA, K/N and BB/N per `inningsPerGame` innings:
+ * "K/7" for high school and youth, "K/9" in a league that plays nine.
+ */
+export function pitchingSeasonColumns(
+  inningsPerGame: number = DEFAULT_STAT_INNINGS,
+): SeasonStatColumn<SeasonPitchingStatKey>[] {
+  const n = inningsPerGame;
+  return [
+    { key: 'inningsPitchedOuts',         label: 'IP',    title: 'Innings pitched',                  format: 'ip' },
+    { key: 'totalPitches',               label: 'PC',    title: 'Pitch count',                      format: 'int' },
+    { key: 'strikePercentage',           label: 'STR%',  title: 'Strike percentage',                format: 'pct' },
+    { key: 'firstPitchStrikePercentage', label: 'FPS%',  title: 'First-pitch strike percentage',    format: 'pct' },
+    { key: 'threeBallCountPercentage',   label: '3B%',   title: '% of PAs with a 3-ball count',     format: 'pct' },
+    { key: 'threeZeroCountPercentage',   label: '30CNT', title: '% of PAs starting with 3 straight balls (3-0 count)', format: 'pct' },
+    { key: 'era',                        label: 'ERA',   title: `Earned run average (per ${n} innings)`, format: 'dec' },
+    { key: 'whip',                       label: 'WHIP',  title: 'Walks + hits per inning pitched',  format: 'dec' },
+    { key: 'strikeoutsPerSeven',         label: `K/${n}`, title: `Strikeouts per ${n} innings`,     format: 'dec' },
+    { key: 'walksPerSeven',              label: `BB/${n}`, title: `Walks per ${n} innings`,         format: 'dec' },
+    { key: 'hitsAllowed',                label: 'H',     title: 'Hits allowed',                     format: 'int' },
+    { key: 'walksAllowed',               label: 'BB',    title: 'Walks',                            format: 'int' },
+    { key: 'strikeouts',                 label: 'K',     title: 'Strikeouts',                       format: 'int' },
+    { key: 'hitBatters',                 label: 'HBP',   title: 'Hit batters',                      format: 'int' },
+    { key: 'wildPitches',                label: 'WP',    title: 'Wild pitches',                     format: 'int' },
+  ];
+}
+
+/** The pitching columns for the default 7-inning game. */
+export const PITCHING_SEASON_COLUMNS: SeasonStatColumn<SeasonPitchingStatKey>[] = pitchingSeasonColumns();
 
 const PITCHING_TIER_KEYS: Record<StatTier, ReadonlySet<SeasonPitchingStatKey>> = {
   youth: new Set<SeasonPitchingStatKey>([
@@ -196,9 +209,16 @@ const FREE_PITCHING_KEYS: ReadonlySet<SeasonPitchingStatKey> = new Set<SeasonPit
   'inningsPitchedOuts', 'totalPitches', 'era', 'hitsAllowed', 'walksAllowed', 'strikeouts', 'hitBatters', 'wildPitches',
 ]);
 
-/** The pitching columns for a stat tier; `advanced` is the plan's ADVANCED_PITCHING_STATS feature. */
-export function visiblePitchingColumns(tier: StatTier, advanced: boolean): SeasonStatColumn<SeasonPitchingStatKey>[] {
-  return PITCHING_SEASON_COLUMNS.filter(
+/**
+ * The pitching columns for a stat tier; `advanced` is the plan's
+ * ADVANCED_PITCHING_STATS feature, `inningsPerGame` labels the per-game rates.
+ */
+export function visiblePitchingColumns(
+  tier: StatTier,
+  advanced: boolean,
+  inningsPerGame: number = DEFAULT_STAT_INNINGS,
+): SeasonStatColumn<SeasonPitchingStatKey>[] {
+  return pitchingSeasonColumns(inningsPerGame).filter(
     (col) => PITCHING_TIER_KEYS[tier].has(col.key) && (advanced || FREE_PITCHING_KEYS.has(col.key)),
   );
 }
@@ -208,8 +228,14 @@ type PitchingCounts = Pick<PitchingStats,
   | 'threeZeroCountPAs' | 'hitsAllowed' | 'earnedRunsAllowed' | 'walksAllowed' | 'strikeouts' | 'hitBatters' | 'wildPitches'
 >;
 
-/** The totals row, rates recomputed from the summed counts (ERA: earned runs per 7 innings, like each row). */
-export function pitchingTotals(rows: PitchingCounts[]): Record<SeasonPitchingStatKey, number> {
+/**
+ * The totals row, rates recomputed from the summed counts (ERA: earned runs
+ * per `inningsPerGame` innings, like each row).
+ */
+export function pitchingTotals(
+  rows: PitchingCounts[],
+  inningsPerGame: number = DEFAULT_STAT_INNINGS,
+): Record<SeasonPitchingStatKey, number> {
   const t = rows.reduce(
     (acc, s) => ({
       ip: acc.ip + s.inningsPitchedOuts, pc: acc.pc + s.totalPitches, str: acc.str + s.strikes,
@@ -227,10 +253,10 @@ export function pitchingTotals(rows: PitchingCounts[]): Record<SeasonPitchingSta
     firstPitchStrikePercentage: t.tpa > 0 ? t.fps / t.tpa : NaN,
     threeBallCountPercentage: t.tpa > 0 ? t.tb3 / t.tpa : NaN,
     threeZeroCountPercentage: t.tpa > 0 ? t.t30 / t.tpa : NaN,
-    era: innings > 0 ? (t.er * 7) / innings : NaN,
+    era: innings > 0 ? (t.er * inningsPerGame) / innings : NaN,
     whip: innings > 0 ? (t.bb + t.h) / innings : NaN,
-    strikeoutsPerSeven: innings > 0 ? (t.k * 7) / innings : NaN,
-    walksPerSeven: innings > 0 ? (t.bb * 7) / innings : NaN,
+    strikeoutsPerSeven: innings > 0 ? (t.k * inningsPerGame) / innings : NaN,
+    walksPerSeven: innings > 0 ? (t.bb * inningsPerGame) / innings : NaN,
     hitsAllowed: t.h,
     walksAllowed: t.bb,
     strikeouts: t.k,

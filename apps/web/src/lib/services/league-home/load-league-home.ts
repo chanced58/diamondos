@@ -111,6 +111,7 @@ function toStandingRow(row: StandingRow): LeagueHomeStandingRow {
     winPct: row.win_pct,
     runsFor: row.runs_for,
     runsAgainst: row.runs_against,
+    streak: row.streak ?? '',
   };
 }
 

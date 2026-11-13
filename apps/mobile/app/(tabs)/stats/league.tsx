@@ -122,8 +122,8 @@ export default function LeagueStatsScreen() {
             rows={sortStatRows(stats.pitching, sorts.pitching, (r) => r.playerName, statValue)}
             rowKey={(r) => r.playerId}
             rowLabel={(r) => r.playerName}
-            columns={pitchingStatColumns(tier, false)}
-            totals={seasonPitchingTotals(stats.pitching, tier, false)}
+            columns={pitchingStatColumns(tier, false, stats.statInnings)}
+            totals={seasonPitchingTotals(stats.pitching, tier, false, stats.statInnings)}
             emptyText="No pitching data across league teams yet."
             labelHeader="Pitcher"
             labelWidth={LEAGUE_NAME_WIDTH}

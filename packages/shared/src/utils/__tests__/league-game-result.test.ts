@@ -1,5 +1,7 @@
 import {
   computeLeagueGameStandings,
+  computeLeagueGameStreaks,
+  formatCurrentStreak,
   isFinishedBook,
   manualLinesToBattingStats,
   mergeBattingStats,
@@ -246,6 +248,12 @@ describe('mergePitchingStats', () => {
     expect(merged.baByCount['0-0']).toEqual({ atBats: 4, hits: 2, average: 0.5 });
   });
 
+  it('should recompute ERA over 9 innings for an adult league', () => {
+    const merged = mergePitchingStats(pitcher({}), pitcher({ inningsPitchedOuts: 12, earnedRunsAllowed: 1 }), 9);
+    expect(merged.era).toBeCloseTo((3 * 9) / 7);
+    expect(merged.whip).toBeCloseTo((2 + 6) / 7);
+  });
+
   it('should keep count buckets that only the second line has', () => {
     const second = pitcher({ baByCount: { '3-2': { atBats: 4, hits: 1, average: 0.25 } } });
     const merged = mergePitchingStats(pitcher({}), second);
@@ -255,5 +263,46 @@ describe('mergePitchingStats', () => {
 
   it('should keep the second line\'s name when the first line has none', () => {
     expect(mergePitchingStats(pitcher({ playerName: '' }), pitcher({})).playerName).toBe('P');
+  });
+});
+
+describe('formatCurrentStreak', () => {
+  it('should count the latest run of the same result', () => {
+    expect(formatCurrentStreak(['L', 'W', 'W', 'W'])).toBe('W3');
+    expect(formatCurrentStreak(['W', 'W', 'L'])).toBe('L1');
+  });
+
+  it('should treat a tie as its own streak', () => {
+    expect(formatCurrentStreak(['W', 'T', 'T'])).toBe('T2');
+  });
+
+  it('should be empty before the first game', () => {
+    expect(formatCurrentStreak([])).toBe('');
+  });
+});
+
+describe('computeLeagueGameStreaks', () => {
+  const game = (homeTeamId: string, awayTeamId: string, homeRuns: number, awayRuns: number, forfeitWinnerTeamId: string | null = null) =>
+    ({ homeTeamId, awayTeamId, homeRuns, awayRuns, forfeitWinnerTeamId });
+
+  it('should follow each team through its games in the order played', () => {
+    const streaks = computeLeagueGameStreaks([
+      game('a', 'b', 5, 2),
+      game('b', 'a', 1, 4),
+      game('c', 'b', 3, 3),
+    ]);
+    expect(streaks.get('a')).toBe('W2');
+    expect(streaks.get('b')).toBe('T1');
+    expect(streaks.get('c')).toBe('T1');
+  });
+
+  it('should count a forfeit as a win and a loss whatever the runs', () => {
+    const streaks = computeLeagueGameStreaks([game('a', 'b', 6, 1), game('a', 'b', 0, 0, 'b')]);
+    expect(streaks.get('a')).toBe('L1');
+    expect(streaks.get('b')).toBe('W1');
+  });
+
+  it('should leave out teams that have not played', () => {
+    expect(computeLeagueGameStreaks([game('a', 'b', 1, 0)]).has('c')).toBe(false);
   });
 });

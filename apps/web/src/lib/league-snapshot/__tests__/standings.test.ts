@@ -1,4 +1,4 @@
-import { computeStandings, computeOpponentStandings, type GameRow } from '../standings';
+import { computeStandings, computeOpponentStandings, computeStreaks, type GameRow } from '../standings';
 
 const games: GameRow[] = [
   { team_id: 't1', opponent_team_id: null, home_score: 5, away_score: 3, location_type: 'home', neutral_home_team: null, status: 'completed' },
@@ -140,5 +140,41 @@ describe('computeOpponentStandings', () => {
     );
     expect(out.get('o1')).toMatchObject({ wins: 1, losses: 2, ties: 0 });
     expect(out.get('o1')!.winPct).toBeCloseTo(0.3333, 4);
+  });
+});
+
+describe('computeStreaks', () => {
+  const game = (over: Partial<GameRow>): GameRow => ({
+    team_id: 't1', opponent_team_id: null, home_score: 0, away_score: 0, location_type: 'home',
+    neutral_home_team: null, status: 'completed', scheduled_at: null, ...over,
+  });
+
+  it('should follow each team through its completed games in date order', () => {
+    const streaks = computeStreaks([
+      // Listed out of order: the April 8 loss is the latest.
+      game({ scheduled_at: '2027-04-08T23:00:00Z', home_score: 1, away_score: 4 }),
+      game({ scheduled_at: '2027-04-01T23:00:00Z', home_score: 5, away_score: 2 }),
+      game({ scheduled_at: '2027-03-25T23:00:00Z', home_score: 3, away_score: 0 }),
+      game({ team_id: 't2', scheduled_at: '2027-04-02T23:00:00Z', location_type: 'away', home_score: 1, away_score: 6 }),
+      game({ team_id: 't2', scheduled_at: '2027-04-09T23:00:00Z', location_type: 'away', home_score: 2, away_score: 9 }),
+    ]);
+    expect(streaks.get('t1')).toBe('L1');
+    expect(streaks.get('t2')).toBe('W2');
+  });
+
+  it('should give league opponent teams the inverse streak and ignore unfinished games', () => {
+    const streaks = computeStreaks(
+      [
+        game({ opponent_team_id: 'opp', scheduled_at: '2027-04-01T23:00:00Z', home_score: 2, away_score: 3 }),
+        game({ opponent_team_id: 'opp', scheduled_at: '2027-04-08T23:00:00Z', home_score: 1, away_score: 7 }),
+        game({ opponent_team_id: 'opp', scheduled_at: '2027-04-15T23:00:00Z', home_score: 9, away_score: 0, status: 'in_progress' }),
+        game({ opponent_team_id: 'not-a-member', scheduled_at: '2027-04-02T23:00:00Z', home_score: 4, away_score: 4 }),
+      ],
+      ['opp'],
+    );
+    expect(streaks.get('opp')).toBe('W2');
+    // The recording team: L (Apr 1), T (Apr 2), L (Apr 8).
+    expect(streaks.get('t1')).toBe('L1');
+    expect(streaks.has('not-a-member')).toBe(false);
   });
 });

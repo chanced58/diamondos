@@ -37,6 +37,7 @@ function stats(over: Partial<SeasonStatsResponse> = {}): SeasonStatsResponse {
     defaultTier: 'high_school',
     features: { advancedBatting: true, advancedPitching: true, opponents: false },
     hasLeague: false,
+    statInnings: 7,
     pitching: [
       {
         playerId: 'p1', playerName: 'Luke Fox', gamesAppeared: 1, inningsPitchedOuts: 9, totalPitches: 50, strikes: 30,
@@ -73,6 +74,23 @@ it("should show the active season's pitchers with their rest, and open a pitcher
   expect(screen.getByText('2d')).toBeTruthy();
   fireEvent.press(screen.getByText('Luke Fox'));
   expect(mockPush).toHaveBeenCalledWith({ pathname: '/(tabs)/stats/pitcher/[playerId]', params: { playerId: 'p1' } });
+});
+
+it('should label the per-game pitching rates K/7 and BB/7 for a high-school team', () => {
+  given(stats());
+  render(<StatsScreen />);
+
+  expect(screen.getByText('K/7')).toBeTruthy();
+  expect(screen.getByText('BB/7')).toBeTruthy();
+});
+
+it("should label them K/9 and BB/9 when the team's league plays nine innings", () => {
+  given(stats({ hasLeague: true, statInnings: 9 }));
+  render(<StatsScreen />);
+
+  expect(screen.getByText('K/9')).toBeTruthy();
+  expect(screen.getByText('BB/9')).toBeTruthy();
+  expect(screen.queryByText('K/7')).toBeNull();
 });
 
 it('should load every game when All games is picked', () => {

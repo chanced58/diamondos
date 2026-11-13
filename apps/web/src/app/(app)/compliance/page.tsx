@@ -184,6 +184,7 @@ export default async function CompliancePage({
             now={now}
             tier={tier}
             subscriptionTier={subscriptionTier}
+            statInnings={stats.statInnings}
           />
         )
       )}
@@ -222,7 +223,7 @@ export default async function CompliancePage({
 
       {/* Opponents tab */}
       {tab === 'opponents' && (
-        <OpponentsStatsTable teams={opponentTeamStats} />
+        <OpponentsStatsTable teams={opponentTeamStats} statInnings={stats.statInnings} />
       )}
     </div>
   );

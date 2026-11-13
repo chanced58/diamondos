@@ -43,11 +43,17 @@ export interface PitchingStats {
   hitBatters: number;
   wildPitches: number;
 
-  /** (earnedRunsAllowed * 7) / inningsPitched; Infinity when inningsPitched === 0 */
+  /**
+   * (earnedRunsAllowed * N) / inningsPitched, N the innings per game the
+   * stats were derived with: the league's `gameLength.statInnings` (9 for
+   * adult leagues), else 7. Infinity when inningsPitched === 0.
+   */
   era: number;
   /** (walksAllowed + hitsAllowed) / inningsPitched */
   whip: number;
+  /** Strikeouts per N innings, N as for `era` (the name predates per-league N). */
   strikeoutsPerSeven: number;
+  /** Walks per N innings, N as for `era`. */
   walksPerSeven: number;
 
   /**

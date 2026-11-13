@@ -82,7 +82,7 @@ export default function OpponentStatsScreen() {
             rowKey={(r) => r.playerId}
             rowLabel={(r) => r.playerName}
             columns={OPPONENT_PITCHING_COLUMNS}
-            totals={opponentPitchingTotals(pitching)}
+            totals={opponentPitchingTotals(pitching, query.data?.statInnings)}
             emptyText="No pitching data."
             labelHeader="Pitcher"
           />
