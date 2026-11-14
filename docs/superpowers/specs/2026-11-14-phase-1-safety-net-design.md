@@ -365,7 +365,7 @@ through the function redeploy by either the header or the service-role fallback.
 - Database (`supabase/tests/database`): inserting a `pitch_thrown` event succeeds with no Vault
   secrets present and, with the trigger enabled for the test, leaves one `job.config` row; a
   non-pitch insert queues nothing; the trigger is disabled after the migration; the four cron
-  jobs exist with the expected schedules; `job_runs` and `app_error_log` is unreadable to `authenticated`.
+  jobs exist with the expected schedules; `job_runs` and `app_error_log` are unreadable to `authenticated`.
 - By hand after step 3: the Jobs panel showing a successful rebuild and dispatch, and a test
   push from the web still arriving.
 
