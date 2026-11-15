@@ -13,6 +13,8 @@
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { internalHeaders, requireInternal } from '../_shared/require-internal.ts';
+import { reportEdgeError } from '../_shared/report-error.ts';
 
 const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 const WINDOW_DAYS = 7;
@@ -31,6 +33,8 @@ interface PracticeCandidate {
 Deno.serve(async (req: Request) => {
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
+  const unauthorized = requireInternal(req);
+  if (unauthorized) return unauthorized;
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -50,6 +54,7 @@ Deno.serve(async (req: Request) => {
 
   if (error) {
     console.error('practice-notifications-dispatch: candidates query failed', error);
+    await reportEdgeError(supabase, 'edge.practice-dispatch', error, { step: 'candidates_query' });
     return new Response(JSON.stringify({ error: 'query_failed' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -118,6 +123,7 @@ Deno.serve(async (req: Request) => {
       );
     if (logErr) {
       console.warn('log insert failed, skipping dispatch for practice', pr.id, logErr);
+      await reportEdgeError(supabase, 'edge.practice-dispatch', logErr, { step: 'log_insert', practiceId: pr.id });
       continue;
     }
 
@@ -130,6 +136,7 @@ Deno.serve(async (req: Request) => {
       : teamName || 'Get ready!';
 
     const { error: invokeErr } = await supabase.functions.invoke('push-notifications', {
+      headers: internalHeaders(),
       body: {
         userIds,
         title,
@@ -143,6 +150,11 @@ Deno.serve(async (req: Request) => {
     });
     if (invokeErr) {
       console.warn('push-notifications invoke failed for practice', pr.id, invokeErr);
+      await reportEdgeError(supabase, 'edge.practice-dispatch', invokeErr, {
+        step: 'push_invoke',
+        practiceId: pr.id,
+        recipients: userIds.length,
+      });
     }
 
     pushesAttempted += userIds.length;

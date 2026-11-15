@@ -27,6 +27,32 @@ describe('sendPush', () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
+  describe('internal secret header', () => {
+    const originalSecret = process.env.INTERNAL_JOB_SECRET;
+    afterEach(() => {
+      if (originalSecret === undefined) delete process.env.INTERNAL_JOB_SECRET;
+      else process.env.INTERNAL_JOB_SECRET = originalSecret;
+    });
+
+    it('should send the x-internal-secret header when INTERNAL_JOB_SECRET is set', async () => {
+      process.env.INTERNAL_JOB_SECRET = 'job-secret';
+      const invoke = jest.fn().mockResolvedValue({ data: null, error: null });
+      await sendPush(dbWith(invoke), input);
+      expect(invoke).toHaveBeenCalledWith('push-notifications', {
+        body: input,
+        headers: { 'x-internal-secret': 'job-secret' },
+      });
+    });
+
+    it('should send no extra headers when INTERNAL_JOB_SECRET is unset', async () => {
+      delete process.env.INTERNAL_JOB_SECRET;
+      const invoke = jest.fn().mockResolvedValue({ data: null, error: null });
+      await sendPush(dbWith(invoke), input);
+      expect(invoke.mock.calls[0][1]).toEqual({ body: input });
+      expect(invoke.mock.calls[0][1]).not.toHaveProperty('headers');
+    });
+  });
+
   it('should not call the edge function when there is nobody to notify', async () => {
     const invoke = jest.fn();
     await sendPush(dbWith(invoke), { ...input, userIds: [] });

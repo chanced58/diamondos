@@ -368,6 +368,18 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# These functions check their caller themselves (x-internal-secret or the
+# service-role bearer, `_shared/require-internal.ts`), so the gateway's JWT
+# check is off: the database calls them through pg_net with only the secret.
+[functions.push-notifications]
+verify_jwt = false
+
+[functions.practice-notifications-dispatch]
+verify_jwt = false
+
+[functions.pitch-count-calculator]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
