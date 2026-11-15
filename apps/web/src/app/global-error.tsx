@@ -20,6 +20,7 @@ export default function GlobalError({
           actionLabel="Try again"
           onAction={reset}
           error={error}
+          homeHref="/"
         />
       </body>
     </html>

@@ -12,7 +12,7 @@ export function reportClientError(
   try {
     const entry = {
       area,
-      message: errorMessageOf(error),
+      message: errorMessageOf(error) || '[no message]',
       details: sanitizeErrorDetails(details),
       occurredAt: new Date().toISOString(),
     };

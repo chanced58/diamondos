@@ -20,6 +20,7 @@ Each step is safe on its own; applied early, the jobs log one `job.config` row a
 - [ ] Apply `20261114000000_app_error_log.sql` and `20261114000001_background_jobs.sql`, then set
       `supabase_migrations.schema_migrations.version` on each applied row to its file's timestamp
       (`20261114000000`, `20261114000001`), since the MCP tool records the apply time instead.
+      Apply outside game hours; if it fails with a lock timeout, retry later.
 - [ ] Verify: `select * from admin_job_health();` shows a successful `rebuild-league-snapshots`
       and `practice-notifications-dispatch` run (allow up to six hours for the rebuild, or call the
       cron route once by hand), and `pitch-count-calculator` as off.
@@ -94,8 +95,11 @@ To change one later: `select vault.update_secret(id, '<new value>') from vault.s
 Platform admins only. The admin index shows the error count for the last 24 hours.
 
 - [ ] The table lists the newest 200 rows from the last 7 days; filter by source (`web`,
-      `web_client`, `mobile`, `edge`, `db`) and area (e.g. `finalize`, `sync.push`, `push.send`,
-      `cron.rebuild`, `render`, `config`, `job.config`). Expand a row for its details (ids and
+      `web_client`, `mobile`, `edge`, `db`) and area (`league.refresh`, `league.snapshot`,
+      `finalize.snapshot`, `finalize.failed`, `push.send`, `cron.rebuild`, `service.failed`,
+      `admin.job-health`, `scoring.record`, `sync.failed`, `config`, `render`, `edge.push`,
+      `edge.practice-dispatch`, `edge.pitch-count`, `job.config`, `job.<job name>`). Pitch-count
+      trigger call failures are counted in the Jobs panel (`job_runs`), not written to the error log. Expand a row for its details (ids and
       context; sanitized, no tokens or emails).
 - [ ] Rows are kept 30 days (`prune-logs`, daily).
 - [ ] Jobs panel (`admin_job_health()`): for the snapshot rebuild and the practice dispatch, the

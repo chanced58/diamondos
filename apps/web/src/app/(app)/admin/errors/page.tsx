@@ -92,7 +92,7 @@ export default async function ErrorsPage({
               {jobs.map((job) => (
                 <tr key={job.job} className="border-b border-gray-100">
                   <td className="px-4 py-2 text-gray-900">{job.job}</td>
-                  <td className="px-4 py-2 text-gray-700">{job.enabled ? 'On' : 'Off'}</td>
+                  <td className="px-4 py-2 text-gray-700">{job.enabled === null ? 'Missing' : job.enabled ? 'On' : 'Off'}</td>
                   <td className="px-4 py-2 whitespace-nowrap text-gray-700">{formatTimestamp(job.lastRunAt)}</td>
                   <td className={`px-4 py-2 ${job.lastOk === false ? 'text-red-700' : 'text-gray-700'}`}>
                     {describeJobResult(job)}
