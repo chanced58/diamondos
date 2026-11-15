@@ -9,6 +9,7 @@ import {
   type MemberWriteResponse,
 } from '@baseball/shared';
 import { addToTeamChannels } from '@/lib/team-channels';
+import { resolveAppOrigin } from '@/lib/auth/app-url';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import { authorizeMemberManager, refuseLeadershipChange } from './authorize';
 
@@ -47,10 +48,6 @@ function failed<T>(action: string, teamId: string, actorUserId: string, error: u
   return serviceError('failed', 'Something went wrong. Please try again.');
 }
 
-function appUrl(): string | null {
-  return process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? null;
-}
-
 /** The invite link's query: team and role, plus the player ids older invitations read from it. */
 function inviteRedirect(base: string, teamId: string, role: string, playerIds: string[]): string {
   const params = new URLSearchParams({ team: teamId, role });
@@ -69,8 +66,8 @@ async function sendInvitation(
   actorUserId: string,
   row: InvitationRow,
 ): Promise<ServiceResult<null>> {
-  const base = appUrl();
-  if (!base) return serviceError('unavailable', 'Invites are not set up on this server (APP_URL is missing).');
+  const base = resolveAppOrigin();
+  if (!base) return serviceError('unavailable', 'Invitations are unavailable: the site address is not configured.');
 
   const { data: previous, error: previousError } = await db
     .from('team_invitations')

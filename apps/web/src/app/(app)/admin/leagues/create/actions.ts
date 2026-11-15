@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { resolveAppOrigin } from '@/lib/auth/app-url';
 import { createLeagueSchema } from '@baseball/shared';
 
 export async function createLeagueAction(_prevState: string | null | undefined, formData: FormData) {
@@ -78,8 +79,12 @@ export async function createLeagueAction(_prevState: string | null | undefined, 
     if (existingProfile) {
       leagueAdminUserId = existingProfile.id;
     } else {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app');
-      const redirectTo = appUrl ? `${appUrl}/auth/callback` : '/auth/callback';
+      const appOrigin = resolveAppOrigin();
+      if (!appOrigin) {
+        await rollbackLeague();
+        return 'Invitations are unavailable: the site address is not configured.';
+      }
+      const redirectTo = `${appOrigin}/auth/callback`;
       const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
         adminEmail,
         { redirectTo, data: { first_name: adminFirstName, last_name: adminLastName } },

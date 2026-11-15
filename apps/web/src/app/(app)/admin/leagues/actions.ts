@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { resolveAppOrigin } from '@/lib/auth/app-url';
 import type { AdminDatabase } from '../database-types';
 
 export async function markInviteAcceptedAction(formData: FormData): Promise<void> {
@@ -104,8 +105,12 @@ export async function inviteLeagueAdminAction(_prevState: string | null | undefi
   if (existingProfile) {
     adminUserId = existingProfile.id;
   } else {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app');
-    const redirectTo = appUrl ? `${appUrl}/auth/callback` : '/auth/callback';
+    const appOrigin = resolveAppOrigin();
+    if (!appOrigin) {
+      await rollbackLeague();
+      return 'Invitations are unavailable: the site address is not configured.';
+    }
+    const redirectTo = `${appOrigin}/auth/callback`;
     const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
       email,
       { redirectTo, data: { first_name: firstName, last_name: lastName } },
