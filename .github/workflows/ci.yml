@@ -63,6 +63,10 @@ jobs:
           node-version: 20
       - name: Prepare isolated database project
         run: node supabase/tests/prepare-isolated-database.mjs "$RUNNER_TEMP/db"
+      # The development seed inserts auth users that the invite-only signup
+      # trigger refuses; the pgTAP tests build their own fixtures.
+      - name: Skip the development seed
+        run: ": > \"$RUNNER_TEMP/db/supabase/seed.sql\""
       - name: Start database
         run: supabase db start --workdir "$RUNNER_TEMP/db"
       - name: Run database tests
