@@ -160,6 +160,88 @@ describe('flushClientErrors', () => {
     expect(mockPost).toHaveBeenCalledTimes(1);
   });
 
+  it('should keep a report made during the flight when the queue is full', async () => {
+    const full = Array.from({ length: 50 }, (_, i) => entry(`m${i}`));
+    mockStorage.set(KEY, JSON.stringify(full));
+    let release!: () => void;
+    mockPost.mockImplementation(() => new Promise<void>((resolve) => { release = resolve; }));
+
+    const flushing = flushClientErrors();
+    await settle();
+    reportClientError('sync.failed', new Error('late'));
+    await settle();
+    release();
+    await flushing;
+    await settle();
+
+    expect(mockPost.mock.calls[0][1].entries).toHaveLength(50);
+    expect(stored().map((e) => e.message)).toEqual(['late']);
+  });
+
+  it('should remove only one of two identical entries when only one was sent', async () => {
+    mockStorage.set(KEY, JSON.stringify([entry('same')]));
+    let release!: () => void;
+    mockPost.mockImplementation(() => new Promise<void>((resolve) => { release = resolve; }));
+
+    const flushing = flushClientErrors();
+    await settle();
+    mockStorage.set(KEY, JSON.stringify([entry('same'), entry('same')]));
+    release();
+    await flushing;
+
+    expect(stored()).toEqual([entry('same')]);
+  });
+
+  it('should drop the sent entries when the server refuses them as invalid', async () => {
+    mockStorage.set(KEY, JSON.stringify([entry('a'), entry('b')]));
+    mockPost.mockRejectedValue(new ApiError('invalid', 'bad batch', { status: 400 }));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await flushClientErrors();
+
+    expect(stored()).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('should keep the queue and wait 10 minutes after a not_found response', async () => {
+    // Start the clock an hour back so the back-off is over by real time when
+    // the spy is restored, and later tests flush normally.
+    let now = Date.now() - 60 * 60 * 1000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const queue = JSON.stringify([entry('a')]);
+    mockStorage.set(KEY, queue);
+    mockPost.mockRejectedValue(new ApiError('not_found', 'no route', { status: 404 }));
+
+    await flushClientErrors();
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockStorage.get(KEY)).toBe(queue);
+
+    now += 9 * 60 * 1000;
+    await flushClientErrors();
+    expect(mockPost).toHaveBeenCalledTimes(1);
+
+    now += 2 * 60 * 1000;
+    mockPost.mockResolvedValue({});
+    await flushClientErrors();
+    expect(mockPost).toHaveBeenCalledTimes(2);
+    expect(stored()).toEqual([]);
+
+    clock.mockRestore();
+    warn.mockRestore();
+  });
+
+  it('should retry at once after an offline failure', async () => {
+    mockStorage.set(KEY, JSON.stringify([entry('a')]));
+    mockPost.mockRejectedValue(new ApiError('offline', 'no signal'));
+
+    await flushClientErrors();
+    await flushClientErrors();
+
+    expect(mockPost).toHaveBeenCalledTimes(2);
+  });
+
   it('should not throw when the register read fails', async () => {
     mockGet.mockImplementation(async () => { throw new Error('db closed'); });
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
