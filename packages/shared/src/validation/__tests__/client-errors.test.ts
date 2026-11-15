@@ -46,6 +46,29 @@ describe('sanitizeErrorDetails', () => {
   });
 });
 
+describe('sanitizeErrorDetails values', () => {
+  it('turns an Error into its message and a Date into an ISO string', () => {
+    expect(
+      sanitizeErrorDetails({ err: new Error('bad'), at: new Date('2026-11-14T00:00:00.000Z'), nope: new Date('x') }),
+    ).toEqual({ err: 'bad', at: '2026-11-14T00:00:00.000Z', nope: '[invalid date]' });
+  });
+});
+
+describe('errorMessageOf never throws', () => {
+  it('handles a throwing message getter and a non-string message', () => {
+    const e = new Error('x');
+    Object.defineProperty(e, 'message', {
+      get() {
+        throw new Error('no');
+      },
+    });
+    expect(errorMessageOf(e)).toBe('[unreadable error]');
+    const odd = new Error('x');
+    Object.defineProperty(odd, 'message', { value: 42 });
+    expect(errorMessageOf(odd)).toBe('42');
+  });
+});
+
 describe('errorMessageOf', () => {
   it('reads a message from anything', () => {
     expect(errorMessageOf(new Error('boom'))).toBe('boom');

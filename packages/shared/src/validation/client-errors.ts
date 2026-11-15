@@ -31,6 +31,8 @@ function sanitizeValue(value: unknown, ancestors: unknown[]): unknown {
   const kind = typeof value;
   if (kind === 'string' || kind === 'number' || kind === 'boolean') return value;
   if (kind !== 'object') return kind === 'undefined' ? undefined : UNSERIALIZABLE;
+  if (value instanceof Error) return errorMessageOf(value);
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? '[invalid date]' : value.toISOString();
   if (ancestors.includes(value)) return '[circular]';
   const path = [...ancestors, value];
   if (Array.isArray(value)) return value.map((item) => sanitizeEntry(() => item, path));
@@ -65,14 +67,10 @@ export function sanitizeErrorDetails(details: unknown): Record<string, unknown> 
 
 export function errorMessageOf(error: unknown): string {
   let message: string;
-  if (error instanceof Error) message = error.message;
-  else if (typeof error === 'string') message = error;
-  else {
-    try {
-      message = String(error);
-    } catch {
-      message = UNSERIALIZABLE;
-    }
+  try {
+    message = error instanceof Error ? String(error.message) : typeof error === 'string' ? error : String(error);
+  } catch {
+    message = '[unreadable error]';
   }
   return message.slice(0, ERROR_MESSAGE_MAX);
 }

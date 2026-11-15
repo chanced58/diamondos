@@ -2,6 +2,7 @@ const insert = jest.fn();
 const from = jest.fn(() => ({ insert }));
 jest.mock('@supabase/supabase-js', () => ({ createClient: jest.fn(() => ({ from })) }));
 
+import { createClient } from '@supabase/supabase-js';
 import { buildErrorRow, reportError } from '../report-error';
 
 const G = '11111111-1111-4111-8111-111111111111';
@@ -62,6 +63,24 @@ describe('reportError', () => {
     insert.mockResolvedValue({ error: { message: 'nope' } });
     expect(() => reportError('a', 'b')).not.toThrow();
     await new Promise((r) => setImmediate(r));
+  });
+
+  it('still inserts one row when details are circular, and logs no secrets', async () => {
+    insert.mockResolvedValue({ error: null });
+    const details: Record<string, unknown> = { token: 'SECRET-TOKEN', n: 1 };
+    details.self = details;
+    reportError('a', 'b', { details });
+    await new Promise((r) => setImmediate(r));
+    expect(insert).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('SECRET-TOKEN');
+  });
+
+  it('reuses one client across calls', async () => {
+    insert.mockResolvedValue({ error: null });
+    reportError('a', 'b');
+    reportError('a', 'c');
+    await new Promise((r) => setImmediate(r));
+    expect(createClient).toHaveBeenCalledTimes(1);
   });
 
   it('never throws when env is missing', () => {
