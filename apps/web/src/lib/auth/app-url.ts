@@ -1,3 +1,5 @@
+import { reportError } from '@/lib/errors/report-error';
+
 /**
  * Resolves the canonical app origin from env vars, defensively normalized.
  *
@@ -13,4 +15,19 @@
 export function getAppOrigin(fallback?: string): string {
   const raw = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? fallback ?? '';
   return raw.replace(/\/+$/, '').replace(/\/auth\/callback$/, '');
+}
+
+const DEV_APP_ORIGIN = 'http://localhost:3001';
+
+/**
+ * The origin to put in emailed links. `getAppOrigin()` when configured;
+ * localhost outside production; otherwise null (after reporting), so callers
+ * refuse to send a link to an address nobody configured.
+ */
+export function resolveAppOrigin(): string | null {
+  const configured = getAppOrigin();
+  if (configured) return configured;
+  if (process.env.NODE_ENV !== 'production') return DEV_APP_ORIGIN;
+  reportError('config', 'NEXT_PUBLIC_APP_URL is not set');
+  return null;
 }

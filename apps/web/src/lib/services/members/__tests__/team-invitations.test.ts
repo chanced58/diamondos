@@ -94,6 +94,32 @@ describe('inviteStaff', () => {
     });
   });
 
+  it('should refuse and send nothing when the site address is not configured in production', async () => {
+    const env = process.env as Record<string, string | undefined>;
+    const saved = { appUrl: env.APP_URL, publicUrl: env.NEXT_PUBLIC_APP_URL, nodeEnv: env.NODE_ENV };
+    delete env.APP_URL;
+    delete env.NEXT_PUBLIC_APP_URL;
+    env.NODE_ENV = 'production';
+    try {
+      const { db, calls, inviteUserByEmail } = setup();
+      expect(await inviteStaff(db, ACTOR, { teamId: TEAM, email: 'new@example.com', role: 'staff' })).toMatchObject({
+        ok: false,
+        code: 'unavailable',
+        error: 'Invitations are unavailable: the site address is not configured.',
+      });
+      expect(inviteUserByEmail).not.toHaveBeenCalled();
+      expect(writes(calls, 'team_invitations')).toEqual([]);
+    } finally {
+      const restore = (key: string, value: string | undefined) => {
+        if (value === undefined) delete env[key];
+        else env[key] = value;
+      };
+      restore('APP_URL', saved.appUrl);
+      restore('NEXT_PUBLIC_APP_URL', saved.publicUrl);
+      restore('NODE_ENV', saved.nodeEnv);
+    }
+  });
+
   it('should take the invitation back when the email fails, and say when it was the rate limit', async () => {
     const fresh = setup({}, { emailError: { status: 429, message: 'Too many requests' } });
     expect(await inviteStaff(fresh.db, ACTOR, { teamId: TEAM, email: 'new@example.com', role: 'staff' })).toMatchObject({ code: 'unavailable' });

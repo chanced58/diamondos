@@ -28,7 +28,7 @@ export type ErrorLogRow = {
 
 export type JobHealth = {
   job: string;
-  enabled: boolean;
+  enabled: boolean | null;
   lastRunAt: string | null;
   lastStatus: number | null;
   lastOk: boolean | null;
@@ -46,7 +46,7 @@ export type ErrorLogData = {
 
 type JobHealthDbRow = {
   job: string;
-  enabled: boolean;
+  enabled: boolean | null;
   last_run_at: string | null;
   last_status: number | null;
   last_ok: boolean | null;

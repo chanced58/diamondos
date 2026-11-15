@@ -110,9 +110,11 @@ Deno.serve(async (req: Request) => {
     });
 
     if (!response.ok) {
-      const responseText = await response.text();
-      console.error('Expo push error:', responseText);
-      await reportEdgeError(supabase, 'edge.push', `Expo push failed (${response.status}): ${responseText}`, {
+      // Expo can echo push tokens in error bodies: keep only the status and error codes.
+      const codes = await expoErrorCodes(response);
+      const summary = `Expo push failed (${response.status})${codes.length ? `: ${codes.join(', ')}` : ''}`;
+      console.error(summary);
+      await reportEdgeError(supabase, 'edge.push', summary, {
         step: 'expo_send',
         status: response.status,
         chunkSize: chunk.length,
@@ -134,3 +136,16 @@ Deno.serve(async (req: Request) => {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 });
+
+async function expoErrorCodes(response: Response): Promise<string[]> {
+  try {
+    const body = await response.json();
+    const errors = Array.isArray(body?.errors) ? body.errors : [];
+    return errors
+      .map((e: { code?: unknown }) => e?.code)
+      .filter((c: unknown): c is string => typeof c === 'string')
+      .map((c: string) => c.slice(0, 64));
+  } catch {
+    return [];
+  }
+}

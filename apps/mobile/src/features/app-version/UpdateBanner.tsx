@@ -62,7 +62,7 @@ export function UpdateBanner() {
           <Text className="text-white text-sm font-semibold">Update</Text>
         </Pressable>
       </View>
-      <Pressable accessibilityRole="button" accessibilityLabel="Dismiss" onPress={dismiss} hitSlop={8} className="ml-3">
+      <Pressable accessibilityRole="button" accessibilityLabel="Dismiss" onPress={dismiss} hitSlop={12} className="ml-3">
         <Ionicons name="close" size={20} color={colors['fg-subtle']} />
       </Pressable>
     </View>

@@ -18,7 +18,7 @@ Deno.test('refuses the anon key, a wrong secret, and no headers', () => {
 });
 
 Deno.test('refuses any header when the secret is unset', () =>
-  assertFalse(isInternalRequest(h({ 'x-internal-secret': '' }), { internalSecret: '' })));
+  assertFalse(isInternalRequest(h({ 'x-internal-secret': 'anything' }), { internalSecret: undefined })));
 
 Deno.test('refuses an empty bearer when the key is unset', () =>
   assertFalse(isInternalRequest(h({ authorization: 'Bearer ' }), {})));

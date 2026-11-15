@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { isThemedPath } from '@/lib/theme/themed-paths';
 
 /**
  * Supabase Auth session refresh middleware.
@@ -45,15 +46,9 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   }
 
-  // Redirect unauthenticated users from protected routes to login
-  const isProtectedRoute = pathname.startsWith('/dashboard') ||
-    pathname.startsWith('/teams') ||
-    pathname.startsWith('/games') ||
-    pathname.startsWith('/compliance') ||
-    pathname.startsWith('/messages') ||
-    pathname.startsWith('/admin');
-
-  if (!user && isProtectedRoute) {
+  // Redirect unauthenticated users from signed-in app routes to login. The
+  // (app) layout redirects too; sharing the themed list keeps this from drifting.
+  if (!user && isThemedPath(pathname)) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = '/login';
     redirectUrl.searchParams.set('redirectTo', pathname);

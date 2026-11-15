@@ -129,6 +129,15 @@ describe('loadErrorLog', () => {
     expect(areaCalls).toContainEqual(['order', 'occurred_at', { ascending: false }]);
   });
 
+  it('keeps a null enabled flag for a missing cron job', async () => {
+    const { db } = fakeDb({
+      isAdmin: true,
+      jobs: [{ job: 'prune-logs', enabled: null, last_run_at: null, last_status: null, last_ok: null, last_success_at: null, calls_24h: 0, failures_24h: 0 }],
+    });
+    const result = await loadErrorLog(db, ADMIN, {});
+    expect(result.ok && result.data.jobs[0].enabled).toBeNull();
+  });
+
   it('maps admin_job_health rows to camel-cased jobs', async () => {
     const { db } = fakeDb({
       isAdmin: true,

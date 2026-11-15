@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
+import { resolveAppOrigin } from '@/lib/auth/app-url';
 import { createTeamSchema } from '@baseball/shared';
 
 export async function createTeamAction(_prevState: string | null | undefined, formData: FormData) {
@@ -75,10 +76,12 @@ export async function createTeamAction(_prevState: string | null | undefined, fo
       coachUserId = existingProfile.id;
     } else {
       // Invite the coach via magic link
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app');
-      const redirectTo = appUrl
-        ? `${appUrl}/auth/callback?team=${team.id}&role=head_coach`
-        : `/auth/callback?team=${team.id}&role=head_coach`;
+      const appOrigin = resolveAppOrigin();
+      if (!appOrigin) {
+        await supabase.from('teams').delete().eq('id', team.id);
+        return 'Invitations are unavailable: the site address is not configured.';
+      }
+      const redirectTo = `${appOrigin}/auth/callback?team=${team.id}&role=head_coach`;
       const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
         coachEmail,
         { redirectTo, data: { first_name: coachFirstName, last_name: coachLastName } },

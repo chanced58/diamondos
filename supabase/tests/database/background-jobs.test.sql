@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(17);
+SELECT plan(18);
 
 -- Fixture: a coach, a team, a season and a regular (non-tournament) game.
 INSERT INTO auth.users (id, instance_id, email, aud, role, raw_app_meta_data, created_at, updated_at)
@@ -39,6 +39,7 @@ SELECT results_eq(
 SET LOCAL ROLE authenticated;
 SELECT throws_ok($$ SELECT count(*) FROM public.job_runs $$, '42501', NULL, 'authenticated cannot read job_runs');
 SELECT throws_ok($$ SELECT private.job_config('job_internal_secret') $$, '42501', NULL, 'authenticated cannot read job configuration');
+SELECT throws_ok($$ SELECT * FROM public.admin_job_health() $$, '42501', NULL, 'authenticated cannot execute admin_job_health');
 RESET ROLE;
 
 -- 4. Enabled, with no Vault secrets: the pitch is saved and the missing config is logged.

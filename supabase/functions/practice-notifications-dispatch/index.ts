@@ -3,8 +3,8 @@
  *
  * Scans upcoming practices and fires a pre-practice push to eligible recipients
  * once `scheduled_at - team.practice_notification_lead_minutes` has passed.
- * Expected to be invoked on a 5-minute cron via Supabase Dashboard schedules
- * or a GitHub Action hitting /functions/v1/practice-notifications-dispatch.
+ * Called every 5 minutes by the database's pg_cron job
+ * `practice-notifications-dispatch`, which sends the `x-internal-secret` header.
  *
  * Idempotency: a row is inserted into `practice_notifications_sent` BEFORE the
  * push is queued. If this function crashes after insert but before invoke, a

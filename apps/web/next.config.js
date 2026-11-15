@@ -6,6 +6,7 @@ const nextConfig = {
   output: 'standalone',
   experimental: {
     outputFileTracingRoot: path.join(__dirname, '../../'),
+    instrumentationHook: true,
   },
   transpilePackages: ['@baseball/shared', '@baseball/database', '@baseball/ui'],
   images: {

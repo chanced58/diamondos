@@ -179,6 +179,7 @@ begin
 end;
 $$;
 
+set lock_timeout = '5s';
 drop trigger if exists game_events_notify_pitch_count on public.game_events;
 create trigger game_events_notify_pitch_count
   after insert on public.game_events
@@ -186,6 +187,7 @@ create trigger game_events_notify_pitch_count
   when (new.event_type = 'pitch_thrown')
   execute function private.notify_pitch_count();
 alter table public.game_events disable trigger game_events_notify_pitch_count;
+reset lock_timeout;
 
 -- Collecting outcomes -----------------------------------------------------------
 create or replace function private.collect_job_runs()

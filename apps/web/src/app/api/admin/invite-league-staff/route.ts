@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@baseball/database';
 import { createServerClient } from '@/lib/supabase/server';
+import { resolveAppOrigin } from '@/lib/auth/app-url';
 
 export async function POST(req: NextRequest) {
   const authClient = createServerClient();
@@ -87,8 +88,11 @@ export async function POST(req: NextRequest) {
     }
   } else {
     // Invite new user
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app');
-    const redirectTo = appUrl ? `${appUrl}/auth/callback` : '/auth/callback';
+    const appOrigin = resolveAppOrigin();
+    if (!appOrigin) {
+      return NextResponse.json({ error: 'Invitations are unavailable: the site address is not configured.' }, { status: 503 });
+    }
+    const redirectTo = `${appOrigin}/auth/callback`;
     const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
       email,
       { redirectTo, data: { first_name: firstName, last_name: lastName } },

@@ -380,6 +380,10 @@ verify_jwt = false
 [functions.pitch-count-calculator]
 verify_jwt = false
 
+# Calendar apps fetch the feed with no JWT; the URL's HMAC token authorizes it.
+[functions.team-calendar-ics]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
