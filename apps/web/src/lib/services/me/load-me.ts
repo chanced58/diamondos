@@ -1,7 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   Feature,
+  MIN_SUPPORTED_MOBILE_VERSION,
   MOBILE_API_VERSION,
+  MOBILE_APP_UPDATE_URL,
   hasFeature,
   type MeLeagueRole,
   type MeResponse,
@@ -87,6 +89,8 @@ export async function loadMe(
     },
     memberships,
     leagueRoles,
+    minSupportedAppVersion: MIN_SUPPORTED_MOBILE_VERSION,
+    appUpdateUrl: MOBILE_APP_UPDATE_URL,
   };
 }
 
