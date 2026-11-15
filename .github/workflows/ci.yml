@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+      - name: Type check
+        run: pnpm type-check
+      - name: Lint
+        run: pnpm lint
+      - name: Test
+        run: pnpm test
+
+  edge-functions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Deno tests
+        run: deno test --allow-env --allow-read supabase/functions
+
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.84.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Prepare isolated database project
+        run: node supabase/tests/prepare-isolated-database.mjs "$RUNNER_TEMP/db"
+      # The development seed inserts auth users that the invite-only signup
+      # trigger refuses; the pgTAP tests build their own fixtures.
+      - name: Skip the development seed
+        run: ": > \"$RUNNER_TEMP/db/supabase/seed.sql\""
+      - name: Start database
+        run: supabase db start --workdir "$RUNNER_TEMP/db"
+      - name: Run database tests
+        run: supabase test db --workdir "$RUNNER_TEMP/db"

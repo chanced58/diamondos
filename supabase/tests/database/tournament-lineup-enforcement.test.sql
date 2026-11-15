@@ -1,11 +1,11 @@
 BEGIN;
 SELECT plan(29);
 
-INSERT INTO auth.users (id, instance_id, email, aud, role, created_at, updated_at)
+INSERT INTO auth.users (id, instance_id, email, aud, role, raw_app_meta_data, created_at, updated_at)
 VALUES
-  ('71000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000000', 'lineup-coach@example.test', 'authenticated', 'authenticated', now(), now()),
-  ('71000000-0000-4000-8000-000000000002', '00000000-0000-0000-0000-000000000000', 'lineup-scorekeeper@example.test', 'authenticated', 'authenticated', now(), now()),
-  ('71000000-0000-4000-8000-000000000003', '00000000-0000-0000-0000-000000000000', 'lineup-outsider@example.test', 'authenticated', 'authenticated', now(), now())
+  ('71000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000000', 'lineup-coach@example.test', 'authenticated', 'authenticated', '{"provider":"email","providers":["email"]}'::jsonb, now(), now()),
+  ('71000000-0000-4000-8000-000000000002', '00000000-0000-0000-0000-000000000000', 'lineup-scorekeeper@example.test', 'authenticated', 'authenticated', '{"provider":"email","providers":["email"]}'::jsonb, now(), now()),
+  ('71000000-0000-4000-8000-000000000003', '00000000-0000-0000-0000-000000000000', 'lineup-outsider@example.test', 'authenticated', 'authenticated', '{"provider":"email","providers":["email"]}'::jsonb, now(), now())
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.teams (id, name, created_by)

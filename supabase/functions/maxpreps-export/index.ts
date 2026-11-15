@@ -12,6 +12,7 @@
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { formatBattingAverage } from './format.ts';
 import { aggregateStats, applyCorrections, type PlayerStats, type RawEvent } from './stats.ts';
 import { buildMaxPrepsXml, type AggregatedGame, type AggregatedPlayer } from './xml.ts';
 
@@ -129,7 +130,7 @@ function buildTxtForSingleGame(
   for (const [playerId, stats] of playerStats.entries()) {
     const player = playerMap.get(playerId);
     if (!player) continue;
-    const avg = stats.ab > 0 ? (stats.h / stats.ab).toFixed(3) : '.000';
+    const avg = formatBattingAverage(stats.h, stats.ab);
     lines.push(
       [
         playerId,
