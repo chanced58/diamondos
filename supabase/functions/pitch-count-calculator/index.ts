@@ -240,7 +240,7 @@ Deno.serve(async (req: Request) => {
         .eq('is_active', true);
 
       if (!coaches || coaches.length === 0) return;
-      await supabase.functions.invoke('push-notifications', {
+      const { error: invokeError } = await supabase.functions.invoke('push-notifications', {
         headers: internalHeaders(),
         body: {
           userIds: coaches.map((c: { user_id: string }) => c.user_id),
@@ -251,6 +251,15 @@ Deno.serve(async (req: Request) => {
           data: { kind: 'game', gameId, pitcherId, pitchCount, type: alertType, ...payloadExtras },
         },
       });
+      if (invokeError) {
+        console.warn('push-notifications invoke failed for pitch alert', { gameId, pitcherId, alertKind, invokeError });
+        await reportEdgeError(supabase, 'edge.pitch-count', invokeError, {
+          step: 'push_invoke',
+          gameId,
+          pitcherId,
+          alertKind,
+        });
+      }
     };
 
     // Daily threshold alerts (75% / 90%)

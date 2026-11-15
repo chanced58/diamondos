@@ -1,4 +1,4 @@
-// Run with: deno test --allow-none supabase/functions/_shared/alert-cutoff.test.ts
+// Run with: deno test supabase/functions/_shared/alert-cutoff.test.ts
 import { assert, assertFalse } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { ALERT_MAX_EVENT_AGE_MS, shouldSendPitchAlert } from './alert-cutoff.ts';
 

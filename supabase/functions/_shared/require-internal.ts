@@ -17,15 +17,15 @@ export interface InternalAuthEnv {
 
 const encoder = new TextEncoder();
 
-/** Constant-time string comparison over UTF-8 bytes. */
+/**
+ * Constant-time comparison over UTF-8 bytes for equal-length inputs. A length
+ * mismatch returns early, so timing reveals only the length — acceptable for
+ * random secrets and keys.
+ */
 export function timingSafeEqual(a: string, b: string): boolean {
   const aBytes = encoder.encode(a);
   const bBytes = encoder.encode(b);
   if (aBytes.length !== bBytes.length) {
-    // Compare against itself so a length mismatch costs about the same time.
-    let dummy = 0;
-    for (let i = 0; i < aBytes.length; i++) dummy |= aBytes[i] ^ aBytes[i];
-    void dummy;
     return false;
   }
   let diff = 0;
