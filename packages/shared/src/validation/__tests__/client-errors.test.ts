@@ -54,6 +54,14 @@ describe('sanitizeErrorDetails values', () => {
   });
 });
 
+describe('sanitizeErrorDetails top level', () => {
+  it('returns {} for an Error, a Date or an array', () => {
+    expect(sanitizeErrorDetails(new Error('x'))).toEqual({});
+    expect(sanitizeErrorDetails(new Date())).toEqual({});
+    expect(sanitizeErrorDetails([1, 2])).toEqual({});
+  });
+});
+
 describe('errorMessageOf never throws', () => {
   it('handles a throwing message getter and a non-string message', () => {
     const e = new Error('x');

@@ -54,12 +54,13 @@ function sanitizeEntry(read: () => unknown, ancestors: unknown[]): unknown {
 
 /** Strips secrets, cycles and oversized payloads from error details. Never throws. */
 export function sanitizeErrorDetails(details: unknown): Record<string, unknown> {
-  if (typeof details !== 'object' || details === null || Array.isArray(details)) return {};
+  if (typeof details !== 'object' || details === null) return {};
+  if (Array.isArray(details) || details instanceof Error || details instanceof Date) return {};
   try {
-    const sanitized = sanitizeValue(details, []) as Record<string, unknown>;
+    const sanitized = sanitizeValue(details, []);
     const json = JSON.stringify(sanitized);
     if (new TextEncoder().encode(json).length > ERROR_DETAILS_MAX_BYTES) return { truncated: true };
-    return sanitized;
+    return sanitized as Record<string, unknown>;
   } catch {
     return { truncated: true };
   }
