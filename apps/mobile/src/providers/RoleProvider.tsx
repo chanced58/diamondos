@@ -28,6 +28,17 @@ export type { Capability } from '../features/teams/capabilities';
 const ACTIVE_TEAM_KEY = 'diamondos.activeTeamId';
 const NO_FEATURES: Feature[] = [];
 
+interface AppVersionInfo {
+  minSupportedAppVersion: string | null;
+  appUpdateUrl: string | null;
+}
+
+const NO_APP_VERSION_INFO: AppVersionInfo = { minSupportedAppVersion: null, appUpdateUrl: null };
+
+function appVersionInfoFrom(me: { minSupportedAppVersion?: string | null; appUpdateUrl?: string | null }): AppVersionInfo {
+  return { minSupportedAppVersion: me.minSupportedAppVersion ?? null, appUpdateUrl: me.appUpdateUrl ?? null };
+}
+
 interface RoleContextValue {
   loading: boolean;
   memberships: TeamMembership[];
@@ -39,6 +50,10 @@ interface RoleContextValue {
   /** The user's active league staff roles, from `/me`. */
   leagueRoles: MeLeagueRole[];
   isLeagueAdmin: boolean;
+  /** Oldest app version the server still supports, from `/me` (null when unknown). */
+  minSupportedAppVersion: string | null;
+  /** Where to get a newer build, from `/me` (null when unknown). */
+  appUpdateUrl: string | null;
 }
 
 const RoleContext = createContext<RoleContextValue | undefined>(undefined);
@@ -60,6 +75,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [memberships, setMemberships] = useState<TeamMembership[]>([]);
   const [leagueRoles, setLeagueRoles] = useState<MeLeagueRole[]>([]);
+  const [appVersionInfo, setAppVersionInfo] = useState<AppVersionInfo>(NO_APP_VERSION_INFO);
   const [activeTeamId, setActiveTeamIdState] = useState<string | null>(null);
   // Bumped when the sync engine sees the user join or leave a team, so the
   // list reloads without waiting for the next sign-in.
@@ -83,6 +99,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       sourceRef.current = null;
       setMemberships([]);
       setLeagueRoles([]);
+      setAppVersionInfo(NO_APP_VERSION_INFO);
       setActiveTeamIdState(null);
       setLoading(false);
     }
@@ -112,7 +129,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       // hydrate or the cache below) — a failed fetch then keeps them.
       let published = isRefresh;
       let publishedFromMe = isRefresh && sourceRef.current === 'me';
-      const publish = (mapped: TeamMembership[], roles: MeLeagueRole[]) => {
+      const publish = (mapped: TeamMembership[], roles: MeLeagueRole[], versionInfo: AppVersionInfo) => {
         const keepCurrent = published;
         hydratedUserIdRef.current = user.id;
         sourceRef.current = 'me';
@@ -120,6 +137,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
         publishedFromMe = true;
         setMemberships(mapped);
         setLeagueRoles(roles);
+        setAppVersionInfo(versionInfo);
         // A reload keeps the team the user is looking at, if they still have it.
         setActiveTeamIdState((current) =>
           mapped.find((m) => m.teamId === (keepCurrent ? current : null))?.teamId
@@ -132,13 +150,13 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       if (!isRefresh) {
         const cached = await readCachedMe(user.id);
         if (cancelled) return;
-        if (cached) publish(mapMeMemberships(cached.memberships), cached.leagueRoles);
+        if (cached) publish(mapMeMemberships(cached.memberships), cached.leagueRoles, appVersionInfoFrom(cached));
       }
 
       try {
         const me = await fetchMe();
         if (cancelled) return;
-        publish(mapMeMemberships(me.memberships), me.leagueRoles);
+        publish(mapMeMemberships(me.memberships), me.leagueRoles, appVersionInfoFrom(me));
         void writeCachedMe(me);
         return;
       } catch (err) {
@@ -200,6 +218,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
         ? mapTeamMemberships(rows, playerIdByTeam, new Set(current.filter((m) => m.isTournamentTeam).map((m) => m.teamId)))
         : mapped);
       setLeagueRoles([]);
+      setAppVersionInfo(NO_APP_VERSION_INFO);
       setActiveTeamIdState((current) => pickActive(isRefresh ? current : null));
       setLoading(false);
 
@@ -273,8 +292,10 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       features,
       leagueRoles,
       isLeagueAdmin,
+      minSupportedAppVersion: appVersionInfo.minSupportedAppVersion,
+      appUpdateUrl: appVersionInfo.appUpdateUrl,
     }),
-    [loading, memberships, activeTeam, setActiveTeamId, isCoachSomewhere, features, leagueRoles, isLeagueAdmin],
+    [loading, memberships, activeTeam, setActiveTeamId, isCoachSomewhere, features, leagueRoles, isLeagueAdmin, appVersionInfo],
   );
 
   return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>;
