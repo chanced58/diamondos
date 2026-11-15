@@ -51,6 +51,11 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
       .select('id, name, organization, logo_url, team_members(count)')
       .order('name');
 
+    const { count: errorsLast24h } = await db
+      .from('app_error_log')
+      .select('id', { count: 'exact', head: true })
+      .gte('occurred_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+
     type AllTeamRow = {
       id: string;
       name: string;
@@ -186,6 +191,19 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
                 Billing
               </h3>
               <p className="text-sm text-gray-500 mt-1">Manage subscriptions.</p>
+            </Link>
+
+            <Link
+              href="/admin/errors"
+              className="bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-400 hover:shadow-sm transition-all group"
+            >
+              <div className="text-2xl mb-2">🐞</div>
+              <h3 className="font-semibold text-gray-900 group-hover:text-gray-700 transition-colors">
+                Errors
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">
+                {errorsLast24h ?? 0} in the last 24 hours.
+              </p>
             </Link>
           </div>
         </div>

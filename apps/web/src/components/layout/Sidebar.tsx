@@ -122,6 +122,7 @@ export function Sidebar({
     { href: '/admin/players',     label: 'Player Pro',  icon: <Icon.team /> },
     { href: '/admin/create-team', label: 'Create Team', icon: <Icon.plus /> },
     { href: '/admin/billing',     label: 'Billing',     icon: <Icon.stats /> },
+    { href: '/admin/errors',      label: 'Errors',      icon: <Icon.gear /> },
   ];
 
   const navItems = isAdminPanel ? adminNavItems : teamNavItems;
