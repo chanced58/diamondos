@@ -1349,6 +1349,36 @@ export type Database = {
           },
         ]
       }
+      job_runs: {
+        Row: {
+          completed_at: string | null
+          error: string | null
+          id: number
+          job: string
+          request_id: number | null
+          requested_at: string
+          status_code: number | null
+        }
+        Insert: {
+          completed_at?: string | null
+          error?: string | null
+          id?: never
+          job: string
+          request_id?: number | null
+          requested_at?: string
+          status_code?: number | null
+        }
+        Update: {
+          completed_at?: string | null
+          error?: string | null
+          id?: never
+          job?: string
+          request_id?: number | null
+          requested_at?: string
+          status_code?: number | null
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
           coaching_staff: string | null
@@ -5444,6 +5474,19 @@ export type Database = {
       sync_cancelled_tournament_lineup_change: {
         Args: { p_change: Json; p_void: Json }
         Returns: undefined
+      }
+      admin_job_health: {
+        Args: never
+        Returns: {
+          calls_24h: number
+          enabled: boolean
+          failures_24h: number
+          job: string
+          last_ok: boolean
+          last_run_at: string
+          last_status: number
+          last_success_at: string
+        }[]
       }
       can_edit_block: { Args: { p_block_id: string }; Returns: boolean }
       start_tournament_game: {
