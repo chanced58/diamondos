@@ -12,7 +12,8 @@ import {
   Platform,
   useWindowDimensions,
 } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useLocalSearchParams, useRouter, Stack, type ErrorBoundaryProps } from 'expo-router';
+import { ErrorFallback } from '../../../../../src/features/errors/ErrorFallback';
 import { useGameIdentity } from '../../../../../src/features/scoring/use-game-identity';
 import { useGameState } from '../../../../../src/features/scoring/use-game-state';
 import { useRecordEvent } from '../../../../../src/features/scoring/use-record-event';
@@ -85,6 +86,11 @@ const ACTION_SURFACE_FILL = { flexGrow: 1, flexShrink: 1, flexBasis: 'auto' } as
  * `Stack.Screen` below) follows the app theme, so this scope leaves the
  * status bar to the root scope.
  */
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  const { gameId } = useLocalSearchParams<{ gameId: string }>();
+  return <ErrorFallback {...props} variant="scorer" gameId={gameId} />;
+}
+
 export default function ScoringScreen() {
   return (
     <ThemeScope theme="light" statusBar={false}>
