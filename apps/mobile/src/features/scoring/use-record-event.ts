@@ -2,6 +2,7 @@ import { randomUUID } from 'expo-crypto';
 import { database } from '../../db';
 import type { GameEvent } from '../../db/models/GameEvent';
 import { getDeviceId } from '../../lib/device-id';
+import { reportClientError } from '../../lib/error-report';
 import { getSupabaseClient } from '../../lib/supabase';
 import { useSyncContext } from '../../providers/SyncProvider';
 import type { EventType, GameEventPayload } from '@baseball/shared';
@@ -19,6 +20,22 @@ export function useRecordEvent(gameRemoteId: string) {
   const supabase = getSupabaseClient();
 
   async function recordEvent(
+    eventType: EventType,
+    inning: number,
+    isTopOfInning: boolean,
+    payload: GameEventPayload,
+  ): Promise<string> {
+    try {
+      return await writeEvent(eventType, inning, isTopOfInning, payload);
+    } catch (error) {
+      // reportClientError returns at once and never throws; the scorer still
+      // sees the original failure.
+      reportClientError('scoring.record', error, { gameId: gameRemoteId, details: { eventType } });
+      throw error;
+    }
+  }
+
+  async function writeEvent(
     eventType: EventType,
     inning: number,
     isTopOfInning: boolean,

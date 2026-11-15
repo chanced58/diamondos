@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ApiError, createApiClient, describeApiError, isPermanentApiError } from '../api-client';
 
 jest.mock('../supabase', () => ({ getSupabaseClient: jest.fn() }));
+jest.mock('../app-version', () => ({ APP_VERSION: '2.4.0' }));
 
 function jsonResponse(status: number, body: unknown): Response {
   return {
@@ -43,6 +44,18 @@ describe('api-client', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer token-1' }),
       }),
     );
+  });
+
+  it('should send the app version with every request', async () => {
+    const fetchImpl = jest.fn(async () => jsonResponse(200, {}));
+
+    await client(fetchImpl).get('/me');
+    await client(fetchImpl).post('/client-errors', { entries: [] });
+
+    for (const call of fetchImpl.mock.calls as unknown as [string, RequestInit][]) {
+      expect(call[1].headers).toEqual(expect.objectContaining({ 'X-App-Version': '2.4.0' }));
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it('should JSON-encode a POST body', async () => {

@@ -1,4 +1,5 @@
 import type { ZodType, ZodTypeDef } from 'zod';
+import { APP_VERSION } from './app-version';
 import { getSupabaseClient } from './supabase';
 
 /**
@@ -154,6 +155,7 @@ export function createApiClient(config: ApiClientConfig) {
         headers: {
           Accept: 'application/json',
           Authorization: `Bearer ${token}`,
+          ...(APP_VERSION ? { 'X-App-Version': APP_VERSION } : {}),
           ...(options.body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : {}),
         },
         body: options.body === undefined ? undefined : isForm ? (options.body as FormData) : JSON.stringify(options.body),

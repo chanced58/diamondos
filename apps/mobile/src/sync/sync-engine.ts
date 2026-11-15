@@ -28,6 +28,7 @@ import { deletedMessagesSince, splitDeletedMessages } from './message-deletions'
 import { pushOpponentPlayers } from './opponent-player-push';
 import { guestRows, pushGuestPlayers } from './guest-player-push';
 import { describeSyncError } from './sync-error';
+import { reportClientError } from '../lib/error-report';
 import {
   EMPTY_TEAM_BACKFILL,
   fetchAllByParentIds,
@@ -1671,6 +1672,10 @@ export async function reconcileGameLifecycle(
         if (!warnedFinalizeFailureGames.has(gameKey)) {
           warnedFinalizeFailureGames.add(gameKey);
           const body = await res.text().catch(() => '');
+          reportClientError('finalize.failed', new Error(`Finalize failed (${res.status})`), {
+            gameId: gameKey,
+            details: { status: res.status, body: body.slice(0, 500) },
+          });
           console.warn(
             'sync: finalize call failed; will retry silently after this first warning',
             gameKey,
@@ -1684,6 +1689,7 @@ export async function reconcileGameLifecycle(
       finalizeFailureCounts.set(gameKey, (finalizeFailureCounts.get(gameKey) ?? 0) + 1);
       if (!warnedFinalizeFailureGames.has(gameKey)) {
         warnedFinalizeFailureGames.add(gameKey);
+        reportClientError('finalize.failed', err, { gameId: gameKey });
         console.warn(
           'sync: finalize call errored; will retry silently after this first warning',
           gameKey,
