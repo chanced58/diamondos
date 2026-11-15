@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { recomputeLeagueSnapshot } from '@/lib/league-snapshot/recompute';
 import { listLeagueSeasons } from '@/lib/league-snapshot/season';
+import { reportError } from '@/lib/errors/report-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +47,7 @@ export async function GET(request: NextRequest) {
       console.error(
         `[cron] rebuild failed league=${lg.id}: ${err instanceof Error ? err.message : String(err)}`,
       );
+      reportError('cron.rebuild', err, { details: { leagueId: lg.id } });
     }
   }
 

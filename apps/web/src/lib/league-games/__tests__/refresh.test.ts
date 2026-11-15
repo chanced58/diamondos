@@ -4,8 +4,10 @@ import { refreshLeagueGame } from '../refresh';
 import { finalizeGame } from '@/lib/games/finalize';
 import { fakeDb, type FakeCall, type FakeResult } from '@/lib/services/__tests__/fake-db';
 import { recomputeLeagueSnapshot } from '@/lib/league-snapshot/recompute';
+import { reportError } from '@/lib/errors/report-error';
 
 jest.mock('@/lib/league-snapshot/recompute', () => ({ recomputeLeagueSnapshot: jest.fn() }));
+jest.mock('@/lib/errors/report-error', () => ({ reportError: jest.fn() }));
 
 const LEAGUE = 'league-1';
 const SEASON = 'Spring 2027';
@@ -621,5 +623,51 @@ describe('refreshLeagueGame', () => {
       expect.objectContaining({ message: expect.stringContaining(LEAGUE_GAME) }),
     );
     expect(recomputeLeagueSnapshot).toHaveBeenCalledWith(db, LEAGUE, SEASON);
+  });
+
+  it('should report a failed league game load as league.refresh with the league game id', async () => {
+    const { db } = leagueGameDb({
+      home: gameRow('home'),
+      away: gameRow('away'),
+      overrides: { 'league_games.select': { error: { message: 'boom' } } },
+    });
+
+    await expect(refreshLeagueGame(db, LEAGUE_GAME)).resolves.toBeUndefined();
+    expect(reportError).toHaveBeenCalledWith(
+      'league.refresh',
+      expect.any(Error),
+      expect.objectContaining({ details: expect.objectContaining({ leagueGameId: LEAGUE_GAME }) }),
+    );
+  });
+
+  it('should report a failed result step as league.refresh and still rebuild the snapshot', async () => {
+    const { db } = leagueGameDb({
+      home: gameRow('home'),
+      away: gameRow('away'),
+      overrides: { 'game_events.select': { error: { message: 'timeout' } } },
+    });
+
+    await refreshLeagueGame(db, LEAGUE_GAME);
+
+    expect(reportError).toHaveBeenCalledWith(
+      'league.refresh',
+      expect.any(Error),
+      expect.objectContaining({ details: expect.objectContaining({ leagueGameId: LEAGUE_GAME, leagueId: LEAGUE }) }),
+    );
+    expect(recomputeLeagueSnapshot).toHaveBeenCalledWith(db, LEAGUE, SEASON);
+  });
+
+  it('should report a failed snapshot rebuild as league.snapshot and still resolve', async () => {
+    (recomputeLeagueSnapshot as jest.Mock).mockRejectedValueOnce(new Error('snapshot down'));
+    const { db } = leagueGameDb({ home: gameRow('home'), away: gameRow('away') });
+
+    await expect(refreshLeagueGame(db, LEAGUE_GAME)).resolves.toBeUndefined();
+    expect(reportError).toHaveBeenCalledWith(
+      'league.snapshot',
+      expect.objectContaining({ message: 'snapshot down' }),
+      expect.objectContaining({
+        details: expect.objectContaining({ leagueGameId: LEAGUE_GAME, leagueId: LEAGUE, season: SEASON }),
+      }),
+    );
   });
 });

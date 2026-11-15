@@ -1,6 +1,6 @@
 import '../global.css';
 import { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, type ErrorBoundaryProps } from 'expo-router';
 import { DatabaseProvider } from '@nozbe/watermelondb/DatabaseProvider';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider, useAuth } from '../src/providers/AuthProvider';
@@ -10,12 +10,18 @@ import { SyncProvider } from '../src/providers/SyncProvider';
 import { database } from '../src/db';
 import { NavigationThemeProvider } from '../src/navigation/NavigationThemeProvider';
 import { ThemeProvider, useThemePreference } from '../src/theme/ThemeProvider';
+import { ErrorFallback } from '../src/features/errors/ErrorFallback';
 import {
   registerForPushNotifications,
   setupNotificationDeepLinks,
 } from '../src/lib/notifications';
 
 SplashScreen.preventAutoHideAsync();
+
+// Renders outside every provider (they may be what crashed), so it needs none.
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <ErrorFallback {...props} variant="app" />;
+}
 
 function RootLayoutNav() {
   const { loading, user } = useAuth();

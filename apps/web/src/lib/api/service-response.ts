@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { ServiceErrorCode, ServiceResult } from '@/lib/services/result';
+import { reportError } from '@/lib/errors/report-error';
 import { apiError } from './bearer-auth';
 
 const STATUS_BY_CODE: Record<ServiceErrorCode, number> = {
@@ -19,6 +20,7 @@ const STATUS_BY_CODE: Record<ServiceErrorCode, number> = {
  */
 export function serviceResponse<T>(result: ServiceResult<T>, successStatus = 200): NextResponse {
   if (result.ok) return NextResponse.json(result.data, { status: successStatus });
+  if (result.code === 'failed') reportError('service.failed', result.error);
   const message = result.code === 'failed' ? 'Internal error' : result.error;
   return apiError(STATUS_BY_CODE[result.code], message, result.code);
 }

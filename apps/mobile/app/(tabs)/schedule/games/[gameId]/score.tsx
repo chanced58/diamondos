@@ -12,7 +12,8 @@ import {
   Platform,
   useWindowDimensions,
 } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useLocalSearchParams, useRouter, Stack, type ErrorBoundaryProps } from 'expo-router';
+import { ErrorFallback } from '../../../../../src/features/errors/ErrorFallback';
 import { useGameIdentity } from '../../../../../src/features/scoring/use-game-identity';
 import { useGameState } from '../../../../../src/features/scoring/use-game-state';
 import { useRecordEvent } from '../../../../../src/features/scoring/use-record-event';
@@ -75,6 +76,11 @@ import type { GameLineup } from '../../../../../src/db/models/GameLineup';
  * rows were squeezed on top of each other.
  */
 const ACTION_SURFACE_FILL = { flexGrow: 1, flexShrink: 1, flexBasis: 'auto' } as const;
+
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  const { gameId } = useLocalSearchParams<{ gameId: string }>();
+  return <ErrorFallback {...props} variant="scorer" gameId={gameId} />;
+}
 
 /**
  * Live game scoring screen — the core feature of the mobile app.

@@ -70,6 +70,48 @@ export type Database = {
           },
         ]
       }
+      app_error_log: {
+        Row: {
+          app_version: string | null
+          area: string
+          details: Json
+          device_id: string | null
+          game_id: string | null
+          id: string
+          message: string
+          occurred_at: string
+          source: string
+          team_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          app_version?: string | null
+          area: string
+          details?: Json
+          device_id?: string | null
+          game_id?: string | null
+          id?: string
+          message: string
+          occurred_at?: string
+          source: string
+          team_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          app_version?: string | null
+          area?: string
+          details?: Json
+          device_id?: string | null
+          game_id?: string | null
+          id?: string
+          message?: string
+          occurred_at?: string
+          source?: string
+          team_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       catcher_innings: {
         Row: {
           created_at: string

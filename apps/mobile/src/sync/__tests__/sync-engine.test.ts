@@ -7,6 +7,10 @@ jest.mock('../../db', () => ({
 jest.mock('../../lib/supabase', () => ({
   getSupabaseClient: jest.fn(),
 }));
+const mockReportClientError = jest.fn();
+jest.mock('../../lib/error-report', () => ({
+  reportClientError: (...args: unknown[]) => mockReportClientError(...args),
+}));
 
 import {
   isFinalizeConfigured,
@@ -222,6 +226,36 @@ describe('reconcileGameLifecycle', () => {
     await reconcileGameLifecycle(supabase as never, 'https://app.test');
 
     expect(fetchMock).toHaveBeenCalledWith('https://app.test/api/games/g-manual/finalize', expect.anything());
+  });
+
+  it('should report a failing finalize once per game, on its first failure', async () => {
+    const { supabase, fetchMock } = lifecycleHarness({ id: 'g-fail', status: 'in_progress', result_source: null });
+    fetchMock.mockImplementation(async () => ({ ok: false, status: 500, text: async () => 'boom' }));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockReportClientError.mockClear();
+
+    await reconcileGameLifecycle(supabase as never, 'https://app.test');
+    await reconcileGameLifecycle(supabase as never, 'https://app.test');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(mockReportClientError).toHaveBeenCalledTimes(1);
+    expect(mockReportClientError).toHaveBeenCalledWith('finalize.failed', expect.any(Error), expect.objectContaining({ gameId: 'g-fail' }));
+    warn.mockRestore();
+  });
+
+  it('should report a finalize call that throws once per game', async () => {
+    const { supabase, fetchMock } = lifecycleHarness({ id: 'g-throw', status: 'in_progress', result_source: null });
+    const offline = new Error('Network request failed');
+    fetchMock.mockImplementation(async () => { throw offline; });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockReportClientError.mockClear();
+
+    await reconcileGameLifecycle(supabase as never, 'https://app.test');
+    await reconcileGameLifecycle(supabase as never, 'https://app.test');
+
+    expect(mockReportClientError).toHaveBeenCalledTimes(1);
+    expect(mockReportClientError).toHaveBeenCalledWith('finalize.failed', offline, { gameId: 'g-throw' });
+    warn.mockRestore();
   });
 
   it('should not finalize a game the server already holds as its own finished book', async () => {

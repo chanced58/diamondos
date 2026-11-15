@@ -7,6 +7,7 @@ import type { ClockHeldEvent } from '../sync/clock-hold';
 import type { TournamentSyncRejection } from '../sync/tournament-event-sync';
 import { describeSyncError, toSyncError } from '../sync/sync-error';
 import { getSupabaseClient } from '../lib/supabase';
+import { flushClientErrors, reportClientError } from '../lib/error-report';
 import { database } from '../db';
 import type { GameEvent } from '../db/models/GameEvent';
 
@@ -95,6 +96,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       setLastSyncedAt(Date.now());
       setLastSyncError(null);
       setIsOffline(false);
+      // Online and authenticated: send any queued error reports. Not awaited,
+      // so the sync state above never waits on it; it never rejects.
+      void flushClientErrors();
     } catch (error) {
       // Ask the device before reading the message. The message alone is a
       // poor classifier in both directions: a server-side statement timeout
@@ -117,6 +121,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         setLastSyncError(null);
       } else {
         console.warn('Sync failed:', describeSyncError(error));
+        reportClientError('sync.failed', toSyncError(error));
         setLastSyncError(toSyncError(error));
       }
     } finally {
@@ -204,6 +209,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState !== 'active') return;
+      void flushClientErrors();
       NetInfo.fetch().then((state) => {
         if (state.isConnected && state.isInternetReachable) {
           triggerSync();
