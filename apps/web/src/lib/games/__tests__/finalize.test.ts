@@ -14,6 +14,11 @@ jest.mock('@/lib/league-snapshot/recompute', () => ({
   recomputeLeagueSnapshot: (...args: unknown[]) => mockRecomputeSnapshot(...args),
 }));
 
+const mockReportError = jest.fn();
+jest.mock('@/lib/errors/report-error', () => ({
+  reportError: (...args: unknown[]) => mockReportError(...args),
+}));
+
 const ARGS = {
   gameId: 'game-1',
   userId: 'coach-1',
@@ -69,5 +74,22 @@ describe('finalizeGame', () => {
     expect(await finalizeGame(db, ARGS)).toEqual({ ok: true });
     expect(mockRefreshLeagueGame).toHaveBeenCalledWith(db, 'lg-1', 'coach-1');
     expect(mockRunReconciliation).not.toHaveBeenCalled();
+  });
+
+  it('should report a failed snapshot rebuild as finalize.snapshot and still finalize', async () => {
+    mockRecomputeSnapshot.mockRejectedValueOnce(new Error('snapshot down'));
+    const { db } = fakeDb({
+      'game_events.select': endedLog,
+      'games.select': { data: { team_id: 'team-1', season_id: 'season-1', league_game_id: null } },
+      'seasons.select': { data: { name: 'Spring 2027' } },
+      'league_members.select': { data: [{ league_id: 'league-1' }] },
+    });
+
+    expect(await finalizeGame(db, ARGS)).toEqual({ ok: true });
+    expect(mockReportError).toHaveBeenCalledWith(
+      'finalize.snapshot',
+      expect.objectContaining({ message: 'snapshot down' }),
+      expect.objectContaining({ gameId: 'game-1' }),
+    );
   });
 });

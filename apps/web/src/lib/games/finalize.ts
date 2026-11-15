@@ -3,6 +3,7 @@ import { applyPitchReverted, computeLineScore, SCORER_ROLES } from '@baseball/sh
 import { recomputeLeagueSnapshot } from '@/lib/league-snapshot/recompute';
 import { runReconciliationForGame } from '@/lib/dual-scorekeeper/reconcile';
 import { refreshLeagueGame } from '@/lib/league-games/refresh';
+import { reportError } from '@/lib/errors/report-error';
 
 export const COACH_ROLES = ['head_coach', 'assistant_coach', 'athletic_director'];
 
@@ -271,5 +272,6 @@ async function recomputeTeamLeagues(supabase: SupabaseClient, gameId: string, ga
     console.error(
       `[finalizeGame] snapshot recompute failed game=${gameId}: ${err instanceof Error ? err.message : String(err)}`,
     );
+    reportError('finalize.snapshot', err, { gameId, teamId: game.team_id ?? undefined });
   }
 }

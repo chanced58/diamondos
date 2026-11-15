@@ -1,5 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { sendPush } from '../send-push';
+import { reportError } from '@/lib/errors/report-error';
+
+jest.mock('@/lib/errors/report-error', () => ({ reportError: jest.fn() }));
 
 function dbWith(invoke: jest.Mock): SupabaseClient {
   return { functions: { invoke } } as unknown as SupabaseClient;
@@ -9,6 +12,7 @@ const input = { userIds: ['u1', 'u2'], title: 'Title', body: 'Body', data: { kin
 
 let errorSpy: jest.SpyInstance;
 beforeEach(() => {
+  jest.clearAllMocks();
   errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 });
 afterEach(() => {
@@ -33,11 +37,17 @@ describe('sendPush', () => {
     const invoke = jest.fn().mockResolvedValue({ data: null, error: new Error('edge down') });
     await expect(sendPush(dbWith(invoke), input)).resolves.toBeUndefined();
     expect(errorSpy).toHaveBeenCalledWith('[sendPush] push-notifications failed title="Title" users=2:', expect.any(Error));
+    expect(reportError).toHaveBeenCalledWith('push.send', expect.any(Error), {
+      details: { title: 'Title', recipients: 2, kind: 'game' },
+    });
   });
 
   it('should log a thrown push without throwing', async () => {
     const invoke = jest.fn().mockRejectedValue(new Error('network'));
     await expect(sendPush(dbWith(invoke), input)).resolves.toBeUndefined();
     expect(errorSpy).toHaveBeenCalledWith('[sendPush] push-notifications threw title="Title" users=2:', expect.any(Error));
+    expect(reportError).toHaveBeenCalledWith('push.send', expect.any(Error), {
+      details: { title: 'Title', recipients: 2, kind: 'game' },
+    });
   });
 });

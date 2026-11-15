@@ -9,6 +9,7 @@ import {
 import { runReconciliationForGame } from '@/lib/dual-scorekeeper/reconcile';
 import { recomputeLeagueSnapshot } from '@/lib/league-snapshot/recompute';
 import { sendPush } from '@/lib/notifications/send-push';
+import { reportError } from '@/lib/errors/report-error';
 
 /**
  * Bring a league game up to date after one of its inputs changed: a team
@@ -338,6 +339,7 @@ export async function refreshLeagueGame(
     leagueGame = await loadLeagueGame(db, leagueGameId);
   } catch (error) {
     console.error(`[refreshLeagueGame] league_game=${leagueGameId}:`, error);
+    reportError('league.refresh', error, { userId: actorUserId, details: { leagueGameId } });
     return;
   }
   if (!leagueGame) {
@@ -350,11 +352,19 @@ export async function refreshLeagueGame(
     else await refreshResult(db, leagueGame, actorUserId, options);
   } catch (error) {
     console.error(`[refreshLeagueGame] result refresh failed league_game=${leagueGameId}:`, error);
+    reportError('league.refresh', error, {
+      userId: actorUserId,
+      details: { leagueGameId, leagueId: leagueGame.league_id },
+    });
   }
 
   try {
     await recomputeLeagueSnapshot(db, leagueGame.league_id, leagueGame.season);
   } catch (error) {
     console.error(`[refreshLeagueGame] snapshot recompute failed league_game=${leagueGameId}:`, error);
+    reportError('league.snapshot', error, {
+      userId: actorUserId,
+      details: { leagueGameId, leagueId: leagueGame.league_id, season: leagueGame.season },
+    });
   }
 }

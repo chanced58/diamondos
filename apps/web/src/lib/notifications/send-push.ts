@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { reportError } from '@/lib/errors/report-error';
 
 export interface PushInput {
   userIds: string[];
@@ -19,8 +20,14 @@ export async function sendPush(db: SupabaseClient, input: PushInput): Promise<vo
     const { error } = await db.functions.invoke('push-notifications', { body: input });
     if (error) {
       console.error(`[sendPush] push-notifications failed title="${input.title}" users=${input.userIds.length}:`, error);
+      reportError('push.send', error, { details: pushDetails(input) });
     }
   } catch (error) {
     console.error(`[sendPush] push-notifications threw title="${input.title}" users=${input.userIds.length}:`, error);
+    reportError('push.send', error, { details: pushDetails(input) });
   }
+}
+
+function pushDetails(input: PushInput): Record<string, unknown> {
+  return { title: input.title, recipients: input.userIds.length, kind: input.data?.kind };
 }
