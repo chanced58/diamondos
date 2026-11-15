@@ -1,5 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadErrorLog } from '../load-error-log';
+import { reportError } from '@/lib/errors/report-error';
+
+jest.mock('@/lib/errors/report-error', () => ({ reportError: jest.fn() }));
 
 const ADMIN = '11111111-1111-4111-8111-111111111111';
 
@@ -22,9 +25,15 @@ function dbRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function fakeDb(opts: { isAdmin: boolean; rows?: Record<string, unknown>[]; count?: number; areas?: string[] }) {
+function fakeDb(opts: { isAdmin: boolean; rows?: Record<string, unknown>[]; count?: number; areas?: string[]; jobs?: Record<string, unknown>[]; jobsError?: boolean }) {
   const logCalls: Call[][] = [];
   const db = {
+    rpc: (name: string) => {
+      expect(name).toBe('admin_job_health');
+      return Promise.resolve(
+        opts.jobsError ? { data: null, error: { message: 'rpc down' } } : { data: opts.jobs ?? [], error: null },
+      );
+    },
     from: (table: string) => {
       if (table === 'user_profiles') {
         const q = {
@@ -111,5 +120,53 @@ describe('loadErrorLog', () => {
     const gte = countCalls.find((c) => c[0] === 'gte')!;
     const ageMs = Date.now() - Date.parse(gte[2] as string);
     expect(Math.abs(ageMs - 24 * 3600 * 1000)).toBeLessThan(60_000);
+  });
+
+  it('orders the area scan newest first so recent areas survive the limit', async () => {
+    const { db, logCalls } = fakeDb({ isAdmin: true });
+    await loadErrorLog(db, ADMIN, {});
+    const areaCalls = logCalls.find((c) => c.some((x) => x[0] === 'select' && x[1] === 'area'))!;
+    expect(areaCalls).toContainEqual(['order', 'occurred_at', { ascending: false }]);
+  });
+
+  it('maps admin_job_health rows to camel-cased jobs', async () => {
+    const { db } = fakeDb({
+      isAdmin: true,
+      jobs: [
+        {
+          job: 'pitch-count-calculator',
+          enabled: true,
+          last_run_at: '2026-11-14T10:00:00Z',
+          last_status: 200,
+          last_ok: true,
+          last_success_at: '2026-11-14T10:00:00Z',
+          calls_24h: 12,
+          failures_24h: 1,
+        },
+      ],
+    });
+    const result = await loadErrorLog(db, ADMIN, {});
+    expect(result.ok && result.data.jobs).toEqual([
+      {
+        job: 'pitch-count-calculator',
+        enabled: true,
+        lastRunAt: '2026-11-14T10:00:00Z',
+        lastStatus: 200,
+        lastOk: true,
+        lastSuccessAt: '2026-11-14T10:00:00Z',
+        calls24h: 12,
+        failures24h: 1,
+      },
+    ]);
+  });
+
+  it('returns no jobs and reports when the job health RPC fails', async () => {
+    const { db } = fakeDb({ isAdmin: true, jobsError: true, rows: [dbRow()] });
+    const result = await loadErrorLog(db, ADMIN, {});
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.jobs).toEqual([]);
+    expect(result.data.rows).toHaveLength(1);
+    expect(reportError).toHaveBeenCalledWith('admin.job-health', expect.anything(), { userId: ADMIN });
   });
 });

@@ -14,6 +14,8 @@
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { requireInternal } from '../_shared/require-internal.ts';
+import { reportEdgeError } from '../_shared/report-error.ts';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
@@ -33,6 +35,8 @@ function isExpoPushToken(token: string): boolean {
 Deno.serve(async (req: Request) => {
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
+  const unauthorized = requireInternal(req);
+  if (unauthorized) return unauthorized;
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -56,6 +60,7 @@ Deno.serve(async (req: Request) => {
 
   if (error) {
     console.error('Error fetching push tokens:', error);
+    await reportEdgeError(supabase, 'edge.push', error, { step: 'fetch_tokens', recipients: userIds.length });
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: corsHeaders,
@@ -105,7 +110,13 @@ Deno.serve(async (req: Request) => {
     });
 
     if (!response.ok) {
-      console.error('Expo push error:', await response.text());
+      const responseText = await response.text();
+      console.error('Expo push error:', responseText);
+      await reportEdgeError(supabase, 'edge.push', `Expo push failed (${response.status}): ${responseText}`, {
+        step: 'expo_send',
+        status: response.status,
+        chunkSize: chunk.length,
+      });
     } else {
       sent += chunk.length;
     }

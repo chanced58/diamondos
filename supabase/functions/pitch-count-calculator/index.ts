@@ -18,6 +18,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { resolveEffectiveTier } from '../_shared/resolve-tier.ts';
 import { gameLocalDate } from '../_shared/game-local-date.ts';
+import { internalHeaders, requireInternal } from '../_shared/require-internal.ts';
+import { reportEdgeError } from '../_shared/report-error.ts';
+import { shouldSendPitchAlert } from '../_shared/alert-cutoff.ts';
 
 /** Stub stamped by pre-a071a02 scoring sessions when no active pitcher was selected. */
 const UNKNOWN_PITCHER_STUB = 'unknown-pitcher';
@@ -33,6 +36,8 @@ interface GameEventRecord {
 Deno.serve(async (req: Request) => {
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
+  const unauthorized = requireInternal(req);
+  if (unauthorized) return unauthorized;
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -97,6 +102,7 @@ Deno.serve(async (req: Request) => {
 
   if (countError) {
     console.error('Error counting pitches:', countError);
+    await reportEdgeError(supabase, 'edge.pitch-count', countError, { step: 'count', eventId: record.id, gameId });
     return new Response(JSON.stringify({ error: countError.message }), {
       status: 500,
       headers: corsHeaders,
@@ -114,6 +120,11 @@ Deno.serve(async (req: Request) => {
 
   if (gameError || !game) {
     console.error('Error fetching game:', gameError);
+    await reportEdgeError(supabase, 'edge.pitch-count', gameError ?? 'Game not found', {
+      step: 'fetch_game',
+      eventId: record.id,
+      gameId,
+    });
     return new Response(JSON.stringify({ error: 'Game not found' }), {
       status: 404,
       headers: corsHeaders,
@@ -137,9 +148,19 @@ Deno.serve(async (req: Request) => {
 
   if (upsertError) {
     console.error('Error upserting pitch count:', upsertError);
+    await reportEdgeError(supabase, 'edge.pitch-count', upsertError, { step: 'upsert', eventId: record.id, gameId });
     return new Response(JSON.stringify({ error: upsertError.message }), {
       status: 500,
       headers: corsHeaders,
+    });
+  }
+
+  // An old event (a phone syncing hours later, a replayed webhook) keeps the
+  // count current but sends no alert about a game that is long over.
+  if (!shouldSendPitchAlert(record.occurred_at, Date.now())) {
+    return new Response(JSON.stringify({ pitchCount, alertsSkipped: 'stale_event' }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
@@ -166,6 +187,7 @@ Deno.serve(async (req: Request) => {
       pitcherId,
       gameDate,
     });
+    await reportEdgeError(supabase, 'edge.pitch-count', ruleError, { step: 'resolve_rule', pitcherId, gameId, gameDate });
     // Return non-2xx so the database webhook retries rather than silently
     // skipping compliance alerts for this pitch.
     return new Response(JSON.stringify({ error: ruleError.message }), {
@@ -201,6 +223,12 @@ Deno.serve(async (req: Request) => {
       if (dedupError) {
         if (dedupError.code === '23505') return; // already sent — silent skip
         console.error('Failed to record alert dedup row:', dedupError);
+        await reportEdgeError(supabase, 'edge.pitch-count', dedupError, {
+          step: 'alert_dedup',
+          pitcherId,
+          gameId,
+          alertKind,
+        });
         return; // fail closed rather than spamming
       }
 
@@ -212,7 +240,8 @@ Deno.serve(async (req: Request) => {
         .eq('is_active', true);
 
       if (!coaches || coaches.length === 0) return;
-      await supabase.functions.invoke('push-notifications', {
+      const { error: invokeError } = await supabase.functions.invoke('push-notifications', {
+        headers: internalHeaders(),
         body: {
           userIds: coaches.map((c: { user_id: string }) => c.user_id),
           title,
@@ -222,6 +251,15 @@ Deno.serve(async (req: Request) => {
           data: { kind: 'game', gameId, pitcherId, pitchCount, type: alertType, ...payloadExtras },
         },
       });
+      if (invokeError) {
+        console.warn('push-notifications invoke failed for pitch alert', { gameId, pitcherId, alertKind, invokeError });
+        await reportEdgeError(supabase, 'edge.pitch-count', invokeError, {
+          step: 'push_invoke',
+          gameId,
+          pitcherId,
+          alertKind,
+        });
+      }
     };
 
     // Daily threshold alerts (75% / 90%)

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
-import type { ErrorSource } from '@/lib/errors/report-error';
+import { reportError, type ErrorSource } from '@/lib/errors/report-error';
 
 const ROW_LIMIT = 200;
 const AREA_SCAN_LIMIT = 2000;
@@ -26,7 +26,56 @@ export type ErrorLogRow = {
   deviceId: string | null;
 };
 
-export type ErrorLogData = { rows: ErrorLogRow[]; countLast24h: number; areas: string[] };
+export type JobHealth = {
+  job: string;
+  enabled: boolean;
+  lastRunAt: string | null;
+  lastStatus: number | null;
+  lastOk: boolean | null;
+  lastSuccessAt: string | null;
+  calls24h: number;
+  failures24h: number;
+};
+
+export type ErrorLogData = {
+  rows: ErrorLogRow[];
+  countLast24h: number;
+  areas: string[];
+  jobs: JobHealth[];
+};
+
+type JobHealthDbRow = {
+  job: string;
+  enabled: boolean;
+  last_run_at: string | null;
+  last_status: number | null;
+  last_ok: boolean | null;
+  last_success_at: string | null;
+  calls_24h: number;
+  failures_24h: number;
+};
+
+function toJobHealth(row: JobHealthDbRow): JobHealth {
+  return {
+    job: row.job,
+    enabled: row.enabled,
+    lastRunAt: row.last_run_at,
+    lastStatus: row.last_status,
+    lastOk: row.last_ok,
+    lastSuccessAt: row.last_success_at,
+    calls24h: row.calls_24h,
+    failures24h: row.failures_24h,
+  };
+}
+
+async function loadJobs(db: SupabaseClient, actorUserId: string): Promise<JobHealth[]> {
+  const { data, error } = await db.rpc('admin_job_health');
+  if (error) {
+    reportError('admin.job-health', new Error(error.message), { userId: actorUserId });
+    return [];
+  }
+  return ((data ?? []) as JobHealthDbRow[]).map(toJobHealth);
+}
 
 type DbRow = {
   id: string;
@@ -61,7 +110,8 @@ function toRow(row: DbRow): ErrorLogRow {
 /**
  * The platform admin's error log: the newest 200 rows from the last 7 days
  * (optionally narrowed by source and area), the 24-hour count across every
- * source and area, and the distinct areas of the last 7 days for the filter.
+ * source and area, and the distinct areas of the last 7 days for the filter, plus the
+ * health of the scheduled background jobs (empty when that lookup fails).
  */
 export async function loadErrorLog(
   db: SupabaseClient,
@@ -92,10 +142,11 @@ export async function loadErrorLog(
   if (source) rowsQuery = rowsQuery.eq('source', source);
   if (area) rowsQuery = rowsQuery.eq('area', area);
 
-  const [rowsResult, countResult, areasResult] = await Promise.all([
+  const [rowsResult, countResult, areasResult, jobs] = await Promise.all([
     rowsQuery,
     db.from('app_error_log').select('id', { count: 'exact', head: true }).gte('occurred_at', dayAgo),
-    db.from('app_error_log').select('area').gte('occurred_at', weekAgo).limit(AREA_SCAN_LIMIT),
+    db.from('app_error_log').select('area').gte('occurred_at', weekAgo).order('occurred_at', { ascending: false }).limit(AREA_SCAN_LIMIT),
+    loadJobs(db, actorUserId),
   ]);
 
   if (rowsResult.error || countResult.error || areasResult.error) {
@@ -110,5 +161,6 @@ export async function loadErrorLog(
     rows: ((rowsResult.data ?? []) as DbRow[]).map(toRow),
     countLast24h: countResult.count ?? 0,
     areas,
+    jobs,
   });
 }

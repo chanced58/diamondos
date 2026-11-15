@@ -51,7 +51,7 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
       .select('id, name, organization, logo_url, team_members(count)')
       .order('name');
 
-    const { count: errorsLast24h } = await db
+    const { count: errorsLast24h, error: errorsCountError } = await db
       .from('app_error_log')
       .select('id', { count: 'exact', head: true })
       .gte('occurred_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
@@ -202,7 +202,7 @@ export default async function AdminPage(): Promise<JSX.Element | null> {
                 Errors
               </h3>
               <p className="text-sm text-gray-500 mt-1">
-                {errorsLast24h ?? 0} in the last 24 hours.
+                {errorsCountError ? '—' : (errorsLast24h ?? 0)} in the last 24 hours.
               </p>
             </Link>
           </div>

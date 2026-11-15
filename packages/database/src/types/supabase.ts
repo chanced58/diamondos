@@ -1349,6 +1349,36 @@ export type Database = {
           },
         ]
       }
+      job_runs: {
+        Row: {
+          completed_at: string | null
+          error: string | null
+          id: number
+          job: string
+          request_id: number | null
+          requested_at: string
+          status_code: number | null
+        }
+        Insert: {
+          completed_at?: string | null
+          error?: string | null
+          id?: never
+          job: string
+          request_id?: number | null
+          requested_at?: string
+          status_code?: number | null
+        }
+        Update: {
+          completed_at?: string | null
+          error?: string | null
+          id?: never
+          job?: string
+          request_id?: number | null
+          requested_at?: string
+          status_code?: number | null
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
           coaching_staff: string | null
@@ -5466,6 +5496,19 @@ export type Database = {
         Returns: {
           event_id: string
           sequence_number: number
+        }[]
+      }
+      admin_job_health: {
+        Args: never
+        Returns: {
+          calls_24h: number
+          enabled: boolean
+          failures_24h: number
+          job: string
+          last_ok: boolean
+          last_run_at: string
+          last_status: number
+          last_success_at: string
         }[]
       }
       create_tournament: {
