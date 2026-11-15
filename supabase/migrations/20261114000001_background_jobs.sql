@@ -33,6 +33,10 @@ create table if not exists public.job_runs (
 create index if not exists job_runs_job_requested_at_idx
   on public.job_runs (job, requested_at desc);
 
+create index if not exists job_runs_pending_request_idx
+  on public.job_runs (request_id)
+  where completed_at is null;
+
 alter table public.job_runs enable row level security;
 revoke all on public.job_runs from anon, authenticated;
 grant select, delete on public.job_runs to service_role;
@@ -83,7 +87,7 @@ begin
     if v_secret_name is null then
       raise exception 'Unsupported auth % for job %', p_auth, p_job;
     end if;
-    if p_method not in ('GET', 'POST') then
+    if p_method is null or p_method not in ('GET', 'POST') then
       raise exception 'Unsupported method % for job %', p_method, p_job;
     end if;
 
@@ -194,7 +198,11 @@ begin
   with answered as (
     update public.job_runs jr
     set status_code = r.status_code,
-        error = coalesce(r.error_msg, case when r.timed_out then 'timed out' end),
+        error = case
+          when r.status_code between 200 and 299 then r.error_msg
+          else coalesce(r.error_msg, case when r.timed_out then 'timed out' end,
+                        'HTTP ' || r.status_code::text, 'unknown failure')
+        end,
         completed_at = now()
     from net._http_response r
     where jr.completed_at is null
@@ -220,7 +228,7 @@ begin
   select
     'db',
     'job.' || f.job,
-    'Job ' || f.job || ' failed: ' || coalesce(f.error, 'HTTP ' || f.status_code::text),
+    'Job ' || f.job || ' failed: ' || coalesce(f.error, 'HTTP ' || f.status_code::text, 'unknown failure'),
     jsonb_build_object('job', f.job, 'job_run_id', f.id, 'request_id', f.request_id,
                        'status_code', f.status_code, 'error', f.error)
   from failed f
@@ -277,6 +285,7 @@ as $$
     select r.requested_at, r.status_code
     from public.job_runs r
     where r.job = j.name
+      and r.completed_at is not null
     order by r.requested_at desc
     limit 1
   ) last_run on true;

@@ -5475,19 +5475,6 @@ export type Database = {
         Args: { p_change: Json; p_void: Json }
         Returns: undefined
       }
-      admin_job_health: {
-        Args: never
-        Returns: {
-          calls_24h: number
-          enabled: boolean
-          failures_24h: number
-          job: string
-          last_ok: boolean
-          last_run_at: string
-          last_status: number
-          last_success_at: string
-        }[]
-      }
       can_edit_block: { Args: { p_block_id: string }; Returns: boolean }
       start_tournament_game: {
         Args: {
@@ -5509,6 +5496,19 @@ export type Database = {
         Returns: {
           event_id: string
           sequence_number: number
+        }[]
+      }
+      admin_job_health: {
+        Args: never
+        Returns: {
+          calls_24h: number
+          enabled: boolean
+          failures_24h: number
+          job: string
+          last_ok: boolean
+          last_run_at: string
+          last_status: number
+          last_success_at: string
         }[]
       }
       create_tournament: {

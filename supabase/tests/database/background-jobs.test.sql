@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(15);
+SELECT plan(17);
 
 -- Fixture: a coach, a team, a season and a regular (non-tournament) game.
 INSERT INTO auth.users (id, instance_id, email, aud, role, raw_app_meta_data, created_at, updated_at)
@@ -101,12 +101,26 @@ SELECT is(
 
 -- 8. Health, with the trigger back off.
 ALTER TABLE public.game_events DISABLE TRIGGER game_events_notify_pitch_count;
+-- A collected success, then a newer run still waiting on its response.
+INSERT INTO public.job_runs (job, request_id, requested_at, status_code, completed_at)
+VALUES ('practice-notifications-dispatch', -1, now() - interval '10 minutes', 200, now() - interval '9 minutes'),
+       ('practice-notifications-dispatch', -2, now() - interval '1 minute', NULL, NULL);
 SET LOCAL ROLE service_role;
 SELECT is((SELECT count(*) FROM public.admin_job_health()), 3::bigint, 'admin_job_health reports three jobs');
 SELECT is(
   (SELECT enabled FROM public.admin_job_health() WHERE job = 'pitch-count-calculator'),
   false,
   'admin_job_health reports the pitch-count job disabled'
+);
+SELECT is(
+  (SELECT last_ok FROM public.admin_job_health() WHERE job = 'practice-notifications-dispatch'),
+  true,
+  'an uncollected newest run does not make the job look failed'
+);
+SELECT is(
+  (SELECT last_status FROM public.admin_job_health() WHERE job = 'practice-notifications-dispatch'),
+  200,
+  'last_status comes from the newest collected run'
 );
 RESET ROLE;
 
