@@ -77,6 +77,11 @@ import type { GameLineup } from '../../../../../src/db/models/GameLineup';
  */
 const ACTION_SURFACE_FILL = { flexGrow: 1, flexShrink: 1, flexBasis: 'auto' } as const;
 
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  const { gameId } = useLocalSearchParams<{ gameId: string }>();
+  return <ErrorFallback {...props} variant="scorer" gameId={gameId} />;
+}
+
 /**
  * Live game scoring screen — the core feature of the mobile app.
  * Works completely offline. All events written to WatermelonDB first,
@@ -86,11 +91,6 @@ const ACTION_SURFACE_FILL = { flexGrow: 1, flexShrink: 1, flexBasis: 'auto' } as
  * `Stack.Screen` below) follows the app theme, so this scope leaves the
  * status bar to the root scope.
  */
-export function ErrorBoundary(props: ErrorBoundaryProps) {
-  const { gameId } = useLocalSearchParams<{ gameId: string }>();
-  return <ErrorFallback {...props} variant="scorer" gameId={gameId} />;
-}
-
 export default function ScoringScreen() {
   return (
     <ThemeScope theme="light" statusBar={false}>
