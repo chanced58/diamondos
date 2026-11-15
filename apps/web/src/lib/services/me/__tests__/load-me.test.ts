@@ -1,5 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Feature, SubscriptionTier, meResponseSchema } from '@baseball/shared';
+import {
+  Feature,
+  MIN_SUPPORTED_MOBILE_VERSION,
+  MOBILE_APP_UPDATE_URL,
+  SubscriptionTier,
+  meResponseSchema,
+} from '@baseball/shared';
 import { featuresForTier, loadMe } from '../load-me';
 
 const mockResolveTeamTier = jest.fn();
@@ -84,6 +90,8 @@ describe('loadMe', () => {
       { leagueId: 'league-1', leagueName: 'Metro League', leagueSlug: 'metro', role: 'league_admin' },
     ]);
     expect(me.user).toEqual({ id: 'user-1', email: 'coach@example.com', firstName: 'Pat', lastName: 'Lee' });
+    expect(me.minSupportedAppVersion).toBe(MIN_SUPPORTED_MOBILE_VERSION);
+    expect(me.appUpdateUrl).toBe(MOBILE_APP_UPDATE_URL);
     expect(mockHeal).not.toHaveBeenCalled();
     expect(mockEnsureChannels).toHaveBeenCalledWith(db, 'user-1', ['team-a', 'team-b']);
     // The payload satisfies the contract the mobile app parses it with.

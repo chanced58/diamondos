@@ -51,6 +51,9 @@ export const meResponseSchema = z.object({
   }),
   memberships: z.array(meTeamMembershipSchema),
   leagueRoles: z.array(meLeagueRoleSchema),
+  /** Optional so older web deploys and older apps still parse. */
+  minSupportedAppVersion: z.string().optional(),
+  appUpdateUrl: z.string().optional(),
 });
 
 export type MeTeamMembership = z.infer<typeof meTeamMembershipSchema>;

@@ -5,6 +5,7 @@ import { EmptyState, ErrorState, SegmentedControl } from '@baseball/ui';
 import type { DashboardView } from '@baseball/shared';
 import { useSyncContext } from '../../../src/providers/SyncProvider';
 import { useRole } from '../../../src/providers/RoleProvider';
+import { UpdateBanner } from '../../../src/features/app-version/UpdateBanner';
 import { TeamSwitcher } from '../../../src/features/teams/TeamSwitcher';
 import { ResumeScoringCards } from '../../../src/features/home/ResumeScoringCards';
 import { useDashboard } from '../../../src/features/home/dashboard-api';
@@ -62,6 +63,7 @@ export default function HomeScreen() {
       contentContainerStyle={{ paddingBottom: 32 }}
       refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} />}
     >
+      <UpdateBanner />
       <TeamSwitcher />
       <View className="px-4 pt-5 pb-3">
         <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide">

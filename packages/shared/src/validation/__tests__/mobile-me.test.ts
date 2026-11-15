@@ -38,6 +38,17 @@ describe('meResponseSchema', () => {
     }).success).toBe(false);
   });
 
+  it('should parse with and without the app version fields', () => {
+    expect(meResponseSchema.parse(payload).minSupportedAppVersion).toBeUndefined();
+    const parsed = meResponseSchema.parse({
+      ...payload,
+      minSupportedAppVersion: '1.0.0',
+      appUpdateUrl: 'itms-beta://',
+    });
+    expect(parsed.minSupportedAppVersion).toBe('1.0.0');
+    expect(parsed.appUpdateUrl).toBe('itms-beta://');
+  });
+
   it('should ignore unknown top-level keys so the web can extend the payload', () => {
     const parsed = meResponseSchema.parse({ ...payload, somethingNew: true });
 
