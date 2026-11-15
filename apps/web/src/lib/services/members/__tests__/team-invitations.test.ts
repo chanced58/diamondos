@@ -110,9 +110,13 @@ describe('inviteStaff', () => {
       expect(inviteUserByEmail).not.toHaveBeenCalled();
       expect(writes(calls, 'team_invitations')).toEqual([]);
     } finally {
-      env.APP_URL = saved.appUrl;
-      env.NEXT_PUBLIC_APP_URL = saved.publicUrl;
-      env.NODE_ENV = saved.nodeEnv;
+      const restore = (key: string, value: string | undefined) => {
+        if (value === undefined) delete env[key];
+        else env[key] = value;
+      };
+      restore('APP_URL', saved.appUrl);
+      restore('NEXT_PUBLIC_APP_URL', saved.publicUrl);
+      restore('NODE_ENV', saved.nodeEnv);
     }
   });
 

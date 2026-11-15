@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
     // Invite new user
     const appOrigin = resolveAppOrigin();
     if (!appOrigin) {
-      return NextResponse.json({ error: 'Invitations are unavailable: the site address is not configured.' }, { status: 500 });
+      return NextResponse.json({ error: 'Invitations are unavailable: the site address is not configured.' }, { status: 503 });
     }
     const redirectTo = `${appOrigin}/auth/callback`;
     const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
