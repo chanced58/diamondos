@@ -1,12 +1,12 @@
 BEGIN;
 SELECT plan(26);
 
-INSERT INTO auth.users (id, instance_id, email, aud, role, created_at, updated_at)
+INSERT INTO auth.users (id, instance_id, email, aud, role, raw_app_meta_data, created_at, updated_at)
 VALUES
-  ('51000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000000', 'tournament-enabled@example.test', 'authenticated', 'authenticated', now(), now()),
-  ('51000000-0000-4000-8000-000000000002', '00000000-0000-0000-0000-000000000000', 'tournament-disabled@example.test', 'authenticated', 'authenticated', now(), now()),
-  ('51000000-0000-4000-8000-000000000003', '00000000-0000-0000-0000-000000000000', 'other-coach@example.test', 'authenticated', 'authenticated', now(), now()),
-  ('51000000-0000-4000-8000-000000000004', '00000000-0000-0000-0000-000000000000', 'platform-admin@example.test', 'authenticated', 'authenticated', now(), now())
+  ('51000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000000', 'tournament-enabled@example.test', 'authenticated', 'authenticated', '{"provider":"email","providers":["email"]}'::jsonb, now(), now()),
+  ('51000000-0000-4000-8000-000000000002', '00000000-0000-0000-0000-000000000000', 'tournament-disabled@example.test', 'authenticated', 'authenticated', '{"provider":"email","providers":["email"]}'::jsonb, now(), now()),
+  ('51000000-0000-4000-8000-000000000003', '00000000-0000-0000-0000-000000000000', 'other-coach@example.test', 'authenticated', 'authenticated', '{"provider":"email","providers":["email"]}'::jsonb, now(), now()),
+  ('51000000-0000-4000-8000-000000000004', '00000000-0000-0000-0000-000000000000', 'platform-admin@example.test', 'authenticated', 'authenticated', '{"provider":"email","providers":["email"]}'::jsonb, now(), now())
 ON CONFLICT (id) DO NOTHING;
 
 UPDATE public.user_profiles SET is_platform_admin = true
