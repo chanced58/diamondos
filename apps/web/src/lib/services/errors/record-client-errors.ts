@@ -9,6 +9,7 @@ import {
 import { invalidInput, serviceError, serviceOk, type ServiceResult } from '../result';
 import type { AppErrorLogInsert } from '@/lib/errors/report-error';
 
+const APP_VERSION_MAX = 32;
 const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
 
 function isWithinAcceptedWindow(occurredAt: string, now: number): boolean {
@@ -31,7 +32,7 @@ function toRow(
     team_id: entry.teamId ?? null,
     game_id: entry.gameId ?? null,
     device_id: entry.deviceId ?? null,
-    app_version: entry.appVersion ?? appVersionHeader ?? null,
+    app_version: entry.appVersion ?? appVersionHeader?.slice(0, APP_VERSION_MAX) ?? null,
     occurred_at: entry.occurredAt,
   };
 }

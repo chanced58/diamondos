@@ -9,10 +9,20 @@ import { readJsonBody, serviceResponse } from '@/lib/api/service-response';
 import { recordClientErrors } from '@/lib/services/errors/record-client-errors';
 import { createServerClient } from '@/lib/supabase/server';
 
+/** The signed-in user, or null for anonymous callers and any session lookup failure. */
+async function readSessionUser() {
+  try {
+    const {
+      data: { user },
+    } = await createServerClient().auth.getUser();
+    return user;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: Request) {
-  const {
-    data: { user },
-  } = await createServerClient().auth.getUser();
+  const user = await readSessionUser();
   if (!user) return new NextResponse(null, { status: 204 });
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

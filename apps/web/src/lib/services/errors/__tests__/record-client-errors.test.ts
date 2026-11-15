@@ -76,4 +76,10 @@ describe('recordClientErrors', () => {
     expect(inserted[0][0].app_version).toBe('1.4.0');
     expect(inserted[0][1].app_version).toBe('2.0.0');
   });
+
+  it('caps the header version at 32 characters', async () => {
+    const { db, inserted } = fakeDb();
+    await recordClientErrors(db, ACTOR, { entries: [entry()] }, 'mobile', 'v'.repeat(40));
+    expect(inserted[0][0].app_version).toBe('v'.repeat(32));
+  });
 });
