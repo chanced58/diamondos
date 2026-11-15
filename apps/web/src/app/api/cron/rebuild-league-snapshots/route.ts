@@ -7,7 +7,7 @@ import { reportError } from '@/lib/errors/report-error';
 export const dynamic = 'force-dynamic';
 
 /**
- * Scheduled safety-net rebuild of all league snapshots. Vercel Cron calls this
+ * Scheduled safety-net rebuild of all league snapshots. The database (pg_cron) calls this
  * with `Authorization: Bearer <CRON_SECRET>`. Self-heals any snapshot missed by
  * the on-finalize trigger.
  */
