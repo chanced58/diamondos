@@ -10,6 +10,7 @@
  * enter. Those are out of scope for Tier 5; this builder emits what we can
  * derive purely from game_events.
  */
+import { formatBattingAverage } from './format.ts';
 import type { PlayerStats } from './stats.ts';
 
 export interface AggregatedPlayer {
@@ -47,7 +48,7 @@ function attr(name: string, value: string | number | null): string {
 
 function buildPlayerElement(p: AggregatedPlayer): string {
   const s = p.stats;
-  const avg = s.ab > 0 ? (s.h / s.ab).toFixed(3) : '.000';
+  const avg = formatBattingAverage(s.h, s.ab);
   return (
     `    <Player` +
     attr('playerId', p.playerId) +
