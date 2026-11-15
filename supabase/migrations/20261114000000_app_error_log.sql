@@ -19,3 +19,4 @@ CREATE INDEX app_error_log_source_occurred_at_idx ON public.app_error_log (sourc
 
 ALTER TABLE public.app_error_log ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.app_error_log FROM anon, authenticated;
+GRANT SELECT, INSERT, DELETE ON public.app_error_log TO service_role;
