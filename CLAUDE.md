@@ -152,7 +152,9 @@ supabase functions deploy push-notifications
 supabase functions deploy maxpreps-export
 supabase functions deploy create-team
 supabase functions deploy invite-member
-# push-notifications, practice-notifications-dispatch and pitch-count-calculator need --no-verify-jwt; create-team and invite-member have no app callers
+supabase functions deploy practice-notifications-dispatch
+supabase functions deploy team-calendar-ics
+# push-notifications, practice-notifications-dispatch, pitch-count-calculator and team-calendar-ics need --no-verify-jwt; create-team and invite-member have no app callers
 ```
 
 ---
